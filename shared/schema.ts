@@ -99,6 +99,21 @@ export const leads = pgTable("leads", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const taskLabelDefinitions = pgTable("task_label_definitions", {
+  id: serial("id").primaryKey(),
+  name: varchar("name").notNull(),
+  color: varchar("color").notNull().default("blue"), // red|orange|yellow|green|blue|purple
+  sortOrder: integer("sort_order").default(0).notNull(),
+});
+
+export const taskColumns = pgTable("task_columns", {
+  id: serial("id").primaryKey(),
+  name: varchar("name").notNull(),
+  slug: varchar("slug").notNull().unique(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  isDefault: boolean("is_default").default(false).notNull(),
+});
+
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
   title: varchar("title").notNull(),
@@ -109,7 +124,7 @@ export const tasks = pgTable("tasks", {
   relatedContactId: integer("related_contact_id").references(() => clientContacts.id),
   dueDate: timestamp("due_date"),
   priority: varchar("priority", { enum: ["low", "medium", "high"] }).default("medium").notNull(),
-  status: varchar("status", { enum: ["todo", "in_progress", "done"] }).default("todo").notNull(),
+  status: varchar("status").default("todo").notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
   checklist: jsonb("checklist").default([]),
   labels: text("labels").array().default([]),
@@ -223,6 +238,8 @@ export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, creat
   valueTier: z.enum(["$", "$$", "$$$", "$$$$"]).optional().nullable(),
 });
 export const insertPipelineViewSchema = createInsertSchema(pipelineViews).omit({ id: true, createdAt: true });
+export const insertTaskLabelDefinitionSchema = createInsertSchema(taskLabelDefinitions).omit({ id: true });
+export const insertTaskColumnSchema = createInsertSchema(taskColumns).omit({ id: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true }).extend({
   checklist: z.array(z.object({ id: z.string(), text: z.string(), done: z.boolean() })).optional().default([]),
   labels: z.array(z.string()).optional().default([]),
@@ -268,3 +285,7 @@ export type PipelineStage = typeof pipelineStages.$inferSelect;
 export type InsertPipelineStage = z.infer<typeof insertPipelineStageSchema>;
 export type PipelineView = typeof pipelineViews.$inferSelect;
 export type InsertPipelineView = z.infer<typeof insertPipelineViewSchema>;
+export type TaskLabelDefinition = typeof taskLabelDefinitions.$inferSelect;
+export type InsertTaskLabelDefinition = z.infer<typeof insertTaskLabelDefinitionSchema>;
+export type TaskColumn = typeof taskColumns.$inferSelect;
+export type InsertTaskColumn = z.infer<typeof insertTaskColumnSchema>;

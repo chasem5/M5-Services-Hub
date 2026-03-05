@@ -16,6 +16,8 @@ import {
   insertProposalSchema,
   insertPipelineStageSchema,
   insertBdSpendEntrySchema,
+  insertTaskLabelDefinitionSchema,
+  insertTaskColumnSchema,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -25,6 +27,8 @@ export async function registerRoutes(
 ): Promise<Server> {
   // Seed default pipeline stages on startup
   await storage.seedDefaultPipelineStages();
+  // Seed default task columns on startup
+  await storage.seedDefaultTaskColumns();
 
   // Helper to log activity
   const logActivity = async (req: any, entityType: any, entityId: number, action: string, metadata?: any) => {
@@ -551,7 +555,7 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
   app.patch("/api/tasks/:id/move", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     const { status, sortOrder } = z.object({
-      status: z.enum(["todo", "in_progress", "done"]),
+      status: z.string(),
       sortOrder: z.number(),
     }).parse(req.body);
     const task = await storage.updateTask(id, { status, sortOrder });
@@ -561,6 +565,61 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
   app.delete("/api/tasks/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     await storage.deleteTask(id);
+    res.sendStatus(204);
+  });
+
+  // Task Label Definitions
+  app.get("/api/task-labels", isAuthenticated, async (_req, res) => {
+    const labels = await storage.listTaskLabelDefinitions();
+    res.json(labels);
+  });
+
+  app.post("/api/task-labels", isAuthenticated, async (req, res) => {
+    const data = insertTaskLabelDefinitionSchema.parse(req.body);
+    const label = await storage.createTaskLabelDefinition(data);
+    res.json(label);
+  });
+
+  app.put("/api/task-labels/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const data = insertTaskLabelDefinitionSchema.partial().parse(req.body);
+    const label = await storage.updateTaskLabelDefinition(id, data);
+    res.json(label);
+  });
+
+  app.delete("/api/task-labels/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    await storage.deleteTaskLabelDefinition(id);
+    res.sendStatus(204);
+  });
+
+  // Task Columns
+  app.get("/api/task-columns", isAuthenticated, async (_req, res) => {
+    const cols = await storage.listTaskColumns();
+    res.json(cols);
+  });
+
+  app.post("/api/task-columns", isAuthenticated, async (req, res) => {
+    const data = insertTaskColumnSchema.parse(req.body);
+    const col = await storage.createTaskColumn(data);
+    res.json(col);
+  });
+
+  app.put("/api/task-columns/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const data = insertTaskColumnSchema.partial().parse(req.body);
+    const col = await storage.updateTaskColumn(id, data);
+    res.json(col);
+  });
+
+  app.delete("/api/task-columns/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const col = await storage.listTaskColumns();
+    const target = col.find((c) => c.id === id);
+    if (target?.isDefault) {
+      return res.status(400).json({ message: "Cannot delete a default column." });
+    }
+    await storage.deleteTaskColumn(id);
     res.sendStatus(204);
   });
 

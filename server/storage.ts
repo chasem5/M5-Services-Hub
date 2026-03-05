@@ -9,6 +9,8 @@ import {
   bdSpendEntries,
   leads,
   tasks,
+  taskLabelDefinitions,
+  taskColumns,
   reminders,
   serviceCatalog,
   estimates,
@@ -49,6 +51,10 @@ import {
   type InsertContactBuilding,
   type PipelineView,
   type InsertPipelineView,
+  type TaskLabelDefinition,
+  type InsertTaskLabelDefinition,
+  type TaskColumn,
+  type InsertTaskColumn,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -160,6 +166,19 @@ export interface IStorage {
   createPipelineView(view: InsertPipelineView): Promise<PipelineView>;
   updatePipelineView(id: number, view: Partial<InsertPipelineView>): Promise<PipelineView>;
   deletePipelineView(id: number): Promise<void>;
+
+  // Task Label Definitions
+  listTaskLabelDefinitions(): Promise<TaskLabelDefinition[]>;
+  createTaskLabelDefinition(label: InsertTaskLabelDefinition): Promise<TaskLabelDefinition>;
+  updateTaskLabelDefinition(id: number, data: Partial<InsertTaskLabelDefinition>): Promise<TaskLabelDefinition>;
+  deleteTaskLabelDefinition(id: number): Promise<void>;
+
+  // Task Columns
+  listTaskColumns(): Promise<TaskColumn[]>;
+  createTaskColumn(col: InsertTaskColumn): Promise<TaskColumn>;
+  updateTaskColumn(id: number, data: Partial<InsertTaskColumn>): Promise<TaskColumn>;
+  deleteTaskColumn(id: number): Promise<void>;
+  seedDefaultTaskColumns(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -619,6 +638,57 @@ export class DatabaseStorage implements IStorage {
 
   async deletePipelineView(id: number): Promise<void> {
     await db.delete(pipelineViews).where(eq(pipelineViews.id, id));
+  }
+
+  // Task Label Definitions
+  async listTaskLabelDefinitions(): Promise<TaskLabelDefinition[]> {
+    return await db.select().from(taskLabelDefinitions).orderBy(taskLabelDefinitions.sortOrder);
+  }
+
+  async createTaskLabelDefinition(label: InsertTaskLabelDefinition): Promise<TaskLabelDefinition> {
+    const [created] = await db.insert(taskLabelDefinitions).values(label).returning();
+    return created;
+  }
+
+  async updateTaskLabelDefinition(id: number, data: Partial<InsertTaskLabelDefinition>): Promise<TaskLabelDefinition> {
+    const [updated] = await db.update(taskLabelDefinitions).set(data).where(eq(taskLabelDefinitions.id, id)).returning();
+    return updated;
+  }
+
+  async deleteTaskLabelDefinition(id: number): Promise<void> {
+    // Remove this label ID from all tasks
+    await db.execute(sql`UPDATE tasks SET labels = array_remove(labels, ${String(id)}) WHERE ${String(id)} = ANY(labels)`);
+    await db.delete(taskLabelDefinitions).where(eq(taskLabelDefinitions.id, id));
+  }
+
+  // Task Columns
+  async listTaskColumns(): Promise<TaskColumn[]> {
+    return await db.select().from(taskColumns).orderBy(taskColumns.sortOrder);
+  }
+
+  async createTaskColumn(col: InsertTaskColumn): Promise<TaskColumn> {
+    const [created] = await db.insert(taskColumns).values(col).returning();
+    return created;
+  }
+
+  async updateTaskColumn(id: number, data: Partial<InsertTaskColumn>): Promise<TaskColumn> {
+    const [updated] = await db.update(taskColumns).set(data).where(eq(taskColumns.id, id)).returning();
+    return updated;
+  }
+
+  async deleteTaskColumn(id: number): Promise<void> {
+    await db.delete(taskColumns).where(eq(taskColumns.id, id));
+  }
+
+  async seedDefaultTaskColumns(): Promise<void> {
+    const defaults = [
+      { name: "To Do", slug: "todo", sortOrder: 0, isDefault: true },
+      { name: "In Progress", slug: "in_progress", sortOrder: 1, isDefault: true },
+      { name: "Done", slug: "done", sortOrder: 2, isDefault: true },
+    ];
+    for (const col of defaults) {
+      await db.execute(sql`INSERT INTO task_columns (name, slug, sort_order, is_default) VALUES (${col.name}, ${col.slug}, ${col.sortOrder}, ${col.isDefault}) ON CONFLICT (slug) DO NOTHING`);
+    }
   }
 }
 

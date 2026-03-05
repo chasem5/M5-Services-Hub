@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Task, Lead, Client, ClientContact, User, InsertTask, insertTaskSchema } from "@shared/schema";
+import { Task, Lead, Client, ClientContact, User, InsertTask, insertTaskSchema, TaskLabelDefinition, TaskColumn } from "@shared/schema";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,22 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Plus,
   Search,
   Calendar as CalendarIcon,
@@ -55,6 +71,9 @@ import {
   AlignLeft,
   ChevronDown,
   GripVertical,
+  MoreHorizontal,
+  Tag,
+  Pencil,
 } from "lucide-react";
 import {
   DndContext,
@@ -76,13 +95,13 @@ import { CSS } from "@dnd-kit/utilities";
 
 type ChecklistItem = { id: string; text: string; done: boolean };
 
-const LABEL_COLORS: Record<string, { bg: string; label: string }> = {
-  red: { bg: "bg-red-500", label: "Red" },
-  orange: { bg: "bg-orange-400", label: "Orange" },
-  yellow: { bg: "bg-yellow-400", label: "Yellow" },
-  green: { bg: "bg-green-500", label: "Green" },
-  blue: { bg: "bg-blue-500", label: "Blue" },
-  purple: { bg: "bg-purple-500", label: "Purple" },
+const COLOR_PALETTE: Record<string, { bg: string; ring: string; label: string }> = {
+  red:    { bg: "bg-red-500",    ring: "ring-red-400",    label: "Red" },
+  orange: { bg: "bg-orange-400", ring: "ring-orange-400", label: "Orange" },
+  yellow: { bg: "bg-yellow-400", ring: "ring-yellow-400", label: "Yellow" },
+  green:  { bg: "bg-green-500",  ring: "ring-green-400",  label: "Green" },
+  blue:   { bg: "bg-blue-500",   ring: "ring-blue-400",   label: "Blue" },
+  purple: { bg: "bg-purple-500", ring: "ring-purple-400", label: "Purple" },
 };
 
 const PRIORITY_COLORS = {
@@ -91,14 +110,12 @@ const PRIORITY_COLORS = {
   high: "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400",
 };
 
-const COLUMNS: { id: "todo" | "in_progress" | "done"; label: string }[] = [
-  { id: "todo", label: "To Do" },
-  { id: "in_progress", label: "In Progress" },
-  { id: "done", label: "Done" },
-];
-
 function genId() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function getLabelDef(labelDefs: TaskLabelDefinition[], id: string) {
+  return labelDefs.find((l) => String(l.id) === id);
 }
 
 function TaskCardCompact({
@@ -106,6 +123,7 @@ function TaskCardCompact({
   users,
   leads,
   clients,
+  labelDefs,
   onClick,
   isDragging,
 }: {
@@ -113,6 +131,7 @@ function TaskCardCompact({
   users: User[];
   leads: Lead[];
   clients: Client[];
+  labelDefs: TaskLabelDefinition[];
   onClick: () => void;
   isDragging?: boolean;
 }) {
@@ -125,7 +144,8 @@ function TaskCardCompact({
     task.status !== "done";
   const checklist = (task.checklist as ChecklistItem[]) || [];
   const doneCount = checklist.filter((i) => i.done).length;
-  const taskLabels = (task.labels as string[]) || [];
+  const taskLabelIds = (task.labels as string[]) || [];
+  const activeLabelDefs = taskLabelIds.map((id) => getLabelDef(labelDefs, id)).filter(Boolean) as TaskLabelDefinition[];
 
   return (
     <div
@@ -137,13 +157,13 @@ function TaskCardCompact({
       onClick={onClick}
       data-testid={`card-task-${task.id}`}
     >
-      {taskLabels.length > 0 && (
+      {activeLabelDefs.length > 0 && (
         <div className="flex gap-1 px-3 pt-2.5">
-          {taskLabels.map((lbl) => (
+          {activeLabelDefs.map((def) => (
             <span
-              key={lbl}
-              className={cn("h-2 rounded-full flex-1 max-w-[40px]", LABEL_COLORS[lbl]?.bg ?? "bg-muted")}
-              title={LABEL_COLORS[lbl]?.label}
+              key={def.id}
+              className={cn("h-2 rounded-full flex-1 max-w-[40px]", COLOR_PALETTE[def.color]?.bg ?? "bg-muted")}
+              title={def.name}
             />
           ))}
         </div>
@@ -224,12 +244,14 @@ function SortableTaskCard({
   users,
   leads,
   clients,
+  labelDefs,
   onClick,
 }: {
   task: Task;
   users: User[];
   leads: Lead[];
   clients: Client[];
+  labelDefs: TaskLabelDefinition[];
   onClick: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -257,6 +279,7 @@ function SortableTaskCard({
           users={users}
           leads={leads}
           clients={clients}
+          labelDefs={labelDefs}
           onClick={onClick}
           isDragging={isDragging}
         />
@@ -339,6 +362,94 @@ function QuickAddCard({
   );
 }
 
+function ColumnHeader({
+  col,
+  taskCount,
+  onAddTask,
+  onRename,
+  onDelete,
+}: {
+  col: TaskColumn;
+  taskCount: number;
+  onAddTask: () => void;
+  onRename: (id: number, name: string) => void;
+  onDelete: (col: TaskColumn) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(col.name);
+
+  const commitRename = () => {
+    if (value.trim() && value.trim() !== col.name) {
+      onRename(col.id, value.trim());
+    } else {
+      setValue(col.name);
+    }
+    setEditing(false);
+  };
+
+  return (
+    <div className="flex items-center justify-between px-3 py-3 border-b border-border/40">
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        {editing ? (
+          <input
+            autoFocus
+            className="text-sm font-bold bg-transparent border-b border-primary outline-none flex-1 min-w-0 pb-0.5"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") { setValue(col.name); setEditing(false); }
+            }}
+            data-testid={`input-rename-column-${col.id}`}
+          />
+        ) : (
+          <span
+            className="text-sm font-bold cursor-text truncate"
+            onDoubleClick={() => { setEditing(true); setValue(col.name); }}
+            data-testid={`text-column-name-${col.id}`}
+          >
+            {col.name}
+          </span>
+        )}
+        <Badge variant="secondary" className="h-5 px-1.5 text-xs font-bold shrink-0">
+          {taskCount}
+        </Badge>
+      </div>
+      <div className="flex items-center gap-1 ml-1 shrink-0">
+        <button
+          className="h-6 w-6 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+          onClick={onAddTask}
+          data-testid={`button-add-in-column-${col.slug}`}
+        >
+          <Plus className="h-4 w-4 text-muted-foreground" />
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-6 w-6 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+              data-testid={`button-column-menu-${col.id}`}
+            >
+              <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => { setEditing(true); setValue(col.name); }}>
+              <Pencil className="h-3.5 w-3.5 mr-2" /> Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => onDelete(col)}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete column
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
 export default function TasksPage() {
   const { toast } = useToast();
   const [view, setView] = useState<"board" | "list">("board");
@@ -350,8 +461,26 @@ export default function TasksPage() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState("");
 
+  // Column management state
+  const [isAddingColumn, setIsAddingColumn] = useState(false);
+  const [newColumnName, setNewColumnName] = useState("");
+  const [deleteColTarget, setDeleteColTarget] = useState<TaskColumn | null>(null);
+
+  // Label management state
+  const [labelMgmtOpen, setLabelMgmtOpen] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState("red");
+  const [editingLabelId, setEditingLabelId] = useState<number | null>(null);
+  const [editingLabelName, setEditingLabelName] = useState("");
+
   const { data: tasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
+  });
+  const { data: taskColumns = [], isLoading: isLoadingColumns } = useQuery<TaskColumn[]>({
+    queryKey: ["/api/task-columns"],
+  });
+  const { data: labelDefs = [] } = useQuery<TaskLabelDefinition[]>({
+    queryKey: ["/api/task-labels"],
   });
   const { data: leads = [] } = useQuery<Lead[]>({ queryKey: ["/api/leads"] });
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
@@ -376,7 +505,7 @@ export default function TasksPage() {
     defaultValues: {
       title: "",
       description: "",
-      status: "todo",
+      status: taskColumns[0]?.slug || "todo",
       priority: "medium",
       checklist: [],
       labels: [],
@@ -386,6 +515,7 @@ export default function TasksPage() {
 
   const watchedCompanyId = addForm.watch("relatedClientId");
 
+  // Task mutations
   const createMutation = useMutation({
     mutationFn: async (data: InsertTask) => {
       const res = await apiRequest("POST", "/api/tasks", data);
@@ -450,6 +580,92 @@ export default function TasksPage() {
     },
   });
 
+  // Column mutations
+  const createColumnMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const slug = name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+      const maxOrder = taskColumns.length > 0 ? Math.max(...taskColumns.map((c) => c.sortOrder ?? 0)) : -1;
+      const res = await apiRequest("POST", "/api/task-columns", { name, slug: slug || `col_${Date.now()}`, sortOrder: maxOrder + 1, isDefault: false });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-columns"] });
+      setNewColumnName("");
+      setIsAddingColumn(false);
+      toast({ title: "Column added" });
+    },
+    onError: () => toast({ title: "Failed to add column", variant: "destructive" }),
+  });
+
+  const renameColumnMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: number; name: string }) => {
+      const res = await apiRequest("PUT", `/api/task-columns/${id}`, { name });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/task-columns"] }),
+    onError: () => toast({ title: "Failed to rename column", variant: "destructive" }),
+  });
+
+  const deleteColumnMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/task-columns/${id}`);
+      if (!res.ok) {
+        const body = await res.json();
+        throw new Error(body.message || "Cannot delete column");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-columns"] });
+      setDeleteColTarget(null);
+      toast({ title: "Column deleted" });
+    },
+    onError: (e: Error) => {
+      setDeleteColTarget(null);
+      toast({ title: e.message, variant: "destructive" });
+    },
+  });
+
+  // Label mutations
+  const createLabelMutation = useMutation({
+    mutationFn: async ({ name, color }: { name: string; color: string }) => {
+      const maxOrder = labelDefs.length > 0 ? Math.max(...labelDefs.map((l) => l.sortOrder ?? 0)) : -1;
+      const res = await apiRequest("POST", "/api/task-labels", { name, color, sortOrder: maxOrder + 1 });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-labels"] });
+      setNewLabelName("");
+      setNewLabelColor("red");
+      toast({ title: "Label created" });
+    },
+    onError: () => toast({ title: "Failed to create label", variant: "destructive" }),
+  });
+
+  const updateLabelMutation = useMutation({
+    mutationFn: async ({ id, name, color }: { id: number; name?: string; color?: string }) => {
+      const res = await apiRequest("PUT", `/api/task-labels/${id}`, { name, color });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-labels"] });
+      setEditingLabelId(null);
+      setEditingLabelName("");
+    },
+    onError: () => toast({ title: "Failed to update label", variant: "destructive" }),
+  });
+
+  const deleteLabelMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/task-labels/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-labels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Label deleted" });
+    },
+    onError: () => toast({ title: "Failed to delete label", variant: "destructive" }),
+  });
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as number);
   };
@@ -495,10 +711,11 @@ export default function TasksPage() {
     updateMutation.mutate({ id: selectedTask.id, data: { [field]: value } as any });
   };
 
-  const toggleLabel = (label: string) => {
+  const toggleLabel = (labelId: number) => {
     if (!selectedTask) return;
     const current = (selectedTask.labels as string[]) || [];
-    const next = current.includes(label) ? current.filter((l) => l !== label) : [...current, label];
+    const idStr = String(labelId);
+    const next = current.includes(idStr) ? current.filter((l) => l !== idStr) : [...current, idStr];
     updateMutation.mutate({ id: selectedTask.id, data: { labels: next } });
   };
 
@@ -528,7 +745,7 @@ export default function TasksPage() {
   const checklistDone = checklist.filter((i) => i.done).length;
   const checklistPct = checklist.length > 0 ? Math.round((checklistDone / checklist.length) * 100) : 0;
 
-  if (isLoadingTasks) {
+  if (isLoadingTasks || isLoadingColumns) {
     return (
       <div className="p-8 space-y-6">
         <div className="flex justify-between items-center">
@@ -563,6 +780,128 @@ export default function TasksPage() {
               data-testid="input-task-search"
             />
           </div>
+
+          {/* Labels management popover */}
+          <Popover open={labelMgmtOpen} onOpenChange={setLabelMgmtOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 gap-1.5" data-testid="button-manage-labels">
+                <Tag className="h-3.5 w-3.5" />
+                Labels
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0" align="end">
+              <div className="p-3 border-b">
+                <p className="text-sm font-bold">Manage Labels</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Create and edit labels for your tasks.</p>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {labelDefs.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-6">No labels yet. Create one below.</p>
+                )}
+                {labelDefs.map((def) => (
+                  <div key={def.id} className="flex items-center gap-2 px-3 py-2 hover:bg-muted/40 group">
+                    <span className={cn("h-4 w-4 rounded-full shrink-0", COLOR_PALETTE[def.color]?.bg ?? "bg-muted")} />
+                    {editingLabelId === def.id ? (
+                      <input
+                        autoFocus
+                        className="flex-1 text-sm bg-transparent border-b border-primary outline-none"
+                        value={editingLabelName}
+                        onChange={(e) => setEditingLabelName(e.target.value)}
+                        onBlur={() => {
+                          if (editingLabelName.trim() && editingLabelName !== def.name) {
+                            updateLabelMutation.mutate({ id: def.id, name: editingLabelName.trim() });
+                          } else {
+                            setEditingLabelId(null);
+                            setEditingLabelName("");
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            if (editingLabelName.trim()) updateLabelMutation.mutate({ id: def.id, name: editingLabelName.trim() });
+                          }
+                          if (e.key === "Escape") { setEditingLabelId(null); setEditingLabelName(""); }
+                        }}
+                        data-testid={`input-edit-label-${def.id}`}
+                      />
+                    ) : (
+                      <span
+                        className="flex-1 text-sm cursor-text"
+                        onDoubleClick={() => { setEditingLabelId(def.id); setEditingLabelName(def.name); }}
+                        data-testid={`text-label-name-${def.id}`}
+                      >
+                        {def.name}
+                      </span>
+                    )}
+                    {/* Color picker for label */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 rounded hover:bg-black/10 flex items-center justify-center" data-testid={`button-label-color-${def.id}`}>
+                          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        {Object.entries(COLOR_PALETTE).map(([key, val]) => (
+                          <DropdownMenuItem key={key} onClick={() => updateLabelMutation.mutate({ id: def.id, color: key })}>
+                            <span className={cn("h-3 w-3 rounded-full mr-2", val.bg)} />
+                            {val.label}
+                            {def.color === key && <Check className="h-3 w-3 ml-auto" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <button
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteLabelMutation.mutate(def.id)}
+                      data-testid={`button-delete-label-${def.id}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {/* Add label form */}
+              <div className="p-3 border-t space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Add Label</p>
+                <div className="flex gap-1.5">
+                  {Object.entries(COLOR_PALETTE).map(([key, val]) => (
+                    <button
+                      key={key}
+                      onClick={() => setNewLabelColor(key)}
+                      className={cn("h-6 w-6 rounded-full transition-all", val.bg, newLabelColor === key && "ring-2 ring-offset-1 ring-foreground/40")}
+                      title={val.label}
+                      data-testid={`button-new-label-color-${key}`}
+                    />
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Label name…"
+                    className="h-8 text-sm"
+                    value={newLabelName}
+                    onChange={(e) => setNewLabelName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newLabelName.trim()) {
+                        createLabelMutation.mutate({ name: newLabelName.trim(), color: newLabelColor });
+                      }
+                    }}
+                    data-testid="input-new-label-name"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-8 shrink-0"
+                    disabled={!newLabelName.trim() || createLabelMutation.isPending}
+                    onClick={() => {
+                      if (newLabelName.trim()) createLabelMutation.mutate({ name: newLabelName.trim(), color: newLabelColor });
+                    }}
+                    data-testid="button-create-label"
+                  >
+                    Add
+                  </Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <div className="flex items-center bg-muted rounded-md p-0.5 border">
             <button
               onClick={() => setView("board")}
@@ -596,33 +935,25 @@ export default function TasksPage() {
             onDragEnd={handleDragEnd}
             onDragOver={handleDragOver}
           >
-            <div className="flex gap-4 h-full min-h-0" style={{ minWidth: "720px" }}>
-              {COLUMNS.map((col) => {
-                const colTasks = getColumnTasks(col.id);
+            <div className="flex gap-4 h-full min-h-0" style={{ minWidth: "fit-content" }}>
+              {taskColumns.map((col) => {
+                const colTasks = getColumnTasks(col.slug);
                 return (
                   <div
                     key={col.id}
                     className="flex flex-col rounded-xl bg-muted/60 border border-border/50 w-72 shrink-0"
-                    data-testid={`column-${col.id}`}
+                    data-testid={`column-${col.slug}`}
                   >
-                    <div className="flex items-center justify-between px-3 py-3 border-b border-border/40">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold">{col.label}</span>
-                        <Badge variant="secondary" className="h-5 px-1.5 text-xs font-bold">
-                          {colTasks.length}
-                        </Badge>
-                      </div>
-                      <button
-                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
-                        onClick={() => {
-                          addForm.setValue("status", col.id);
-                          setIsAddOpen(true);
-                        }}
-                        data-testid={`button-add-in-column-${col.id}`}
-                      >
-                        <Plus className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                    </div>
+                    <ColumnHeader
+                      col={col}
+                      taskCount={colTasks.length}
+                      onAddTask={() => {
+                        addForm.setValue("status", col.slug);
+                        setIsAddOpen(true);
+                      }}
+                      onRename={(id, name) => renameColumnMutation.mutate({ id, name })}
+                      onDelete={(c) => setDeleteColTarget(c)}
+                    />
 
                     <div className="flex-1 overflow-y-auto p-2 space-y-2">
                       <SortableContext
@@ -636,6 +967,7 @@ export default function TasksPage() {
                             users={users}
                             leads={leads}
                             clients={clients}
+                            labelDefs={labelDefs}
                             onClick={() => setSelectedTask(task)}
                           />
                         ))}
@@ -649,13 +981,56 @@ export default function TasksPage() {
 
                     <div className="px-2 pb-2 pt-1 border-t border-border/30">
                       <QuickAddCard
-                        status={col.id}
+                        status={col.slug}
                         onAdd={(title, status) => quickAddMutation.mutate({ title, status })}
                       />
                     </div>
                   </div>
                 );
               })}
+
+              {/* Add Column */}
+              <div className="shrink-0 w-72">
+                {isAddingColumn ? (
+                  <div className="rounded-xl bg-muted/60 border border-border/50 p-3 space-y-2">
+                    <input
+                      autoFocus
+                      className="w-full text-sm bg-white dark:bg-card border border-border rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary/50"
+                      placeholder="Column name…"
+                      value={newColumnName}
+                      onChange={(e) => setNewColumnName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newColumnName.trim()) createColumnMutation.mutate(newColumnName.trim());
+                        if (e.key === "Escape") { setIsAddingColumn(false); setNewColumnName(""); }
+                      }}
+                      data-testid="input-new-column-name"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={!newColumnName.trim() || createColumnMutation.isPending}
+                        onClick={() => { if (newColumnName.trim()) createColumnMutation.mutate(newColumnName.trim()); }}
+                        data-testid="button-save-new-column"
+                      >
+                        Add column
+                      </Button>
+                      <button className="text-muted-foreground hover:text-foreground" onClick={() => { setIsAddingColumn(false); setNewColumnName(""); }}>
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground w-full px-3 py-2.5 rounded-xl border border-dashed border-border/60 hover:border-border hover:bg-muted/30 transition-all"
+                    onClick={() => setIsAddingColumn(true)}
+                    data-testid="button-add-column"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add column
+                  </button>
+                )}
+              </div>
             </div>
 
             <DragOverlay>
@@ -666,6 +1041,7 @@ export default function TasksPage() {
                     users={users}
                     leads={leads}
                     clients={clients}
+                    labelDefs={labelDefs}
                     onClick={() => {}}
                     isDragging={false}
                   />
@@ -687,19 +1063,20 @@ export default function TasksPage() {
             </div>
           ) : (
             <div className="space-y-2 max-w-3xl mx-auto">
-              {COLUMNS.map((col) => {
-                const colTasks = getColumnTasks(col.id);
+              {taskColumns.map((col) => {
+                const colTasks = getColumnTasks(col.slug);
                 if (colTasks.length === 0) return null;
                 return (
                   <div key={col.id} className="space-y-1.5">
                     <div className="flex items-center gap-2 px-1 py-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{col.label}</span>
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{col.name}</span>
                       <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{colTasks.length}</Badge>
                     </div>
                     {colTasks.map((task) => {
                       const assignedUser = users.find((u) => u.id === task.assignedTo);
                       const isOverdue = task.dueDate && isBefore(new Date(task.dueDate), startOfDay(new Date())) && task.status !== "done";
-                      const labels = (task.labels as string[]) || [];
+                      const taskLabelIds = (task.labels as string[]) || [];
+                      const activeLabelDefs = taskLabelIds.map((id) => getLabelDef(labelDefs, id)).filter(Boolean) as TaskLabelDefinition[];
                       return (
                         <div
                           key={task.id}
@@ -711,21 +1088,22 @@ export default function TasksPage() {
                             className="shrink-0"
                             onClick={(e) => {
                               e.stopPropagation();
-                              const next: Record<string, string> = { todo: "in_progress", in_progress: "done", done: "todo" };
-                              updateMutation.mutate({ id: task.id, data: { status: next[task.status] as any } });
+                              const idx = taskColumns.findIndex((c) => c.slug === task.status);
+                              const next = taskColumns[(idx + 1) % taskColumns.length]?.slug || task.status;
+                              updateMutation.mutate({ id: task.id, data: { status: next } });
                             }}
                             data-testid={`button-toggle-${task.id}`}
                           >
                             {task.status === "done"
-                              ? <CheckCircle2 className="h-4.5 w-4.5 text-green-500" />
+                              ? <CheckCircle2 className="h-4 w-4 text-green-500" />
                               : task.status === "in_progress"
-                              ? <Clock className="h-4.5 w-4.5 text-yellow-500" />
-                              : <Circle className="h-4.5 w-4.5 text-muted-foreground group-hover:text-primary transition-colors" />}
+                              ? <Clock className="h-4 w-4 text-yellow-500" />
+                              : <Circle className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />}
                           </button>
-                          {labels.length > 0 && (
+                          {activeLabelDefs.length > 0 && (
                             <div className="flex gap-0.5 shrink-0">
-                              {labels.map((lbl) => (
-                                <span key={lbl} className={cn("h-3 w-3 rounded-full", LABEL_COLORS[lbl]?.bg)} />
+                              {activeLabelDefs.map((def) => (
+                                <span key={def.id} className={cn("h-3 w-3 rounded-full", COLOR_PALETTE[def.color]?.bg)} title={def.name} />
                               ))}
                             </div>
                           )}
@@ -760,6 +1138,28 @@ export default function TasksPage() {
           )}
         </div>
       )}
+
+      {/* Delete column confirmation */}
+      <AlertDialog open={!!deleteColTarget} onOpenChange={(open) => !open && setDeleteColTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{deleteColTarget?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the column. Tasks in this column will remain but lose their column assignment. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteColTarget && deleteColumnMutation.mutate(deleteColTarget.id)}
+              data-testid="button-confirm-delete-column"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Add Task Sheet */}
       <Sheet open={isAddOpen} onOpenChange={setIsAddOpen}>
@@ -816,9 +1216,9 @@ export default function TasksPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="todo">To Do</SelectItem>
-                          <SelectItem value="in_progress">In Progress</SelectItem>
-                          <SelectItem value="done">Done</SelectItem>
+                          {taskColumns.map((col) => (
+                            <SelectItem key={col.id} value={col.slug}>{col.name}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </FormItem>
@@ -962,7 +1362,8 @@ export default function TasksPage() {
       <Sheet open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           {selectedTask && (() => {
-            const taskLabels = (selectedTask.labels as string[]) || [];
+            const taskLabelIds = (selectedTask.labels as string[]) || [];
+            const activeLabelDefs = taskLabelIds.map((id) => getLabelDef(labelDefs, id)).filter(Boolean) as TaskLabelDefinition[];
             const assignedUser = users.find((u) => u.id === selectedTask.assignedTo);
             const relatedLead = leads.find((l) => l.id === selectedTask.relatedLeadId);
             const relatedClient = clients.find((c) => c.id === selectedTask.relatedClientId);
@@ -971,15 +1372,13 @@ export default function TasksPage() {
               <>
                 <SheetHeader className="pb-0">
                   <SheetDescription className="sr-only">Task detail</SheetDescription>
-                  {/* Color labels */}
-                  {taskLabels.length > 0 && (
+                  {activeLabelDefs.length > 0 && (
                     <div className="flex gap-1.5 mb-3">
-                      {taskLabels.map((lbl) => (
-                        <span key={lbl} className={cn("h-2.5 rounded-full w-10", LABEL_COLORS[lbl]?.bg)} />
+                      {activeLabelDefs.map((def) => (
+                        <span key={def.id} className={cn("h-2.5 rounded-full w-10", COLOR_PALETTE[def.color]?.bg)} title={def.name} />
                       ))}
                     </div>
                   )}
-                  {/* Title inline edit */}
                   {isEditingTitle ? (
                     <input
                       autoFocus
@@ -1018,27 +1417,31 @@ export default function TasksPage() {
                   {/* Labels picker */}
                   <div className="space-y-2">
                     <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Labels</p>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(LABEL_COLORS).map(([key, { bg, label }]) => {
-                        const active = taskLabels.includes(key);
-                        return (
-                          <button
-                            key={key}
-                            onClick={() => toggleLabel(key)}
-                            className={cn(
-                              "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all border",
-                              bg,
-                              "text-white border-transparent",
-                              active ? "opacity-100 ring-2 ring-offset-1 ring-foreground/20" : "opacity-40 hover:opacity-70"
-                            )}
-                            data-testid={`button-label-${key}`}
-                          >
-                            {active && <Check className="h-3 w-3" />}
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {labelDefs.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">No labels defined yet. Use the Labels button in the header to create some.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {labelDefs.map((def) => {
+                          const active = taskLabelIds.includes(String(def.id));
+                          return (
+                            <button
+                              key={def.id}
+                              onClick={() => toggleLabel(def.id)}
+                              className={cn(
+                                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all border",
+                                COLOR_PALETTE[def.color]?.bg ?? "bg-muted",
+                                "text-white border-transparent",
+                                active ? "opacity-100 ring-2 ring-offset-1 ring-foreground/20" : "opacity-40 hover:opacity-70"
+                              )}
+                              data-testid={`button-label-${def.id}`}
+                            >
+                              {active && <Check className="h-3 w-3" />}
+                              {def.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Description */}
@@ -1123,9 +1526,9 @@ export default function TasksPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="todo">To Do</SelectItem>
-                          <SelectItem value="in_progress">In Progress</SelectItem>
-                          <SelectItem value="done">Done</SelectItem>
+                          {taskColumns.map((col) => (
+                            <SelectItem key={col.id} value={col.slug}>{col.name}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -1248,9 +1651,9 @@ export default function TasksPage() {
                   {/* Delete */}
                   <div className="pt-2 border-t border-border/50">
                     <Button
-                      variant="destructive"
+                      variant="ghost"
                       size="sm"
-                      className="w-full"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10 w-full"
                       onClick={() => deleteMutation.mutate(selectedTask.id)}
                       disabled={deleteMutation.isPending}
                       data-testid="button-delete-task"
