@@ -30,11 +30,19 @@ export const clientContacts = pgTable("client_contacts", {
   isPrimary: boolean("is_primary").default(false).notNull(),
 });
 
+export const pipelineStages = pgTable("pipeline_stages", {
+  id: serial("id").primaryKey(),
+  label: varchar("label").notNull(),
+  slug: varchar("slug").notNull().unique(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  color: varchar("color"), // 'green' | 'red' | null (default)
+});
+
 export const leads = pgTable("leads", {
   id: serial("id").primaryKey(),
   title: varchar("title").notNull(),
   clientId: integer("client_id").references(() => clients.id),
-  stage: varchar("stage", { enum: ["new_lead", "contacted", "qualified", "proposal_sent", "won", "lost"] }).default("new_lead").notNull(),
+  stage: varchar("stage").default("new_lead").notNull(),
   value: decimal("value", { precision: 12, scale: 2 }).default("0").notNull(),
   confidenceScore: integer("confidence_score").default(50),
   tags: text("tags").array().default([]),
@@ -130,6 +138,7 @@ export const activityLogs = pgTable("activity_logs", {
 });
 
 // Zod Schemas
+export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientContactSchema = createInsertSchema(clientContacts).omit({ id: true });
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true });
@@ -162,3 +171,5 @@ export type Proposal = typeof proposals.$inferSelect;
 export type InsertProposal = z.infer<typeof insertProposalSchema>;
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type PipelineStage = typeof pipelineStages.$inferSelect;
+export type InsertPipelineStage = z.infer<typeof insertPipelineStageSchema>;

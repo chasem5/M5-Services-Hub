@@ -12,6 +12,7 @@ import {
   estimateLineItems,
   proposals,
   activityLogs,
+  pipelineStages,
   type User,
   type UpsertUser,
   type Client,
@@ -34,6 +35,8 @@ import {
   type InsertProposal,
   type ActivityLog,
   type InsertActivityLog,
+  type PipelineStage,
+  type InsertPipelineStage,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -106,6 +109,14 @@ export interface IStorage {
 
   // Dashboard
   getDashboardStats(): Promise<any>;
+
+  // Pipeline Stages
+  listPipelineStages(): Promise<PipelineStage[]>;
+  createPipelineStage(stage: InsertPipelineStage): Promise<PipelineStage>;
+  updatePipelineStage(id: number, stage: Partial<InsertPipelineStage>): Promise<PipelineStage>;
+  deletePipelineStage(id: number): Promise<void>;
+  reorderPipelineStages(orderedIds: number[]): Promise<PipelineStage[]>;
+  seedDefaultPipelineStages(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -396,6 +407,48 @@ export class DatabaseStorage implements IStorage {
       monthlyRevenue: monthlyRevenue[0].total || "0",
       leadStageCounts
     };
+  }
+
+  // Pipeline Stages
+  async listPipelineStages(): Promise<PipelineStage[]> {
+    return await db.select().from(pipelineStages).orderBy(pipelineStages.sortOrder);
+  }
+
+  async createPipelineStage(stage: InsertPipelineStage): Promise<PipelineStage> {
+    const [created] = await db.insert(pipelineStages).values(stage).returning();
+    return created;
+  }
+
+  async updatePipelineStage(id: number, stage: Partial<InsertPipelineStage>): Promise<PipelineStage> {
+    const [updated] = await db.update(pipelineStages).set(stage).where(eq(pipelineStages.id, id)).returning();
+    return updated;
+  }
+
+  async deletePipelineStage(id: number): Promise<void> {
+    await db.delete(pipelineStages).where(eq(pipelineStages.id, id));
+  }
+
+  async reorderPipelineStages(orderedIds: number[]): Promise<PipelineStage[]> {
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        db.update(pipelineStages).set({ sortOrder: index }).where(eq(pipelineStages.id, id))
+      )
+    );
+    return this.listPipelineStages();
+  }
+
+  async seedDefaultPipelineStages(): Promise<void> {
+    const existing = await db.select().from(pipelineStages);
+    if (existing.length > 0) return;
+    const defaults = [
+      { label: "New Lead", slug: "new_lead", sortOrder: 0, color: null },
+      { label: "Contacted", slug: "contacted", sortOrder: 1, color: null },
+      { label: "Qualified", slug: "qualified", sortOrder: 2, color: null },
+      { label: "Proposal Sent", slug: "proposal_sent", sortOrder: 3, color: null },
+      { label: "Won", slug: "won", sortOrder: 4, color: "green" },
+      { label: "Lost", slug: "lost", sortOrder: 5, color: "red" },
+    ];
+    await db.insert(pipelineStages).values(defaults);
   }
 }
 

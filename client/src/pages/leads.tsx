@@ -5,6 +5,7 @@ import {
   Client, 
   User,
   Task,
+  PipelineStage,
   insertLeadSchema,
   InsertLead
 } from "@shared/schema";
@@ -27,7 +28,14 @@ import {
   CheckCircle2,
   Clock,
   Circle,
-  Target
+  Target,
+  Settings,
+  Trash2,
+  Pencil,
+  ChevronUp,
+  ChevronDown,
+  GripVertical,
+  TrendingUp,
 } from "lucide-react";
 import {
   Card,
@@ -82,15 +90,38 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
-const STAGES = [
-  { id: "new_lead", label: "New Lead" },
-  { id: "contacted", label: "Contacted" },
-  { id: "qualified", label: "Qualified" },
-  { id: "proposal_sent", label: "Proposal Sent" },
-  { id: "won", label: "Won" },
-  { id: "lost", label: "Lost" },
-];
+const STAGE_COLORS = {
+  green: {
+    column: "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800",
+    header: "bg-green-100 dark:bg-green-900/40 border-green-200 dark:border-green-800 rounded-t-lg",
+    dot: "bg-green-500",
+    badge: "bg-green-100 text-green-800 border-green-200",
+    value: "text-green-700 dark:text-green-400",
+  },
+  red: {
+    column: "bg-red-50/60 dark:bg-red-950/20 border-red-200/70 dark:border-red-800/50",
+    header: "bg-red-100/70 dark:bg-red-900/30 border-red-200/70 dark:border-red-800/50 rounded-t-lg",
+    dot: "bg-red-500",
+    badge: "bg-red-100 text-red-700 border-red-200",
+    value: "text-red-700 dark:text-red-400",
+  },
+  default: {
+    column: "bg-muted/50 border-border/50",
+    header: "bg-background/50 border-b rounded-t-lg",
+    dot: "bg-muted-foreground/40",
+    badge: "",
+    value: "text-muted-foreground",
+  },
+};
 
 const statusIcons: Record<string, typeof Circle> = {
   todo: Circle,
@@ -124,7 +155,16 @@ export default function Leads() {
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [tagInput, setTagInput] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
+  const [isManageStagesOpen, setIsManageStagesOpen] = useState(false);
+  const [editingStageId, setEditingStageId] = useState<number | null>(null);
+  const [editingStageLabel, setEditingStageLabel] = useState("");
+  const [newStageLabel, setNewStageLabel] = useState("");
+  const [newStageColor, setNewStageColor] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const { data: stages = [] } = useQuery<PipelineStage[]>({
+    queryKey: ["/api/pipeline-stages"],
+  });
 
   const { data: leads, isLoading: isLoadingLeads } = useQuery<Lead[]>({
     queryKey: ["/api/leads"],
@@ -181,6 +221,74 @@ export default function Leads() {
       if (selectedLead) setSelectedLead(updated);
     },
   });
+
+  const createStageMutation = useMutation({
+    mutationFn: async (data: { label: string; slug: string; color?: string | null }) => {
+      const res = await apiRequest("POST", "/api/pipeline-stages", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pipeline-stages"] });
+      setNewStageLabel("");
+      setNewStageColor(null);
+      toast({ title: "Stage created" });
+    },
+  });
+
+  const updateStageMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { label?: string; color?: string | null } }) => {
+      const res = await apiRequest("PUT", `/api/pipeline-stages/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pipeline-stages"] });
+      setEditingStageId(null);
+    },
+  });
+
+  const deleteStageMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/pipeline-stages/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pipeline-stages"] });
+      toast({ title: "Stage deleted" });
+    },
+  });
+
+  const reorderStageMutation = useMutation({
+    mutationFn: async (orderedIds: number[]) => {
+      const res = await apiRequest("POST", "/api/pipeline-stages/reorder", { orderedIds });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pipeline-stages"] });
+    },
+  });
+
+  const moveStage = (index: number, direction: "up" | "down") => {
+    const newOrder = [...stages];
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (target < 0 || target >= newOrder.length) return;
+    [newOrder[index], newOrder[target]] = [newOrder[target], newOrder[index]];
+    reorderStageMutation.mutate(newOrder.map((s) => s.id));
+  };
+
+  const getStageColors = (color: string | null | undefined) =>
+    STAGE_COLORS[(color as keyof typeof STAGE_COLORS) ?? "default"] ?? STAGE_COLORS.default;
+
+  const getStageWeightedValue = (slug: string) => {
+    const stageLeads = filteredLeads?.filter((l) => l.stage === slug) ?? [];
+    return stageLeads.reduce((sum, lead) => {
+      const weight = (lead.confidenceScore ?? 50) / 100;
+      return sum + Number(lead.value) * weight;
+    }, 0);
+  };
+
+  const getStageRawValue = (slug: string) => {
+    const stageLeads = filteredLeads?.filter((l) => l.stage === slug) ?? [];
+    return stageLeads.reduce((sum, lead) => sum + Number(lead.value), 0);
+  };
 
   const form = useForm<InsertLead>({
     resolver: zodResolver(insertLeadSchema),
@@ -271,6 +379,14 @@ export default function Leads() {
                 List
               </Button>
             </div>
+            <Button
+              variant="outline"
+              onClick={() => setIsManageStagesOpen(true)}
+              data-testid="button-manage-stages"
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Manage Stages
+            </Button>
             <Button onClick={() => {
               form.reset();
               setFormTags([]);
@@ -301,8 +417,8 @@ export default function Leads() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Stages</SelectItem>
-              {STAGES.map((stage) => (
-                <SelectItem key={stage.id} value={stage.id}>{stage.label}</SelectItem>
+              {stages.map((stage) => (
+                <SelectItem key={stage.id} value={stage.slug}>{stage.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -322,35 +438,58 @@ export default function Leads() {
           </div>
         ) : view === "kanban" ? (
           <div className="flex h-full overflow-x-auto p-6 gap-6">
-            {STAGES.map((stage) => (
+            {stages.map((stage) => {
+              const sc = getStageColors(stage.color);
+              const weightedVal = getStageWeightedValue(stage.slug);
+              const rawVal = getStageRawValue(stage.slug);
+              const cardCount = filteredLeads?.filter(l => l.stage === stage.slug).length || 0;
+              return (
               <div
                 key={stage.id}
-                className="flex flex-col w-80 min-w-80 bg-muted/50 rounded-lg border border-border/50 shadow-sm"
+                className={`flex flex-col w-80 min-w-80 rounded-lg border shadow-sm ${sc.column}`}
               >
-                <div className="p-3 flex items-center justify-between border-b bg-background/50 rounded-t-lg">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-sm">{stage.label}</h3>
-                    <Badge variant="secondary" className="h-5 px-1.5 min-w-[1.25rem] flex items-center justify-center font-bold">
-                      {filteredLeads?.filter(l => l.stage === stage.id).length || 0}
-                    </Badge>
+                <div className={`p-3 border-b ${sc.header}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-2 w-2 rounded-full ${sc.dot}`} />
+                      <h3 className="font-semibold text-sm">{stage.label}</h3>
+                      <Badge variant="secondary" className="h-5 px-1.5 min-w-[1.25rem] flex items-center justify-center font-bold text-[10px]">
+                        {cardCount}
+                      </Badge>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setIsManageStagesOpen(true)}
+                      data-testid={`button-manage-stage-${stage.id}`}
+                    >
+                      <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Sort by Value</DropdownMenuItem>
-                      <DropdownMenuItem>Sort by Date</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {cardCount > 0 && (
+                    <div className="mt-2 space-y-0.5">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-muted-foreground font-medium flex items-center gap-1">
+                          <TrendingUp className="h-2.5 w-2.5" />
+                          Weighted
+                        </span>
+                        <span className={`font-bold ${sc.value}`}>
+                          {formatCurrency(weightedVal)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-muted-foreground font-medium">Raw total</span>
+                        <span className="text-muted-foreground">{formatCurrency(rawVal)}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <ScrollArea className="flex-1">
                   <div className="p-3 space-y-3">
                     {filteredLeads
-                      ?.filter((l) => l.stage === stage.id)
+                      ?.filter((l) => l.stage === stage.slug)
                       .map((lead) => {
                         const score = lead.confidenceScore ?? 50;
                         const leadTasks = getLeadTasks(lead.id);
@@ -427,7 +566,8 @@ export default function Leads() {
                   </div>
                 </ScrollArea>
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="p-6">
@@ -556,8 +696,8 @@ export default function Leads() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {STAGES.map((stage) => (
-                            <SelectItem key={stage.id} value={stage.id}>{stage.label}</SelectItem>
+                          {stages.map((stage) => (
+                            <SelectItem key={stage.id} value={stage.slug}>{stage.label}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -786,20 +926,24 @@ export default function Leads() {
                   <Separator />
 
                   <div className="space-y-3">
-                    <FormLabel>Change Stage</FormLabel>
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Change Stage</p>
                     <div className="grid grid-cols-2 gap-2">
-                      {STAGES.map((stage) => (
-                        <Button
-                          key={stage.id}
-                          variant={selectedLead.stage === stage.id ? "secondary" : "outline"}
-                          size="sm"
-                          className="justify-start font-medium"
-                          onClick={() => updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.id })}
-                        >
-                          <div className={`h-2 w-2 rounded-full mr-2 ${selectedLead.stage === stage.id ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
-                          {stage.label}
-                        </Button>
-                      ))}
+                      {stages.map((stage) => {
+                        const sc = getStageColors(stage.color);
+                        const isActive = selectedLead.stage === stage.slug;
+                        return (
+                          <Button
+                            key={stage.id}
+                            variant={isActive ? "secondary" : "outline"}
+                            size="sm"
+                            className={`justify-start font-medium ${isActive ? '' : ''}`}
+                            onClick={() => updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.slug })}
+                          >
+                            <div className={`h-2 w-2 rounded-full mr-2 ${isActive ? sc.dot : 'bg-muted-foreground/30'}`} />
+                            {stage.label}
+                          </Button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -869,6 +1013,176 @@ export default function Leads() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Manage Pipeline Stages Dialog */}
+      <Dialog open={isManageStagesOpen} onOpenChange={setIsManageStagesOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GripVertical className="h-5 w-5 text-muted-foreground" />
+              Manage Pipeline Stages
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-2 max-h-[420px] overflow-y-auto py-2">
+            {stages.map((stage, index) => (
+              <div
+                key={stage.id}
+                className="flex items-center gap-2 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
+                data-testid={`stage-row-${stage.id}`}
+              >
+                {/* Reorder arrows */}
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    onClick={() => moveStage(index, "up")}
+                    disabled={index === 0}
+                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
+                    data-testid={`button-stage-up-${stage.id}`}
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => moveStage(index, "down")}
+                    disabled={index === stages.length - 1}
+                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
+                    data-testid={`button-stage-down-${stage.id}`}
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {/* Color indicator */}
+                <div className={`h-3 w-3 rounded-full flex-shrink-0 ${getStageColors(stage.color).dot}`} />
+
+                {/* Label — editable inline */}
+                {editingStageId === stage.id ? (
+                  <Input
+                    autoFocus
+                    value={editingStageLabel}
+                    onChange={(e) => setEditingStageLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        updateStageMutation.mutate({ id: stage.id, data: { label: editingStageLabel } });
+                      }
+                      if (e.key === "Escape") setEditingStageId(null);
+                    }}
+                    className="h-7 text-sm flex-1"
+                    data-testid={`input-stage-label-${stage.id}`}
+                  />
+                ) : (
+                  <span className="flex-1 text-sm font-medium truncate">{stage.label}</span>
+                )}
+
+                {/* Color picker */}
+                <select
+                  value={stage.color ?? "default"}
+                  onChange={(e) => {
+                    const val = e.target.value === "default" ? null : e.target.value;
+                    updateStageMutation.mutate({ id: stage.id, data: { color: val } });
+                  }}
+                  className="text-xs border rounded px-1.5 py-1 bg-background h-7"
+                  data-testid={`select-stage-color-${stage.id}`}
+                >
+                  <option value="default">Default</option>
+                  <option value="green">Green (Won)</option>
+                  <option value="red">Red (Lost)</option>
+                </select>
+
+                {/* Edit / Save button */}
+                {editingStageId === stage.id ? (
+                  <Button
+                    size="icon"
+                    variant="default"
+                    className="h-7 w-7"
+                    onClick={() => updateStageMutation.mutate({ id: stage.id, data: { label: editingStageLabel } })}
+                    disabled={updateStageMutation.isPending}
+                    data-testid={`button-save-stage-${stage.id}`}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      setEditingStageId(stage.id);
+                      setEditingStageLabel(stage.label);
+                    }}
+                    data-testid={`button-edit-stage-${stage.id}`}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+
+                {/* Delete button */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-destructive hover:text-destructive"
+                  onClick={() => {
+                    if (confirm(`Delete stage "${stage.label}"? Leads in this stage will remain but won't appear in the board.`)) {
+                      deleteStageMutation.mutate(stage.id);
+                    }
+                  }}
+                  data-testid={`button-delete-stage-${stage.id}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {/* Add new stage */}
+          <div className="border-t pt-3 space-y-2">
+            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Add New Stage</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Stage name..."
+                value={newStageLabel}
+                onChange={(e) => setNewStageLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newStageLabel.trim()) {
+                    const slug = newStageLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+                    createStageMutation.mutate({ label: newStageLabel.trim(), slug, color: newStageColor });
+                  }
+                }}
+                className="flex-1 h-8"
+                data-testid="input-new-stage-name"
+              />
+              <select
+                value={newStageColor ?? "default"}
+                onChange={(e) => setNewStageColor(e.target.value === "default" ? null : e.target.value)}
+                className="text-xs border rounded px-1.5 py-1 bg-background h-8"
+                data-testid="select-new-stage-color"
+              >
+                <option value="default">Default</option>
+                <option value="green">Green</option>
+                <option value="red">Red</option>
+              </select>
+              <Button
+                size="sm"
+                className="h-8"
+                disabled={!newStageLabel.trim() || createStageMutation.isPending}
+                onClick={() => {
+                  const slug = newStageLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+                  createStageMutation.mutate({ label: newStageLabel.trim(), slug, color: newStageColor });
+                }}
+                data-testid="button-add-stage"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsManageStagesOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

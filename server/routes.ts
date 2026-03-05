@@ -11,7 +11,8 @@ import {
   insertServiceCatalogSchema, 
   insertEstimateSchema, 
   insertEstimateLineItemSchema, 
-  insertProposalSchema 
+  insertProposalSchema,
+  insertPipelineStageSchema,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -19,6 +20,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Seed default pipeline stages on startup
+  await storage.seedDefaultPipelineStages();
+
   // Helper to log activity
   const logActivity = async (req: any, entityType: any, entityId: number, action: string, metadata?: any) => {
     const userId = req.user.claims.sub;
@@ -329,6 +333,38 @@ export async function registerRoutes(
     const entityId = req.query.entityId ? parseInt(req.query.entityId as string) : undefined;
     const logs = await storage.listActivityLogs(entityType, entityId);
     res.json(logs);
+  });
+
+  // Pipeline Stages
+  app.get("/api/pipeline-stages", isAuthenticated, async (_req, res) => {
+    const stages = await storage.listPipelineStages();
+    res.json(stages);
+  });
+
+  app.post("/api/pipeline-stages", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+    const stages = await storage.listPipelineStages();
+    const data = insertPipelineStageSchema.parse({ ...req.body, sortOrder: stages.length });
+    const stage = await storage.createPipelineStage(data);
+    res.json(stage);
+  });
+
+  app.put("/api/pipeline-stages/:id", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const data = insertPipelineStageSchema.partial().parse(req.body);
+    const stage = await storage.updatePipelineStage(id, data);
+    res.json(stage);
+  });
+
+  app.delete("/api/pipeline-stages/:id", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    await storage.deletePipelineStage(id);
+    res.sendStatus(204);
+  });
+
+  app.post("/api/pipeline-stages/reorder", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+    const { orderedIds } = z.object({ orderedIds: z.array(z.number()) }).parse(req.body);
+    const stages = await storage.reorderPipelineStages(orderedIds);
+    res.json(stages);
   });
 
   return httpServer;
