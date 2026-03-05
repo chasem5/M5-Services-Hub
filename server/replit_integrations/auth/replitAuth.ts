@@ -130,6 +130,23 @@ export async function setupAuth(app: Express) {
   });
 }
 
+export function requireRole(roles: string[]): RequestHandler {
+  return async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const userId = (req.user as any).claims.sub;
+    const user = await authStorage.getUser(userId);
+
+    if (!user || !roles.includes(user.role)) {
+      return res.status(403).json({ message: "Forbidden: Insufficient permissions" });
+    }
+
+    next();
+  };
+}
+
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const user = req.user as any;
 
