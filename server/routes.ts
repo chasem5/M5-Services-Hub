@@ -122,43 +122,51 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
-  // LinkedIn enrichment via Proxycurl
+  // LinkedIn enrichment via Apollo.io People Match API
   app.post("/api/contacts/:contactId/linkedin-enrich", isAuthenticated, async (req, res) => {
-    const apiKey = process.env.PROXYCURL_API_KEY;
+    const apiKey = process.env.APOLLO_API_KEY;
     if (!apiKey) {
-      return res.status(503).json({ message: "PROXYCURL_API_KEY is not configured." });
+      return res.status(503).json({ message: "APOLLO_API_KEY is not configured." });
     }
     const contactId = parseInt(req.params.contactId as string);
-    const contacts = await storage.getClientContact(contactId);
-    if (!contacts) return res.status(404).json({ message: "Contact not found" });
-    const linkedinUrl = req.body?.linkedinUrl || contacts.linkedinUrl;
+    const contact = await storage.getClientContact(contactId);
+    if (!contact) return res.status(404).json({ message: "Contact not found" });
+    const linkedinUrl = req.body?.linkedinUrl || contact.linkedinUrl;
     if (!linkedinUrl) return res.status(400).json({ message: "No LinkedIn URL provided." });
 
-    const url = new URL("https://nubela.co/proxycurl/api/v2/linkedin");
-    url.searchParams.set("linkedin_profile_url", linkedinUrl);
-    url.searchParams.set("personal_email", "include");
-    url.searchParams.set("personal_contact_number", "include");
-
-    const proxycurlRes = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    const apolloRes = await fetch("https://api.apollo.io/api/v1/people/match", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+        "X-Api-Key": apiKey,
+      },
+      body: JSON.stringify({
+        linkedin_url: linkedinUrl,
+        reveal_personal_emails: true,
+        reveal_phone_number: true,
+      }),
     });
 
-    if (!proxycurlRes.ok) {
-      const errText = await proxycurlRes.text();
-      return res.status(proxycurlRes.status).json({ message: `Proxycurl error: ${errText}` });
+    if (!apolloRes.ok) {
+      const errText = await apolloRes.text();
+      return res.status(apolloRes.status).json({ message: `Apollo error: ${errText}` });
     }
 
-    const data: any = await proxycurlRes.json();
+    const data: any = await apolloRes.json();
+    const person = data?.person;
+    if (!person) {
+      return res.status(404).json({ message: "No person found for that LinkedIn URL." });
+    }
 
     const updates: Record<string, string | null> = {};
     updates.linkedinUrl = linkedinUrl;
-    if (data.profile_pic_url) updates.profilePictureUrl = data.profile_pic_url;
-    if (data.occupation) updates.title = data.occupation;
-    else if (data.experiences?.[0]?.title) updates.title = data.experiences[0].title;
-    if (!contacts.email && data.personal_emails?.[0]) updates.email = data.personal_emails[0];
-    if (!contacts.phone && data.personal_numbers?.[0]) updates.phone = data.personal_numbers[0];
-    if (!contacts.name && (data.full_name || (data.first_name && data.last_name))) {
-      updates.name = data.full_name || `${data.first_name} ${data.last_name}`;
+    if (person.photo_url) updates.profilePictureUrl = person.photo_url;
+    if (person.title) updates.title = person.title;
+    if (!contact.name && person.name) updates.name = person.name;
+    if (!contact.email && person.email) updates.email = person.email;
+    if (!contact.phone && person.phone_numbers?.[0]?.raw_number) {
+      updates.phone = person.phone_numbers[0].raw_number;
     }
 
     const updated = await storage.updateClientContact(contactId, updates);

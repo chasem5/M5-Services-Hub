@@ -147,7 +147,7 @@ function LinkedInSyncButton({
       <div className="flex items-start gap-2">
         <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
         <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">
-          Each LinkedIn sync costs <strong>~$0.01</strong> from your Proxycurl/NinjaPear credits. This will overwrite the title and fill any blank email/phone fields.
+          Each LinkedIn sync costs credits from your Apollo.io account. This will overwrite the title and fill any blank email/phone fields.
         </p>
       </div>
       {!confirmed ? (
@@ -173,7 +173,7 @@ function LinkedInSyncButton({
             onClick={() => enrichMutation.mutate()}
             data-testid={`button-linkedin-sync-confirm-${contactId}`}
           >
-            {enrichMutation.isPending ? "Syncing..." : "Yes, sync (~$0.01)"}
+            {enrichMutation.isPending ? "Syncing..." : "Yes, sync from LinkedIn"}
           </Button>
           <Button
             type="button"
