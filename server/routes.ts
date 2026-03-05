@@ -485,7 +485,7 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
       const completion = await openai.chat.completions.create({
         model: "gpt-5-mini",
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 200,
+        max_completion_tokens: 200,
       });
       const summary = completion.choices[0]?.message?.content ?? "Unable to generate summary.";
       res.json({ summary });
