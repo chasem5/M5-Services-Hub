@@ -238,7 +238,7 @@ export default function ClientDetail() {
       email: "",
       phone: "",
       isPrimary: false,
-      reportsTo: undefined as number | undefined,
+      reportsTo: null as number | null,
       clientId: clientId,
     },
   });
@@ -251,7 +251,7 @@ export default function ClientDetail() {
       email: contact.email || "",
       phone: contact.phone || "",
       isPrimary: contact.isPrimary,
-      reportsTo: contact.reportsTo ?? undefined,
+      reportsTo: contact.reportsTo ?? null,
       clientId: contact.clientId,
     });
     setIsEditContactDialogOpen(true);
@@ -866,7 +866,7 @@ export default function ClientDetail() {
                     onUpdateReportsTo={(contactId, reportsTo) => {
                       updateContactMutation.mutate({
                         contactId,
-                        data: { reportsTo: reportsTo ?? undefined },
+                        data: { reportsTo: reportsTo },
                       });
                     }}
                     onEditContact={openEditContact}
@@ -969,7 +969,7 @@ export default function ClientDetail() {
                     <Select
                       onValueChange={(val) => {
                         field.onChange(parseInt(val));
-                        editContactForm.setValue("reportsTo", undefined);
+                        editContactForm.setValue("reportsTo", null);
                       }}
                       value={field.value?.toString()}
                     >
@@ -1007,8 +1007,8 @@ export default function ClientDetail() {
                     <FormItem>
                       <FormLabel>Reports To</FormLabel>
                       <Select
-                        onValueChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))}
-                        value={field.value?.toString() || "none"}
+                        onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                        value={field.value != null ? field.value.toString() : "none"}
                       >
                         <FormControl>
                           <SelectTrigger data-testid="select-edit-contact-reports-to">
