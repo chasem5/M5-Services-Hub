@@ -88,7 +88,9 @@ export const leads = pgTable("leads", {
   buildingId: integer("building_id").references(() => contactBuildings.id),
   serviceType: varchar("service_type", { enum: ["building_engineering", "facility_solutions", "janitorial", "special_projects", "property_assessment"] }),
   stage: varchar("stage").default("new_lead").notNull(),
+  valueType: varchar("value_type", { length: 10 }).default("fixed").notNull(),
   value: decimal("value", { precision: 12, scale: 2 }).default("0").notNull(),
+  valueTier: varchar("value_tier", { length: 5 }),
   confidenceScore: integer("confidence_score").default(50),
   tags: text("tags").array().default([]),
   assignedTo: varchar("assigned_to").references(() => users.id),
@@ -214,6 +216,8 @@ export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, creat
   buildingId: z.number().optional().nullable(),
   contactId: z.number().optional().nullable(),
   serviceType: z.enum(["building_engineering", "facility_solutions", "janitorial", "special_projects", "property_assessment"]).optional().nullable(),
+  valueType: z.enum(["fixed", "potential"]).optional().default("fixed"),
+  valueTier: z.enum(["$", "$$", "$$$", "$$$$"]).optional().nullable(),
 });
 export const insertPipelineViewSchema = createInsertSchema(pipelineViews).omit({ id: true, createdAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });

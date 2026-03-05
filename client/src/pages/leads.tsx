@@ -187,6 +187,16 @@ function getServiceTypeColor(value: string | null | undefined) {
   return SERVICE_TYPE_OPTIONS.find(o => o.value === value)?.color ?? "";
 }
 
+const TIER_OPTIONS = ["$", "$$", "$$$", "$$$$"] as const;
+const TIER_VALUES: Record<string, number> = { "$": 25000, "$$": 75000, "$$$": 200000, "$$$$": 500000 };
+
+function getLeadNumericValue(lead: { value: string | number; valueType?: string | null; valueTier?: string | null }): number {
+  if (lead.valueType === "potential" && lead.valueTier) {
+    return TIER_VALUES[lead.valueTier] ?? 0;
+  }
+  return Number(lead.value);
+}
+
 export default function Leads() {
   const [view, setView] = useState<"kanban" | "list">("kanban");
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
@@ -219,6 +229,11 @@ export default function Leads() {
   // For create form: contact dropdown
   const [selectedClientIdForContact, setSelectedClientIdForContact] = useState<number | null>(null);
   const [selectedClientIdForContactEdit, setSelectedClientIdForContactEdit] = useState<number | null>(null);
+  // Value type toggle for create/edit forms
+  const [createValueType, setCreateValueType] = useState<"fixed" | "potential">("fixed");
+  const [createValueTier, setCreateValueTier] = useState<string | null>(null);
+  const [editValueType, setEditValueType] = useState<"fixed" | "potential">("fixed");
+  const [editValueTier, setEditValueTier] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data: stages = [] } = useQuery<PipelineStage[]>({
@@ -291,6 +306,8 @@ export default function Leads() {
       setIsAddLeadOpen(false);
       setFormTags([]);
       setTagInput("");
+      setCreateValueType("fixed");
+      setCreateValueTier(null);
       toast({ title: "Success", description: "Lead created successfully" });
     },
     onError: (error: Error) => {
@@ -449,13 +466,13 @@ export default function Leads() {
     const stageLeads = filteredLeads?.filter((l) => l.stage === slug) ?? [];
     return stageLeads.reduce((sum, lead) => {
       const weight = (lead.confidenceScore ?? 50) / 100;
-      return sum + Number(lead.value) * weight;
+      return sum + getLeadNumericValue(lead) * weight;
     }, 0);
   };
 
   const getStageRawValue = (slug: string) => {
     const stageLeads = filteredLeads?.filter((l) => l.stage === slug) ?? [];
-    return stageLeads.reduce((sum, lead) => sum + Number(lead.value), 0);
+    return stageLeads.reduce((sum, lead) => sum + getLeadNumericValue(lead), 0);
   };
 
   const form = useForm<InsertLead>({
@@ -465,7 +482,9 @@ export default function Leads() {
       clientId: undefined,
       buildingId: null,
       stage: "new_lead",
+      valueType: "fixed",
       value: "0",
+      valueTier: null,
       confidenceScore: 50,
       tags: [],
       notes: "",
@@ -523,6 +542,16 @@ export default function Leads() {
   const formatCurrency = (value: string | number) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value));
 
+  const formatLeadValue = (lead: { value: string | number; valueType?: string | null; valueTier?: string | null }) => {
+    if (lead.valueType === "potential" && lead.valueTier) {
+      return lead.valueTier;
+    }
+    return formatCurrency(lead.value);
+  };
+
+  const isLeadPotential = (lead: { valueType?: string | null; valueTier?: string | null }) =>
+    lead.valueType === "potential" && !!lead.valueTier;
+
   const addTag = (tag: string) => {
     const clean = tag.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
     if (clean && !formTags.includes(clean)) {
@@ -552,13 +581,18 @@ export default function Leads() {
     setIsAddTaskOpen(false);
     setSelectedClientIdForBuildingEdit(lead.clientId ?? null);
     setSelectedClientIdForContactEdit(lead.clientId ?? null);
+    const vType = (lead.valueType as "fixed" | "potential") ?? "fixed";
+    setEditValueType(vType);
+    setEditValueTier((lead.valueTier as string | null) ?? null);
     editLeadForm.reset({
       title: lead.title,
       clientId: lead.clientId ?? undefined,
       contactId: lead.contactId ?? null,
       buildingId: lead.buildingId ?? null,
       serviceType: (lead.serviceType as any) ?? null,
+      valueType: vType,
       value: lead.value,
+      valueTier: (lead.valueTier as any) ?? null,
       confidenceScore: lead.confidenceScore ?? 50,
       notes: lead.notes ?? "",
       assignedTo: lead.assignedTo ?? undefined,
@@ -802,9 +836,11 @@ export default function Leads() {
                             </CardHeader>
                             <CardContent className="p-3 pt-2 flex flex-col gap-2">
                               <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-primary flex items-center gap-1">
-                                  <DollarSign className="h-3 w-3" />
-                                  {formatCurrency(lead.value)}
+                                <span className={`text-xs font-bold flex items-center gap-1 ${isLeadPotential(lead) ? "text-muted-foreground" : "text-primary"}`}>
+                                  {isLeadPotential(lead) ? null : <DollarSign className="h-3 w-3" />}
+                                  {isLeadPotential(lead) ? (
+                                    <span className="font-black tracking-tight text-primary">{lead.valueTier}</span>
+                                  ) : formatCurrency(lead.value)}
                                 </span>
                                 <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
                                   {getUserName(lead.assignedTo).split(' ')[0]}
@@ -946,7 +982,11 @@ export default function Leads() {
                             {lead.stage.replace('_', ' ')}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-mono">{formatCurrency(lead.value)}</TableCell>
+                        <TableCell className="font-mono">
+                          {isLeadPotential(lead) ? (
+                            <span className="font-black text-primary tracking-tight">{lead.valueTier}</span>
+                          ) : formatCurrency(lead.value)}
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2 min-w-[80px]">
                             <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
@@ -1125,42 +1165,99 @@ export default function Leads() {
                   )}
                 />
               )}
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="stage"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Stage</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-lead-stage">
-                            <SelectValue placeholder="Select stage" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {stages.map((stage) => (
-                            <SelectItem key={stage.id} value={stage.slug}>{stage.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="value"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Estimated Value</FormLabel>
+              <FormField
+                control={form.control}
+                name="stage"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Stage</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} data-testid="input-lead-value" />
+                        <SelectTrigger data-testid="select-lead-stage">
+                          <SelectValue placeholder="Select stage" />
+                        </SelectTrigger>
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                      <SelectContent>
+                        {stages.map((stage) => (
+                          <SelectItem key={stage.id} value={stage.slug}>{stage.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Value Type toggle + input */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Value</Label>
+                <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateValueType("fixed");
+                      form.setValue("valueType", "fixed");
+                      form.setValue("valueTier", null);
+                      setCreateValueTier(null);
+                    }}
+                    className={`px-3 py-1 text-sm rounded font-medium transition-colors ${createValueType === "fixed" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                    data-testid="button-value-type-fixed"
+                  >
+                    Price
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateValueType("potential");
+                      form.setValue("valueType", "potential");
+                      form.setValue("value", "0");
+                    }}
+                    className={`px-3 py-1 text-sm rounded font-medium transition-colors ${createValueType === "potential" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                    data-testid="button-value-type-potential"
+                  >
+                    Potential
+                  </button>
+                </div>
+
+                {createValueType === "fixed" ? (
+                  <FormField
+                    control={form.control}
+                    name="value"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                            <Input type="number" step="0.01" className="pl-6" {...field} data-testid="input-lead-value" />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="flex gap-2">
+                      {TIER_OPTIONS.map((tier) => (
+                        <button
+                          key={tier}
+                          type="button"
+                          onClick={() => {
+                            setCreateValueTier(tier);
+                            form.setValue("valueTier", tier as any);
+                          }}
+                          className={`flex-1 py-2 text-sm font-bold rounded-md border transition-colors ${createValueTier === tier ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+                          data-testid={`button-tier-${tier}`}
+                        >
+                          {tier}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {createValueTier ? `≈ ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(TIER_VALUES[createValueTier])} estimated` : "Select a potential tier"}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <FormField
@@ -1318,13 +1415,18 @@ export default function Leads() {
                         onClick={() => {
                           setIsEditingLead(false);
                           setEditFormTags(selectedLead.tags ?? []);
+                          const vType = (selectedLead.valueType as "fixed" | "potential") ?? "fixed";
+                          setEditValueType(vType);
+                          setEditValueTier((selectedLead.valueTier as string | null) ?? null);
                           editLeadForm.reset({
                             title: selectedLead.title,
                             clientId: selectedLead.clientId ?? undefined,
                             contactId: selectedLead.contactId ?? null,
                             buildingId: selectedLead.buildingId ?? null,
                             serviceType: (selectedLead.serviceType as any) ?? null,
+                            valueType: vType,
                             value: selectedLead.value,
+                            valueTier: (selectedLead.valueTier as any) ?? null,
                             confidenceScore: selectedLead.confidenceScore ?? 50,
                             notes: selectedLead.notes ?? "",
                             assignedTo: selectedLead.assignedTo ?? undefined,
@@ -1384,52 +1486,109 @@ export default function Leads() {
                             </FormItem>
                           )}
                         />
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={editLeadForm.control}
-                            name="clientId"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Client</FormLabel>
-                                <Select
-                                  onValueChange={(val) => {
-                                    const id = parseInt(val);
-                                    field.onChange(id);
-                                    setSelectedClientIdForBuildingEdit(id);
-                                    setSelectedClientIdForContactEdit(id);
-                                    editLeadForm.setValue("buildingId", null);
-                                    editLeadForm.setValue("contactId", null);
-                                  }}
-                                  value={field.value?.toString()}
-                                >
-                                  <FormControl>
-                                    <SelectTrigger data-testid="select-edit-lead-client">
-                                      <SelectValue placeholder="Select client" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    {clients?.map((c) => (
-                                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={editLeadForm.control}
-                            name="value"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Value ($)</FormLabel>
+                        <FormField
+                          control={editLeadForm.control}
+                          name="clientId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Client</FormLabel>
+                              <Select
+                                onValueChange={(val) => {
+                                  const id = parseInt(val);
+                                  field.onChange(id);
+                                  setSelectedClientIdForBuildingEdit(id);
+                                  setSelectedClientIdForContactEdit(id);
+                                  editLeadForm.setValue("buildingId", null);
+                                  editLeadForm.setValue("contactId", null);
+                                }}
+                                value={field.value?.toString()}
+                              >
                                 <FormControl>
-                                  <Input type="number" step="0.01" {...field} value={field.value || ""} data-testid="input-edit-lead-value" />
+                                  <SelectTrigger data-testid="select-edit-lead-client">
+                                    <SelectValue placeholder="Select client" />
+                                  </SelectTrigger>
                                 </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                                <SelectContent>
+                                  {clients?.map((c) => (
+                                    <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Edit Value Type toggle + input */}
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Value</Label>
+                          <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditValueType("fixed");
+                                editLeadForm.setValue("valueType", "fixed");
+                                editLeadForm.setValue("valueTier", null);
+                                setEditValueTier(null);
+                              }}
+                              className={`px-3 py-1 text-sm rounded font-medium transition-colors ${editValueType === "fixed" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                              data-testid="button-edit-value-type-fixed"
+                            >
+                              Price
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditValueType("potential");
+                                editLeadForm.setValue("valueType", "potential");
+                                editLeadForm.setValue("value", "0");
+                              }}
+                              className={`px-3 py-1 text-sm rounded font-medium transition-colors ${editValueType === "potential" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                              data-testid="button-edit-value-type-potential"
+                            >
+                              Potential
+                            </button>
+                          </div>
+
+                          {editValueType === "fixed" ? (
+                            <FormField
+                              control={editLeadForm.control}
+                              name="value"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <div className="relative">
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                                      <Input type="number" step="0.01" className="pl-6" {...field} value={field.value || ""} data-testid="input-edit-lead-value" />
+                                    </div>
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          ) : (
+                            <div className="space-y-1.5">
+                              <div className="flex gap-2">
+                                {TIER_OPTIONS.map((tier) => (
+                                  <button
+                                    key={tier}
+                                    type="button"
+                                    onClick={() => {
+                                      setEditValueTier(tier);
+                                      editLeadForm.setValue("valueTier", tier as any);
+                                    }}
+                                    className={`flex-1 py-2 text-sm font-bold rounded-md border transition-colors ${editValueTier === tier ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+                                    data-testid={`button-edit-tier-${tier}`}
+                                  >
+                                    {tier}
+                                  </button>
+                                ))}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {editValueTier ? `≈ ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(TIER_VALUES[editValueTier])} estimated` : "Select a potential tier"}
+                              </p>
+                            </div>
+                          )}
                         </div>
                         {selectedClientIdForContactEdit && contactsForEdit.length > 0 && (
                           <FormField
@@ -1630,7 +1789,14 @@ export default function Leads() {
                         </div>
                         <div className="space-y-1">
                           <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Value</p>
-                          <p className="font-mono text-sm font-bold text-primary">{formatCurrency(selectedLead.value)}</p>
+                          {isLeadPotential(selectedLead) ? (
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-xl text-primary tracking-tight">{selectedLead.valueTier}</span>
+                              <span className="text-xs text-muted-foreground">≈ {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(TIER_VALUES[selectedLead.valueTier!])}</span>
+                            </div>
+                          ) : (
+                            <p className="font-mono text-sm font-bold text-primary">{formatCurrency(selectedLead.value)}</p>
+                          )}
                         </div>
                         {selectedLead.contactId && getContactName(selectedLead.contactId) && (
                           <div className="space-y-1">
