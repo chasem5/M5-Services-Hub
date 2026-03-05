@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   Plus, 
@@ -13,7 +13,68 @@ import {
   Trash2,
   Users,
   Star,
+  Upload,
+  Download,
+  FileText,
+  CheckCircle2,
+  AlertTriangle,
+  ChevronDown,
 } from "lucide-react";
+
+// ── CSV utilities ────────────────────────────────────────────────────────────
+
+function escapeCSV(v: unknown): string {
+  const s = v == null ? "" : String(v);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+function rowToCSV(row: unknown[]): string {
+  return row.map(escapeCSV).join(",");
+}
+
+function buildCSV(headers: string[], rows: unknown[][]): string {
+  return [rowToCSV(headers), ...rows.map(rowToCSV)].join("\n");
+}
+
+function downloadCSV(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function parseCSVRow(line: string): string[] {
+  const result: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (line[i] === "," && !inQuotes) {
+      result.push(cur); cur = "";
+    } else {
+      cur += line[i];
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseCSV(text: string): Record<string, string>[] {
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim().split("\n").filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = parseCSVRow(lines[0]).map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
+  return lines.slice(1).map(line => {
+    const vals = parseCSVRow(line);
+    const obj: Record<string, string> = {};
+    headers.forEach((h, i) => { obj[h] = (vals[i] ?? "").trim(); });
+    return obj;
+  });
+}
 import { Link } from "wouter";
 import { 
   Table, 
@@ -72,11 +133,21 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
+interface ImportResult {
+  created: number;
+  errors: string[];
+  type: "companies" | "contacts";
+}
+
 export default function Customers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [contactSearch, setContactSearch] = useState("");
   const [industryFilter, setIndustryFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const companiesFileRef = useRef<HTMLInputElement>(null);
+  const contactsFileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const { data: clients, isLoading } = useQuery<Client[]>({
@@ -112,6 +183,66 @@ export default function Customers() {
       toast({ title: "Success", description: "Customer deleted successfully" });
     },
   });
+
+  const exportCompanies = () => {
+    if (!clients?.length) { toast({ title: "No companies to export" }); return; }
+    const csv = buildCSV(
+      ["name", "industry", "address", "phone", "email", "website", "notes"],
+      clients.map(c => [c.name, c.industry, c.address, c.phone, c.email, c.website, c.notes])
+    );
+    downloadCSV("m5-companies.csv", csv);
+  };
+
+  const exportContacts = () => {
+    if (!allContacts.length) { toast({ title: "No contacts to export" }); return; }
+    const csv = buildCSV(
+      ["company_name", "name", "title", "email", "phone", "is_primary"],
+      allContacts.map(c => [
+        clients?.find(cl => cl.id === c.clientId)?.name ?? "",
+        c.name, c.title, c.email, c.phone,
+        c.isPrimary ? "true" : "false",
+      ])
+    );
+    downloadCSV("m5-contacts.csv", csv);
+  };
+
+  const downloadCompaniesTemplate = () => {
+    const csv = buildCSV(
+      ["name", "industry", "address", "phone", "email", "website", "notes"],
+      [["Acme Corp", "Facility Management", "123 Main St", "555-1234", "info@acme.com", "acme.com", "Sample note"]]
+    );
+    downloadCSV("m5-companies-template.csv", csv);
+  };
+
+  const downloadContactsTemplate = () => {
+    const csv = buildCSV(
+      ["company_name", "name", "title", "email", "phone", "is_primary"],
+      [["Acme Corp", "Jane Smith", "Property Manager", "jane@acme.com", "555-5678", "true"]]
+    );
+    downloadCSV("m5-contacts-template.csv", csv);
+  };
+
+  const handleImportFile = async (file: File, type: "companies" | "contacts") => {
+    const text = await file.text();
+    const rows = parseCSV(text);
+    if (!rows.length) {
+      toast({ title: "Empty or invalid CSV", description: "Make sure the file has a header row and at least one data row.", variant: "destructive" });
+      return;
+    }
+    setIsImporting(true);
+    try {
+      const endpoint = type === "companies" ? "/api/clients/import" : "/api/client-contacts/import";
+      const res = await apiRequest("POST", endpoint, { rows });
+      const result = await res.json();
+      setImportResult({ ...result, type });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+    } catch (e: any) {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   const form = useForm({
     resolver: zodResolver(insertClientSchema),
@@ -155,18 +286,85 @@ export default function Customers() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Hidden file inputs for import */}
+      <input
+        ref={companiesFileRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportFile(file, "companies");
+          e.target.value = "";
+        }}
+        data-testid="input-import-companies-file"
+      />
+      <input
+        ref={contactsFileRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportFile(file, "contacts");
+          e.target.value = "";
+        }}
+        data-testid="input-import-contacts-file"
+      />
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-heading font-bold">Customers</h1>
           <p className="text-muted-foreground text-lg">Manage your customer database and relationships</p>
         </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="h-11 px-6 font-medium" data-testid="button-add-customer">
-              <Plus className="mr-2 h-5 w-5" />
-              Add Company
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          {/* Import / Export dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="h-11 px-4 font-medium" disabled={isImporting} data-testid="button-import-export">
+                {isImporting ? (
+                  <><Upload className="mr-2 h-4 w-4 animate-pulse" />Importing...</>
+                ) : (
+                  <><FileText className="mr-2 h-4 w-4" />Import / Export<ChevronDown className="ml-2 h-4 w-4" /></>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="flex items-center gap-2">
+                <Building2 className="h-3.5 w-3.5" /> Companies
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={exportCompanies} data-testid="button-export-companies">
+                <Download className="mr-2 h-4 w-4" /> Export Companies CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => companiesFileRef.current?.click()} data-testid="button-import-companies">
+                <Upload className="mr-2 h-4 w-4" /> Import Companies CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={downloadCompaniesTemplate} data-testid="button-template-companies">
+                <FileText className="mr-2 h-4 w-4 text-muted-foreground" /> Download Template
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="flex items-center gap-2">
+                <Users className="h-3.5 w-3.5" /> Contacts
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={exportContacts} data-testid="button-export-contacts">
+                <Download className="mr-2 h-4 w-4" /> Export Contacts CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => contactsFileRef.current?.click()} data-testid="button-import-contacts">
+                <Upload className="mr-2 h-4 w-4" /> Import Contacts CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={downloadContactsTemplate} data-testid="button-template-contacts">
+                <FileText className="mr-2 h-4 w-4 text-muted-foreground" /> Download Template
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="h-11 px-6 font-medium" data-testid="button-add-customer">
+                <Plus className="mr-2 h-5 w-5" />
+                Add Company
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
               <DialogTitle>Add New Company</DialogTitle>
@@ -295,6 +493,7 @@ export default function Customers() {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Tabs defaultValue="companies">
@@ -596,6 +795,47 @@ export default function Customers() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Import Result Dialog */}
+      <Dialog open={!!importResult} onOpenChange={(open) => { if (!open) setImportResult(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {importResult && importResult.errors.length === 0 ? (
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+              )}
+              Import Complete
+            </DialogTitle>
+            <DialogDescription>
+              {importResult?.type === "companies" ? "Companies" : "Contacts"} import finished.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 border border-green-200 dark:bg-green-950/20 dark:border-green-800">
+              <span className="text-sm font-medium text-green-700 dark:text-green-400">Records created</span>
+              <span className="text-2xl font-bold text-green-700 dark:text-green-400">{importResult?.created ?? 0}</span>
+            </div>
+            {importResult && importResult.errors.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                  <AlertTriangle className="h-4 w-4" />
+                  {importResult.errors.length} row{importResult.errors.length !== 1 ? "s" : ""} skipped
+                </p>
+                <div className="max-h-48 overflow-y-auto rounded border bg-muted/30 p-2 space-y-1">
+                  {importResult.errors.map((err, i) => (
+                    <p key={i} className="text-xs text-muted-foreground font-mono">{err}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setImportResult(null)} data-testid="button-close-import-result">Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

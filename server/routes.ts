@@ -147,6 +147,68 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // Bulk Import
+  app.post("/api/clients/import", isAuthenticated, async (req, res) => {
+    const { rows } = req.body as { rows: Record<string, string>[] };
+    if (!Array.isArray(rows)) return res.status(400).json({ message: "rows must be an array" });
+    let created = 0;
+    const errors: string[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        const data = insertClientSchema.parse({
+          name: row.name || row.company_name || "",
+          industry: row.industry || null,
+          address: row.address || null,
+          phone: row.phone || null,
+          email: row.email || null,
+          website: row.website || null,
+          notes: row.notes || null,
+          createdBy: (req as any).user?.id ?? null,
+        });
+        const client = await storage.createClient(data);
+        await logActivity(req, "client", client.id, "created");
+        created++;
+      } catch (e: any) {
+        errors.push(`Row ${i + 2}: ${e.message ?? String(e)}`);
+      }
+    }
+    res.json({ created, errors });
+  });
+
+  app.post("/api/client-contacts/import", isAuthenticated, async (req, res) => {
+    const { rows } = req.body as { rows: Record<string, string>[] };
+    if (!Array.isArray(rows)) return res.status(400).json({ message: "rows must be an array" });
+    const allClients = await storage.listClients();
+    let created = 0;
+    const errors: string[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        const companyName = (row.company_name || row.company || "").trim();
+        const company = allClients.find(c => c.name.toLowerCase() === companyName.toLowerCase());
+        if (!company) {
+          errors.push(`Row ${i + 2}: Company "${companyName}" not found`);
+          continue;
+        }
+        await storage.createClientContact({
+          clientId: company.id,
+          name: row.name || row.contact_name || "",
+          title: row.title || null,
+          email: row.email || null,
+          phone: row.phone || null,
+          isPrimary: row.is_primary === "true" || row.is_primary === "1" || row.is_primary === "yes",
+          reportsTo: null,
+          officeId: null,
+        });
+        created++;
+      } catch (e: any) {
+        errors.push(`Row ${i + 2}: ${e.message ?? String(e)}`);
+      }
+    }
+    res.json({ created, errors });
+  });
+
   // Leads
   app.get("/api/leads", isAuthenticated, async (_req, res) => {
     const leads = await storage.listLeads();
