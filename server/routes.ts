@@ -122,6 +122,19 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // All buildings for all contacts of a client (for portfolio map)
+  app.get("/api/clients/:id/all-buildings", isAuthenticated, async (req, res) => {
+    const clientId = parseInt(req.params.id as string);
+    const contacts = await storage.listClientContacts(clientId);
+    const allBuildings = await Promise.all(
+      contacts.map(async (c) => {
+        const buildings = await storage.listContactBuildings(c.id);
+        return buildings.map(b => ({ ...b, contactName: c.name, contactId: c.id }));
+      })
+    );
+    res.json(allBuildings.flat());
+  });
+
   // Contact Buildings
   app.get("/api/contacts/:contactId/buildings", isAuthenticated, async (req, res) => {
     const contactId = parseInt(req.params.contactId as string);

@@ -48,6 +48,8 @@ export const contactBuildings = pgTable("contact_buildings", {
   contactId: integer("contact_id").references(() => clientContacts.id).notNull(),
   name: varchar("name").notNull(),
   address: text("address"),
+  lat: decimal("lat", { precision: 10, scale: 7 }),
+  lng: decimal("lng", { precision: 10, scale: 7 }),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

@@ -29,6 +29,7 @@ import {
   ClipboardList,
   X,
   Home,
+  Map,
 } from "lucide-react";
 import {
   Popover,
@@ -99,6 +100,8 @@ import {
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { OrgChart } from "@/components/OrgChart";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { BuildingsMap } from "@/components/BuildingsMap";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -116,9 +119,13 @@ function ContactCard({
   const [editingBuilding, setEditingBuilding] = useState<ContactBuilding | null>(null);
   const [addName, setAddName] = useState("");
   const [addAddress, setAddAddress] = useState("");
+  const [addLat, setAddLat] = useState<number | null>(null);
+  const [addLng, setAddLng] = useState<number | null>(null);
   const [addNotes, setAddNotes] = useState("");
   const [editName, setEditName] = useState("");
   const [editAddress, setEditAddress] = useState("");
+  const [editLat, setEditLat] = useState<number | null>(null);
+  const [editLng, setEditLng] = useState<number | null>(null);
   const [editNotes, setEditNotes] = useState("");
   const { toast } = useToast();
 
@@ -132,13 +139,16 @@ function ContactCard({
       const res = await apiRequest("POST", `/api/contacts/${contact.id}/buildings`, {
         name: addName.trim(),
         address: addAddress.trim() || null,
+        lat: addLat ?? null,
+        lng: addLng ?? null,
         notes: addNotes.trim() || null,
       });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "buildings"] });
-      setAddName(""); setAddAddress(""); setAddNotes("");
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setAddName(""); setAddAddress(""); setAddLat(null); setAddLng(null); setAddNotes("");
       setIsAddingBuilding(false);
     },
     onError: () => { toast({ title: "Failed to add building", variant: "destructive" }); },
@@ -149,12 +159,15 @@ function ContactCard({
       const res = await apiRequest("PUT", `/api/contacts/${contact.id}/buildings/${b.id}`, {
         name: editName.trim(),
         address: editAddress.trim() || null,
+        lat: editLat ?? null,
+        lng: editLng ?? null,
         notes: editNotes.trim() || null,
       });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "buildings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       setEditingBuilding(null);
     },
     onError: () => { toast({ title: "Failed to update building", variant: "destructive" }); },
@@ -173,6 +186,8 @@ function ContactCard({
     setEditingBuilding(b);
     setEditName(b.name);
     setEditAddress(b.address ?? "");
+    setEditLat(b.lat != null ? parseFloat(String(b.lat)) : null);
+    setEditLng(b.lng != null ? parseFloat(String(b.lng)) : null);
     setEditNotes(b.notes ?? "");
   };
 
@@ -262,8 +277,14 @@ function ContactCard({
                     <div className="space-y-2 pl-2 py-2 rounded-md bg-muted/30 border">
                       <Input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Building name"
                         className="h-7 text-xs" data-testid={`input-edit-building-name-${b.id}`} />
-                      <Input value={editAddress} onChange={e => setEditAddress(e.target.value)} placeholder="Address"
-                        className="h-7 text-xs" data-testid={`input-edit-building-address-${b.id}`} />
+                      <AddressAutocomplete
+                        value={editAddress}
+                        onChange={(addr, lat, lng) => { setEditAddress(addr); if (lat !== undefined) setEditLat(lat); if (lng !== undefined) setEditLng(lng); }}
+                        placeholder="Search address..."
+                        className="h-7 text-xs"
+                        data-testid={`input-edit-building-address-${b.id}`}
+                      />
+                      {editLat && <p className="text-[10px] text-green-600 pl-0.5">📍 Location confirmed</p>}
                       <Input value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Notes (optional)"
                         className="h-7 text-xs" data-testid={`input-edit-building-notes-${b.id}`} />
                       <div className="flex gap-2">
@@ -307,8 +328,14 @@ function ContactCard({
               <div className="space-y-2 pl-2 py-2 rounded-md bg-muted/20 border border-dashed">
                 <Input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Building name *"
                   className="h-7 text-xs" autoFocus data-testid={`input-add-building-name-${contact.id}`} />
-                <Input value={addAddress} onChange={e => setAddAddress(e.target.value)} placeholder="Address"
-                  className="h-7 text-xs" data-testid={`input-add-building-address-${contact.id}`} />
+                <AddressAutocomplete
+                  value={addAddress}
+                  onChange={(addr, lat, lng) => { setAddAddress(addr); if (lat !== undefined) setAddLat(lat); if (lng !== undefined) setAddLng(lng); }}
+                  placeholder="Search address..."
+                  className="h-7 text-xs"
+                  data-testid={`input-add-building-address-${contact.id}`}
+                />
+                {addLat && <p className="text-[10px] text-green-600 pl-0.5">📍 Location confirmed</p>}
                 <Input value={addNotes} onChange={e => setAddNotes(e.target.value)} placeholder="Notes (optional)"
                   className="h-7 text-xs" data-testid={`input-add-building-notes-${contact.id}`} />
                 <div className="flex gap-2">
@@ -319,7 +346,7 @@ function ContactCard({
                     Add
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 text-xs px-2"
-                    onClick={() => { setIsAddingBuilding(false); setAddName(""); setAddAddress(""); setAddNotes(""); }}
+                    onClick={() => { setIsAddingBuilding(false); setAddName(""); setAddAddress(""); setAddLat(null); setAddLng(null); setAddNotes(""); }}
                     data-testid={`button-cancel-add-building-${contact.id}`}>
                     Cancel
                   </Button>
@@ -391,6 +418,10 @@ export default function ClientDetail() {
 
   const { data: allClients = [] } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
+  });
+
+  const { data: allBuildings = [] } = useQuery<Array<{ id: number; name: string; address?: string | null; lat?: string | null; lng?: string | null; notes?: string | null; contactName: string; contactId: number }>>({
+    queryKey: ["/api/clients", clientId, "all-buildings"],
   });
 
   const { data: allContacts = [] } = useQuery<ClientContact[]>({
@@ -673,6 +704,10 @@ export default function ClientDetail() {
           <TabsTrigger value="orgchart" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
             <GitBranch className="mr-2 h-4 w-4" />
             Org Chart
+          </TabsTrigger>
+          <TabsTrigger value="portfolio-map" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium" data-testid="tab-portfolio-map">
+            <Map className="mr-2 h-4 w-4" />
+            Portfolio Map
           </TabsTrigger>
           <TabsTrigger value="activity" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
             <History className="mr-2 h-4 w-4" />
@@ -1414,6 +1449,42 @@ export default function ClientDetail() {
                     onEditContact={openEditContact}
                     isUpdating={updateContactMutation.isPending}
                   />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="portfolio-map" className="m-0">
+            <Card className="border-none shadow-sm bg-card">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2">
+                  <Map className="h-5 w-5 text-primary" />
+                  Portfolio Map
+                </CardTitle>
+                <CardDescription>
+                  All buildings across contacts for {client.name} — {allBuildings.filter(b => b.lat).length} of {allBuildings.length} location{allBuildings.length !== 1 ? "s" : ""} mapped
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pb-6">
+                <BuildingsMap
+                  buildings={allBuildings}
+                  className="h-[520px] w-full"
+                />
+                {allBuildings.length > 0 && (
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {allBuildings.map(b => (
+                      <div key={b.id} className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${b.lat ? "border-border bg-card" : "border-dashed border-border/50 bg-muted/20"}`}
+                        data-testid={`building-list-item-${b.id}`}>
+                        <MapPin className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-primary" : "text-muted-foreground/50"}`} />
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{b.name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">{b.contactName}</p>
+                          {b.address && <p className="text-xs text-muted-foreground mt-0.5 truncate">{b.address}</p>}
+                          {!b.lat && <p className="text-[10px] text-amber-500 mt-0.5 italic">No location — edit to add address</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
