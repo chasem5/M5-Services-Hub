@@ -799,6 +799,7 @@ export default function ClientDetail() {
       email: client.email || "",
       website: client.website || "",
       notes: client.notes || "",
+      tier: (client as any).tier ?? null,
     } : {
       name: "",
       industry: "",
@@ -807,6 +808,7 @@ export default function ClientDetail() {
       email: "",
       website: "",
       notes: "",
+      tier: null,
     },
   });
 
@@ -1055,6 +1057,29 @@ export default function ClientDetail() {
                                 data-testid="input-edit-client-annual-revenue"
                               />
                             </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={clientForm.control}
+                        name={"tier" as any}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Company Tier</FormLabel>
+                            <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-edit-client-tier">
+                                  <SelectValue placeholder="No Tier" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">No Tier</SelectItem>
+                                <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                                <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                                <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                              </SelectContent>
+                            </Select>
                             <FormMessage />
                           </FormItem>
                         )}
