@@ -30,7 +30,10 @@ import {
   X,
   Home,
   Map,
+  Linkedin,
+  AlertCircle,
 } from "lucide-react";
+import { SiLinkedin } from "react-icons/si";
 import {
   Popover,
   PopoverContent,
@@ -104,6 +107,89 @@ import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { BuildingsMap } from "@/components/BuildingsMap";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+
+function LinkedInSyncButton({
+  contactId,
+  linkedinUrl,
+  onSuccess,
+}: {
+  contactId: number;
+  linkedinUrl: string;
+  onSuccess: (updated: any) => void;
+}) {
+  const { toast } = useToast();
+  const [confirmed, setConfirmed] = useState(false);
+
+  const enrichMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/contacts/${contactId}/linkedin-enrich`, { linkedinUrl });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Sync failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      onSuccess(data);
+      setConfirmed(false);
+      toast({ title: "Profile synced from LinkedIn", description: "Contact info has been updated." });
+    },
+    onError: (err: Error) => {
+      setConfirmed(false);
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const disabled = !linkedinUrl.trim() || enrichMutation.isPending;
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+        <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">
+          Each LinkedIn sync costs <strong>~$0.01</strong> from your Proxycurl/NinjaPear credits. This will overwrite the title and fill any blank email/phone fields.
+        </p>
+      </div>
+      {!confirmed ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full h-8 text-xs border-amber-300 text-amber-800 hover:bg-amber-100 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-900/30"
+          disabled={disabled}
+          onClick={() => setConfirmed(true)}
+          data-testid={`button-linkedin-sync-${contactId}`}
+        >
+          <SiLinkedin className="h-3.5 w-3.5 mr-1.5 text-[#0A66C2]" />
+          Sync from LinkedIn
+        </Button>
+      ) : (
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            size="sm"
+            className="flex-1 h-8 text-xs bg-[#0A66C2] hover:bg-[#004182] text-white"
+            disabled={enrichMutation.isPending}
+            onClick={() => enrichMutation.mutate()}
+            data-testid={`button-linkedin-sync-confirm-${contactId}`}
+          >
+            {enrichMutation.isPending ? "Syncing..." : "Yes, sync (~$0.01)"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8 text-xs"
+            onClick={() => setConfirmed(false)}
+            data-testid={`button-linkedin-sync-cancel-${contactId}`}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ContactCard({
   contact,
@@ -199,14 +285,39 @@ function ContactCard({
         {/* Header row */}
         <div className="flex justify-between">
           <div className="flex gap-3">
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-sm">
-              {contact.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
+            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-sm overflow-hidden">
+              {(contact as any).profilePictureUrl ? (
+                <img
+                  src={(contact as any).profilePictureUrl}
+                  alt={contact.name}
+                  className="h-full w-full object-cover"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                    (e.currentTarget.parentElement as HTMLElement).innerHTML =
+                      contact.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+                  }}
+                />
+              ) : (
+                contact.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+              )}
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-bold">{contact.name}</p>
                 {contact.isPrimary && (
                   <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 uppercase">Primary</Badge>
+                )}
+                {(contact as any).linkedinUrl && (
+                  <a
+                    href={(contact as any).linkedinUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#0A66C2] hover:opacity-80 transition-opacity"
+                    onClick={e => e.stopPropagation()}
+                    data-testid={`link-linkedin-${contact.id}`}
+                  >
+                    <SiLinkedin className="h-3.5 w-3.5" />
+                  </a>
                 )}
               </div>
               <p className="text-sm text-muted-foreground">{contact.title || "No Title"}</p>
@@ -641,6 +752,7 @@ export default function ClientDetail() {
       officeId: contact.officeId ?? null,
       clientId: contact.clientId,
       serviceNeeds: (contact.serviceNeeds as string[] | null) ?? [],
+      linkedinUrl: (contact as any).linkedinUrl || "",
     });
     setIsEditContactDialogOpen(true);
   };
@@ -1609,6 +1721,44 @@ export default function ClientDetail() {
                     </FormItem>
                   )}
                 />
+              </div>
+
+              {/* LinkedIn URL + Sync */}
+              <div className="space-y-2">
+                <FormField
+                  control={editContactForm.control}
+                  name={"linkedinUrl" as any}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <SiLinkedin className="h-3.5 w-3.5 text-[#0A66C2]" />
+                        LinkedIn Profile URL
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="https://linkedin.com/in/username"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-edit-contact-linkedin"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {editingContact && (
+                  <LinkedInSyncButton
+                    contactId={editingContact.id}
+                    linkedinUrl={editContactForm.watch("linkedinUrl" as any) || ""}
+                    onSuccess={(updated) => {
+                      if (updated.title) editContactForm.setValue("title" as any, updated.title);
+                      if (updated.email) editContactForm.setValue("email" as any, updated.email);
+                      if (updated.phone) editContactForm.setValue("phone" as any, updated.phone);
+                      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+                    }}
+                  />
+                )}
               </div>
 
               {(offices || []).length > 0 && (

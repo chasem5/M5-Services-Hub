@@ -122,6 +122,49 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // LinkedIn enrichment via Proxycurl
+  app.post("/api/contacts/:contactId/linkedin-enrich", isAuthenticated, async (req, res) => {
+    const apiKey = process.env.PROXYCURL_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ message: "PROXYCURL_API_KEY is not configured." });
+    }
+    const contactId = parseInt(req.params.contactId as string);
+    const contacts = await storage.getClientContact(contactId);
+    if (!contacts) return res.status(404).json({ message: "Contact not found" });
+    const linkedinUrl = req.body?.linkedinUrl || contacts.linkedinUrl;
+    if (!linkedinUrl) return res.status(400).json({ message: "No LinkedIn URL provided." });
+
+    const url = new URL("https://nubela.co/proxycurl/api/v2/linkedin");
+    url.searchParams.set("linkedin_profile_url", linkedinUrl);
+    url.searchParams.set("personal_email", "include");
+    url.searchParams.set("personal_contact_number", "include");
+
+    const proxycurlRes = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    if (!proxycurlRes.ok) {
+      const errText = await proxycurlRes.text();
+      return res.status(proxycurlRes.status).json({ message: `Proxycurl error: ${errText}` });
+    }
+
+    const data: any = await proxycurlRes.json();
+
+    const updates: Record<string, string | null> = {};
+    updates.linkedinUrl = linkedinUrl;
+    if (data.profile_pic_url) updates.profilePictureUrl = data.profile_pic_url;
+    if (data.occupation) updates.title = data.occupation;
+    else if (data.experiences?.[0]?.title) updates.title = data.experiences[0].title;
+    if (!contacts.email && data.personal_emails?.[0]) updates.email = data.personal_emails[0];
+    if (!contacts.phone && data.personal_numbers?.[0]) updates.phone = data.personal_numbers[0];
+    if (!contacts.name && (data.full_name || (data.first_name && data.last_name))) {
+      updates.name = data.full_name || `${data.first_name} ${data.last_name}`;
+    }
+
+    const updated = await storage.updateClientContact(contactId, updates);
+    res.json(updated);
+  });
+
   // All buildings for all contacts of a client (for portfolio map)
   app.get("/api/clients/:id/all-buildings", isAuthenticated, async (req, res) => {
     const clientId = parseInt(req.params.id as string);
