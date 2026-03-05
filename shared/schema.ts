@@ -174,6 +174,14 @@ export const proposals = pgTable("proposals", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const pipelineViews = pgTable("pipeline_views", {
+  id: serial("id").primaryKey(),
+  name: varchar("name").notNull(),
+  filters: jsonb("filters").notNull().default({}),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const activityLogs = pgTable("activity_logs", {
   id: serial("id").primaryKey(),
   entityType: varchar("entity_type", { enum: ["lead", "client", "task", "estimate", "proposal"] }).notNull(),
@@ -204,7 +212,10 @@ export const insertContactBuildingSchema = createInsertSchema(contactBuildings).
 });
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   buildingId: z.number().optional().nullable(),
+  contactId: z.number().optional().nullable(),
+  serviceType: z.enum(["building_engineering", "facility_solutions", "janitorial", "special_projects", "property_assessment"]).optional().nullable(),
 });
+export const insertPipelineViewSchema = createInsertSchema(pipelineViews).omit({ id: true, createdAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertReminderSchema = createInsertSchema(reminders).omit({ id: true, createdAt: true });
 export const insertServiceCatalogSchema = createInsertSchema(serviceCatalog).omit({ id: true });
@@ -244,3 +255,5 @@ export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
 export type PipelineStage = typeof pipelineStages.$inferSelect;
 export type InsertPipelineStage = z.infer<typeof insertPipelineStageSchema>;
+export type PipelineView = typeof pipelineViews.$inferSelect;
+export type InsertPipelineView = z.infer<typeof insertPipelineViewSchema>;

@@ -16,6 +16,7 @@ import {
   proposals,
   activityLogs,
   pipelineStages,
+  pipelineViews,
   type User,
   type UpsertUser,
   type Client,
@@ -46,6 +47,8 @@ import {
   type InsertPipelineStage,
   type ContactBuilding,
   type InsertContactBuilding,
+  type PipelineView,
+  type InsertPipelineView,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -151,6 +154,12 @@ export interface IStorage {
   deleteSpendEntry(id: number): Promise<void>;
   getAllClientSpendTotals(): Promise<{ clientId: number; total: string }[]>;
   getAllContactSpendTotals(): Promise<{ contactId: number; total: string }[]>;
+
+  // Pipeline Views
+  listPipelineViews(): Promise<PipelineView[]>;
+  createPipelineView(view: InsertPipelineView): Promise<PipelineView>;
+  updatePipelineView(id: number, view: Partial<InsertPipelineView>): Promise<PipelineView>;
+  deletePipelineView(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -591,6 +600,25 @@ export class DatabaseStorage implements IStorage {
       .where(sql`${bdSpendEntries.contactId} is not null`)
       .groupBy(bdSpendEntries.contactId);
     return rows.map(r => ({ contactId: r.contactId as number, total: r.total }));
+  }
+
+  // Pipeline Views
+  async listPipelineViews(): Promise<PipelineView[]> {
+    return await db.select().from(pipelineViews).orderBy(pipelineViews.createdAt);
+  }
+
+  async createPipelineView(view: InsertPipelineView): Promise<PipelineView> {
+    const [created] = await db.insert(pipelineViews).values(view).returning();
+    return created;
+  }
+
+  async updatePipelineView(id: number, view: Partial<InsertPipelineView>): Promise<PipelineView> {
+    const [updated] = await db.update(pipelineViews).set(view).where(eq(pipelineViews.id, id)).returning();
+    return updated;
+  }
+
+  async deletePipelineView(id: number): Promise<void> {
+    await db.delete(pipelineViews).where(eq(pipelineViews.id, id));
   }
 }
 

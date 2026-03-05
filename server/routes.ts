@@ -444,6 +444,82 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // AI Summary for a lead
+  app.post("/api/leads/:id/ai-summary", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const lead = await storage.getLead(id);
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+    const [leadTasks, activityLogs] = await Promise.all([
+      storage.listTasks().then(t => t.filter(t => t.relatedLeadId === id).slice(0, 10)),
+      storage.listActivityLogs("lead", id).then(a => a.slice(0, 10)),
+    ]);
+
+    const tasksSummary = leadTasks.length
+      ? leadTasks.map(t => `- Task: "${t.title}" (${t.status}, priority: ${t.priority})`).join("\n")
+      : "No tasks linked.";
+
+    const activitySummary = activityLogs.length
+      ? activityLogs.map(a => `- ${a.action} on ${new Date(a.createdAt).toLocaleDateString()}${a.metadata ? `: ${JSON.stringify(a.metadata)}` : ""}`).join("\n")
+      : "No recent activity.";
+
+    const prompt = `You are a CRM assistant for M5 Services, a facility maintenance company. Summarize this lead in 2-3 concise sentences, focusing on the current status, key details, and any important next steps.
+
+Lead: "${lead.title}"
+Stage: ${lead.stage.replace("_", " ")}
+Value: $${Number(lead.value).toLocaleString()}
+Confidence: ${lead.confidenceScore}%
+Service Type: ${lead.serviceType?.replace(/_/g, " ") ?? "Not specified"}
+Notes: ${lead.notes || "None"}
+
+Recent Tasks:
+${tasksSummary}
+
+Recent Activity:
+${activitySummary}
+
+Write a concise, factual summary paragraph (no bullet points, no headers).`;
+
+    try {
+      const { openai } = await import("./openai");
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 200,
+      });
+      const summary = completion.choices[0]?.message?.content ?? "Unable to generate summary.";
+      res.json({ summary });
+    } catch (err: any) {
+      console.error("AI summary error:", err);
+      res.status(500).json({ message: "AI summary failed", error: err.message });
+    }
+  });
+
+  // Pipeline Views
+  app.get("/api/pipeline-views", isAuthenticated, async (_req, res) => {
+    const views = await storage.listPipelineViews();
+    res.json(views);
+  });
+
+  app.post("/api/pipeline-views", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const data = { ...req.body, createdBy: userId };
+    const view = await storage.createPipelineView(data);
+    res.json(view);
+  });
+
+  app.put("/api/pipeline-views/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const view = await storage.updatePipelineView(id, req.body);
+    res.json(view);
+  });
+
+  app.delete("/api/pipeline-views/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    await storage.deletePipelineView(id);
+    res.sendStatus(204);
+  });
+
   // Tasks
   app.get("/api/tasks", isAuthenticated, async (_req, res) => {
     const tasks = await storage.listTasks();

@@ -7,6 +7,8 @@ import {
   Task,
   PipelineStage,
   ContactBuilding,
+  ClientContact,
+  PipelineView,
   insertLeadSchema,
   InsertLead,
   insertTaskSchema,
@@ -42,6 +44,12 @@ import {
   Check,
   CalendarIcon,
   Building2,
+  Sparkles,
+  Briefcase,
+  User2,
+  Eye,
+  SlidersHorizontal,
+  BookmarkPlus,
 } from "lucide-react";
 import {
   Card,
@@ -102,8 +110,16 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const STAGE_COLORS = {
   green: {
@@ -153,6 +169,24 @@ function getConfidenceBarColor(score: number) {
   return "bg-red-500";
 }
 
+const SERVICE_TYPE_OPTIONS = [
+  { value: "building_engineering", label: "Building Engineering", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  { value: "facility_solutions", label: "Facility Solutions", color: "bg-purple-100 text-purple-700 border-purple-200" },
+  { value: "janitorial", label: "Janitorial", color: "bg-green-100 text-green-700 border-green-200" },
+  { value: "special_projects", label: "Special Projects", color: "bg-orange-100 text-orange-700 border-orange-200" },
+  { value: "property_assessment", label: "Property Assessment", color: "bg-teal-100 text-teal-700 border-teal-200" },
+] as const;
+
+function getServiceTypeLabel(value: string | null | undefined) {
+  if (!value) return null;
+  return SERVICE_TYPE_OPTIONS.find(o => o.value === value)?.label ?? value;
+}
+
+function getServiceTypeColor(value: string | null | undefined) {
+  if (!value) return "";
+  return SERVICE_TYPE_OPTIONS.find(o => o.value === value)?.color ?? "";
+}
+
 export default function Leads() {
   const [view, setView] = useState<"kanban" | "list">("kanban");
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
@@ -172,6 +206,19 @@ export default function Leads() {
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
   const [selectedClientIdForBuilding, setSelectedClientIdForBuilding] = useState<number | null>(null);
   const [selectedClientIdForBuildingEdit, setSelectedClientIdForBuildingEdit] = useState<number | null>(null);
+  // Pipeline views
+  const [activeViewId, setActiveViewId] = useState<number | null>(null);
+  const [isManageViewsOpen, setIsManageViewsOpen] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
+  const [newViewStages, setNewViewStages] = useState<string[]>([]);
+  const [newViewServiceTypes, setNewViewServiceTypes] = useState<string[]>([]);
+  const [editingView, setEditingView] = useState<PipelineView | null>(null);
+  // AI summaries cache: leadId -> summary string
+  const [aiSummaries, setAiSummaries] = useState<Record<number, string>>({});
+  const [loadingAiSummary, setLoadingAiSummary] = useState<Record<number, boolean>>({});
+  // For create form: contact dropdown
+  const [selectedClientIdForContact, setSelectedClientIdForContact] = useState<number | null>(null);
+  const [selectedClientIdForContactEdit, setSelectedClientIdForContactEdit] = useState<number | null>(null);
   const { toast } = useToast();
 
   const { data: stages = [] } = useQuery<PipelineStage[]>({
@@ -198,6 +245,14 @@ export default function Leads() {
     queryKey: ["/api/all-buildings"],
   });
 
+  const { data: allContacts = [] } = useQuery<ClientContact[]>({
+    queryKey: ["/api/client-contacts"],
+  });
+
+  const { data: pipelineViews = [] } = useQuery<PipelineView[]>({
+    queryKey: ["/api/pipeline-views"],
+  });
+
   const { data: buildingsForCreate = [] } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/clients", selectedClientIdForBuilding, "all-buildings"],
     enabled: !!selectedClientIdForBuilding,
@@ -208,9 +263,22 @@ export default function Leads() {
     enabled: !!selectedClientIdForBuildingEdit,
   });
 
+  const contactsForCreate = selectedClientIdForContact
+    ? allContacts.filter(c => c.clientId === selectedClientIdForContact)
+    : [];
+
+  const contactsForEdit = selectedClientIdForContactEdit
+    ? allContacts.filter(c => c.clientId === selectedClientIdForContactEdit)
+    : [];
+
   const getBuildingName = (buildingId: number | null) => {
     if (!buildingId) return null;
     return allBuildings.find(b => b.id === buildingId)?.name ?? null;
+  };
+
+  const getContactName = (contactId: number | null | undefined) => {
+    if (!contactId) return null;
+    return allContacts.find(c => c.id === contactId)?.name ?? null;
   };
 
   const createLeadMutation = useMutation({
@@ -313,6 +381,59 @@ export default function Leads() {
     },
   });
 
+  const createViewMutation = useMutation({
+    mutationFn: async (data: { name: string; filters: object }) => {
+      const res = await apiRequest("POST", "/api/pipeline-views", data);
+      return res.json();
+    },
+    onSuccess: (view) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pipeline-views"] });
+      setActiveViewId(view.id);
+      setNewViewName("");
+      setNewViewStages([]);
+      setNewViewServiceTypes([]);
+      setIsManageViewsOpen(false);
+      toast({ title: "View created", description: `"${view.name}" is now active.` });
+    },
+  });
+
+  const updateViewMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: object }) => {
+      const res = await apiRequest("PUT", `/api/pipeline-views/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pipeline-views"] });
+      setEditingView(null);
+      toast({ title: "View updated" });
+    },
+  });
+
+  const deleteViewMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/pipeline-views/${id}`);
+    },
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pipeline-views"] });
+      if (activeViewId === id) setActiveViewId(null);
+      toast({ title: "View deleted" });
+    },
+  });
+
+  const fetchAiSummary = async (leadId: number) => {
+    if (aiSummaries[leadId] || loadingAiSummary[leadId]) return;
+    setLoadingAiSummary(prev => ({ ...prev, [leadId]: true }));
+    try {
+      const res = await apiRequest("POST", `/api/leads/${leadId}/ai-summary`, {});
+      const data = await res.json();
+      setAiSummaries(prev => ({ ...prev, [leadId]: data.summary }));
+    } catch {
+      setAiSummaries(prev => ({ ...prev, [leadId]: "Unable to generate summary at this time." }));
+    } finally {
+      setLoadingAiSummary(prev => ({ ...prev, [leadId]: false }));
+    }
+  };
+
   const moveStage = (index: number, direction: "up" | "down") => {
     const newOrder = [...stages];
     const target = direction === "up" ? index - 1 : index + 1;
@@ -377,10 +498,15 @@ export default function Leads() {
     },
   });
 
+  const activeView = pipelineViews.find(v => v.id === activeViewId) ?? null;
+  const activeFilters = activeView ? (activeView.filters as { stages?: string[]; serviceTypes?: string[] }) : null;
+
   const filteredLeads = leads?.filter((lead) => {
     const matchesSearch = lead.title.toLowerCase().includes(search.toLowerCase());
     const matchesStage = stageFilter === "all" || lead.stage === stageFilter;
-    return matchesSearch && matchesStage;
+    const matchesViewStage = !activeFilters?.stages?.length || activeFilters.stages.includes(lead.stage);
+    const matchesViewService = !activeFilters?.serviceTypes?.length || (lead.serviceType != null && activeFilters.serviceTypes.includes(lead.serviceType));
+    return matchesSearch && matchesStage && matchesViewStage && matchesViewService;
   });
 
   const getClientName = (clientId: number | null) => {
@@ -425,10 +551,13 @@ export default function Leads() {
     setIsEditingLead(false);
     setIsAddTaskOpen(false);
     setSelectedClientIdForBuildingEdit(lead.clientId ?? null);
+    setSelectedClientIdForContactEdit(lead.clientId ?? null);
     editLeadForm.reset({
       title: lead.title,
       clientId: lead.clientId ?? undefined,
+      contactId: lead.contactId ?? null,
       buildingId: lead.buildingId ?? null,
+      serviceType: (lead.serviceType as any) ?? null,
       value: lead.value,
       confidenceScore: lead.confidenceScore ?? 50,
       notes: lead.notes ?? "",
@@ -508,6 +637,37 @@ export default function Leads() {
           </div>
         </div>
 
+        {/* Pipeline View switcher */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setActiveViewId(null)}
+            className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${!activeViewId ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+            data-testid="button-view-all"
+          >
+            All Leads
+          </button>
+          {pipelineViews.map(v => (
+            <button
+              key={v.id}
+              onClick={() => setActiveViewId(v.id)}
+              className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${activeViewId === v.id ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+              data-testid={`button-view-${v.id}`}
+            >
+              {v.name}
+            </button>
+          ))}
+          <Button size="sm" variant="outline" className="h-7 rounded-full text-xs gap-1.5" onClick={() => {
+            setEditingView(null);
+            setNewViewName("");
+            setNewViewStages([]);
+            setNewViewServiceTypes([]);
+            setIsManageViewsOpen(true);
+          }} data-testid="button-manage-views">
+            <BookmarkPlus className="h-3.5 w-3.5" />
+            New View
+          </Button>
+        </div>
+
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -531,6 +691,15 @@ export default function Leads() {
               ))}
             </SelectContent>
           </Select>
+          {activeView && (
+            <div className="flex items-center gap-1.5 text-xs text-primary font-medium border border-primary/30 bg-primary/5 rounded-full px-3 py-1">
+              <Eye className="h-3 w-3" />
+              View: {activeView.name}
+              <button onClick={() => setActiveViewId(null)} className="ml-1 hover:text-destructive">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -598,12 +767,17 @@ export default function Leads() {
                       .map((lead) => {
                         const score = lead.confidenceScore ?? 50;
                         const leadTasks = getLeadTasks(lead.id);
+                        const contactName = getContactName(lead.contactId);
+                        const serviceLabel = getServiceTypeLabel(lead.serviceType);
+                        const serviceColor = getServiceTypeColor(lead.serviceType);
                         return (
+                          <HoverCard key={lead.id} openDelay={700} closeDelay={100}>
+                            <HoverCardTrigger asChild>
                           <Card
-                            key={lead.id}
                             className="hover-elevate cursor-pointer border-border/60 shadow-sm transition-shadow hover:shadow-md"
                             onClick={() => openLeadDetail(lead)}
                             data-testid={`card-lead-${lead.id}`}
+                            onMouseEnter={() => fetchAiSummary(lead.id)}
                           >
                             <CardHeader className="p-3 pb-0 space-y-1">
                               <div className="flex items-start justify-between gap-2">
@@ -613,6 +787,12 @@ export default function Leads() {
                                 <UsersIcon className="h-3 w-3" />
                                 {getClientName(lead.clientId)}
                               </p>
+                              {contactName && (
+                                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                  <User2 className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{contactName}</span>
+                                </p>
+                              )}
                               {lead.buildingId && getBuildingName(lead.buildingId) && (
                                 <p className="text-[10px] text-muted-foreground flex items-center gap-1">
                                   <Building2 className="h-3 w-3 shrink-0" />
@@ -630,6 +810,13 @@ export default function Leads() {
                                   {getUserName(lead.assignedTo).split(' ')[0]}
                                 </span>
                               </div>
+
+                              {serviceLabel && (
+                                <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 w-fit font-medium border ${serviceColor}`}>
+                                  <Briefcase className="h-2.5 w-2.5 mr-1" />
+                                  {serviceLabel}
+                                </Badge>
+                              )}
 
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between">
@@ -672,6 +859,25 @@ export default function Leads() {
                               )}
                             </CardContent>
                           </Card>
+                            </HoverCardTrigger>
+                            <HoverCardContent side="right" align="start" className="w-72 p-3" data-testid={`ai-summary-${lead.id}`}>
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                                <span className="text-xs font-bold text-primary">AI Summary</span>
+                              </div>
+                              {loadingAiSummary[lead.id] ? (
+                                <div className="space-y-1.5">
+                                  <div className="h-3 bg-muted animate-pulse rounded w-full" />
+                                  <div className="h-3 bg-muted animate-pulse rounded w-5/6" />
+                                  <div className="h-3 bg-muted animate-pulse rounded w-4/6" />
+                                </div>
+                              ) : aiSummaries[lead.id] ? (
+                                <p className="text-xs text-muted-foreground leading-relaxed">{aiSummaries[lead.id]}</p>
+                              ) : (
+                                <p className="text-xs text-muted-foreground italic">Hover to generate summary...</p>
+                              )}
+                            </HoverCardContent>
+                          </HoverCard>
                         );
                       })}
                   </div>
@@ -688,6 +894,8 @@ export default function Leads() {
                   <TableRow>
                     <TableHead>Lead Title</TableHead>
                     <TableHead>Client</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Service Type</TableHead>
                     <TableHead>Stage</TableHead>
                     <TableHead>Value</TableHead>
                     <TableHead>Confidence</TableHead>
@@ -718,6 +926,21 @@ export default function Leads() {
                           </div>
                         </TableCell>
                         <TableCell>{getClientName(lead.clientId)}</TableCell>
+                        <TableCell>
+                          {lead.contactId ? (
+                            <span className="flex items-center gap-1 text-sm">
+                              <User2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              {getContactName(lead.contactId) ?? "—"}
+                            </span>
+                          ) : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {lead.serviceType ? (
+                            <Badge variant="outline" className={`text-xs font-medium border ${getServiceTypeColor(lead.serviceType)}`}>
+                              {getServiceTypeLabel(lead.serviceType)}
+                            </Badge>
+                          ) : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="capitalize">
                             {lead.stage.replace('_', ' ')}
@@ -791,7 +1014,9 @@ export default function Leads() {
                       const id = parseInt(val);
                       field.onChange(id);
                       setSelectedClientIdForBuilding(id);
+                      setSelectedClientIdForContact(id);
                       form.setValue("buildingId", null);
+                      form.setValue("contactId", null);
                     }} defaultValue={field.value?.toString()}>
                       <FormControl>
                         <SelectTrigger data-testid="select-lead-client">
@@ -801,6 +1026,65 @@ export default function Leads() {
                       <SelectContent>
                         {clients?.map((client) => (
                           <SelectItem key={client.id} value={client.id.toString()}>{client.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {selectedClientIdForContact && contactsForCreate.length > 0 && (
+                <FormField
+                  control={form.control}
+                  name="contactId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact (Optional)</FormLabel>
+                      <Select
+                        onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                        value={field.value != null ? String(field.value) : "none"}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-lead-contact">
+                            <SelectValue placeholder="No specific contact" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No specific contact</SelectItem>
+                          {contactsForCreate.map((c) => (
+                            <SelectItem key={c.id} value={c.id.toString()}>
+                              <span className="flex items-center gap-2">
+                                <User2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                {c.name}{c.title ? ` · ${c.title}` : ""}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              <FormField
+                control={form.control}
+                name="serviceType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Service Type (Optional)</FormLabel>
+                    <Select
+                      onValueChange={(val) => field.onChange(val === "none" ? null : val)}
+                      value={field.value != null ? String(field.value) : "none"}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-lead-service-type">
+                          <SelectValue placeholder="Select service type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">No service type</SelectItem>
+                        {SERVICE_TYPE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1037,6 +1321,9 @@ export default function Leads() {
                           editLeadForm.reset({
                             title: selectedLead.title,
                             clientId: selectedLead.clientId ?? undefined,
+                            contactId: selectedLead.contactId ?? null,
+                            buildingId: selectedLead.buildingId ?? null,
+                            serviceType: (selectedLead.serviceType as any) ?? null,
                             value: selectedLead.value,
                             confidenceScore: selectedLead.confidenceScore ?? 50,
                             notes: selectedLead.notes ?? "",
@@ -1109,7 +1396,9 @@ export default function Leads() {
                                     const id = parseInt(val);
                                     field.onChange(id);
                                     setSelectedClientIdForBuildingEdit(id);
+                                    setSelectedClientIdForContactEdit(id);
                                     editLeadForm.setValue("buildingId", null);
+                                    editLeadForm.setValue("contactId", null);
                                   }}
                                   value={field.value?.toString()}
                                 >
@@ -1142,6 +1431,65 @@ export default function Leads() {
                             )}
                           />
                         </div>
+                        {selectedClientIdForContactEdit && contactsForEdit.length > 0 && (
+                          <FormField
+                            control={editLeadForm.control}
+                            name="contactId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Contact (Optional)</FormLabel>
+                                <Select
+                                  onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                                  value={field.value != null ? String(field.value) : "none"}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-edit-lead-contact">
+                                      <SelectValue placeholder="No specific contact" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="none">No specific contact</SelectItem>
+                                    {contactsForEdit.map((c) => (
+                                      <SelectItem key={c.id} value={c.id.toString()}>
+                                        <span className="flex items-center gap-2">
+                                          <User2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                          {c.name}{c.title ? ` · ${c.title}` : ""}
+                                        </span>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
+                        <FormField
+                          control={editLeadForm.control}
+                          name="serviceType"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Service Type (Optional)</FormLabel>
+                              <Select
+                                onValueChange={(val) => field.onChange(val === "none" ? null : val)}
+                                value={field.value != null ? String(field.value) : "none"}
+                              >
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-edit-lead-service-type">
+                                    <SelectValue placeholder="Select service type" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="none">No service type</SelectItem>
+                                  {SERVICE_TYPE_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                         {selectedClientIdForBuildingEdit && buildingsForEdit.length > 0 && (
                           <FormField
                             control={editLeadForm.control}
@@ -1284,6 +1632,24 @@ export default function Leads() {
                           <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Value</p>
                           <p className="font-mono text-sm font-bold text-primary">{formatCurrency(selectedLead.value)}</p>
                         </div>
+                        {selectedLead.contactId && getContactName(selectedLead.contactId) && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                              <User2 className="h-3 w-3" /> Contact
+                            </p>
+                            <p className="font-medium text-sm">{getContactName(selectedLead.contactId)}</p>
+                          </div>
+                        )}
+                        {selectedLead.serviceType && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                              <Briefcase className="h-3 w-3" /> Service Type
+                            </p>
+                            <Badge variant="outline" className={`text-xs font-medium border w-fit ${getServiceTypeColor(selectedLead.serviceType)}`}>
+                              {getServiceTypeLabel(selectedLead.serviceType)}
+                            </Badge>
+                          </div>
+                        )}
                         {selectedLead.buildingId && getBuildingName(selectedLead.buildingId) && (
                           <div className="space-y-1 col-span-2">
                             <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
@@ -1756,6 +2122,179 @@ export default function Leads() {
             <Button variant="outline" onClick={() => setIsManageStagesOpen(false)}>
               Done
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pipeline Views Dialog */}
+      <Dialog open={isManageViewsOpen} onOpenChange={setIsManageViewsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-4 w-4 text-primary" />
+              {editingView ? "Edit View" : "Create Pipeline View"}
+            </DialogTitle>
+            <DialogDescription>
+              Save a named filter preset to quickly switch between different lead perspectives.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">View Name</Label>
+              <Input
+                placeholder="E.g. Relationship Pipeline, Contract Pipeline..."
+                value={editingView ? editingView.name : newViewName}
+                onChange={(e) => editingView
+                  ? setEditingView({ ...editingView, name: e.target.value })
+                  : setNewViewName(e.target.value)
+                }
+                data-testid="input-view-name"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Filter by Stage</Label>
+              <div className="flex flex-wrap gap-2">
+                {stages.map((stage) => {
+                  const arr = editingView
+                    ? ((editingView.filters as any)?.stages ?? []) as string[]
+                    : newViewStages;
+                  const selected = arr.includes(stage.slug);
+                  return (
+                    <button
+                      key={stage.id}
+                      type="button"
+                      onClick={() => {
+                        if (editingView) {
+                          const curr = ((editingView.filters as any)?.stages ?? []) as string[];
+                          const next = selected ? curr.filter(s => s !== stage.slug) : [...curr, stage.slug];
+                          setEditingView({ ...editingView, filters: { ...(editingView.filters as any), stages: next } });
+                        } else {
+                          setNewViewStages(selected ? newViewStages.filter(s => s !== stage.slug) : [...newViewStages, stage.slug]);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md border transition-colors font-medium ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+                      data-testid={`button-view-stage-${stage.slug}`}
+                    >
+                      {stage.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">Leave blank to include all stages.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Filter by Service Type</Label>
+              <div className="flex flex-wrap gap-2">
+                {SERVICE_TYPE_OPTIONS.map((opt) => {
+                  const arr = editingView
+                    ? ((editingView.filters as any)?.serviceTypes ?? []) as string[]
+                    : newViewServiceTypes;
+                  const selected = arr.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        if (editingView) {
+                          const curr = ((editingView.filters as any)?.serviceTypes ?? []) as string[];
+                          const next = selected ? curr.filter(s => s !== opt.value) : [...curr, opt.value];
+                          setEditingView({ ...editingView, filters: { ...(editingView.filters as any), serviceTypes: next } });
+                        } else {
+                          setNewViewServiceTypes(selected ? newViewServiceTypes.filter(s => s !== opt.value) : [...newViewServiceTypes, opt.value]);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md border transition-colors font-medium ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+                      data-testid={`button-view-service-${opt.value}`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">Leave blank to include all service types.</p>
+            </div>
+
+            {/* Existing views list */}
+            {!editingView && pipelineViews.length > 0 && (
+              <div className="space-y-1.5 border-t pt-3">
+                <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Saved Views</Label>
+                <div className="space-y-1.5">
+                  {pipelineViews.map((v) => {
+                    const filters = v.filters as { stages?: string[]; serviceTypes?: string[] };
+                    return (
+                      <div key={v.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted/50">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{v.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {[
+                              filters.stages?.length ? `${filters.stages.length} stage(s)` : null,
+                              filters.serviceTypes?.length ? `${filters.serviceTypes.length} service(s)` : null,
+                            ].filter(Boolean).join(" · ") || "No filters"}
+                          </p>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 shrink-0"
+                          onClick={() => {
+                            setEditingView(v);
+                          }}
+                          data-testid={`button-edit-view-${v.id}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => deleteViewMutation.mutate(v.id)}
+                          data-testid={`button-delete-view-${v.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            {editingView ? (
+              <>
+                <Button variant="outline" onClick={() => setEditingView(null)}>
+                  Back
+                </Button>
+                <Button
+                  onClick={() => updateViewMutation.mutate({ id: editingView.id, data: { name: editingView.name, filters: editingView.filters } })}
+                  disabled={updateViewMutation.isPending || !editingView.name.trim()}
+                  data-testid="button-save-view"
+                >
+                  Save Changes
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setIsManageViewsOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => createViewMutation.mutate({
+                    name: newViewName.trim(),
+                    filters: { stages: newViewStages, serviceTypes: newViewServiceTypes },
+                  })}
+                  disabled={createViewMutation.isPending || !newViewName.trim()}
+                  data-testid="button-create-view"
+                >
+                  <BookmarkPlus className="h-4 w-4 mr-1.5" />
+                  Save View
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
