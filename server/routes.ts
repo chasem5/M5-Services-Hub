@@ -196,7 +196,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/tasks", isAuthenticated, async (req, res) => {
-    const taskData = insertTaskSchema.parse(req.body);
+    const taskData = insertTaskSchema.extend({ dueDate: z.coerce.date().optional().nullable() }).parse(req.body);
     const task = await storage.createTask(taskData);
     await logActivity(req, "task", task.id, "created");
     res.json(task);
@@ -211,7 +211,7 @@ export async function registerRoutes(
 
   app.put("/api/tasks/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
-    const taskData = insertTaskSchema.partial().parse(req.body);
+    const taskData = insertTaskSchema.extend({ dueDate: z.coerce.date().optional().nullable() }).partial().parse(req.body);
     const task = await storage.updateTask(id, taskData);
     await logActivity(req, "task", task.id, "updated", taskData);
     res.json(task);

@@ -340,7 +340,6 @@ export default function Leads() {
   });
 
   const addTaskForm = useForm<InsertTask>({
-    resolver: zodResolver(insertTaskSchema),
     defaultValues: {
       title: "",
       description: "",
@@ -1281,9 +1280,14 @@ export default function Leads() {
                       <CardContent className="p-4">
                         <Form {...addTaskForm}>
                           <form
-                            onSubmit={addTaskForm.handleSubmit((data) =>
-                              createTaskMutation.mutate({ ...data, relatedLeadId: selectedLead.id })
-                            )}
+                            onSubmit={addTaskForm.handleSubmit((data) => {
+                              const dueDateRaw = data.dueDate as unknown as string;
+                              createTaskMutation.mutate({
+                                ...data,
+                                relatedLeadId: selectedLead.id,
+                                dueDate: dueDateRaw ? new Date(dueDateRaw) : undefined,
+                              });
+                            })}
                             className="space-y-3"
                           >
                             <FormField
