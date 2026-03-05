@@ -144,7 +144,6 @@ export async function registerRoutes(
       body: JSON.stringify({
         linkedin_url: linkedinUrl,
         reveal_personal_emails: true,
-        reveal_phone_number: true,
       }),
     });
 
@@ -165,9 +164,6 @@ export async function registerRoutes(
     if (person.title) updates.title = person.title;
     if (!contact.name && person.name) updates.name = person.name;
     if (!contact.email && person.email) updates.email = person.email;
-    if (!contact.phone && person.phone_numbers?.[0]?.raw_number) {
-      updates.phone = person.phone_numbers[0].raw_number;
-    }
 
     const updated = await storage.updateClientContact(contactId, updates);
     res.json(updated);
