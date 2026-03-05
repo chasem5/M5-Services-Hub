@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { isAuthenticated, requireRole } from "./replit_integrations/auth/replitAuth";
 import { 
   insertClientSchema, 
+  insertClientOfficeSchema,
   insertClientContactSchema, 
   insertLeadSchema, 
   insertTaskSchema, 
@@ -117,6 +118,32 @@ export async function registerRoutes(
   app.delete("/api/clients/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
     const contactId = parseInt(req.params.contactId as string);
     await storage.deleteClientContact(contactId);
+    res.sendStatus(204);
+  });
+
+  // Client Offices
+  app.get("/api/clients/:id/offices", isAuthenticated, async (req, res) => {
+    const clientId = parseInt(req.params.id as string);
+    const offices = await storage.listClientOffices(clientId);
+    res.json(offices);
+  });
+
+  app.post("/api/clients/:id/offices", isAuthenticated, async (req, res) => {
+    const clientId = parseInt(req.params.id as string);
+    const body = insertClientOfficeSchema.parse({ ...req.body, clientId });
+    const office = await storage.createClientOffice(body);
+    res.json(office);
+  });
+
+  app.put("/api/clients/:id/offices/:officeId", isAuthenticated, async (req, res) => {
+    const officeId = parseInt(req.params.officeId as string);
+    const updated = await storage.updateClientOffice(officeId, req.body);
+    res.json(updated);
+  });
+
+  app.delete("/api/clients/:id/offices/:officeId", isAuthenticated, async (req, res) => {
+    const officeId = parseInt(req.params.officeId as string);
+    await storage.deleteClientOffice(officeId);
     res.sendStatus(204);
   });
 

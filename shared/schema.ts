@@ -21,9 +21,19 @@ export const clients = pgTable("clients", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const clientOffices = pgTable("client_offices", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull(),
+  name: varchar("name").notNull(),
+  address: text("address"),
+  phone: varchar("phone"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const clientContacts = pgTable("client_contacts", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id).notNull(),
+  officeId: integer("office_id").references(() => clientOffices.id),
   name: varchar("name").notNull(),
   title: varchar("title"),
   email: varchar("email"),
@@ -143,6 +153,7 @@ export const activityLogs = pgTable("activity_logs", {
 // Zod Schemas
 export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertClientOfficeSchema = createInsertSchema(clientOffices).omit({ id: true, createdAt: true });
 export const insertClientContactSchema = createInsertSchema(clientContacts).omit({ id: true });
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
@@ -156,6 +167,8 @@ export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ i
 // Types
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = z.infer<typeof insertClientSchema>;
+export type ClientOffice = typeof clientOffices.$inferSelect;
+export type InsertClientOffice = z.infer<typeof insertClientOfficeSchema>;
 export type ClientContact = typeof clientContacts.$inferSelect;
 export type InsertClientContact = z.infer<typeof insertClientContactSchema>;
 export type Lead = typeof leads.$inferSelect;

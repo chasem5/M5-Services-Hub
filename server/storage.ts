@@ -3,6 +3,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import {
   users,
   clients,
+  clientOffices,
   clientContacts,
   leads,
   tasks,
@@ -17,6 +18,8 @@ import {
   type UpsertUser,
   type Client,
   type InsertClient,
+  type ClientOffice,
+  type InsertClientOffice,
   type ClientContact,
   type InsertClientContact,
   type Lead,
@@ -51,6 +54,12 @@ export interface IStorage {
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: number, client: Partial<InsertClient>): Promise<Client>;
   deleteClient(id: number): Promise<void>;
+
+  // Client Offices
+  listClientOffices(clientId: number): Promise<ClientOffice[]>;
+  createClientOffice(office: InsertClientOffice): Promise<ClientOffice>;
+  updateClientOffice(id: number, data: Partial<InsertClientOffice>): Promise<ClientOffice>;
+  deleteClientOffice(id: number): Promise<void>;
 
   // Client Contacts
   listAllClientContacts(): Promise<ClientContact[]>;
@@ -172,6 +181,26 @@ export class DatabaseStorage implements IStorage {
   // Client Contacts
   async listAllClientContacts(): Promise<ClientContact[]> {
     return await db.select().from(clientContacts);
+  }
+
+  // Client Offices
+  async listClientOffices(clientId: number): Promise<ClientOffice[]> {
+    return await db.select().from(clientOffices).where(eq(clientOffices.clientId, clientId)).orderBy(clientOffices.name);
+  }
+
+  async createClientOffice(office: InsertClientOffice): Promise<ClientOffice> {
+    const [newOffice] = await db.insert(clientOffices).values(office).returning();
+    return newOffice;
+  }
+
+  async updateClientOffice(id: number, data: Partial<InsertClientOffice>): Promise<ClientOffice> {
+    const [updated] = await db.update(clientOffices).set(data).where(eq(clientOffices.id, id)).returning();
+    return updated;
+  }
+
+  async deleteClientOffice(id: number): Promise<void> {
+    await db.update(clientContacts).set({ officeId: null }).where(eq(clientContacts.officeId, id));
+    await db.delete(clientOffices).where(eq(clientOffices.id, id));
   }
 
   async listClientContacts(clientId: number): Promise<ClientContact[]> {
