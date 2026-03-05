@@ -19,7 +19,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   ChevronDown,
+  ChevronUp,
+  ArrowUpDown,
   Linkedin,
+  X,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 
@@ -144,6 +147,10 @@ interface ImportResult {
 export default function Customers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [contactSearch, setContactSearch] = useState("");
+  const [contactCompanyFilter, setContactCompanyFilter] = useState("all");
+  const [contactStatusFilter, setContactStatusFilter] = useState("all");
+  const [contactSortField, setContactSortField] = useState<"name" | "company" | "title" | "status">("name");
+  const [contactSortDir, setContactSortDir] = useState<"asc" | "desc">("asc");
   const [industryFilter, setIndustryFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -277,15 +284,37 @@ export default function Customers() {
   const getCompanyName = (clientId: number) =>
     clients?.find(c => c.id === clientId)?.name ?? "Unknown Company";
 
-  const filteredContacts = allContacts.filter(contact => {
-    const term = contactSearch.toLowerCase();
-    return (
-      contact.name.toLowerCase().includes(term) ||
-      contact.email?.toLowerCase().includes(term) ||
-      contact.title?.toLowerCase().includes(term) ||
-      getCompanyName(contact.clientId).toLowerCase().includes(term)
-    );
-  });
+  const statusOrder: Record<string, number> = { active: 0, likely_left: 1, unverified: 2 };
+  const filteredContacts = allContacts
+    .filter(contact => {
+      const term = contactSearch.toLowerCase();
+      const matchesSearch =
+        contact.name.toLowerCase().includes(term) ||
+        (contact.email ?? "").toLowerCase().includes(term) ||
+        (contact.title ?? "").toLowerCase().includes(term) ||
+        getCompanyName(contact.clientId).toLowerCase().includes(term);
+      const matchesCompany =
+        contactCompanyFilter === "all" || contact.clientId === Number(contactCompanyFilter);
+      const matchesStatus =
+        contactStatusFilter === "all" ||
+        (contactStatusFilter === "none" ? !contact.employmentStatus : contact.employmentStatus === contactStatusFilter);
+      return matchesSearch && matchesCompany && matchesStatus;
+    })
+    .sort((a, b) => {
+      let cmp = 0;
+      if (contactSortField === "name") {
+        cmp = a.name.localeCompare(b.name);
+      } else if (contactSortField === "company") {
+        cmp = getCompanyName(a.clientId).localeCompare(getCompanyName(b.clientId));
+      } else if (contactSortField === "title") {
+        cmp = (a.title ?? "").localeCompare(b.title ?? "");
+      } else if (contactSortField === "status") {
+        const aOrder = a.employmentStatus ? (statusOrder[a.employmentStatus] ?? 9) : 9;
+        const bOrder = b.employmentStatus ? (statusOrder[b.employmentStatus] ?? 9) : 9;
+        cmp = aOrder - bOrder;
+      }
+      return contactSortDir === "asc" ? cmp : -cmp;
+    });
 
   return (
     <div className="p-6 space-y-6">
@@ -700,16 +729,57 @@ export default function Customers() {
         {/* ── Contacts Tab ── */}
         <TabsContent value="contacts">
           <Card className="border-none shadow-sm bg-card">
-            <CardHeader className="pb-3">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search contacts..."
-                  value={contactSearch}
-                  onChange={(e) => setContactSearch(e.target.value)}
-                  className="pl-10 h-10"
-                  data-testid="input-search-contacts"
-                />
+            <CardHeader className="pb-3 space-y-3">
+              {/* Search + filters row */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex-1 min-w-[180px] max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search contacts..."
+                    value={contactSearch}
+                    onChange={(e) => setContactSearch(e.target.value)}
+                    className="pl-10 h-10"
+                    data-testid="input-search-contacts"
+                  />
+                </div>
+                {/* Company filter */}
+                <Select value={contactCompanyFilter} onValueChange={setContactCompanyFilter}>
+                  <SelectTrigger className="w-[180px] h-10" data-testid="select-contact-company-filter">
+                    <SelectValue placeholder="All Companies" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Companies</SelectItem>
+                    {clients?.map(c => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {/* Status filter */}
+                <Select value={contactStatusFilter} onValueChange={setContactStatusFilter}>
+                  <SelectTrigger className="w-[160px] h-10" data-testid="select-contact-status-filter">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="likely_left">May have left</SelectItem>
+                    <SelectItem value="unverified">Open to Work</SelectItem>
+                    <SelectItem value="none">Not verified</SelectItem>
+                  </SelectContent>
+                </Select>
+                {/* Clear filters button — only shown when any filter is active */}
+                {(contactSearch || contactCompanyFilter !== "all" || contactStatusFilter !== "all") && (
+                  <button
+                    onClick={() => { setContactSearch(""); setContactCompanyFilter("all"); setContactStatusFilter("all"); }}
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground h-10 px-3 rounded-md border border-border/50 hover:bg-muted/50 transition-colors"
+                    data-testid="button-clear-contact-filters"
+                  >
+                    <X className="h-3 w-3" />Clear
+                  </button>
+                )}
+                <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
+                  {filteredContacts.length} contact{filteredContacts.length !== 1 ? "s" : ""}
+                </span>
               </div>
             </CardHeader>
             <CardContent>
@@ -722,11 +792,48 @@ export default function Customers() {
                   <Table>
                     <TableHeader className="bg-muted/50">
                       <TableRow>
-                        <TableHead className="font-bold">Name</TableHead>
-                        <TableHead className="font-bold">Company</TableHead>
-                        <TableHead className="font-bold">Title</TableHead>
+                        {(["name", "company", "title"] as const).map(field => {
+                          const labels = { name: "Name", company: "Company", title: "Title" };
+                          const active = contactSortField === field;
+                          return (
+                            <TableHead
+                              key={field}
+                              className="font-bold cursor-pointer select-none hover:text-foreground"
+                              onClick={() => {
+                                if (active) setContactSortDir(d => d === "asc" ? "desc" : "asc");
+                                else { setContactSortField(field); setContactSortDir("asc"); }
+                              }}
+                              data-testid={`th-sort-${field}`}
+                            >
+                              <span className="inline-flex items-center gap-1">
+                                {labels[field]}
+                                {active
+                                  ? contactSortDir === "asc"
+                                    ? <ChevronUp className="h-3.5 w-3.5" />
+                                    : <ChevronDown className="h-3.5 w-3.5" />
+                                  : <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />}
+                              </span>
+                            </TableHead>
+                          );
+                        })}
                         <TableHead className="font-bold">Contact Info</TableHead>
-                        <TableHead className="font-bold">Status</TableHead>
+                        <TableHead
+                          className="font-bold cursor-pointer select-none hover:text-foreground"
+                          onClick={() => {
+                            if (contactSortField === "status") setContactSortDir(d => d === "asc" ? "desc" : "asc");
+                            else { setContactSortField("status"); setContactSortDir("asc"); }
+                          }}
+                          data-testid="th-sort-status"
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            Status
+                            {contactSortField === "status"
+                              ? contactSortDir === "asc"
+                                ? <ChevronUp className="h-3.5 w-3.5" />
+                                : <ChevronDown className="h-3.5 w-3.5" />
+                              : <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />}
+                          </span>
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -834,6 +941,7 @@ export default function Customers() {
       {/* Contact Profile Dialog */}
       <Dialog open={!!selectedContact} onOpenChange={(open) => { if (!open) setSelectedContact(null); }}>
         <DialogContent className="sm:max-w-md p-0 overflow-hidden">
+          <DialogTitle className="sr-only">{selectedContact?.name ?? "Contact"} Profile</DialogTitle>
           {selectedContact && (() => {
             const sc = selectedContact;
             const initials = sc.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
