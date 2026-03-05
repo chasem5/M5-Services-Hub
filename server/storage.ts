@@ -5,6 +5,7 @@ import {
   clients,
   clientOffices,
   clientContacts,
+  contactBuildings,
   leads,
   tasks,
   reminders,
@@ -40,6 +41,8 @@ import {
   type InsertActivityLog,
   type PipelineStage,
   type InsertPipelineStage,
+  type ContactBuilding,
+  type InsertContactBuilding,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -67,6 +70,12 @@ export interface IStorage {
   createClientContact(contact: InsertClientContact): Promise<ClientContact>;
   updateClientContact(id: number, data: Partial<ClientContact>): Promise<ClientContact>;
   deleteClientContact(id: number): Promise<void>;
+
+  // Contact Buildings
+  listContactBuildings(contactId: number): Promise<ContactBuilding[]>;
+  createContactBuilding(building: InsertContactBuilding): Promise<ContactBuilding>;
+  updateContactBuilding(id: number, data: Partial<InsertContactBuilding>): Promise<ContactBuilding>;
+  deleteContactBuilding(id: number): Promise<void>;
 
   // Leads
   listLeads(): Promise<Lead[]>;
@@ -218,7 +227,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteClientContact(id: number): Promise<void> {
+    await db.delete(contactBuildings).where(eq(contactBuildings.contactId, id));
     await db.delete(clientContacts).where(eq(clientContacts.id, id));
+  }
+
+  async listContactBuildings(contactId: number): Promise<ContactBuilding[]> {
+    return await db.select().from(contactBuildings).where(eq(contactBuildings.contactId, contactId)).orderBy(contactBuildings.name);
+  }
+
+  async createContactBuilding(building: InsertContactBuilding): Promise<ContactBuilding> {
+    const [b] = await db.insert(contactBuildings).values(building).returning();
+    return b;
+  }
+
+  async updateContactBuilding(id: number, data: Partial<InsertContactBuilding>): Promise<ContactBuilding> {
+    const [b] = await db.update(contactBuildings).set(data).where(eq(contactBuildings.id, id)).returning();
+    return b;
+  }
+
+  async deleteContactBuilding(id: number): Promise<void> {
+    await db.delete(contactBuildings).where(eq(contactBuildings.id, id));
   }
 
   // Leads

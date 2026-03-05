@@ -20,12 +20,15 @@ import {
   ExternalLink,
   GitBranch,
   ChevronDown,
+  ChevronRight,
   Star,
   HardHat,
   Wrench,
   Sparkles,
   Zap,
-  ClipboardList
+  ClipboardList,
+  X,
+  Home,
 } from "lucide-react";
 import {
   Popover,
@@ -88,7 +91,8 @@ import {
   insertClientOfficeSchema,
   type Client, 
   type ClientOffice,
-  type ClientContact, 
+  type ClientContact,
+  type ContactBuilding,
   type Lead, 
   type Estimate,
   type ActivityLog
@@ -107,12 +111,80 @@ function ContactCard({
   onEdit: (c: ClientContact) => void;
   onDelete: (id: number) => void;
 }) {
+  const [isPortfolioOpen, setIsPortfolioOpen] = useState(false);
+  const [isAddingBuilding, setIsAddingBuilding] = useState(false);
+  const [editingBuilding, setEditingBuilding] = useState<ContactBuilding | null>(null);
+  const [addName, setAddName] = useState("");
+  const [addAddress, setAddAddress] = useState("");
+  const [addNotes, setAddNotes] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const { toast } = useToast();
+
+  const { data: buildings = [], isLoading: isLoadingBuildings } = useQuery<ContactBuilding[]>({
+    queryKey: ["/api/contacts", contact.id, "buildings"],
+    enabled: isPortfolioOpen,
+  });
+
+  const addBuildingMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/contacts/${contact.id}/buildings`, {
+        name: addName.trim(),
+        address: addAddress.trim() || null,
+        notes: addNotes.trim() || null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "buildings"] });
+      setAddName(""); setAddAddress(""); setAddNotes("");
+      setIsAddingBuilding(false);
+    },
+    onError: () => { toast({ title: "Failed to add building", variant: "destructive" }); },
+  });
+
+  const updateBuildingMutation = useMutation({
+    mutationFn: async (b: ContactBuilding) => {
+      const res = await apiRequest("PUT", `/api/contacts/${contact.id}/buildings/${b.id}`, {
+        name: editName.trim(),
+        address: editAddress.trim() || null,
+        notes: editNotes.trim() || null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "buildings"] });
+      setEditingBuilding(null);
+    },
+    onError: () => { toast({ title: "Failed to update building", variant: "destructive" }); },
+  });
+
+  const deleteBuildingMutation = useMutation({
+    mutationFn: async (buildingId: number) => {
+      await apiRequest("DELETE", `/api/contacts/${contact.id}/buildings/${buildingId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "buildings"] });
+    },
+  });
+
+  const openEditBuilding = (b: ContactBuilding) => {
+    setEditingBuilding(b);
+    setEditName(b.name);
+    setEditAddress(b.address ?? "");
+    setEditNotes(b.notes ?? "");
+  };
+
+  const contactServiceNeeds: string[] = (contact.serviceNeeds as string[] | null) ?? [];
+
   return (
-    <Card className="relative group border-border/50 hover:border-primary/50 transition-colors shadow-none">
-      <CardContent className="p-4">
+    <Card className="relative group border-border/50 hover:border-primary/40 transition-colors shadow-none">
+      <CardContent className="p-4 space-y-3">
+        {/* Header row */}
         <div className="flex justify-between">
           <div className="flex gap-3">
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
+            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-sm">
               {contact.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
             </div>
             <div>
@@ -126,40 +198,143 @@ function ContactCard({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={() => onEdit(contact)}
-              data-testid={`button-edit-contact-${contact.id}`}
-            >
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              onClick={() => onEdit(contact)} data-testid={`button-edit-contact-${contact.id}`}>
               <Edit className="h-4 w-4" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-              onClick={() => onDelete(contact.id)}
-              data-testid={`button-delete-contact-${contact.id}`}
-            >
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              onClick={() => onDelete(contact.id)} data-testid={`button-delete-contact-${contact.id}`}>
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        <div className="mt-3 space-y-1.5">
+
+        {/* Contact info */}
+        <div className="space-y-1">
           {contact.email && (
             <div className="flex items-center text-sm text-muted-foreground">
-              <Mail className="mr-2 h-3.5 w-3.5 shrink-0" />
-              {contact.email}
+              <Mail className="mr-2 h-3.5 w-3.5 shrink-0" />{contact.email}
             </div>
           )}
           {contact.phone && (
             <div className="flex items-center text-sm text-muted-foreground">
-              <Phone className="mr-2 h-3.5 w-3.5 shrink-0" />
-              {contact.phone}
+              <Phone className="mr-2 h-3.5 w-3.5 shrink-0" />{contact.phone}
             </div>
           )}
         </div>
+
+        {/* Service Needs badges */}
+        {contactServiceNeeds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {SERVICE_NEEDS.filter(s => contactServiceNeeds.includes(s.key)).map(s => (
+              <span key={s.key} className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-background ${s.color}`}
+                style={{ borderColor: "currentColor", opacity: 0.9 }}
+                data-testid={`badge-contact-service-${contact.id}-${s.key}`}>
+                <s.Icon className="h-3 w-3" />{s.label}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Portfolio toggle */}
+        <button
+          type="button"
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors w-full pt-0.5"
+          onClick={() => setIsPortfolioOpen(v => !v)}
+          data-testid={`button-toggle-portfolio-${contact.id}`}
+        >
+          {isPortfolioOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          <Home className="h-3.5 w-3.5" />
+          Portfolio{!isPortfolioOpen && buildings.length === 0 && !isPortfolioOpen ? "" : ` · ${buildings.length} building${buildings.length !== 1 ? "s" : ""}`}
+        </button>
+
+        {/* Portfolio panel */}
+        {isPortfolioOpen && (
+          <div className="space-y-2 pl-1 border-l-2 border-border/50 ml-1">
+            {isLoadingBuildings ? (
+              <p className="text-xs text-muted-foreground pl-2 py-1">Loading...</p>
+            ) : buildings.length === 0 && !isAddingBuilding ? (
+              <p className="text-xs text-muted-foreground pl-2 py-1 italic">No buildings added yet.</p>
+            ) : (
+              buildings.map(b => (
+                <div key={b.id}>
+                  {editingBuilding?.id === b.id ? (
+                    <div className="space-y-2 pl-2 py-2 rounded-md bg-muted/30 border">
+                      <Input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Building name"
+                        className="h-7 text-xs" data-testid={`input-edit-building-name-${b.id}`} />
+                      <Input value={editAddress} onChange={e => setEditAddress(e.target.value)} placeholder="Address"
+                        className="h-7 text-xs" data-testid={`input-edit-building-address-${b.id}`} />
+                      <Input value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Notes (optional)"
+                        className="h-7 text-xs" data-testid={`input-edit-building-notes-${b.id}`} />
+                      <div className="flex gap-2">
+                        <Button size="sm" className="h-7 text-xs px-3"
+                          disabled={!editName.trim() || updateBuildingMutation.isPending}
+                          onClick={() => updateBuildingMutation.mutate(b)}
+                          data-testid={`button-save-building-${b.id}`}>
+                          Save
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs px-2"
+                          onClick={() => setEditingBuilding(null)} data-testid={`button-cancel-edit-building-${b.id}`}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start justify-between pl-2 py-1 group/building rounded hover:bg-muted/30 transition-colors">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{b.name}</p>
+                        {b.address && <p className="text-[11px] text-muted-foreground truncate">{b.address}</p>}
+                        {b.notes && <p className="text-[11px] text-muted-foreground italic truncate">{b.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover/building:opacity-100 transition-opacity shrink-0 ml-2">
+                        <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                          onClick={() => openEditBuilding(b)} data-testid={`button-edit-building-${b.id}`}>
+                          <Edit className="h-3 w-3" />
+                        </button>
+                        <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteBuildingMutation.mutate(b.id)} data-testid={`button-delete-building-${b.id}`}>
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+
+            {/* Add Building inline form */}
+            {isAddingBuilding ? (
+              <div className="space-y-2 pl-2 py-2 rounded-md bg-muted/20 border border-dashed">
+                <Input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Building name *"
+                  className="h-7 text-xs" autoFocus data-testid={`input-add-building-name-${contact.id}`} />
+                <Input value={addAddress} onChange={e => setAddAddress(e.target.value)} placeholder="Address"
+                  className="h-7 text-xs" data-testid={`input-add-building-address-${contact.id}`} />
+                <Input value={addNotes} onChange={e => setAddNotes(e.target.value)} placeholder="Notes (optional)"
+                  className="h-7 text-xs" data-testid={`input-add-building-notes-${contact.id}`} />
+                <div className="flex gap-2">
+                  <Button size="sm" className="h-7 text-xs px-3"
+                    disabled={!addName.trim() || addBuildingMutation.isPending}
+                    onClick={() => addBuildingMutation.mutate()}
+                    data-testid={`button-save-add-building-${contact.id}`}>
+                    Add
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs px-2"
+                    onClick={() => { setIsAddingBuilding(false); setAddName(""); setAddAddress(""); setAddNotes(""); }}
+                    data-testid={`button-cancel-add-building-${contact.id}`}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button type="button"
+                className="flex items-center gap-1 pl-2 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                onClick={() => setIsAddingBuilding(true)}
+                data-testid={`button-add-building-${contact.id}`}>
+                <Plus className="h-3 w-3" /> Add building
+              </button>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -387,6 +562,7 @@ export default function ClientDetail() {
       phone: "",
       isPrimary: false,
       reportsTo: undefined as number | undefined,
+      serviceNeeds: [] as string[],
     },
   });
 
@@ -400,6 +576,7 @@ export default function ClientDetail() {
       reportsTo: null as number | null,
       officeId: null as number | null,
       clientId: clientId,
+      serviceNeeds: [] as string[],
     },
   });
 
@@ -422,6 +599,7 @@ export default function ClientDetail() {
       reportsTo: contact.reportsTo ?? null,
       officeId: contact.officeId ?? null,
       clientId: contact.clientId,
+      serviceNeeds: (contact.serviceNeeds as string[] | null) ?? [],
     });
     setIsEditContactDialogOpen(true);
   };
@@ -895,13 +1073,13 @@ export default function ClientDetail() {
 
             {/* Add Contact Dialog */}
             <Dialog open={isContactDialogOpen} onOpenChange={(open) => { setIsContactDialogOpen(open); if (!open) setDefaultOfficeId(null); }}>
-              <DialogContent className="sm:max-w-[500px]">
+              <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
                 <DialogHeader>
                   <DialogTitle>Add Contact</DialogTitle>
                   <DialogDescription>Add a new contact person for {client.name}.</DialogDescription>
                 </DialogHeader>
                 <Form {...contactForm}>
-                  <form onSubmit={contactForm.handleSubmit(onAddContact)} className="space-y-4 py-4">
+                  <form onSubmit={contactForm.handleSubmit(onAddContact)} className="space-y-4 py-4 overflow-y-auto flex-1 pr-1">
                     <FormField control={contactForm.control} name="name"
                       render={({ field }) => (
                         <FormItem>
@@ -983,6 +1161,42 @@ export default function ClientDetail() {
                         </FormItem>
                       )}
                     />
+                    {/* Service Needs */}
+                    <div>
+                      <FormLabel className="text-sm font-medium">Service Needs</FormLabel>
+                      <p className="text-xs text-muted-foreground mb-2 mt-0.5">Which M5 services does this contact require?</p>
+                      <div className="grid grid-cols-1 gap-2">
+                        {SERVICE_NEEDS.map(s => {
+                          const current: string[] = (contactForm.watch("serviceNeeds") as string[]) ?? [];
+                          const checked = current.includes(s.key);
+                          return (
+                            <div
+                              key={s.key}
+                              role="checkbox"
+                              aria-checked={checked}
+                              tabIndex={0}
+                              className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors select-none ${checked ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                              onClick={() => {
+                                const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
+                                contactForm.setValue("serviceNeeds", next);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === " " || e.key === "Enter") {
+                                  const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
+                                  contactForm.setValue("serviceNeeds", next);
+                                }
+                              }}
+                              data-testid={`toggle-add-contact-service-${s.key}`}
+                            >
+                              <s.Icon className={`h-4 w-4 shrink-0 ${s.color}`} />
+                              <span className="text-sm">{s.label}</span>
+                              {checked && <CheckCircle2 className="h-4 w-4 text-primary ml-auto" />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <FormField control={contactForm.control} name="isPrimary"
                       render={({ field }) => (
                         <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
@@ -1224,7 +1438,7 @@ export default function ClientDetail() {
         setIsEditContactDialogOpen(open);
         if (!open) setEditingContact(null);
       }}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="sm:max-w-[520px] max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Edit Contact</DialogTitle>
             <DialogDescription>
@@ -1232,7 +1446,7 @@ export default function ClientDetail() {
             </DialogDescription>
           </DialogHeader>
           <Form {...editContactForm}>
-            <form onSubmit={editContactForm.handleSubmit(onSaveEditContact)} className="space-y-4 py-2">
+            <form onSubmit={editContactForm.handleSubmit(onSaveEditContact)} className="space-y-4 py-2 overflow-y-auto flex-1 pr-1">
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={editContactForm.control}
@@ -1377,6 +1591,42 @@ export default function ClientDetail() {
                   );
                 }}
               />
+
+              {/* Service Needs */}
+              <div>
+                <FormLabel className="text-sm font-medium">Service Needs</FormLabel>
+                <p className="text-xs text-muted-foreground mb-2 mt-0.5">Which M5 services does this contact require?</p>
+                <div className="grid grid-cols-1 gap-2">
+                  {SERVICE_NEEDS.map(s => {
+                    const current: string[] = (editContactForm.watch("serviceNeeds") as string[]) ?? [];
+                    const checked = current.includes(s.key);
+                    return (
+                      <div
+                        key={s.key}
+                        role="checkbox"
+                        aria-checked={checked}
+                        tabIndex={0}
+                        className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors select-none ${checked ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                        onClick={() => {
+                          const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
+                          editContactForm.setValue("serviceNeeds", next);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
+                            editContactForm.setValue("serviceNeeds", next);
+                          }
+                        }}
+                        data-testid={`toggle-edit-contact-service-${s.key}`}
+                      >
+                        <s.Icon className={`h-4 w-4 shrink-0 ${s.color}`} />
+                        <span className="text-sm">{s.label}</span>
+                        {checked && <CheckCircle2 className="h-4 w-4 text-primary ml-auto" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
               <FormField
                 control={editContactForm.control}

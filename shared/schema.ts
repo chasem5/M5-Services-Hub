@@ -40,6 +40,16 @@ export const clientContacts = pgTable("client_contacts", {
   phone: varchar("phone"),
   isPrimary: boolean("is_primary").default(false).notNull(),
   reportsTo: integer("reports_to"),
+  serviceNeeds: text("service_needs").array().default([]),
+});
+
+export const contactBuildings = pgTable("contact_buildings", {
+  id: serial("id").primaryKey(),
+  contactId: integer("contact_id").references(() => clientContacts.id).notNull(),
+  name: varchar("name").notNull(),
+  address: text("address"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const pipelineStages = pgTable("pipeline_stages", {
@@ -155,6 +165,7 @@ export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientOfficeSchema = createInsertSchema(clientOffices).omit({ id: true, createdAt: true });
 export const insertClientContactSchema = createInsertSchema(clientContacts).omit({ id: true });
+export const insertContactBuildingSchema = createInsertSchema(contactBuildings).omit({ id: true, createdAt: true });
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertReminderSchema = createInsertSchema(reminders).omit({ id: true, createdAt: true });
@@ -171,6 +182,8 @@ export type ClientOffice = typeof clientOffices.$inferSelect;
 export type InsertClientOffice = z.infer<typeof insertClientOfficeSchema>;
 export type ClientContact = typeof clientContacts.$inferSelect;
 export type InsertClientContact = z.infer<typeof insertClientContactSchema>;
+export type ContactBuilding = typeof contactBuildings.$inferSelect;
+export type InsertContactBuilding = z.infer<typeof insertContactBuildingSchema>;
 export type Lead = typeof leads.$inferSelect;
 export type InsertLead = z.infer<typeof insertLeadSchema>;
 export type Task = typeof tasks.$inferSelect;

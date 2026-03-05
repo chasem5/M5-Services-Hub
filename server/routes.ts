@@ -5,7 +5,8 @@ import { isAuthenticated, requireRole } from "./replit_integrations/auth/replitA
 import { 
   insertClientSchema, 
   insertClientOfficeSchema,
-  insertClientContactSchema, 
+  insertClientContactSchema,
+  insertContactBuildingSchema,
   insertLeadSchema, 
   insertTaskSchema, 
   insertReminderSchema, 
@@ -118,6 +119,32 @@ export async function registerRoutes(
   app.delete("/api/clients/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
     const contactId = parseInt(req.params.contactId as string);
     await storage.deleteClientContact(contactId);
+    res.sendStatus(204);
+  });
+
+  // Contact Buildings
+  app.get("/api/contacts/:contactId/buildings", isAuthenticated, async (req, res) => {
+    const contactId = parseInt(req.params.contactId as string);
+    const buildings = await storage.listContactBuildings(contactId);
+    res.json(buildings);
+  });
+
+  app.post("/api/contacts/:contactId/buildings", isAuthenticated, async (req, res) => {
+    const contactId = parseInt(req.params.contactId as string);
+    const data = insertContactBuildingSchema.parse({ ...req.body, contactId });
+    const building = await storage.createContactBuilding(data);
+    res.json(building);
+  });
+
+  app.put("/api/contacts/:contactId/buildings/:buildingId", isAuthenticated, async (req, res) => {
+    const buildingId = parseInt(req.params.buildingId as string);
+    const updated = await storage.updateContactBuilding(buildingId, req.body);
+    res.json(updated);
+  });
+
+  app.delete("/api/contacts/:contactId/buildings/:buildingId", isAuthenticated, async (req, res) => {
+    const buildingId = parseInt(req.params.buildingId as string);
+    await storage.deleteContactBuilding(buildingId);
     res.sendStatus(204);
   });
 
