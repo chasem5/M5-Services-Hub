@@ -92,6 +92,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { TierBadge } from "@/components/TierBadge";
 import {
   Table,
   TableBody,
@@ -203,6 +204,7 @@ export default function Leads() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
+  const [tierFilter, setTierFilter] = useState<string>("all");
   const [tagInput, setTagInput] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
   const [isManageStagesOpen, setIsManageStagesOpen] = useState(false);
@@ -485,6 +487,7 @@ export default function Leads() {
       valueType: "fixed",
       value: "0",
       valueTier: null,
+      tier: null,
       confidenceScore: 50,
       tags: [],
       notes: "",
@@ -498,6 +501,7 @@ export default function Leads() {
       clientId: undefined,
       buildingId: null,
       value: "0",
+      tier: null,
       confidenceScore: 50,
       notes: "",
       assignedTo: undefined,
@@ -525,7 +529,8 @@ export default function Leads() {
     const matchesStage = stageFilter === "all" || lead.stage === stageFilter;
     const matchesViewStage = !activeFilters?.stages?.length || activeFilters.stages.includes(lead.stage);
     const matchesViewService = !activeFilters?.serviceTypes?.length || (lead.serviceType != null && activeFilters.serviceTypes.includes(lead.serviceType));
-    return matchesSearch && matchesStage && matchesViewStage && matchesViewService;
+    const matchesTier = tierFilter === "all" || lead.tier === tierFilter;
+    return matchesSearch && matchesStage && matchesViewStage && matchesViewService && matchesTier;
   });
 
   const getClientName = (clientId: number | null) => {
@@ -593,6 +598,7 @@ export default function Leads() {
       valueType: vType,
       value: lead.value,
       valueTier: (lead.valueTier as any) ?? null,
+      tier: (lead.tier as any) ?? null,
       confidenceScore: lead.confidenceScore ?? 50,
       notes: lead.notes ?? "",
       assignedTo: lead.assignedTo ?? undefined,
@@ -725,6 +731,17 @@ export default function Leads() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={tierFilter} onValueChange={setTierFilter}>
+            <SelectTrigger className="w-[140px]" data-testid="select-lead-tier-filter">
+              <SelectValue placeholder="All Tiers" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Tiers</SelectItem>
+              <SelectItem value="tier_1">Tier 1</SelectItem>
+              <SelectItem value="tier_2">Tier 2</SelectItem>
+              <SelectItem value="tier_3">Tier 3</SelectItem>
+            </SelectContent>
+          </Select>
           {activeView && (
             <div className="flex items-center gap-1.5 text-xs text-primary font-medium border border-primary/30 bg-primary/5 rounded-full px-3 py-1">
               <Eye className="h-3 w-3" />
@@ -847,12 +864,15 @@ export default function Leads() {
                                 </span>
                               </div>
 
-                              {serviceLabel && (
-                                <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 w-fit font-medium border ${serviceColor}`}>
-                                  <Briefcase className="h-2.5 w-2.5 mr-1" />
-                                  {serviceLabel}
-                                </Badge>
-                              )}
+                              <div className="flex flex-wrap gap-1">
+                                {serviceLabel && (
+                                  <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 w-fit font-medium border ${serviceColor}`}>
+                                    <Briefcase className="h-2.5 w-2.5 mr-1" />
+                                    {serviceLabel}
+                                  </Badge>
+                                )}
+                                {lead.tier && <TierBadge tier={lead.tier} size="xs" />}
+                              </div>
 
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between">
@@ -933,6 +953,7 @@ export default function Leads() {
                     <TableHead>Contact</TableHead>
                     <TableHead>Service Type</TableHead>
                     <TableHead>Stage</TableHead>
+                    <TableHead>Tier</TableHead>
                     <TableHead>Value</TableHead>
                     <TableHead>Confidence</TableHead>
                     <TableHead>Tags</TableHead>
@@ -981,6 +1002,9 @@ export default function Leads() {
                           <Badge variant="outline" className="capitalize">
                             {lead.stage.replace('_', ' ')}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <TierBadge tier={lead.tier} size="xs" />
                         </TableCell>
                         <TableCell className="font-mono">
                           {isLeadPotential(lead) ? (
@@ -1282,6 +1306,30 @@ export default function Leads() {
                         data-testid="slider-confidence"
                       />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="tier"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Lead Tier</FormLabel>
+                    <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-lead-tier">
+                          <SelectValue placeholder="No Tier" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">No Tier</SelectItem>
+                        <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                        <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                        <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1725,6 +1773,29 @@ export default function Leads() {
                                   data-testid="slider-edit-confidence"
                                 />
                               </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={editLeadForm.control}
+                          name="tier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Lead Tier</FormLabel>
+                              <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-edit-lead-tier">
+                                    <SelectValue placeholder="No Tier" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="none">No Tier</SelectItem>
+                                  <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                                  <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                                  <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
                             </FormItem>
                           )}
                         />

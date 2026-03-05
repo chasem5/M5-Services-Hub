@@ -17,6 +17,7 @@ export const clients = pgTable("clients", {
   notes: text("notes"),
   serviceNeeds: text("service_needs").array().default([]),
   annualRevenue: decimal("annual_revenue", { precision: 12, scale: 2 }),
+  tier: varchar("tier", { length: 10 }),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -47,6 +48,7 @@ export const clientContacts = pgTable("client_contacts", {
   linkedinUrl: varchar("linkedin_url"),
   profilePictureUrl: varchar("profile_picture_url"),
   employmentStatus: varchar("employment_status"),
+  tier: varchar("tier", { length: 10 }),
 });
 
 export const bdSpendEntries = pgTable("bd_spend_entries", {
@@ -91,6 +93,7 @@ export const leads = pgTable("leads", {
   valueType: varchar("value_type", { length: 10 }).default("fixed").notNull(),
   value: decimal("value", { precision: 12, scale: 2 }).default("0").notNull(),
   valueTier: varchar("value_tier", { length: 5 }),
+  tier: varchar("tier", { length: 10 }),
   confidenceScore: integer("confidence_score").default(50),
   tags: text("tags").array().default([]),
   assignedTo: varchar("assigned_to").references(() => users.id),
@@ -237,6 +240,7 @@ export const meetingActions = pgTable("meeting_actions", {
 export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   annualRevenue: z.coerce.string().optional().nullable(),
+  tier: z.enum(["tier_1", "tier_2", "tier_3"]).optional().nullable(),
 });
 export const insertBdSpendEntrySchema = createInsertSchema(bdSpendEntries).omit({ id: true, createdAt: true }).extend({
   date: z.coerce.date(),
@@ -246,7 +250,9 @@ export const insertClientOfficeSchema = createInsertSchema(clientOffices).omit({
   lat: z.coerce.string().optional().nullable(),
   lng: z.coerce.string().optional().nullable(),
 });
-export const insertClientContactSchema = createInsertSchema(clientContacts).omit({ id: true });
+export const insertClientContactSchema = createInsertSchema(clientContacts).omit({ id: true }).extend({
+  tier: z.enum(["tier_1", "tier_2", "tier_3"]).optional().nullable(),
+});
 export const insertContactBuildingSchema = createInsertSchema(contactBuildings).omit({ id: true, createdAt: true }).extend({
   lat: z.coerce.string().optional().nullable(),
   lng: z.coerce.string().optional().nullable(),
@@ -257,6 +263,7 @@ export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, creat
   serviceType: z.enum(["building_engineering", "facility_solutions", "janitorial", "special_projects", "property_assessment"]).optional().nullable(),
   valueType: z.enum(["fixed", "potential"]).optional().default("fixed"),
   valueTier: z.enum(["$", "$$", "$$$", "$$$$"]).optional().nullable(),
+  tier: z.enum(["tier_1", "tier_2", "tier_3"]).optional().nullable(),
 });
 export const insertPipelineViewSchema = createInsertSchema(pipelineViews).omit({ id: true, createdAt: true });
 export const insertTaskLabelDefinitionSchema = createInsertSchema(taskLabelDefinitions).omit({ id: true });

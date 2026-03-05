@@ -50,6 +50,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AddressLink } from "@/components/AddressLink";
+import { TierBadge } from "@/components/TierBadge";
 import { 
   Card, 
   CardContent, 
@@ -393,6 +394,7 @@ function ContactCard({
                 {contact.isPrimary && (
                   <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 uppercase">Primary</Badge>
                 )}
+                {(contact as any).tier && <TierBadge tier={(contact as any).tier} size="xs" />}
                 {(contact as any).linkedinUrl && (
                   <a
                     href={(contact as any).linkedinUrl}
@@ -817,6 +819,7 @@ export default function ClientDetail() {
       email: "",
       phone: "",
       isPrimary: false,
+      tier: null as string | null,
       reportsTo: undefined as number | undefined,
       serviceNeeds: [] as string[],
     },
@@ -829,6 +832,7 @@ export default function ClientDetail() {
       email: "",
       phone: "",
       isPrimary: false,
+      tier: null as string | null,
       reportsTo: null as number | null,
       officeId: null as number | null,
       clientId: clientId,
@@ -852,6 +856,7 @@ export default function ClientDetail() {
       email: contact.email || "",
       phone: contact.phone || "",
       isPrimary: contact.isPrimary,
+      tier: (contact as any).tier ?? null,
       reportsTo: contact.reportsTo ?? null,
       officeId: contact.officeId ?? null,
       clientId: contact.clientId,
@@ -901,9 +906,10 @@ export default function ClientDetail() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-3xl font-heading font-bold">{client.name}</h1>
             <Badge variant="outline" className="h-6">Customer ID: {client.id}</Badge>
+            {(client as any).tier && <TierBadge tier={(client as any).tier} />}
           </div>
           <p className="text-muted-foreground">{client.industry || "No industry specified"}</p>
         </div>
@@ -1669,6 +1675,27 @@ export default function ClientDetail() {
                       </div>
                     </div>
 
+                    <FormField control={contactForm.control} name={"tier" as any}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Contact Tier</FormLabel>
+                          <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-contact-tier">
+                                <SelectValue placeholder="No Tier" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">No Tier</SelectItem>
+                              <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                              <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                              <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField control={contactForm.control} name="isPrimary"
                       render={({ field }) => (
                         <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
@@ -2213,6 +2240,30 @@ export default function ClientDetail() {
                   })}
                 </div>
               </div>
+
+              <FormField
+                control={editContactForm.control}
+                name={"tier" as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Contact Tier</FormLabel>
+                    <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-contact-tier">
+                          <SelectValue placeholder="No Tier" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">No Tier</SelectItem>
+                        <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                        <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                        <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={editContactForm.control}

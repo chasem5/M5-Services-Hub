@@ -95,6 +95,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { AddressLink } from "@/components/AddressLink";
+import { TierBadge } from "@/components/TierBadge";
 import { Input } from "@/components/ui/input";
 import { 
   Card, 
@@ -158,6 +159,8 @@ export default function Customers() {
   const [contactSortField, setContactSortField] = useState<"name" | "company" | "title" | "status" | "spend">("name");
   const [contactSortDir, setContactSortDir] = useState<"asc" | "desc">("asc");
   const [industryFilter, setIndustryFilter] = useState("all");
+  const [tierFilter, setTierFilter] = useState("all");
+  const [contactTierFilter, setContactTierFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -293,6 +296,7 @@ export default function Customers() {
       email: "",
       website: "",
       notes: "",
+      tier: null as string | null,
     },
   });
 
@@ -307,7 +311,8 @@ export default function Customers() {
                           client.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           client.industry?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesIndustry = industryFilter === "all" || client.industry === industryFilter;
-    return matchesSearch && matchesIndustry;
+    const matchesTier = tierFilter === "all" || client.tier === tierFilter;
+    return matchesSearch && matchesIndustry && matchesTier;
   });
 
   const getCompanyName = (clientId: number) =>
@@ -344,7 +349,8 @@ export default function Customers() {
       const matchesStatus =
         contactStatusFilter === "all" ||
         (contactStatusFilter === "none" ? !contact.employmentStatus : contact.employmentStatus === contactStatusFilter);
-      return matchesSearch && matchesCompany && matchesStatus;
+      const matchesTier = contactTierFilter === "all" || contact.tier === contactTierFilter;
+      return matchesSearch && matchesCompany && matchesStatus && matchesTier;
     })
     .sort((a, b) => {
       let cmp = 0;
@@ -563,6 +569,29 @@ export default function Customers() {
                 />
                 <FormField
                   control={form.control}
+                  name="tier"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Customer Tier</FormLabel>
+                      <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-customer-tier">
+                            <SelectValue placeholder="No Tier" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No Tier</SelectItem>
+                          <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                          <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                          <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="notes"
                   render={({ field }) => (
                     <FormItem>
@@ -648,6 +677,17 @@ export default function Customers() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Select value={tierFilter} onValueChange={setTierFilter}>
+                  <SelectTrigger className="w-[140px] h-10" data-testid="select-tier-filter">
+                    <SelectValue placeholder="All Tiers" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Tiers</SelectItem>
+                    <SelectItem value="tier_1">Tier 1</SelectItem>
+                    <SelectItem value="tier_2">Tier 2</SelectItem>
+                    <SelectItem value="tier_3">Tier 3</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardHeader>
             <CardContent>
@@ -663,6 +703,7 @@ export default function Customers() {
                     <TableHeader className="bg-muted/50">
                       <TableRow>
                         <TableHead className="font-bold">Company Name</TableHead>
+                        <TableHead className="font-bold">Tier</TableHead>
                         <TableHead className="font-bold">Industry</TableHead>
                         <TableHead className="font-bold">Contact Info</TableHead>
                         <TableHead className="font-bold">Address</TableHead>
@@ -709,6 +750,9 @@ export default function Customers() {
                                 )}
                               </div>
                             </Link>
+                          </TableCell>
+                          <TableCell>
+                            <TierBadge tier={client.tier} data-testid={`badge-tier-${client.id}`} />
                           </TableCell>
                           <TableCell>
                             {client.industry ? (
@@ -872,10 +916,22 @@ export default function Customers() {
                     <SelectItem value="none">Not verified</SelectItem>
                   </SelectContent>
                 </Select>
+                {/* Tier filter */}
+                <Select value={contactTierFilter} onValueChange={setContactTierFilter}>
+                  <SelectTrigger className="w-[140px] h-10" data-testid="select-contact-tier-filter">
+                    <SelectValue placeholder="All Tiers" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Tiers</SelectItem>
+                    <SelectItem value="tier_1">Tier 1</SelectItem>
+                    <SelectItem value="tier_2">Tier 2</SelectItem>
+                    <SelectItem value="tier_3">Tier 3</SelectItem>
+                  </SelectContent>
+                </Select>
                 {/* Clear filters button — only shown when any filter is active */}
-                {(contactSearch || contactCompanyFilter !== "all" || contactStatusFilter !== "all") && (
+                {(contactSearch || contactCompanyFilter !== "all" || contactStatusFilter !== "all" || contactTierFilter !== "all") && (
                   <button
-                    onClick={() => { setContactSearch(""); setContactCompanyFilter("all"); setContactStatusFilter("all"); }}
+                    onClick={() => { setContactSearch(""); setContactCompanyFilter("all"); setContactStatusFilter("all"); setContactTierFilter("all"); }}
                     className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground h-10 px-3 rounded-md border border-border/50 hover:bg-muted/50 transition-colors"
                     data-testid="button-clear-contact-filters"
                   >
@@ -922,6 +978,7 @@ export default function Customers() {
                           );
                         })}
                         <TableHead className="font-bold">Contact Info</TableHead>
+                        <TableHead className="font-bold">Tier</TableHead>
                         {(["status", "spend"] as const).map(field => {
                           const labels = { status: "Status", spend: "BD Spend" };
                           const active = contactSortField === field;
@@ -1009,6 +1066,9 @@ export default function Customers() {
                                 </div>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <TierBadge tier={contact.tier} data-testid={`badge-contact-tier-${contact.id}`} />
                           </TableCell>
                           <TableCell>
                             {contact.employmentStatus === "active" && (
