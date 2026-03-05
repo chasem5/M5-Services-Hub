@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Task, Lead, Client, User, InsertTask, insertTaskSchema } from "@shared/schema";
+import { Task, Lead, Client, ClientContact, User, InsertTask, insertTaskSchema } from "@shared/schema";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,6 +87,10 @@ export default function TasksPage() {
     queryKey: ["/api/clients"],
   });
 
+  const { data: allContacts = [] } = useQuery<ClientContact[]>({
+    queryKey: ["/api/client-contacts"],
+  });
+
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
   });
@@ -111,9 +115,12 @@ export default function TasksPage() {
       assignedTo: undefined,
       relatedLeadId: undefined,
       relatedClientId: undefined,
+      relatedContactId: undefined,
       dueDate: undefined,
     },
   });
+
+  const watchedCompanyId = addForm.watch("relatedClientId");
 
   const createMutation = useMutation({
     mutationFn: async (data: InsertTask) => {
@@ -284,46 +291,49 @@ export default function TasksPage() {
                       )}
                     />
                   </div>
+                  <FormField
+                    control={addForm.control}
+                    name="relatedLeadId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Related Lead</FormLabel>
+                        <Select 
+                          onValueChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))} 
+                          value={field.value?.toString() || "none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-task-lead">
+                              <SelectValue placeholder="Select lead" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {leads.map(l => (
+                              <SelectItem key={l.id} value={l.id.toString()}>{l.title}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={addForm.control}
-                      name="relatedLeadId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Related Lead</FormLabel>
-                          <Select 
-                            onValueChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))} 
-                            value={field.value?.toString() || "none"}
-                          >
-                            <FormControl>
-                              <SelectTrigger data-testid="select-task-lead">
-                                <SelectValue placeholder="Select lead" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              {leads.map(l => (
-                                <SelectItem key={l.id} value={l.id.toString()}>{l.title}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
                     <FormField
                       control={addForm.control}
                       name="relatedClientId"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Related Client</FormLabel>
+                          <FormLabel>Related Company</FormLabel>
                           <Select 
-                            onValueChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))} 
+                            onValueChange={(val) => {
+                              field.onChange(val === "none" ? undefined : parseInt(val));
+                              addForm.setValue("relatedContactId", undefined);
+                            }} 
                             value={field.value?.toString() || "none"}
                           >
                             <FormControl>
-                              <SelectTrigger data-testid="select-task-client">
-                                <SelectValue placeholder="Select client" />
+                              <SelectTrigger data-testid="select-task-company">
+                                <SelectValue placeholder="Select company" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
@@ -336,6 +346,40 @@ export default function TasksPage() {
                           <FormMessage />
                         </FormItem>
                       )}
+                    />
+                    <FormField
+                      control={addForm.control}
+                      name="relatedContactId"
+                      render={({ field }) => {
+                        const availableContacts = watchedCompanyId
+                          ? allContacts.filter(c => c.clientId === watchedCompanyId)
+                          : allContacts;
+                        return (
+                          <FormItem>
+                            <FormLabel>Related Contact</FormLabel>
+                            <Select 
+                              onValueChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))} 
+                              value={field.value?.toString() || "none"}
+                              disabled={availableContacts.length === 0}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-task-contact">
+                                  <SelectValue placeholder={watchedCompanyId ? "Select contact" : "Select company first"} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                {availableContacts.map(c => (
+                                  <SelectItem key={c.id} value={c.id.toString()}>
+                                    {c.name}{c.title ? ` – ${c.title}` : ""}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
                     />
                   </div>
                   <FormField
@@ -457,6 +501,7 @@ export default function TasksPage() {
             const assignedUser = users.find(u => u.id === task.assignedTo);
             const relatedLead = leads.find(l => l.id === task.relatedLeadId);
             const relatedClient = clients.find(c => c.id === task.relatedClientId);
+            const relatedContact = allContacts.find(c => c.id === task.relatedContactId);
             const isOverdue = task.dueDate && isBefore(new Date(task.dueDate), startOfDay(new Date())) && task.status !== "done";
 
             return (
@@ -509,7 +554,13 @@ export default function TasksPage() {
                     {relatedClient && (
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <UserIcon className="h-3 w-3" />
-                        <span>Client: {relatedClient.name}</span>
+                        <span>{relatedClient.name}</span>
+                      </div>
+                    )}
+                    {relatedContact && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <UserIcon className="h-3 w-3 opacity-60" />
+                        <span>{relatedContact.name}{relatedContact.title ? ` – ${relatedContact.title}` : ""}</span>
                       </div>
                     )}
                   </div>
@@ -621,7 +672,7 @@ export default function TasksPage() {
                         </div>
                       </div>
                       <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/leads`}>View</Link>
+                        <Link href="/leads">View</Link>
                       </Button>
                     </div>
                   )}
@@ -630,14 +681,40 @@ export default function TasksPage() {
                       <div className="flex items-center gap-3">
                         <UserIcon className="h-5 w-5 text-muted-foreground" />
                         <div>
-                          <p className="text-xs text-muted-foreground">Linked Client</p>
+                          <p className="text-xs text-muted-foreground">Linked Company</p>
                           <p className="text-sm font-semibold">{clients.find(c => c.id === selectedTask.relatedClientId)?.name}</p>
                         </div>
                       </div>
                       <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/customers`}>View</Link>
+                        <Link href={`/customers/${selectedTask.relatedClientId}`}>View</Link>
                       </Button>
                     </div>
+                  )}
+                  {selectedTask.relatedContactId && (
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <UserIcon className="h-5 w-5 text-muted-foreground opacity-70" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Linked Contact</p>
+                          <p className="text-sm font-semibold">
+                            {allContacts.find(c => c.id === selectedTask.relatedContactId)?.name}
+                          </p>
+                          {allContacts.find(c => c.id === selectedTask.relatedContactId)?.title && (
+                            <p className="text-xs text-muted-foreground">
+                              {allContacts.find(c => c.id === selectedTask.relatedContactId)?.title}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {allContacts.find(c => c.id === selectedTask.relatedContactId)?.clientId && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href={`/customers/${allContacts.find(c => c.id === selectedTask.relatedContactId)?.clientId}`}>View</Link>
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {!selectedTask.relatedLeadId && !selectedTask.relatedClientId && !selectedTask.relatedContactId && (
+                    <p className="text-sm text-muted-foreground italic">No relationships linked.</p>
                   )}
                 </div>
               </div>
