@@ -449,7 +449,7 @@ export default function Leads() {
                 className={`flex flex-col w-80 min-w-80 rounded-lg border shadow-sm ${sc.column}`}
               >
                 <div className={`p-3 border-b ${sc.header}`}>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <div className={`h-2 w-2 rounded-full ${sc.dot}`} />
                       <h3 className="font-semibold text-sm">{stage.label}</h3>
@@ -467,23 +467,19 @@ export default function Leads() {
                       <Settings className="h-3.5 w-3.5 text-muted-foreground" />
                     </Button>
                   </div>
-                  {cardCount > 0 && (
-                    <div className="mt-2 space-y-0.5">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-muted-foreground font-medium flex items-center gap-1">
-                          <TrendingUp className="h-2.5 w-2.5" />
-                          Weighted
-                        </span>
-                        <span className={`font-bold ${sc.value}`}>
-                          {formatCurrency(weightedVal)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-muted-foreground font-medium">Raw total</span>
-                        <span className="text-muted-foreground">{formatCurrency(rawVal)}</span>
-                      </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Total Value</span>
+                      <span className="text-sm font-bold text-foreground">{formatCurrency(rawVal)}</span>
                     </div>
-                  )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                        <TrendingUp className="h-2.5 w-2.5" />
+                        Weighted
+                      </span>
+                      <span className={`text-xs font-semibold ${sc.value}`}>{formatCurrency(weightedVal)}</span>
+                    </div>
+                  </div>
                 </div>
 
                 <ScrollArea className="flex-1">
