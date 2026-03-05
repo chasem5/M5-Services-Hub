@@ -371,10 +371,34 @@ export default function Customers() {
                               className="flex items-center gap-3 text-primary hover:underline group"
                               data-testid={`link-customer-detail-${client.id}`}
                             >
-                              <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                              <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors shrink-0">
                                 <Building2 className="h-5 w-5" />
                               </div>
-                              <span className="text-base">{client.name}</span>
+                              <div className="flex flex-col gap-1 min-w-0">
+                                <span className="text-base">{client.name}</span>
+                                {(client.serviceNeeds ?? []).length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {(client.serviceNeeds ?? []).map(need => {
+                                      const labels: Record<string, string> = {
+                                        building_engineering: "Building Eng.",
+                                        facility_solutions: "Facility Sol.",
+                                        janitorial: "Janitorial",
+                                        special_projects: "Special Proj.",
+                                        property_assessment: "Prop. Assessment",
+                                      };
+                                      return (
+                                        <span
+                                          key={need}
+                                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20"
+                                          data-testid={`badge-service-need-${client.id}-${need}`}
+                                        >
+                                          {labels[need] ?? need}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                             </Link>
                           </TableCell>
                           <TableCell>

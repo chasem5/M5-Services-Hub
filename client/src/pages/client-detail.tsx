@@ -20,7 +20,12 @@ import {
   ExternalLink,
   GitBranch,
   ChevronDown,
-  Star
+  Star,
+  HardHat,
+  Wrench,
+  Sparkles,
+  Zap,
+  ClipboardList
 } from "lucide-react";
 import {
   Popover,
@@ -90,6 +95,14 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { OrgChart } from "@/components/OrgChart";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+
+const SERVICE_NEEDS = [
+  { key: "building_engineering", label: "Building Engineer", Icon: HardHat, color: "text-orange-500" },
+  { key: "facility_solutions", label: "Facility Solutions", Icon: Wrench, color: "text-blue-500" },
+  { key: "janitorial", label: "Janitorial", Icon: Sparkles, color: "text-teal-500" },
+  { key: "special_projects", label: "Special Projects", Icon: Zap, color: "text-purple-500" },
+  { key: "property_assessment", label: "Property Assessment", Icon: ClipboardList, color: "text-primary" },
+] as const;
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
@@ -195,6 +208,25 @@ export default function ClientDetail() {
       toast({ title: "Saved", description: "Contact updated successfully" });
     },
   });
+
+  const updateServiceNeedsMutation = useMutation({
+    mutationFn: async (serviceNeeds: string[]) => {
+      const res = await apiRequest("PUT", `/api/clients/${clientId}`, { serviceNeeds });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+    },
+  });
+
+  const toggleServiceNeed = (key: string) => {
+    const current: string[] = client?.serviceNeeds ?? [];
+    const updated = current.includes(key)
+      ? current.filter(s => s !== key)
+      : [...current, key];
+    updateServiceNeedsMutation.mutate(updated);
+  };
 
   // Forms
   const clientForm = useForm({
@@ -453,6 +485,45 @@ export default function ClientDetail() {
               </Card>
 
               <div className="space-y-6">
+                <Card className="border-none shadow-sm bg-card">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg">Service Needs</CardTitle>
+                    <CardDescription>Which M5 services does this company require?</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-1">
+                    {SERVICE_NEEDS.map(({ key, label, Icon, color }) => {
+                      const isChecked = (client.serviceNeeds ?? []).includes(key);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => toggleServiceNeed(key)}
+                          disabled={updateServiceNeedsMutation.isPending}
+                          data-testid={`toggle-service-need-${key}`}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors text-left ${
+                            isChecked
+                              ? "bg-primary/8 border border-primary/20"
+                              : "hover:bg-muted/60 border border-transparent"
+                          }`}
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={() => toggleServiceNeed(key)}
+                            className="pointer-events-none"
+                            data-testid={`checkbox-service-need-${key}`}
+                          />
+                          <div className={`h-7 w-7 rounded flex items-center justify-center shrink-0 ${isChecked ? "bg-primary/10" : "bg-muted"}`}>
+                            <Icon className={`h-3.5 w-3.5 ${isChecked ? color : "text-muted-foreground"}`} />
+                          </div>
+                          <span className={`text-sm font-medium ${isChecked ? "text-foreground" : "text-muted-foreground"}`}>
+                            {label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+
                 <Card className="border-none shadow-sm bg-card">
                   <CardHeader>
                     <CardTitle className="text-lg">Quick Info</CardTitle>

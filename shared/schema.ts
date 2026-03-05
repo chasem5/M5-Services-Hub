@@ -15,6 +15,7 @@ export const clients = pgTable("clients", {
   email: varchar("email"),
   website: varchar("website"),
   notes: text("notes"),
+  serviceNeeds: text("service_needs").array().default([]),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
