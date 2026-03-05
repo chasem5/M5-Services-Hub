@@ -67,7 +67,8 @@ import {
   type EstimateLineItem, 
   type ServiceCatalogItem,
   type Lead,
-  type Client
+  type Client,
+  type ContactBuilding
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -82,6 +83,7 @@ export default function EstimateDetail() {
   const { toast } = useToast();
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedClientIdForBuilding, setSelectedClientIdForBuilding] = useState<number | null>(null);
 
   const { data: estimate, isLoading: isLoadingEstimate } = useQuery<Estimate>({
     queryKey: ["/api/estimates", id],
@@ -101,6 +103,12 @@ export default function EstimateDetail() {
 
   const { data: clients } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
+  });
+
+  const clientIdForBuilding = selectedClientIdForBuilding ?? estimate?.clientId ?? null;
+  const { data: buildingsForClient = [] } = useQuery<ContactBuilding[]>({
+    queryKey: ["/api/clients", clientIdForBuilding, "all-buildings"],
+    enabled: !!clientIdForBuilding,
   });
 
   const updateEstimateMutation = useMutation({
@@ -157,6 +165,7 @@ export default function EstimateDetail() {
         title: estimate.title,
         leadId: estimate.leadId || undefined as any,
         clientId: estimate.clientId,
+        buildingId: estimate.buildingId ?? null,
         status: estimate.status as any,
         subtotal: estimate.subtotal.toString(),
         tax: estimate.tax.toString(),
@@ -460,6 +469,32 @@ export default function EstimateDetail() {
                         </Link>
                       </div>
                     )}
+                    <div className="pt-2">
+                      <p className="text-xs font-bold text-muted-foreground uppercase mb-1">Building (Optional)</p>
+                      {buildingsForClient.length > 0 ? (
+                        <Select
+                          value={estimate.buildingId != null ? String(estimate.buildingId) : "none"}
+                          onValueChange={(val) => {
+                            const buildingId = val === "none" ? null : parseInt(val);
+                            updateEstimateMutation.mutate({ buildingId } as any);
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-sm" data-testid="select-detail-estimate-building">
+                            <SelectValue placeholder="No specific building" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No specific building</SelectItem>
+                            {buildingsForClient.map((b) => (
+                              <SelectItem key={b.id} value={b.id.toString()}>
+                                {b.name}{b.address ? ` · ${b.address}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">No buildings in client portfolio</p>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               </div>

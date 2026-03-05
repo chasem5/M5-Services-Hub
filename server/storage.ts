@@ -76,10 +76,12 @@ export interface IStorage {
   deleteClientContact(id: number): Promise<void>;
 
   // Contact Buildings
+  listAllContactBuildings(): Promise<ContactBuilding[]>;
   listContactBuildings(contactId: number): Promise<ContactBuilding[]>;
   createContactBuilding(building: InsertContactBuilding): Promise<ContactBuilding>;
   updateContactBuilding(id: number, data: Partial<InsertContactBuilding>): Promise<ContactBuilding>;
   deleteContactBuilding(id: number): Promise<void>;
+  getBuildingActivity(buildingId: number): Promise<{ leads: Lead[]; estimates: Estimate[] }>;
 
   // Leads
   listLeads(): Promise<Lead[]>;
@@ -248,6 +250,10 @@ export class DatabaseStorage implements IStorage {
     await db.delete(clientContacts).where(eq(clientContacts.id, id));
   }
 
+  async listAllContactBuildings(): Promise<ContactBuilding[]> {
+    return await db.select().from(contactBuildings).orderBy(contactBuildings.name);
+  }
+
   async listContactBuildings(contactId: number): Promise<ContactBuilding[]> {
     return await db.select().from(contactBuildings).where(eq(contactBuildings.contactId, contactId)).orderBy(contactBuildings.name);
   }
@@ -264,6 +270,12 @@ export class DatabaseStorage implements IStorage {
 
   async deleteContactBuilding(id: number): Promise<void> {
     await db.delete(contactBuildings).where(eq(contactBuildings.id, id));
+  }
+
+  async getBuildingActivity(buildingId: number): Promise<{ leads: Lead[]; estimates: Estimate[] }> {
+    const buildingLeads = await db.select().from(leads).where(eq(leads.buildingId, buildingId)).orderBy(desc(leads.createdAt));
+    const buildingEstimates = await db.select().from(estimates).where(eq(estimates.buildingId, buildingId)).orderBy(desc(estimates.createdAt));
+    return { leads: buildingLeads, estimates: buildingEstimates };
   }
 
   // Leads

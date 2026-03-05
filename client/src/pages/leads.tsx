@@ -6,6 +6,7 @@ import {
   User,
   Task,
   PipelineStage,
+  ContactBuilding,
   insertLeadSchema,
   InsertLead,
   insertTaskSchema,
@@ -40,6 +41,7 @@ import {
   TrendingUp,
   Check,
   CalendarIcon,
+  Building2,
 } from "lucide-react";
 import {
   Card,
@@ -168,6 +170,8 @@ export default function Leads() {
   const [editTagInput, setEditTagInput] = useState("");
   const [editFormTags, setEditFormTags] = useState<string[]>([]);
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
+  const [selectedClientIdForBuilding, setSelectedClientIdForBuilding] = useState<number | null>(null);
+  const [selectedClientIdForBuildingEdit, setSelectedClientIdForBuildingEdit] = useState<number | null>(null);
   const { toast } = useToast();
 
   const { data: stages = [] } = useQuery<PipelineStage[]>({
@@ -189,6 +193,25 @@ export default function Leads() {
   const { data: tasks = [] } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
   });
+
+  const { data: allBuildings = [] } = useQuery<ContactBuilding[]>({
+    queryKey: ["/api/all-buildings"],
+  });
+
+  const { data: buildingsForCreate = [] } = useQuery<ContactBuilding[]>({
+    queryKey: ["/api/clients", selectedClientIdForBuilding, "all-buildings"],
+    enabled: !!selectedClientIdForBuilding,
+  });
+
+  const { data: buildingsForEdit = [] } = useQuery<ContactBuilding[]>({
+    queryKey: ["/api/clients", selectedClientIdForBuildingEdit, "all-buildings"],
+    enabled: !!selectedClientIdForBuildingEdit,
+  });
+
+  const getBuildingName = (buildingId: number | null) => {
+    if (!buildingId) return null;
+    return allBuildings.find(b => b.id === buildingId)?.name ?? null;
+  };
 
   const createLeadMutation = useMutation({
     mutationFn: async (data: InsertLead) => {
@@ -319,6 +342,7 @@ export default function Leads() {
     defaultValues: {
       title: "",
       clientId: undefined,
+      buildingId: null,
       stage: "new_lead",
       value: "0",
       confidenceScore: 50,
@@ -332,6 +356,7 @@ export default function Leads() {
     defaultValues: {
       title: "",
       clientId: undefined,
+      buildingId: null,
       value: "0",
       confidenceScore: 50,
       notes: "",
@@ -399,9 +424,11 @@ export default function Leads() {
     setSelectedLead(lead);
     setIsEditingLead(false);
     setIsAddTaskOpen(false);
+    setSelectedClientIdForBuildingEdit(lead.clientId ?? null);
     editLeadForm.reset({
       title: lead.title,
       clientId: lead.clientId ?? undefined,
+      buildingId: lead.buildingId ?? null,
       value: lead.value,
       confidenceScore: lead.confidenceScore ?? 50,
       notes: lead.notes ?? "",
@@ -586,6 +613,12 @@ export default function Leads() {
                                 <UsersIcon className="h-3 w-3" />
                                 {getClientName(lead.clientId)}
                               </p>
+                              {lead.buildingId && getBuildingName(lead.buildingId) && (
+                                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                  <Building2 className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{getBuildingName(lead.buildingId)}</span>
+                                </p>
+                              )}
                             </CardHeader>
                             <CardContent className="p-3 pt-2 flex flex-col gap-2">
                               <div className="flex items-center justify-between">
@@ -673,7 +706,17 @@ export default function Leads() {
                         onClick={() => openLeadDetail(lead)}
                         data-testid={`row-lead-${lead.id}`}
                       >
-                        <TableCell className="font-medium">{lead.title}</TableCell>
+                        <TableCell className="font-medium">
+                          <div>
+                            {lead.title}
+                            {lead.buildingId && getBuildingName(lead.buildingId) && (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                                <Building2 className="h-3 w-3 shrink-0" />
+                                {getBuildingName(lead.buildingId)}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{getClientName(lead.clientId)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="capitalize">
@@ -744,7 +787,12 @@ export default function Leads() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Client</FormLabel>
-                    <Select onValueChange={(val) => field.onChange(parseInt(val))} defaultValue={field.value?.toString()}>
+                    <Select onValueChange={(val) => {
+                      const id = parseInt(val);
+                      field.onChange(id);
+                      setSelectedClientIdForBuilding(id);
+                      form.setValue("buildingId", null);
+                    }} defaultValue={field.value?.toString()}>
                       <FormControl>
                         <SelectTrigger data-testid="select-lead-client">
                           <SelectValue placeholder="Select a client" />
@@ -760,6 +808,39 @@ export default function Leads() {
                   </FormItem>
                 )}
               />
+              {selectedClientIdForBuilding && buildingsForCreate.length > 0 && (
+                <FormField
+                  control={form.control}
+                  name="buildingId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Building (Optional)</FormLabel>
+                      <Select
+                        onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                        value={field.value != null ? String(field.value) : "none"}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-lead-building">
+                            <SelectValue placeholder="No specific building" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No specific building</SelectItem>
+                          {buildingsForCreate.map((b) => (
+                            <SelectItem key={b.id} value={b.id.toString()}>
+                              <span className="flex items-center gap-2">
+                                <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                {b.name}{b.address ? ` · ${b.address}` : ""}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -1024,7 +1105,12 @@ export default function Leads() {
                               <FormItem>
                                 <FormLabel>Client</FormLabel>
                                 <Select
-                                  onValueChange={(val) => field.onChange(parseInt(val))}
+                                  onValueChange={(val) => {
+                                    const id = parseInt(val);
+                                    field.onChange(id);
+                                    setSelectedClientIdForBuildingEdit(id);
+                                    editLeadForm.setValue("buildingId", null);
+                                  }}
                                   value={field.value?.toString()}
                                 >
                                   <FormControl>
@@ -1056,6 +1142,36 @@ export default function Leads() {
                             )}
                           />
                         </div>
+                        {selectedClientIdForBuildingEdit && buildingsForEdit.length > 0 && (
+                          <FormField
+                            control={editLeadForm.control}
+                            name="buildingId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Building (Optional)</FormLabel>
+                                <Select
+                                  onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                                  value={field.value != null ? String(field.value) : "none"}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-edit-lead-building">
+                                      <SelectValue placeholder="No specific building" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="none">No specific building</SelectItem>
+                                    {buildingsForEdit.map((b) => (
+                                      <SelectItem key={b.id} value={b.id.toString()}>
+                                        {b.name}{b.address ? ` · ${b.address}` : ""}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
                         <FormField
                           control={editLeadForm.control}
                           name="assignedTo"
@@ -1168,6 +1284,16 @@ export default function Leads() {
                           <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Value</p>
                           <p className="font-mono text-sm font-bold text-primary">{formatCurrency(selectedLead.value)}</p>
                         </div>
+                        {selectedLead.buildingId && getBuildingName(selectedLead.buildingId) && (
+                          <div className="space-y-1 col-span-2">
+                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                              <Building2 className="h-3 w-3" /> Building
+                            </p>
+                            <p className="font-medium text-sm flex items-center gap-1.5">
+                              {getBuildingName(selectedLead.buildingId)}
+                            </p>
+                          </div>
+                        )}
                         <div className="space-y-1">
                           <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Assigned To</p>
                           <p className="font-medium text-sm">{getUserName(selectedLead.assignedTo)}</p>

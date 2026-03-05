@@ -193,6 +193,88 @@ function LinkedInSyncButton({
   );
 }
 
+function BuildingActivityRow({
+  building,
+  isExpanded,
+  onToggleExpand,
+  onEdit,
+  onDelete,
+}: {
+  building: ContactBuilding;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { data: activity } = useQuery<{ leads: Lead[]; estimates: Estimate[] }>({
+    queryKey: ["/api/buildings", building.id, "activity"],
+    enabled: isExpanded,
+  });
+
+  const totalCount = (activity?.leads.length ?? 0) + (activity?.estimates.length ?? 0);
+
+  return (
+    <div className="rounded hover:bg-muted/30 transition-colors">
+      <div className="flex items-start justify-between pl-2 py-1 group/building">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium truncate">{building.name}</p>
+          {building.address && <p className="text-[11px] text-muted-foreground truncate">{building.address}</p>}
+          {building.notes && <p className="text-[11px] text-muted-foreground italic truncate">{building.notes}</p>}
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            className="flex items-center gap-1 mt-0.5 text-[10px] text-primary/70 hover:text-primary font-medium transition-colors"
+            data-testid={`button-toggle-building-activity-${building.id}`}
+          >
+            {isExpanded ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />}
+            {isExpanded ? "Hide" : "Show"} linked activity
+            {totalCount > 0 && <span className="text-muted-foreground">· {totalCount} item{totalCount !== 1 ? "s" : ""}</span>}
+          </button>
+        </div>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover/building:opacity-100 transition-opacity shrink-0 ml-2">
+          <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+            onClick={onEdit} data-testid={`button-edit-building-${building.id}`}>
+            <Edit className="h-3 w-3" />
+          </button>
+          <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-destructive"
+            onClick={onDelete} data-testid={`button-delete-building-${building.id}`}>
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="pl-3 pb-2 space-y-1.5">
+          {!activity ? (
+            <p className="text-[10px] text-muted-foreground">Loading...</p>
+          ) : activity.leads.length === 0 && activity.estimates.length === 0 ? (
+            <p className="text-[10px] text-muted-foreground italic">No leads or estimates linked to this building yet.</p>
+          ) : (
+            <>
+              {activity.leads.map(lead => (
+                <div key={lead.id} className="flex items-center gap-2 text-[10px] bg-muted/40 rounded px-2 py-1" data-testid={`building-lead-${building.id}-${lead.id}`}>
+                  <Target className="h-2.5 w-2.5 text-primary shrink-0" />
+                  <span className="font-medium truncate flex-1">{lead.title}</span>
+                  <span className="text-muted-foreground capitalize shrink-0">{lead.stage.replace("_", " ")}</span>
+                  <span className="font-mono shrink-0">${Number(lead.value).toLocaleString()}</span>
+                </div>
+              ))}
+              {activity.estimates.map(est => (
+                <div key={est.id} className="flex items-center gap-2 text-[10px] bg-muted/40 rounded px-2 py-1" data-testid={`building-estimate-${building.id}-${est.id}`}>
+                  <FileText className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
+                  <span className="font-medium truncate flex-1">{est.title}</span>
+                  <span className="text-muted-foreground capitalize shrink-0">{est.status}</span>
+                  <span className="font-mono shrink-0">${Number(est.total).toLocaleString()}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ContactCard({
   contact,
   onEdit,
@@ -205,6 +287,7 @@ function ContactCard({
   const [isPortfolioOpen, setIsPortfolioOpen] = useState(false);
   const [isAddingBuilding, setIsAddingBuilding] = useState(false);
   const [editingBuilding, setEditingBuilding] = useState<ContactBuilding | null>(null);
+  const [expandedBuildingId, setExpandedBuildingId] = useState<number | null>(null);
   const [addName, setAddName] = useState("");
   const [addAddress, setAddAddress] = useState("");
   const [addLat, setAddLat] = useState<number | null>(null);
@@ -414,23 +497,13 @@ function ContactCard({
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-start justify-between pl-2 py-1 group/building rounded hover:bg-muted/30 transition-colors">
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium truncate">{b.name}</p>
-                        {b.address && <p className="text-[11px] text-muted-foreground truncate">{b.address}</p>}
-                        {b.notes && <p className="text-[11px] text-muted-foreground italic truncate">{b.notes}</p>}
-                      </div>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover/building:opacity-100 transition-opacity shrink-0 ml-2">
-                        <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                          onClick={() => openEditBuilding(b)} data-testid={`button-edit-building-${b.id}`}>
-                          <Edit className="h-3 w-3" />
-                        </button>
-                        <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-destructive"
-                          onClick={() => deleteBuildingMutation.mutate(b.id)} data-testid={`button-delete-building-${b.id}`}>
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    </div>
+                    <BuildingActivityRow
+                      building={b}
+                      isExpanded={expandedBuildingId === b.id}
+                      onToggleExpand={() => setExpandedBuildingId(expandedBuildingId === b.id ? null : b.id)}
+                      onEdit={() => openEditBuilding(b)}
+                      onDelete={() => deleteBuildingMutation.mutate(b.id)}
+                    />
                   )}
                 </div>
               ))

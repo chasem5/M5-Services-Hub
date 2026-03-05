@@ -267,6 +267,12 @@ export async function registerRoutes(
     res.json([...officeEntries, ...contactBuildings.flat()]);
   });
 
+  // All contact buildings (for lookups)
+  app.get("/api/all-buildings", isAuthenticated, async (_req, res) => {
+    const buildings = await storage.listAllContactBuildings();
+    res.json(buildings);
+  });
+
   // Contact Buildings
   app.get("/api/contacts/:contactId/buildings", isAuthenticated, async (req, res) => {
     const contactId = parseInt(req.params.contactId as string);
@@ -297,6 +303,12 @@ export async function registerRoutes(
     const buildingId = parseInt(req.params.buildingId as string);
     await storage.deleteContactBuilding(buildingId);
     res.sendStatus(204);
+  });
+
+  app.get("/api/buildings/:id/activity", isAuthenticated, async (req, res) => {
+    const buildingId = parseInt(req.params.id as string);
+    const activity = await storage.getBuildingActivity(buildingId);
+    res.json(activity);
   });
 
   // Client Offices

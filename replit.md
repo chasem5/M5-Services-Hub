@@ -34,7 +34,10 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 
 ## Database Schema
 
-Tables: `users`, `sessions`, `clients`, `client_contacts`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`
+Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`
+
+- `leads.building_id` → FK to `contact_buildings` (optional, links a lead to a specific portfolio building)
+- `estimates.building_id` → FK to `contact_buildings` (optional, links an estimate to a specific portfolio building)
 
 ## Branding
 

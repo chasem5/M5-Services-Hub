@@ -84,6 +84,7 @@ export const leads = pgTable("leads", {
   id: serial("id").primaryKey(),
   title: varchar("title").notNull(),
   clientId: integer("client_id").references(() => clients.id),
+  buildingId: integer("building_id").references(() => contactBuildings.id),
   stage: varchar("stage").default("new_lead").notNull(),
   value: decimal("value", { precision: 12, scale: 2 }).default("0").notNull(),
   confidenceScore: integer("confidence_score").default(50),
@@ -135,6 +136,7 @@ export const estimates = pgTable("estimates", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => leads.id),
   clientId: integer("client_id").references(() => clients.id).notNull(),
+  buildingId: integer("building_id").references(() => contactBuildings.id),
   title: varchar("title").notNull(),
   status: varchar("status", { enum: ["draft", "sent", "accepted", "rejected"] }).default("draft").notNull(),
   subtotal: decimal("subtotal", { precision: 12, scale: 2 }).default("0").notNull(),
@@ -198,11 +200,15 @@ export const insertContactBuildingSchema = createInsertSchema(contactBuildings).
   lat: z.coerce.string().optional().nullable(),
   lng: z.coerce.string().optional().nullable(),
 });
-export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  buildingId: z.number().optional().nullable(),
+});
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertReminderSchema = createInsertSchema(reminders).omit({ id: true, createdAt: true });
 export const insertServiceCatalogSchema = createInsertSchema(serviceCatalog).omit({ id: true });
-export const insertEstimateSchema = createInsertSchema(estimates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertEstimateSchema = createInsertSchema(estimates).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  buildingId: z.number().optional().nullable(),
+});
 export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({ id: true });
 export const insertProposalSchema = createInsertSchema(proposals).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ id: true, createdAt: true });

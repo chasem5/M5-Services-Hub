@@ -66,7 +66,7 @@ import {
 } from "@/components/ui/select";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertEstimateSchema, type Estimate, type Lead, type Client } from "@shared/schema";
+import { insertEstimateSchema, type Estimate, type Lead, type Client, type ContactBuilding } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -77,6 +77,7 @@ export default function Estimates() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [selectedClientIdForBuilding, setSelectedClientIdForBuilding] = useState<number | null>(null);
   const { toast } = useToast();
 
   const { data: estimates, isLoading: isLoadingEstimates } = useQuery<Estimate[]>({
@@ -89,6 +90,11 @@ export default function Estimates() {
 
   const { data: clients } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
+  });
+
+  const { data: buildingsForClient = [] } = useQuery<ContactBuilding[]>({
+    queryKey: ["/api/clients", selectedClientIdForBuilding, "all-buildings"],
+    enabled: !!selectedClientIdForBuilding,
   });
 
   const createEstimateMutation = useMutation({
@@ -134,6 +140,7 @@ export default function Estimates() {
       title: "",
       leadId: undefined as any,
       clientId: undefined as any,
+      buildingId: null as any,
       status: "draft",
       subtotal: "0",
       tax: "0",
@@ -219,7 +226,12 @@ export default function Estimates() {
                     <FormItem>
                       <FormLabel>Client</FormLabel>
                       <Select 
-                        onValueChange={(val) => field.onChange(parseInt(val))} 
+                        onValueChange={(val) => {
+                          const id = parseInt(val);
+                          field.onChange(id);
+                          setSelectedClientIdForBuilding(id);
+                          form.setValue("buildingId", null);
+                        }} 
                         defaultValue={field.value?.toString()}
                       >
                         <FormControl>
@@ -239,6 +251,36 @@ export default function Estimates() {
                     </FormItem>
                   )}
                 />
+                {selectedClientIdForBuilding && buildingsForClient.length > 0 && (
+                  <FormField
+                    control={form.control}
+                    name="buildingId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Building (Optional)</FormLabel>
+                        <Select
+                          onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                          value={field.value != null ? String(field.value) : "none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-estimate-building">
+                              <SelectValue placeholder="No specific building" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No specific building</SelectItem>
+                            {buildingsForClient.map((b) => (
+                              <SelectItem key={b.id} value={b.id.toString()}>
+                                {b.name}{b.address ? ` · ${b.address}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
                 <FormField
                   control={form.control}
                   name="leadId"
