@@ -483,7 +483,7 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     try {
       const { openai } = await import("./openai");
       const completion = await openai.chat.completions.create({
-        model: "gpt-5-mini",
+        model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
         max_completion_tokens: 200,
       });

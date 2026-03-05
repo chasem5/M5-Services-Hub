@@ -871,8 +871,8 @@ export default function Leads() {
                                   <div className="h-3 bg-muted animate-pulse rounded w-5/6" />
                                   <div className="h-3 bg-muted animate-pulse rounded w-4/6" />
                                 </div>
-                              ) : aiSummaries[lead.id] ? (
-                                <p className="text-xs text-muted-foreground leading-relaxed">{aiSummaries[lead.id]}</p>
+                              ) : aiSummaries[lead.id] !== undefined ? (
+                                <p className="text-xs text-muted-foreground leading-relaxed">{aiSummaries[lead.id] || "No summary available."}</p>
                               ) : (
                                 <p className="text-xs text-muted-foreground italic">Hover to generate summary...</p>
                               )}
