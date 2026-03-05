@@ -28,6 +28,7 @@ export const clientContacts = pgTable("client_contacts", {
   email: varchar("email"),
   phone: varchar("phone"),
   isPrimary: boolean("is_primary").default(false).notNull(),
+  reportsTo: integer("reports_to"),
 });
 
 export const pipelineStages = pgTable("pipeline_stages", {

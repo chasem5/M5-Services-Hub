@@ -56,6 +56,7 @@ export interface IStorage {
   listAllClientContacts(): Promise<ClientContact[]>;
   listClientContacts(clientId: number): Promise<ClientContact[]>;
   createClientContact(contact: InsertClientContact): Promise<ClientContact>;
+  updateClientContact(id: number, data: Partial<ClientContact>): Promise<ClientContact>;
   deleteClientContact(id: number): Promise<void>;
 
   // Leads
@@ -179,6 +180,11 @@ export class DatabaseStorage implements IStorage {
 
   async createClientContact(insertContact: InsertClientContact): Promise<ClientContact> {
     const [contact] = await db.insert(clientContacts).values(insertContact).returning();
+    return contact;
+  }
+
+  async updateClientContact(id: number, data: Partial<ClientContact>): Promise<ClientContact> {
+    const [contact] = await db.update(clientContacts).set(data).where(eq(clientContacts.id, id)).returning();
     return contact;
   }
 

@@ -17,8 +17,23 @@ import {
   MoreVertical,
   Edit,
   ArrowLeft,
-  ExternalLink
+  ExternalLink,
+  GitBranch,
+  ChevronDown,
+  Star
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { 
@@ -72,6 +87,7 @@ import {
   type ActivityLog
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { OrgChart } from "@/components/OrgChart";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -82,6 +98,7 @@ export default function ClientDetail() {
   const { toast } = useToast();
   const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<ClientContact | null>(null);
+  const [orgChartEditId, setOrgChartEditId] = useState<number | null>(null);
 
   // Queries
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
@@ -141,6 +158,18 @@ export default function ClientDetail() {
     },
   });
 
+  const updateContactMutation = useMutation({
+    mutationFn: async ({ contactId, data }: { contactId: number; data: Partial<ClientContact> }) => {
+      const res = await apiRequest("PUT", `/api/clients/${clientId}/contacts/${contactId}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+      setOrgChartEditId(null);
+      toast({ title: "Updated", description: "Contact updated successfully" });
+    },
+  });
+
   // Forms
   const clientForm = useForm({
     resolver: zodResolver(insertClientSchema),
@@ -172,6 +201,7 @@ export default function ClientDetail() {
       email: "",
       phone: "",
       isPrimary: false,
+      reportsTo: undefined as number | undefined,
     },
   });
 
@@ -233,6 +263,10 @@ export default function ClientDetail() {
           <TabsTrigger value="estimates" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
             <FileText className="mr-2 h-4 w-4" />
             Estimates
+          </TabsTrigger>
+          <TabsTrigger value="orgchart" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
+            <GitBranch className="mr-2 h-4 w-4" />
+            Org Chart
           </TabsTrigger>
           <TabsTrigger value="activity" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
             <History className="mr-2 h-4 w-4" />
@@ -501,6 +535,32 @@ export default function ClientDetail() {
                         </div>
                         <FormField
                           control={contactForm.control}
+                          name="reportsTo"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Reports To</FormLabel>
+                              <Select
+                                onValueChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))}
+                                value={field.value?.toString() || "none"}
+                              >
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-contact-reports-to">
+                                    <SelectValue placeholder="Select manager (optional)" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="none">No manager (top level)</SelectItem>
+                                  {(contacts || []).map(c => (
+                                    <SelectItem key={c.id} value={c.id.toString()}>{c.name}{c.title ? ` — ${c.title}` : ""}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={contactForm.control}
                           name="isPrimary"
                           render={({ field }) => (
                             <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
@@ -701,6 +761,46 @@ export default function ClientDetail() {
                     <h3 className="text-lg font-semibold">No estimates found</h3>
                     <p className="text-muted-foreground">No estimates have been created for this client yet.</p>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="orgchart" className="m-0">
+            <Card className="border-none shadow-sm bg-card">
+              <CardHeader className="flex flex-row items-start justify-between pb-4">
+                <div>
+                  <CardTitle>Organization Chart</CardTitle>
+                  <CardDescription>
+                    Visual hierarchy of contacts. Click any node to view details or change reporting relationships.
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsContactDialogOpen(true)}
+                  data-testid="button-add-contact-org"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Contact
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {isLoadingContacts ? (
+                  <div className="flex items-center justify-center h-64">
+                    <div className="text-muted-foreground text-sm">Loading org chart...</div>
+                  </div>
+                ) : (
+                  <OrgChart
+                    contacts={contacts || []}
+                    onUpdateReportsTo={(contactId, reportsTo) => {
+                      updateContactMutation.mutate({
+                        contactId,
+                        data: { reportsTo: reportsTo ?? undefined },
+                      });
+                    }}
+                    isUpdating={updateContactMutation.isPending}
+                  />
                 )}
               </CardContent>
             </Card>

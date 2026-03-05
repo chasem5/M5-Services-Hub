@@ -13,7 +13,7 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 
 - **Dashboard** — Key metrics (active leads, pipeline value, open tasks, monthly revenue), activity feed, upcoming tasks
 - **Lead/Pipeline Management** — Kanban board by stage (New Lead → Won/Lost), list view, drag-free stage transitions, lead detail sheet with activity timeline
-- **Client Database** — Company profiles, contacts, tabbed detail view (Overview, Contacts, Leads, Estimates, Activity)
+- **Client Database** — Company profiles, contacts, tabbed detail view (Overview, Contacts, Leads, Estimates, Org Chart, Activity); contacts support `reportsTo` for hierarchy
 - **Task Management** — Priority + status filtering, due date tracking, assignments, detail sheet editing
 - **Reminders** — Bell notification dropdown in header, create/dismiss reminders linked to leads/clients/tasks
 - **Service Catalog** — Predefined service items with pricing by service type; Admin/Manager CRUD

@@ -108,6 +108,12 @@ export async function registerRoutes(
     res.json(contact);
   });
 
+  app.put("/api/clients/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
+    const contactId = parseInt(req.params.contactId as string);
+    const contact = await storage.updateClientContact(contactId, req.body);
+    res.json(contact);
+  });
+
   app.delete("/api/clients/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
     const contactId = parseInt(req.params.contactId as string);
     await storage.deleteClientContact(contactId);
