@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/Sidebar";
@@ -5,9 +6,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SiReplit } from "react-icons/si";
 import { RemindersDropdown } from "@/components/RemindersDropdown";
+import { GlobalSearch, GlobalSearchTrigger } from "@/components/GlobalSearch";
+import { Search } from "lucide-react";
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen(prev => !prev);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   if (isLoading) {
     return (
@@ -54,12 +69,19 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <header className="flex items-center justify-between px-4 h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
               <div className="h-6 w-px bg-border hidden md:block" />
-              <h2 className="text-sm font-semibold text-muted-foreground hidden md:block">
-                M5 Services Operations
-              </h2>
+              <GlobalSearchTrigger onClick={() => setSearchOpen(true)} />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden h-9 w-9"
+                onClick={() => setSearchOpen(true)}
+                data-testid="button-global-search-mobile"
+              >
+                <Search className="h-4 w-4" />
+              </Button>
             </div>
             <div className="flex items-center gap-2">
               <RemindersDropdown />
@@ -70,6 +92,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </SidebarProvider>
   );
 }
