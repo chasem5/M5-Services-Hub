@@ -239,6 +239,9 @@ export default function Leads() {
   const getLeadTasks = (leadId: number) =>
     tasks.filter((t) => t.relatedLeadId === leadId);
 
+  const detailScore = selectedLead?.confidenceScore ?? 50;
+  const detailLeadTasks = selectedLead ? getLeadTasks(selectedLead.id) : [];
+
   return (
     <div className="flex flex-col h-full bg-muted">
       <header className="flex flex-col gap-4 p-6 bg-background border-b shadow-sm">
@@ -698,176 +701,172 @@ export default function Leads() {
       {/* Lead Detail Sheet */}
       <Sheet open={!!selectedLead} onOpenChange={(open) => !open && setSelectedLead(null)}>
         <SheetContent className="sm:max-w-xl overflow-y-auto">
-          {selectedLead && (() => {
-            const score = selectedLead.confidenceScore ?? 50;
-            const leadTasks = getLeadTasks(selectedLead.id);
-            return (
-              <>
-                <SheetHeader>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge className="capitalize">
-                      {selectedLead.stage.replace('_', ' ')}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">ID: #{selectedLead.id}</span>
-                  </div>
-                  <SheetTitle className="text-2xl">{selectedLead.title}</SheetTitle>
-                  <SheetDescription>
-                    Full details, tasks, and activity timeline for this opportunity.
-                  </SheetDescription>
-                </SheetHeader>
+          {selectedLead && (
+            <>
+              <SheetHeader>
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge className="capitalize">
+                    {selectedLead.stage.replace('_', ' ')}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">ID: #{selectedLead.id}</span>
+                </div>
+                <SheetTitle className="text-2xl">{selectedLead.title}</SheetTitle>
+                <SheetDescription>
+                  Full details, tasks, and activity timeline for this opportunity.
+                </SheetDescription>
+              </SheetHeader>
 
-                <Tabs defaultValue="details" className="mt-6">
-                  <TabsList className="w-full grid grid-cols-3">
-                    <TabsTrigger value="details">Details</TabsTrigger>
-                    <TabsTrigger value="tasks">
-                      Tasks
-                      {leadTasks.length > 0 && (
-                        <Badge variant="secondary" className="ml-1.5 h-4 px-1.5 text-[10px]">
-                          {leadTasks.length}
-                        </Badge>
-                      )}
-                    </TabsTrigger>
-                    <TabsTrigger value="activity">Timeline</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="details" className="space-y-6 py-4">
-                    <div className="grid grid-cols-2 gap-6">
-                      <div className="space-y-1">
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Client</p>
-                        <p className="font-medium text-sm">{getClientName(selectedLead.clientId)}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Value</p>
-                        <p className="font-mono text-sm font-bold text-primary">{formatCurrency(selectedLead.value)}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Assigned To</p>
-                        <p className="font-medium text-sm">{getUserName(selectedLead.assignedTo)}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Created</p>
-                        <p className="font-medium text-sm">{new Date(selectedLead.createdAt).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                          <Target className="h-3 w-3" /> Confidence Score
-                        </p>
-                        <span className={`text-sm font-bold ${getConfidenceColor(score)}`}>{score}%</span>
-                      </div>
-                      <Progress value={score} className="h-2" />
-                      <Slider
-                        min={0}
-                        max={100}
-                        step={5}
-                        value={[score]}
-                        onValueChange={([val]) => {
-                          updateLeadMutation.mutate({ id: selectedLead.id, data: { confidenceScore: val } });
-                        }}
-                        data-testid="slider-confidence-detail"
-                      />
-                    </div>
-
-                    {selectedLead.tags && selectedLead.tags.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                          <TagIcon className="h-3 w-3" /> Tags
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {selectedLead.tags.map((tag) => (
-                            <Badge key={tag} variant="secondary">{tag}</Badge>
-                          ))}
-                        </div>
-                      </div>
+              <Tabs defaultValue="details" className="mt-6">
+                <TabsList className="w-full grid grid-cols-3">
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="tasks">
+                    Tasks
+                    {detailLeadTasks.length > 0 && (
+                      <Badge variant="secondary" className="ml-1.5 h-4 px-1.5 text-[10px]">
+                        {detailLeadTasks.length}
+                      </Badge>
                     )}
+                  </TabsTrigger>
+                  <TabsTrigger value="activity">Timeline</TabsTrigger>
+                </TabsList>
 
-                    <Separator />
+                <TabsContent value="details" className="space-y-6 py-4">
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Client</p>
+                      <p className="font-medium text-sm">{getClientName(selectedLead.clientId)}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Value</p>
+                      <p className="font-mono text-sm font-bold text-primary">{formatCurrency(selectedLead.value)}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Assigned To</p>
+                      <p className="font-medium text-sm">{getUserName(selectedLead.assignedTo)}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Created</p>
+                      <p className="font-medium text-sm">{new Date(selectedLead.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
 
-                    <div className="space-y-3">
-                      <FormLabel>Change Stage</FormLabel>
-                      <div className="grid grid-cols-2 gap-2">
-                        {STAGES.map((stage) => (
-                          <Button
-                            key={stage.id}
-                            variant={selectedLead.stage === stage.id ? "secondary" : "outline"}
-                            size="sm"
-                            className="justify-start font-medium"
-                            onClick={() => updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.id })}
-                          >
-                            <div className={`h-2 w-2 rounded-full mr-2 ${selectedLead.stage === stage.id ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
-                            {stage.label}
-                          </Button>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <Target className="h-3 w-3" /> Confidence Score
+                      </p>
+                      <span className={`text-sm font-bold ${getConfidenceColor(detailScore)}`}>{detailScore}%</span>
+                    </div>
+                    <Progress value={detailScore} className="h-2" />
+                    <Slider
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={[detailScore]}
+                      onValueCommit={([val]) => {
+                        updateLeadMutation.mutate({ id: selectedLead.id, data: { confidenceScore: val } });
+                      }}
+                      data-testid="slider-confidence-detail"
+                    />
+                  </div>
+
+                  {selectedLead.tags && selectedLead.tags.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <TagIcon className="h-3 w-3" /> Tags
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedLead.tags.map((tag) => (
+                          <Badge key={tag} variant="secondary">{tag}</Badge>
                         ))}
                       </div>
                     </div>
+                  )}
 
-                    <Separator />
+                  <Separator />
 
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Internal Notes</p>
-                      <Card className="bg-muted">
-                        <CardContent className="p-3 text-sm leading-relaxed whitespace-pre-wrap">
-                          {selectedLead.notes || "No notes provided."}
-                        </CardContent>
-                      </Card>
+                  <div className="space-y-3">
+                    <FormLabel>Change Stage</FormLabel>
+                    <div className="grid grid-cols-2 gap-2">
+                      {STAGES.map((stage) => (
+                        <Button
+                          key={stage.id}
+                          variant={selectedLead.stage === stage.id ? "secondary" : "outline"}
+                          size="sm"
+                          className="justify-start font-medium"
+                          onClick={() => updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.id })}
+                        >
+                          <div className={`h-2 w-2 rounded-full mr-2 ${selectedLead.stage === stage.id ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
+                          {stage.label}
+                        </Button>
+                      ))}
                     </div>
-                  </TabsContent>
+                  </div>
 
-                  <TabsContent value="tasks" className="py-4 space-y-3">
-                    {leadTasks.length === 0 ? (
-                      <div className="text-center py-10 text-muted-foreground">
-                        <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                        <p className="text-sm">No tasks linked to this lead.</p>
-                        <p className="text-xs mt-1">Create a task and associate it with this lead.</p>
-                      </div>
-                    ) : (
-                      leadTasks.map((task) => {
-                        const StatusIcon = statusIcons[task.status];
-                        return (
-                          <Card key={task.id} className={`border-l-4 ${
-                            task.status === "done" ? "border-l-green-400 opacity-70" :
-                            task.priority === "high" ? "border-l-red-400" :
-                            task.priority === "medium" ? "border-l-yellow-400" : "border-l-blue-400"
-                          }`} data-testid={`card-lead-task-${task.id}`}>
-                            <CardContent className="p-3 flex items-start gap-3">
-                              <StatusIcon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
-                                task.status === "done" ? "text-green-500" :
-                                task.status === "in_progress" ? "text-blue-500" : "text-muted-foreground"
-                              }`} />
-                              <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-medium ${task.status === "done" ? "line-through text-muted-foreground" : ""}`}>
-                                  {task.title}
-                                </p>
-                                {task.description && (
-                                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{task.description}</p>
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Internal Notes</p>
+                    <Card className="bg-muted">
+                      <CardContent className="p-3 text-sm leading-relaxed whitespace-pre-wrap">
+                        {selectedLead.notes || "No notes provided."}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="tasks" className="py-4 space-y-3">
+                  {detailLeadTasks.length === 0 ? (
+                    <div className="text-center py-10 text-muted-foreground">
+                      <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                      <p className="text-sm">No tasks linked to this lead.</p>
+                      <p className="text-xs mt-1">Create a task and associate it with this lead.</p>
+                    </div>
+                  ) : (
+                    detailLeadTasks.map((task) => {
+                      const StatusIcon = statusIcons[task.status] ?? Circle;
+                      return (
+                        <Card key={task.id} className={`border-l-4 ${
+                          task.status === "done" ? "border-l-green-400 opacity-70" :
+                          task.priority === "high" ? "border-l-red-400" :
+                          task.priority === "medium" ? "border-l-yellow-400" : "border-l-blue-400"
+                        }`} data-testid={`card-lead-task-${task.id}`}>
+                          <CardContent className="p-3 flex items-start gap-3">
+                            <StatusIcon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
+                              task.status === "done" ? "text-green-500" :
+                              task.status === "in_progress" ? "text-blue-500" : "text-muted-foreground"
+                            }`} />
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-medium ${task.status === "done" ? "line-through text-muted-foreground" : ""}`}>
+                                {task.title}
+                              </p>
+                              {task.description && (
+                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{task.description}</p>
+                              )}
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 capitalize ${priorityColors[task.priority]}`}>
+                                  {task.priority}
+                                </Badge>
+                                {task.dueDate && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Due {new Date(task.dueDate).toLocaleDateString()}
+                                  </span>
                                 )}
-                                <div className="flex items-center gap-2 mt-1.5">
-                                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 capitalize ${priorityColors[task.priority]}`}>
-                                    {task.priority}
-                                  </Badge>
-                                  {task.dueDate && (
-                                    <span className="text-[10px] text-muted-foreground">
-                                      Due {new Date(task.dueDate).toLocaleDateString()}
-                                    </span>
-                                  )}
-                                </div>
                               </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })
-                    )}
-                  </TabsContent>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })
+                  )}
+                </TabsContent>
 
-                  <TabsContent value="activity" className="py-4 h-[500px]">
-                    <ActivityTimeline entityType="lead" entityId={selectedLead.id} />
-                  </TabsContent>
-                </Tabs>
-              </>
-            );
-          })()}
+                <TabsContent value="activity" className="py-4 h-[500px]">
+                  <ActivityTimeline entityType="lead" entityId={selectedLead.id} />
+                </TabsContent>
+              </Tabs>
+            </>
+          )}
         </SheetContent>
       </Sheet>
     </div>
