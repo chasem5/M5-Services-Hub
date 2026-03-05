@@ -162,7 +162,9 @@ export async function registerRoutes(
     updates.linkedinUrl = linkedinUrl;
     if (person.photo_url) updates.profilePictureUrl = person.photo_url;
     if (person.title) updates.title = person.title;
-    if (!contact.name && person.name) updates.name = person.name;
+    // Always take Apollo's full name if it's more complete (has a last name)
+    if (person.name && person.name.trim().includes(" ")) updates.name = person.name.trim();
+    else if (!contact.name && person.name) updates.name = person.name.trim();
     if (!contact.email && person.email) updates.email = person.email;
 
     const updated = await storage.updateClientContact(contactId, updates);
