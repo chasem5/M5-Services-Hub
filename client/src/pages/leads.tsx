@@ -7,7 +7,9 @@ import {
   Task,
   PipelineStage,
   insertLeadSchema,
-  InsertLead
+  InsertLead,
+  insertTaskSchema,
+  InsertTask,
 } from "@shared/schema";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +38,8 @@ import {
   ChevronDown,
   GripVertical,
   TrendingUp,
+  Check,
+  CalendarIcon,
 } from "lucide-react";
 import {
   Card,
@@ -160,6 +164,10 @@ export default function Leads() {
   const [editingStageLabel, setEditingStageLabel] = useState("");
   const [newStageLabel, setNewStageLabel] = useState("");
   const [newStageColor, setNewStageColor] = useState<string | null>(null);
+  const [isEditingLead, setIsEditingLead] = useState(false);
+  const [editTagInput, setEditTagInput] = useState("");
+  const [editFormTags, setEditFormTags] = useState<string[]>([]);
+  const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: stages = [] } = useQuery<PipelineStage[]>({
@@ -266,6 +274,22 @@ export default function Leads() {
     },
   });
 
+  const createTaskMutation = useMutation({
+    mutationFn: async (data: InsertTask) => {
+      const res = await apiRequest("POST", "/api/tasks", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setIsAddTaskOpen(false);
+      addTaskForm.reset();
+      toast({ title: "Task created", description: "Task linked to this lead." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const moveStage = (index: number, direction: "up" | "down") => {
     const newOrder = [...stages];
     const target = direction === "up" ? index - 1 : index + 1;
@@ -301,6 +325,31 @@ export default function Leads() {
       tags: [],
       notes: "",
       assignedTo: undefined,
+    },
+  });
+
+  const editLeadForm = useForm<Partial<InsertLead>>({
+    defaultValues: {
+      title: "",
+      clientId: undefined,
+      value: "0",
+      confidenceScore: 50,
+      notes: "",
+      assignedTo: undefined,
+    },
+  });
+
+  const addTaskForm = useForm<InsertTask>({
+    resolver: zodResolver(insertTaskSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      priority: "medium",
+      status: "todo",
+      assignedTo: undefined,
+      dueDate: undefined,
+      relatedLeadId: undefined,
+      relatedClientId: undefined,
     },
   });
 
@@ -346,6 +395,40 @@ export default function Leads() {
 
   const getLeadTasks = (leadId: number) =>
     tasks.filter((t) => t.relatedLeadId === leadId);
+
+  const openLeadDetail = (lead: Lead) => {
+    setSelectedLead(lead);
+    setIsEditingLead(false);
+    setIsAddTaskOpen(false);
+    editLeadForm.reset({
+      title: lead.title,
+      clientId: lead.clientId ?? undefined,
+      value: lead.value,
+      confidenceScore: lead.confidenceScore ?? 50,
+      notes: lead.notes ?? "",
+      assignedTo: lead.assignedTo ?? undefined,
+    });
+    setEditFormTags(lead.tags ?? []);
+  };
+
+  const addEditTag = (tag: string) => {
+    const clean = tag.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (clean && !editFormTags.includes(clean)) {
+      setEditFormTags((prev) => [...prev, clean]);
+    }
+    setEditTagInput("");
+  };
+
+  const removeEditTag = (tag: string) => setEditFormTags((prev) => prev.filter((t) => t !== tag));
+
+  const saveLeadEdits = (data: Partial<InsertLead>) => {
+    if (!selectedLead) return;
+    updateLeadMutation.mutate({
+      id: selectedLead.id,
+      data: { ...data, tags: editFormTags },
+    });
+    setIsEditingLead(false);
+  };
 
   const detailScore = selectedLead?.confidenceScore ?? 50;
   const detailLeadTasks = selectedLead ? getLeadTasks(selectedLead.id) : [];
@@ -493,7 +576,7 @@ export default function Leads() {
                           <Card
                             key={lead.id}
                             className="hover-elevate cursor-pointer border-border/60 shadow-sm transition-shadow hover:shadow-md"
-                            onClick={() => setSelectedLead(lead)}
+                            onClick={() => openLeadDetail(lead)}
                             data-testid={`card-lead-${lead.id}`}
                           >
                             <CardHeader className="p-3 pb-0 space-y-1">
@@ -588,7 +671,7 @@ export default function Leads() {
                       <TableRow
                         key={lead.id}
                         className="cursor-pointer"
-                        onClick={() => setSelectedLead(lead)}
+                        onClick={() => openLeadDetail(lead)}
                         data-testid={`row-lead-${lead.id}`}
                       >
                         <TableCell className="font-medium">{lead.title}</TableCell>
@@ -835,16 +918,67 @@ export default function Leads() {
       </Sheet>
 
       {/* Lead Detail Sheet */}
-      <Sheet open={!!selectedLead} onOpenChange={(open) => !open && setSelectedLead(null)}>
+      <Sheet open={!!selectedLead} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedLead(null);
+          setIsEditingLead(false);
+          setIsAddTaskOpen(false);
+        }
+      }}>
         <SheetContent className="sm:max-w-xl overflow-y-auto">
           {selectedLead && (
             <>
               <SheetHeader>
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge className="capitalize">
-                    {selectedLead.stage.replace('_', ' ')}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">ID: #{selectedLead.id}</span>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <Badge className="capitalize">
+                      {selectedLead.stage.replace('_', ' ')}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">ID: #{selectedLead.id}</span>
+                  </div>
+                  {!isEditingLead ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setIsEditingLead(true)}
+                      data-testid="button-edit-lead"
+                    >
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                      Edit Lead
+                    </Button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setIsEditingLead(false);
+                          setEditFormTags(selectedLead.tags ?? []);
+                          editLeadForm.reset({
+                            title: selectedLead.title,
+                            clientId: selectedLead.clientId ?? undefined,
+                            value: selectedLead.value,
+                            confidenceScore: selectedLead.confidenceScore ?? 50,
+                            notes: selectedLead.notes ?? "",
+                            assignedTo: selectedLead.assignedTo ?? undefined,
+                          });
+                        }}
+                        data-testid="button-cancel-edit-lead"
+                      >
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={editLeadForm.handleSubmit(saveLeadEdits)}
+                        disabled={updateLeadMutation.isPending}
+                        data-testid="button-save-lead-edits"
+                      >
+                        <Check className="h-3.5 w-3.5 mr-1" />
+                        {updateLeadMutation.isPending ? "Saving..." : "Save"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <SheetTitle className="text-2xl">{selectedLead.title}</SheetTitle>
                 <SheetDescription>
@@ -867,100 +1001,410 @@ export default function Leads() {
                 </TabsList>
 
                 <TabsContent value="details" className="space-y-6 py-4">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-1">
-                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Client</p>
-                      <p className="font-medium text-sm">{getClientName(selectedLead.clientId)}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Value</p>
-                      <p className="font-mono text-sm font-bold text-primary">{formatCurrency(selectedLead.value)}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Assigned To</p>
-                      <p className="font-medium text-sm">{getUserName(selectedLead.assignedTo)}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Created</p>
-                      <p className="font-medium text-sm">{new Date(selectedLead.createdAt).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                        <Target className="h-3 w-3" /> Confidence Score
-                      </p>
-                      <span className={`text-sm font-bold ${getConfidenceColor(detailScore)}`}>{detailScore}%</span>
-                    </div>
-                    <Progress value={detailScore} className="h-2" />
-                    <Slider
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={[detailScore]}
-                      onValueCommit={([val]) => {
-                        updateLeadMutation.mutate({ id: selectedLead.id, data: { confidenceScore: val } });
-                      }}
-                      data-testid="slider-confidence-detail"
-                    />
-                  </div>
-
-                  {selectedLead.tags && selectedLead.tags.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                        <TagIcon className="h-3 w-3" /> Tags
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedLead.tags.map((tag) => (
-                          <Badge key={tag} variant="secondary">{tag}</Badge>
-                        ))}
+                  {isEditingLead ? (
+                    <Form {...editLeadForm}>
+                      <form onSubmit={editLeadForm.handleSubmit(saveLeadEdits)} className="space-y-4">
+                        <FormField
+                          control={editLeadForm.control}
+                          name="title"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Title</FormLabel>
+                              <FormControl>
+                                <Input {...field} value={field.value || ""} data-testid="input-edit-lead-title" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={editLeadForm.control}
+                            name="clientId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Client</FormLabel>
+                                <Select
+                                  onValueChange={(val) => field.onChange(parseInt(val))}
+                                  value={field.value?.toString()}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-edit-lead-client">
+                                      <SelectValue placeholder="Select client" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {clients?.map((c) => (
+                                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={editLeadForm.control}
+                            name="value"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Value ($)</FormLabel>
+                                <FormControl>
+                                  <Input type="number" step="0.01" {...field} value={field.value || ""} data-testid="input-edit-lead-value" />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <FormField
+                          control={editLeadForm.control}
+                          name="assignedTo"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Assigned To</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || undefined}
+                              >
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-edit-lead-assignee">
+                                    <SelectValue placeholder="Select team member" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {users?.map((u) => (
+                                    <SelectItem key={u.id} value={u.id}>
+                                      {u.firstName} {u.lastName}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={editLeadForm.control}
+                          name="confidenceScore"
+                          render={({ field }) => (
+                            <FormItem>
+                              <div className="flex items-center justify-between">
+                                <FormLabel>Confidence Score</FormLabel>
+                                <span className={`text-sm font-bold ${getConfidenceColor(field.value ?? 50)}`}>
+                                  {field.value ?? 50}%
+                                </span>
+                              </div>
+                              <FormControl>
+                                <Slider
+                                  min={0} max={100} step={5}
+                                  value={[field.value ?? 50]}
+                                  onValueChange={([v]) => field.onChange(v)}
+                                  data-testid="slider-edit-confidence"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Tags</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Add a tag and press Enter"
+                              value={editTagInput}
+                              onChange={(e) => setEditTagInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === ",") {
+                                  e.preventDefault();
+                                  addEditTag(editTagInput);
+                                }
+                              }}
+                              data-testid="input-edit-lead-tag"
+                            />
+                            <Button type="button" variant="outline" size="sm" onClick={() => addEditTag(editTagInput)}>
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          {editFormTags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {editFormTags.map((tag) => (
+                                <Badge key={tag} variant="secondary" className="gap-1 pl-2 pr-1">
+                                  {tag}
+                                  <button type="button" onClick={() => removeEditTag(tag)} className="rounded-sm hover:bg-muted p-0.5">
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <FormField
+                          control={editLeadForm.control}
+                          name="notes"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Notes</FormLabel>
+                              <FormControl>
+                                <Textarea
+                                  className="resize-none min-h-[100px]"
+                                  {...field}
+                                  value={field.value || ""}
+                                  data-testid="textarea-edit-lead-notes"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </form>
+                    </Form>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Client</p>
+                          <p className="font-medium text-sm">{getClientName(selectedLead.clientId)}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Value</p>
+                          <p className="font-mono text-sm font-bold text-primary">{formatCurrency(selectedLead.value)}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Assigned To</p>
+                          <p className="font-medium text-sm">{getUserName(selectedLead.assignedTo)}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Created</p>
+                          <p className="font-medium text-sm">{new Date(selectedLead.createdAt).toLocaleDateString()}</p>
+                        </div>
                       </div>
-                    </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                            <Target className="h-3 w-3" /> Confidence Score
+                          </p>
+                          <span className={`text-sm font-bold ${getConfidenceColor(detailScore)}`}>{detailScore}%</span>
+                        </div>
+                        <Progress value={detailScore} className="h-2" />
+                        <Slider
+                          min={0} max={100} step={5}
+                          value={[detailScore]}
+                          onValueCommit={([val]) => {
+                            updateLeadMutation.mutate({ id: selectedLead.id, data: { confidenceScore: val } });
+                          }}
+                          data-testid="slider-confidence-detail"
+                        />
+                      </div>
+
+                      {selectedLead.tags && selectedLead.tags.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                            <TagIcon className="h-3 w-3" /> Tags
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedLead.tags.map((tag) => (
+                              <Badge key={tag} variant="secondary">{tag}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <Separator />
+
+                      <div className="space-y-3">
+                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Change Stage</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {stages.map((stage) => {
+                            const sc = getStageColors(stage.color);
+                            const isActive = selectedLead.stage === stage.slug;
+                            return (
+                              <Button
+                                key={stage.id}
+                                variant={isActive ? "secondary" : "outline"}
+                                size="sm"
+                                className="justify-start font-medium"
+                                onClick={() => updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.slug })}
+                              >
+                                <div className={`h-2 w-2 rounded-full mr-2 ${isActive ? sc.dot : 'bg-muted-foreground/30'}`} />
+                                {stage.label}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Internal Notes</p>
+                        <Card className="bg-muted">
+                          <CardContent className="p-3 text-sm leading-relaxed whitespace-pre-wrap">
+                            {selectedLead.notes || "No notes provided."}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </>
                   )}
-
-                  <Separator />
-
-                  <div className="space-y-3">
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Change Stage</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {stages.map((stage) => {
-                        const sc = getStageColors(stage.color);
-                        const isActive = selectedLead.stage === stage.slug;
-                        return (
-                          <Button
-                            key={stage.id}
-                            variant={isActive ? "secondary" : "outline"}
-                            size="sm"
-                            className={`justify-start font-medium ${isActive ? '' : ''}`}
-                            onClick={() => updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.slug })}
-                          >
-                            <div className={`h-2 w-2 rounded-full mr-2 ${isActive ? sc.dot : 'bg-muted-foreground/30'}`} />
-                            {stage.label}
-                          </Button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Internal Notes</p>
-                    <Card className="bg-muted">
-                      <CardContent className="p-3 text-sm leading-relaxed whitespace-pre-wrap">
-                        {selectedLead.notes || "No notes provided."}
-                      </CardContent>
-                    </Card>
-                  </div>
                 </TabsContent>
 
                 <TabsContent value="tasks" className="py-4 space-y-3">
-                  {detailLeadTasks.length === 0 ? (
-                    <div className="text-center py-10 text-muted-foreground">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      {detailLeadTasks.length} Task{detailLeadTasks.length !== 1 ? "s" : ""}
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setIsAddTaskOpen((v) => !v);
+                        addTaskForm.reset({
+                          title: "",
+                          description: "",
+                          priority: "medium",
+                          status: "todo",
+                          relatedLeadId: selectedLead.id,
+                          relatedClientId: selectedLead.clientId ?? undefined,
+                          assignedTo: undefined,
+                          dueDate: undefined,
+                        });
+                      }}
+                      data-testid="button-add-task-to-lead"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1.5" />
+                      Add Task
+                    </Button>
+                  </div>
+
+                  {isAddTaskOpen && (
+                    <Card className="border-primary/30 bg-primary/3">
+                      <CardContent className="p-4">
+                        <Form {...addTaskForm}>
+                          <form
+                            onSubmit={addTaskForm.handleSubmit((data) =>
+                              createTaskMutation.mutate({ ...data, relatedLeadId: selectedLead.id })
+                            )}
+                            className="space-y-3"
+                          >
+                            <FormField
+                              control={addTaskForm.control}
+                              name="title"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Task Title</FormLabel>
+                                  <FormControl>
+                                    <Input placeholder="e.g. Follow up with client" {...field} value={field.value || ""} data-testid="input-new-task-title" />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={addTaskForm.control}
+                              name="description"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                                  <FormControl>
+                                    <Textarea className="resize-none min-h-[60px]" {...field} value={field.value || ""} data-testid="textarea-new-task-desc" />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                            <div className="grid grid-cols-2 gap-3">
+                              <FormField
+                                control={addTaskForm.control}
+                                name="priority"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Priority</FormLabel>
+                                    <Select onValueChange={field.onChange} value={field.value}>
+                                      <FormControl>
+                                        <SelectTrigger data-testid="select-new-task-priority">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value="low">Low</SelectItem>
+                                        <SelectItem value="medium">Medium</SelectItem>
+                                        <SelectItem value="high">High</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={addTaskForm.control}
+                                name="dueDate"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Due Date</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="date"
+                                        {...field}
+                                        value={field.value ? String(field.value).slice(0, 10) : ""}
+                                        data-testid="input-new-task-due"
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+                            <FormField
+                              control={addTaskForm.control}
+                              name="assignedTo"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Assign To <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                                  <Select onValueChange={field.onChange} value={field.value || undefined}>
+                                    <FormControl>
+                                      <SelectTrigger data-testid="select-new-task-assignee">
+                                        <SelectValue placeholder="Select team member" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {users?.map((u) => (
+                                        <SelectItem key={u.id} value={u.id}>
+                                          {u.firstName} {u.lastName}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </FormItem>
+                              )}
+                            />
+                            <div className="flex gap-2 pt-1">
+                              <Button
+                                type="submit"
+                                size="sm"
+                                disabled={createTaskMutation.isPending}
+                                className="flex-1"
+                                data-testid="button-save-new-task"
+                              >
+                                {createTaskMutation.isPending ? "Creating..." : "Create Task"}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setIsAddTaskOpen(false)}
+                                data-testid="button-cancel-new-task"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </form>
+                        </Form>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {detailLeadTasks.length === 0 && !isAddTaskOpen ? (
+                    <div className="text-center py-8 text-muted-foreground">
                       <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                      <p className="text-sm">No tasks linked to this lead.</p>
-                      <p className="text-xs mt-1">Create a task and associate it with this lead.</p>
+                      <p className="text-sm">No tasks linked to this lead yet.</p>
+                      <p className="text-xs mt-1">Use the "Add Task" button above to create one.</p>
                     </div>
                   ) : (
                     detailLeadTasks.map((task) => {
@@ -988,8 +1432,14 @@ export default function Leads() {
                                   {task.priority}
                                 </Badge>
                                 {task.dueDate && (
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                    <CalendarIcon className="h-2.5 w-2.5" />
+                                    {new Date(task.dueDate).toLocaleDateString()}
+                                  </span>
+                                )}
+                                {task.assignedTo && (
                                   <span className="text-[10px] text-muted-foreground">
-                                    Due {new Date(task.dueDate).toLocaleDateString()}
+                                    {getUserName(task.assignedTo)}
                                   </span>
                                 )}
                               </div>
