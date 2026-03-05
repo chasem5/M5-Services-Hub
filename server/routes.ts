@@ -548,6 +548,16 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     res.json(task);
   });
 
+  app.patch("/api/tasks/:id/move", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const { status, sortOrder } = z.object({
+      status: z.enum(["todo", "in_progress", "done"]),
+      sortOrder: z.number(),
+    }).parse(req.body);
+    const task = await storage.updateTask(id, { status, sortOrder });
+    res.json(task);
+  });
+
   app.delete("/api/tasks/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     await storage.deleteTask(id);

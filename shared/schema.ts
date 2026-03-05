@@ -110,6 +110,9 @@ export const tasks = pgTable("tasks", {
   dueDate: timestamp("due_date"),
   priority: varchar("priority", { enum: ["low", "medium", "high"] }).default("medium").notNull(),
   status: varchar("status", { enum: ["todo", "in_progress", "done"] }).default("todo").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  checklist: jsonb("checklist").default([]),
+  labels: text("labels").array().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -220,7 +223,11 @@ export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, creat
   valueTier: z.enum(["$", "$$", "$$$", "$$$$"]).optional().nullable(),
 });
 export const insertPipelineViewSchema = createInsertSchema(pipelineViews).omit({ id: true, createdAt: true });
-export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
+export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true }).extend({
+  checklist: z.array(z.object({ id: z.string(), text: z.string(), done: z.boolean() })).optional().default([]),
+  labels: z.array(z.string()).optional().default([]),
+  sortOrder: z.number().optional().default(0),
+});
 export const insertReminderSchema = createInsertSchema(reminders).omit({ id: true, createdAt: true });
 export const insertServiceCatalogSchema = createInsertSchema(serviceCatalog).omit({ id: true });
 export const insertEstimateSchema = createInsertSchema(estimates).omit({ id: true, createdAt: true, updatedAt: true }).extend({
