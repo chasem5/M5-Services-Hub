@@ -121,6 +121,12 @@ function OrgNode({ contact, contacts, allContacts, onUpdateReportsTo, onEditCont
                     <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">May have left</span>
                   </div>
                 )}
+                {contact.employmentStatus === "unverified" && (
+                  <div className="flex items-center justify-center gap-1 mt-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-400 shrink-0" />
+                    <span className="text-[10px] text-blue-500 dark:text-blue-400 font-medium">Open to Work</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

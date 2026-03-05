@@ -682,7 +682,7 @@ export default function ClientDetail() {
       const unverified = results.filter(r => r.status === "unverified").length;
       toast({
         title: "Employment verified",
-        description: `${active} active, ${left} may have left, ${unverified} unverified (no LinkedIn)`,
+        description: `${active} active, ${left} may have left, ${unverified} open to work`,
       });
     },
     onError: (err: Error) => {
