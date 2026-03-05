@@ -295,7 +295,7 @@ export default function Proposals() {
         </Dialog>
       </div>
 
-      <Card className="border-none shadow-sm bg-card/50 backdrop-blur">
+      <Card className="border-none shadow-sm bg-card">
         <CardHeader className="pb-3">
           <div className="flex flex-col md:flex-row md:items-center gap-4">
             <div className="relative flex-1">

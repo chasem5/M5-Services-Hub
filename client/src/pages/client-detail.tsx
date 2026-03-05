@@ -243,7 +243,7 @@ export default function ClientDetail() {
         <div className="py-6">
           <TabsContent value="overview" className="m-0">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <Card className="lg:col-span-2 border-none shadow-sm bg-card/50">
+              <Card className="lg:col-span-2 border-none shadow-sm bg-card">
                 <CardHeader>
                   <CardTitle>Company Profile</CardTitle>
                   <CardDescription>View and edit detailed company information</CardDescription>
@@ -360,7 +360,7 @@ export default function ClientDetail() {
               </Card>
 
               <div className="space-y-6">
-                <Card className="border-none shadow-sm bg-card/50">
+                <Card className="border-none shadow-sm bg-card">
                   <CardHeader>
                     <CardTitle className="text-lg">Quick Info</CardTitle>
                   </CardHeader>
@@ -425,7 +425,7 @@ export default function ClientDetail() {
           </TabsContent>
 
           <TabsContent value="contacts" className="m-0">
-            <Card className="border-none shadow-sm bg-card/50">
+            <Card className="border-none shadow-sm bg-card">
               <CardHeader className="flex flex-row items-center justify-between pb-4">
                 <div>
                   <CardTitle>Client Contacts</CardTitle>
@@ -609,7 +609,7 @@ export default function ClientDetail() {
           </TabsContent>
 
           <TabsContent value="leads" className="m-0">
-            <Card className="border-none shadow-sm bg-card/50">
+            <Card className="border-none shadow-sm bg-card">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Sales Leads</CardTitle>
@@ -658,7 +658,7 @@ export default function ClientDetail() {
           </TabsContent>
 
           <TabsContent value="estimates" className="m-0">
-            <Card className="border-none shadow-sm bg-card/50">
+            <Card className="border-none shadow-sm bg-card">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Estimates</CardTitle>
@@ -707,7 +707,7 @@ export default function ClientDetail() {
           </TabsContent>
 
           <TabsContent value="activity" className="m-0">
-            <Card className="border-none shadow-sm bg-card/50">
+            <Card className="border-none shadow-sm bg-card">
               <CardHeader className="pb-0">
                 <CardTitle>Activity Timeline</CardTitle>
                 <CardDescription>Complete history of interactions and changes</CardDescription>

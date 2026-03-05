@@ -467,7 +467,7 @@ export default function EstimateDetail() {
           </TabsContent>
 
           <TabsContent value="activity" className="m-0">
-            <Card className="border-none shadow-sm bg-card/50">
+            <Card className="border-none shadow-sm bg-card">
               <CardHeader className="pb-0">
                 <CardTitle>Estimate Activity</CardTitle>
                 <CardDescription>History of changes to this estimate</CardDescription>

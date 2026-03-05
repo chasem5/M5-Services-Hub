@@ -186,7 +186,7 @@ export default function Leads() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-muted/30">
+    <div className="flex flex-col h-full bg-muted">
       <header className="flex flex-col gap-4 p-6 bg-background border-b shadow-sm">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -597,7 +597,7 @@ export default function Leads() {
 
                   <div className="space-y-2">
                     <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Internal Notes</p>
-                    <Card className="bg-muted/30">
+                    <Card className="bg-muted">
                       <CardContent className="p-3 text-sm leading-relaxed whitespace-pre-wrap">
                         {selectedLead.notes || "No notes provided."}
                       </CardContent>

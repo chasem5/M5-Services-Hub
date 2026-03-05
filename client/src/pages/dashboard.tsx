@@ -114,7 +114,7 @@ export default function Dashboard() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
         {/* Lead Stages */}
-        <Card className="col-span-4 shadow-sm border-border/40 bg-card/50 backdrop-blur">
+        <Card className="col-span-4 shadow-sm border-border/40 bg-card">
           <CardHeader>
             <CardTitle className="text-lg font-heading">Lead Pipeline</CardTitle>
           </CardHeader>
@@ -149,7 +149,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Upcoming Tasks */}
-        <Card className="col-span-3 shadow-sm border-border/40 bg-card/50 backdrop-blur">
+        <Card className="col-span-3 shadow-sm border-border/40 bg-card">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg font-heading">Upcoming Tasks</CardTitle>
             <Button variant="ghost" size="sm" asChild className="no-default-hover-elevate">
@@ -195,7 +195,7 @@ export default function Dashboard() {
       </div>
 
       {/* Activity Feed */}
-      <Card className="shadow-sm border-border/40 bg-card/50 backdrop-blur">
+      <Card className="shadow-sm border-border/40 bg-card">
         <CardHeader>
           <CardTitle className="text-lg font-heading font-bold">Recent Activity</CardTitle>
         </CardHeader>
@@ -252,7 +252,7 @@ function MetricCard({
   dataTestId: string;
 }) {
   return (
-    <Card className="shadow-sm border-border/40 bg-card/50 backdrop-blur">
+    <Card className="shadow-sm border-border/40 bg-card">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           {title}
