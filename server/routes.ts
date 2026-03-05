@@ -125,14 +125,28 @@ export async function registerRoutes(
   // All buildings for all contacts of a client (for portfolio map)
   app.get("/api/clients/:id/all-buildings", isAuthenticated, async (req, res) => {
     const clientId = parseInt(req.params.id as string);
-    const contacts = await storage.listClientContacts(clientId);
-    const allBuildings = await Promise.all(
+    const [contacts, offices] = await Promise.all([
+      storage.listClientContacts(clientId),
+      storage.listClientOffices(clientId),
+    ]);
+    const contactBuildings = await Promise.all(
       contacts.map(async (c) => {
         const buildings = await storage.listContactBuildings(c.id);
-        return buildings.map(b => ({ ...b, contactName: c.name, contactId: c.id }));
+        return buildings.map(b => ({ ...b, contactName: c.name, contactId: c.id, type: "building" as const }));
       })
     );
-    res.json(allBuildings.flat());
+    const officeEntries = offices.map(o => ({
+      id: o.id,
+      name: o.name,
+      address: o.address,
+      lat: o.lat,
+      lng: o.lng,
+      notes: null,
+      contactName: "Office",
+      contactId: null,
+      type: "office" as const,
+    }));
+    res.json([...officeEntries, ...contactBuildings.flat()]);
   });
 
   // Contact Buildings
@@ -183,7 +197,10 @@ export async function registerRoutes(
 
   app.put("/api/clients/:id/offices/:officeId", isAuthenticated, async (req, res) => {
     const officeId = parseInt(req.params.officeId as string);
-    const updated = await storage.updateClientOffice(officeId, req.body);
+    const body = { ...req.body };
+    if (body.lat != null) body.lat = String(body.lat);
+    if (body.lng != null) body.lng = String(body.lng);
+    const updated = await storage.updateClientOffice(officeId, body);
     res.json(updated);
   });
 

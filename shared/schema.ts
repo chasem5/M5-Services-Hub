@@ -27,6 +27,8 @@ export const clientOffices = pgTable("client_offices", {
   name: varchar("name").notNull(),
   address: text("address"),
   phone: varchar("phone"),
+  lat: decimal("lat", { precision: 10, scale: 7 }),
+  lng: decimal("lng", { precision: 10, scale: 7 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -165,7 +167,10 @@ export const activityLogs = pgTable("activity_logs", {
 // Zod Schemas
 export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertClientOfficeSchema = createInsertSchema(clientOffices).omit({ id: true, createdAt: true });
+export const insertClientOfficeSchema = createInsertSchema(clientOffices).omit({ id: true, createdAt: true }).extend({
+  lat: z.coerce.string().optional().nullable(),
+  lng: z.coerce.string().optional().nullable(),
+});
 export const insertClientContactSchema = createInsertSchema(clientContacts).omit({ id: true });
 export const insertContactBuildingSchema = createInsertSchema(contactBuildings).omit({ id: true, createdAt: true }).extend({
   lat: z.coerce.string().optional().nullable(),

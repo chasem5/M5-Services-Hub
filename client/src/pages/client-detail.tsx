@@ -387,6 +387,10 @@ export default function ClientDetail() {
   const [isOfficeDialogOpen, setIsOfficeDialogOpen] = useState(false);
   const [isEditOfficeDialogOpen, setIsEditOfficeDialogOpen] = useState(false);
   const [editingOffice, setEditingOffice] = useState<ClientOffice | null>(null);
+  const [officeLat, setOfficeLat] = useState<number | null>(null);
+  const [officeLng, setOfficeLng] = useState<number | null>(null);
+  const [editOfficeLat, setEditOfficeLat] = useState<number | null>(null);
+  const [editOfficeLng, setEditOfficeLng] = useState<number | null>(null);
   const [defaultOfficeId, setDefaultOfficeId] = useState<number | null>(null);
 
   // Queries
@@ -420,7 +424,7 @@ export default function ClientDetail() {
     queryKey: ["/api/clients"],
   });
 
-  const { data: allBuildings = [] } = useQuery<Array<{ id: number; name: string; address?: string | null; lat?: string | null; lng?: string | null; notes?: string | null; contactName: string; contactId: number }>>({
+  const { data: allBuildings = [] } = useQuery<Array<{ id: number; name: string; address?: string | null; lat?: string | null; lng?: string | null; notes?: string | null; contactName: string; contactId: number | null; type: "building" | "office" }>>({
     queryKey: ["/api/clients", clientId, "all-buildings"],
   });
 
@@ -512,28 +516,32 @@ export default function ClientDetail() {
   };
 
   const createOfficeMutation = useMutation({
-    mutationFn: async (data: { name: string; address?: string; phone?: string }) => {
+    mutationFn: async (data: { name: string; address?: string; phone?: string; lat?: number | null; lng?: number | null }) => {
       const res = await apiRequest("POST", `/api/clients/${clientId}/offices`, data);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "offices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "all-buildings"] });
       setIsOfficeDialogOpen(false);
       officeForm.reset({ name: "", address: "", phone: "" });
+      setOfficeLat(null); setOfficeLng(null);
       toast({ title: "Office added", description: "The office/division has been created." });
     },
   });
 
   const updateOfficeMutation = useMutation({
-    mutationFn: async (data: { id: number; name: string; address?: string; phone?: string }) => {
+    mutationFn: async (data: { id: number; name: string; address?: string; phone?: string; lat?: number | null; lng?: number | null }) => {
       const { id, ...fields } = data;
       const res = await apiRequest("PUT", `/api/clients/${clientId}/offices/${id}`, fields);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "offices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "all-buildings"] });
       setIsEditOfficeDialogOpen(false);
       setEditingOffice(null);
+      setEditOfficeLat(null); setEditOfficeLng(null);
       toast({ title: "Office updated" });
     },
   });
@@ -558,6 +566,8 @@ export default function ClientDetail() {
   const openEditOffice = (office: ClientOffice) => {
     setEditingOffice(office);
     editOfficeForm.reset({ name: office.name, address: office.address || "", phone: office.phone || "" });
+    setEditOfficeLat(office.lat ? parseFloat(String(office.lat)) : null);
+    setEditOfficeLng(office.lng ? parseFloat(String(office.lng)) : null);
     setIsEditOfficeDialogOpen(true);
   };
 
@@ -1262,14 +1272,24 @@ export default function ClientDetail() {
                   <DialogTitle>Add Office / Division</DialogTitle>
                   <DialogDescription>Create a new office or division to organize contacts.</DialogDescription>
                 </DialogHeader>
-                <form onSubmit={officeForm.handleSubmit((d) => createOfficeMutation.mutate(d))} className="space-y-4 py-2">
+                <form onSubmit={officeForm.handleSubmit((d) => createOfficeMutation.mutate({ ...d, lat: officeLat, lng: officeLng }))} className="space-y-4 py-2">
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Name <span className="text-destructive">*</span></label>
                     <Input {...officeForm.register("name", { required: true })} placeholder="e.g. Downtown Office, West Division" data-testid="input-office-name" />
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Address</label>
-                    <Input {...officeForm.register("address")} placeholder="123 Main St, City, State" data-testid="input-office-address" />
+                    <AddressAutocomplete
+                      value={officeForm.watch("address") || ""}
+                      onChange={(addr, lat, lng) => {
+                        officeForm.setValue("address", addr);
+                        if (lat !== undefined) setOfficeLat(lat);
+                        if (lng !== undefined) setOfficeLng(lng);
+                      }}
+                      placeholder="Search address..."
+                      data-testid="input-office-address"
+                    />
+                    {officeLat && <p className="text-[11px] text-green-600 mt-1">📍 Location confirmed</p>}
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Phone</label>
@@ -1291,14 +1311,24 @@ export default function ClientDetail() {
                   <DialogTitle>Edit Office</DialogTitle>
                   <DialogDescription>Update the details for this office or division.</DialogDescription>
                 </DialogHeader>
-                <form onSubmit={editOfficeForm.handleSubmit((d) => editingOffice && updateOfficeMutation.mutate({ id: editingOffice.id, ...d }))} className="space-y-4 py-2">
+                <form onSubmit={editOfficeForm.handleSubmit((d) => editingOffice && updateOfficeMutation.mutate({ id: editingOffice.id, ...d, lat: editOfficeLat, lng: editOfficeLng }))} className="space-y-4 py-2">
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Name <span className="text-destructive">*</span></label>
                     <Input {...editOfficeForm.register("name", { required: true })} data-testid="input-edit-office-name" />
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Address</label>
-                    <Input {...editOfficeForm.register("address")} data-testid="input-edit-office-address" />
+                    <AddressAutocomplete
+                      value={editOfficeForm.watch("address") || ""}
+                      onChange={(addr, lat, lng) => {
+                        editOfficeForm.setValue("address", addr);
+                        if (lat !== undefined) setEditOfficeLat(lat);
+                        if (lng !== undefined) setEditOfficeLng(lng);
+                      }}
+                      placeholder="Search address..."
+                      data-testid="input-edit-office-address"
+                    />
+                    {editOfficeLat && <p className="text-[11px] text-green-600 mt-1">📍 Location confirmed</p>}
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Phone</label>
@@ -1462,7 +1492,7 @@ export default function ClientDetail() {
                   Portfolio Map
                 </CardTitle>
                 <CardDescription>
-                  All buildings across contacts for {client.name} — {allBuildings.filter(b => b.lat).length} of {allBuildings.length} location{allBuildings.length !== 1 ? "s" : ""} mapped
+                  Offices and contact buildings for {client.name} — {allBuildings.filter(b => b.lat).length} of {allBuildings.length} location{allBuildings.length !== 1 ? "s" : ""} mapped
                 </CardDescription>
               </CardHeader>
               <CardContent className="pb-6">
@@ -1473,12 +1503,20 @@ export default function ClientDetail() {
                 {allBuildings.length > 0 && (
                   <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     {allBuildings.map(b => (
-                      <div key={b.id} className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${b.lat ? "border-border bg-card" : "border-dashed border-border/50 bg-muted/20"}`}
-                        data-testid={`building-list-item-${b.id}`}>
-                        <MapPin className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-primary" : "text-muted-foreground/50"}`} />
+                      <div key={`${b.type}-${b.id}`} className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${b.lat ? "border-border bg-card" : "border-dashed border-border/50 bg-muted/20"}`}
+                        data-testid={`map-list-item-${b.type}-${b.id}`}>
+                        {b.type === "office"
+                          ? <Building2 className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-slate-500" : "text-muted-foreground/50"}`} />
+                          : <MapPin className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-primary" : "text-muted-foreground/50"}`} />
+                        }
                         <div className="min-w-0">
-                          <p className="font-medium truncate">{b.name}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">{b.contactName}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-medium truncate">{b.name}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${b.type === "office" ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"}`}>
+                              {b.type === "office" ? "Office" : "Building"}
+                            </span>
+                          </div>
+                          {b.type === "building" && <p className="text-[11px] text-muted-foreground truncate">{b.contactName}</p>}
                           {b.address && <p className="text-xs text-muted-foreground mt-0.5 truncate">{b.address}</p>}
                           {!b.lat && <p className="text-[10px] text-amber-500 mt-0.5 italic">No location — edit to add address</p>}
                         </div>
