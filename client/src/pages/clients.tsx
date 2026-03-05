@@ -19,7 +19,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   ChevronDown,
+  Linkedin,
 } from "lucide-react";
+import { SiLinkedin } from "react-icons/si";
 
 // ── CSV utilities ────────────────────────────────────────────────────────────
 
@@ -146,6 +148,7 @@ export default function Customers() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<ClientContact | null>(null);
   const companiesFileRef = useRef<HTMLInputElement>(null);
   const contactsFileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -723,16 +726,31 @@ export default function Customers() {
                         <TableHead className="font-bold">Company</TableHead>
                         <TableHead className="font-bold">Title</TableHead>
                         <TableHead className="font-bold">Contact Info</TableHead>
+                        <TableHead className="font-bold">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredContacts.map((contact) => (
-                        <TableRow key={contact.id} className="hover:bg-muted/30 transition-colors" data-testid={`row-contact-${contact.id}`}>
+                        <TableRow
+                          key={contact.id}
+                          className="hover:bg-muted/30 transition-colors cursor-pointer"
+                          onClick={() => setSelectedContact(contact)}
+                          data-testid={`row-contact-${contact.id}`}
+                        >
                           <TableCell>
                             <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">
-                                {contact.name.charAt(0).toUpperCase()}
-                              </div>
+                              {contact.profilePictureUrl ? (
+                                <img
+                                  src={contact.profilePictureUrl}
+                                  alt={contact.name}
+                                  className="h-8 w-8 rounded-full object-cover"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                />
+                              ) : (
+                                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
+                                  {contact.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
                               <div>
                                 <p className="font-medium text-sm">{contact.name}</p>
                                 {contact.isPrimary && (
@@ -744,7 +762,7 @@ export default function Customers() {
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
                             <Link
                               href={`/customers/${contact.clientId}`}
                               className="flex items-center gap-1.5 text-primary hover:underline text-sm"
@@ -773,6 +791,23 @@ export default function Customers() {
                               )}
                             </div>
                           </TableCell>
+                          <TableCell>
+                            {contact.employmentStatus === "active" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-600 dark:text-green-400">
+                                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Active
+                              </span>
+                            )}
+                            {contact.employmentStatus === "likely_left" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                                <AlertTriangle className="h-3 w-3" />May have left
+                              </span>
+                            )}
+                            {contact.employmentStatus === "unverified" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-500 dark:text-blue-400">
+                                <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />Open to Work
+                              </span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -795,6 +830,140 @@ export default function Customers() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Contact Profile Dialog */}
+      <Dialog open={!!selectedContact} onOpenChange={(open) => { if (!open) setSelectedContact(null); }}>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden">
+          {selectedContact && (() => {
+            const sc = selectedContact;
+            const initials = sc.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+            return (
+              <>
+                {/* Header band */}
+                <div className="bg-primary/8 border-b px-6 pt-6 pb-5">
+                  <div className="flex items-start gap-4">
+                    {sc.profilePictureUrl ? (
+                      <img src={sc.profilePictureUrl} alt={sc.name} className="h-16 w-16 rounded-full object-cover ring-2 ring-border shrink-0" />
+                    ) : (
+                      <div className="h-16 w-16 rounded-full bg-primary/10 ring-2 ring-border flex items-center justify-center text-primary font-bold text-xl shrink-0">
+                        {initials}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0 pt-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="font-bold text-lg leading-tight">{sc.name}</h2>
+                        {sc.isPrimary && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 uppercase tracking-wide">
+                            <Star className="h-2.5 w-2.5 fill-current" />Primary
+                          </span>
+                        )}
+                        {sc.linkedinUrl && (
+                          <a href={sc.linkedinUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} data-testid={`link-linkedin-profile-${sc.id}`}>
+                            <SiLinkedin className="h-4 w-4 text-[#0A66C2]" />
+                          </a>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-0.5">{sc.title || <span className="italic">No title</span>}</p>
+                      {/* Employment status */}
+                      <div className="mt-2">
+                        {sc.employmentStatus === "active" && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-600 dark:text-green-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />Active
+                          </span>
+                        )}
+                        {sc.employmentStatus === "likely_left" && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                            <AlertTriangle className="h-3 w-3" />May have left
+                          </span>
+                        )}
+                        {sc.employmentStatus === "unverified" && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-500 dark:text-blue-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />Open to Work
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {/* Body */}
+                <div className="px-6 py-5 space-y-4">
+                  {/* Company */}
+                  <div className="flex items-center gap-3">
+                    <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <Link
+                      href={`/customers/${sc.clientId}`}
+                      className="text-sm text-primary hover:underline font-medium"
+                      onClick={() => setSelectedContact(null)}
+                      data-testid={`link-profile-company-${sc.id}`}
+                    >
+                      {getCompanyName(sc.clientId)}
+                    </Link>
+                  </div>
+                  {/* Email */}
+                  {sc.email ? (
+                    <div className="flex items-center gap-3">
+                      <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <a href={`mailto:${sc.email}`} className="text-sm hover:underline" data-testid={`link-profile-email-${sc.id}`}>{sc.email}</a>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm text-muted-foreground italic">No email on file</span>
+                    </div>
+                  )}
+                  {/* Phone */}
+                  {sc.phone ? (
+                    <div className="flex items-center gap-3">
+                      <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <a href={`tel:${sc.phone}`} className="text-sm hover:underline" data-testid={`link-profile-phone-${sc.id}`}>{sc.phone}</a>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm text-muted-foreground italic">No phone on file</span>
+                    </div>
+                  )}
+                  {/* LinkedIn URL text */}
+                  {sc.linkedinUrl && (
+                    <div className="flex items-center gap-3">
+                      <Linkedin className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <a href={sc.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate" data-testid={`link-profile-linkedin-${sc.id}`}>
+                        {sc.linkedinUrl.replace("https://www.linkedin.com/in/", "")}
+                      </a>
+                    </div>
+                  )}
+                  {/* Service Needs */}
+                  {sc.serviceNeeds && sc.serviceNeeds.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Service Needs</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {sc.serviceNeeds.map((need: string) => (
+                          <Badge key={need} variant="secondary" className="text-xs capitalize">
+                            {need.replace(/_/g, " ")}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Go to full company profile */}
+                  <div className="pt-2 border-t">
+                    <Link
+                      href={`/customers/${sc.clientId}`}
+                      onClick={() => setSelectedContact(null)}
+                      data-testid={`button-view-company-${sc.id}`}
+                    >
+                      <button className="w-full h-9 text-sm rounded-md border border-border hover:bg-muted/50 transition-colors flex items-center justify-center gap-2">
+                        <ExternalLink className="h-4 w-4" />
+                        View full company profile
+                      </button>
+                    </Link>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Import Result Dialog */}
       <Dialog open={!!importResult} onOpenChange={(open) => { if (!open) setImportResult(null); }}>
