@@ -144,14 +144,20 @@ export async function registerRoutes(
 
   app.post("/api/contacts/:contactId/buildings", isAuthenticated, async (req, res) => {
     const contactId = parseInt(req.params.contactId as string);
-    const data = insertContactBuildingSchema.parse({ ...req.body, contactId });
+    const body = { ...req.body, contactId };
+    if (body.lat != null) body.lat = String(body.lat);
+    if (body.lng != null) body.lng = String(body.lng);
+    const data = insertContactBuildingSchema.parse(body);
     const building = await storage.createContactBuilding(data);
     res.json(building);
   });
 
   app.put("/api/contacts/:contactId/buildings/:buildingId", isAuthenticated, async (req, res) => {
     const buildingId = parseInt(req.params.buildingId as string);
-    const updated = await storage.updateContactBuilding(buildingId, req.body);
+    const body = { ...req.body };
+    if (body.lat != null) body.lat = String(body.lat);
+    if (body.lng != null) body.lng = String(body.lng);
+    const updated = await storage.updateContactBuilding(buildingId, body);
     res.json(updated);
   });
 
