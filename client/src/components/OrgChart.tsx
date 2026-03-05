@@ -20,6 +20,7 @@ import { Mail, Phone, UserCircle2, Star, Edit2, Check } from "lucide-react";
 interface OrgChartProps {
   contacts: ClientContact[];
   onUpdateReportsTo: (contactId: number, reportsTo: number | null) => void;
+  onEditContact: (contact: ClientContact) => void;
   isUpdating: boolean;
 }
 
@@ -27,6 +28,7 @@ interface OrgNodeProps {
   contact: ClientContact;
   contacts: ClientContact[];
   onUpdateReportsTo: (contactId: number, reportsTo: number | null) => void;
+  onEditContact: (contact: ClientContact) => void;
   isUpdating: boolean;
   isLast: boolean;
   isFirst: boolean;
@@ -37,7 +39,7 @@ function getInitials(name: string) {
   return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
-function OrgNode({ contact, contacts, onUpdateReportsTo, isUpdating, isLast, isFirst, siblingCount }: OrgNodeProps) {
+function OrgNode({ contact, contacts, onUpdateReportsTo, onEditContact, isUpdating, isLast, isFirst, siblingCount }: OrgNodeProps) {
   const children = contacts.filter(c => c.reportsTo === contact.id);
   const [editingReportsTo, setEditingReportsTo] = useState(false);
   const [pendingReportsTo, setPendingReportsTo] = useState<string>(
@@ -112,6 +114,16 @@ function OrgNode({ contact, contacts, onUpdateReportsTo, isUpdating, isLast, isF
               <p className="text-sm text-muted-foreground italic">No contact info</p>
             )}
             <div className="pt-2 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mb-3"
+                onClick={() => onEditContact(contact)}
+                data-testid={`button-edit-contact-org-${contact.id}`}
+              >
+                <Edit2 className="mr-2 h-3.5 w-3.5" />
+                Edit Contact Info
+              </Button>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Reports To</p>
               {editingReportsTo ? (
                 <div className="flex gap-2">
@@ -182,6 +194,7 @@ function OrgNode({ contact, contacts, onUpdateReportsTo, isUpdating, isLast, isF
                   contact={child}
                   contacts={contacts}
                   onUpdateReportsTo={onUpdateReportsTo}
+                  onEditContact={onEditContact}
                   isUpdating={isUpdating}
                   isFirst={idx === 0}
                   isLast={idx === children.length - 1}
@@ -196,7 +209,7 @@ function OrgNode({ contact, contacts, onUpdateReportsTo, isUpdating, isLast, isF
   );
 }
 
-export function OrgChart({ contacts, onUpdateReportsTo, isUpdating }: OrgChartProps) {
+export function OrgChart({ contacts, onUpdateReportsTo, onEditContact, isUpdating }: OrgChartProps) {
   const rootContacts = contacts.filter(c => !c.reportsTo);
 
   if (contacts.length === 0) {
@@ -219,6 +232,7 @@ export function OrgChart({ contacts, onUpdateReportsTo, isUpdating }: OrgChartPr
               contact={root}
               contacts={contacts}
               onUpdateReportsTo={onUpdateReportsTo}
+              onEditContact={onEditContact}
               isUpdating={isUpdating}
               isFirst={true}
               isLast={true}

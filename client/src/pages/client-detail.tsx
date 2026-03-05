@@ -97,6 +97,7 @@ export default function ClientDetail() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
+  const [isEditContactDialogOpen, setIsEditContactDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<ClientContact | null>(null);
   const [orgChartEditId, setOrgChartEditId] = useState<number | null>(null);
 
@@ -121,6 +122,14 @@ export default function ClientDetail() {
 
   const { data: activityLogs } = useQuery<ActivityLog[]>({
     queryKey: ["/api/activity-logs", { entityType: "client", entityId: clientId }],
+  });
+
+  const { data: allClients = [] } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+  });
+
+  const { data: allContacts = [] } = useQuery<ClientContact[]>({
+    queryKey: ["/api/client-contacts"],
   });
 
   // Mutations
@@ -165,8 +174,25 @@ export default function ClientDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
       setOrgChartEditId(null);
       toast({ title: "Updated", description: "Contact updated successfully" });
+    },
+  });
+
+  const saveEditContactMutation = useMutation({
+    mutationFn: async (data: Partial<ClientContact> & { id: number }) => {
+      const { id: contactId, ...fields } = data;
+      const res = await apiRequest("PUT", `/api/clients/${clientId}/contacts/${contactId}`, fields);
+      return res.json();
+    },
+    onSuccess: (updated: ClientContact) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", updated.clientId, "contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+      setIsEditContactDialogOpen(false);
+      setEditingContact(null);
+      toast({ title: "Saved", description: "Contact updated successfully" });
     },
   });
 
@@ -204,6 +230,39 @@ export default function ClientDetail() {
       reportsTo: undefined as number | undefined,
     },
   });
+
+  const editContactForm = useForm({
+    defaultValues: {
+      name: "",
+      title: "",
+      email: "",
+      phone: "",
+      isPrimary: false,
+      reportsTo: undefined as number | undefined,
+      clientId: clientId,
+    },
+  });
+
+  const openEditContact = (contact: ClientContact) => {
+    setEditingContact(contact);
+    editContactForm.reset({
+      name: contact.name,
+      title: contact.title || "",
+      email: contact.email || "",
+      phone: contact.phone || "",
+      isPrimary: contact.isPrimary,
+      reportsTo: contact.reportsTo ?? undefined,
+      clientId: contact.clientId,
+    });
+    setIsEditContactDialogOpen(true);
+  };
+
+  const watchedEditCompanyId = editContactForm.watch("clientId");
+
+  const onSaveEditContact = (data: any) => {
+    if (!editingContact) return;
+    saveEditContactMutation.mutate({ id: editingContact.id, ...data });
+  };
 
   const onUpdateClient = (data: any) => {
     updateClientMutation.mutate(data);
@@ -621,19 +680,30 @@ export default function ClientDetail() {
                                 <p className="text-sm text-muted-foreground">{contact.title || "No Title"}</p>
                               </div>
                             </div>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
-                              onClick={() => {
-                                if (confirm("Delete this contact?")) {
-                                  deleteContactMutation.mutate(contact.id);
-                                }
-                              }}
-                              data-testid={`button-delete-contact-${contact.id}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground transition-colors"
+                                onClick={() => openEditContact(contact)}
+                                data-testid={`button-edit-contact-${contact.id}`}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
+                                onClick={() => {
+                                  if (confirm("Delete this contact?")) {
+                                    deleteContactMutation.mutate(contact.id);
+                                  }
+                                }}
+                                data-testid={`button-delete-contact-${contact.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
                           <div className="mt-4 space-y-2">
                             {contact.email && (
@@ -799,6 +869,7 @@ export default function ClientDetail() {
                         data: { reportsTo: reportsTo ?? undefined },
                       });
                     }}
+                    onEditContact={openEditContact}
                     isUpdating={updateContactMutation.isPending}
                   />
                 )}
@@ -819,6 +890,188 @@ export default function ClientDetail() {
           </TabsContent>
         </div>
       </Tabs>
+
+      {/* Edit Contact Dialog */}
+      <Dialog open={isEditContactDialogOpen} onOpenChange={(open) => {
+        setIsEditContactDialogOpen(open);
+        if (!open) setEditingContact(null);
+      }}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Edit Contact</DialogTitle>
+            <DialogDescription>
+              Update contact info or move them to a different company.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...editContactForm}>
+            <form onSubmit={editContactForm.handleSubmit(onSaveEditContact)} className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={editContactForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel>Full Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Contact name" {...field} data-testid="input-edit-contact-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editContactForm.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel>Job Title</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. Operations Manager" {...field} value={field.value || ""} data-testid="input-edit-contact-title" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editContactForm.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input placeholder="email@example.com" {...field} value={field.value || ""} data-testid="input-edit-contact-email" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editContactForm.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone</FormLabel>
+                      <FormControl>
+                        <Input placeholder="555-0123" {...field} value={field.value || ""} data-testid="input-edit-contact-phone" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={editContactForm.control}
+                name="clientId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Company</FormLabel>
+                    <Select
+                      onValueChange={(val) => {
+                        field.onChange(parseInt(val));
+                        editContactForm.setValue("reportsTo", undefined);
+                      }}
+                      value={field.value?.toString()}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-contact-company">
+                          <SelectValue placeholder="Select company" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {allClients.map(c => (
+                          <SelectItem key={c.id} value={c.id.toString()}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {watchedEditCompanyId !== clientId && (
+                      <p className="text-xs text-amber-600 font-medium mt-1">
+                        This contact will be moved to the selected company.
+                      </p>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editContactForm.control}
+                name="reportsTo"
+                render={({ field }) => {
+                  const companyContacts = allContacts.filter(
+                    c => c.clientId === watchedEditCompanyId && c.id !== editingContact?.id
+                  );
+                  return (
+                    <FormItem>
+                      <FormLabel>Reports To</FormLabel>
+                      <Select
+                        onValueChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))}
+                        value={field.value?.toString() || "none"}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-contact-reports-to">
+                            <SelectValue placeholder="No manager (top level)" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No manager (top level)</SelectItem>
+                          {companyContacts.map(c => (
+                            <SelectItem key={c.id} value={c.id.toString()}>
+                              {c.name}{c.title ? ` — ${c.title}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+
+              <FormField
+                control={editContactForm.control}
+                name="isPrimary"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="checkbox-edit-contact-primary"
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>Primary Contact</FormLabel>
+                      <FormDescription>
+                        Mark as the main point of contact for their company.
+                      </FormDescription>
+                    </div>
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditContactDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={saveEditContactMutation.isPending}
+                  data-testid="button-save-edit-contact"
+                >
+                  {saveEditContactMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
