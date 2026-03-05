@@ -16,6 +16,7 @@ import {
 import { Link } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { AddressLink } from "@/components/AddressLink";
 import { 
   Table, 
   TableBody, 
@@ -457,7 +458,7 @@ export default function EstimateDetail() {
                       </div>
                     </div>
                     <div className="text-sm space-y-1">
-                      <p className="text-muted-foreground">{currentClient?.address}</p>
+                      {currentClient?.address && <AddressLink address={currentClient.address} className="text-sm text-muted-foreground" />}
                       <p className="text-muted-foreground">{currentClient?.email}</p>
                       <p className="text-muted-foreground">{currentClient?.phone}</p>
                     </div>

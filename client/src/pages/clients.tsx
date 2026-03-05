@@ -94,6 +94,7 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { AddressLink } from "@/components/AddressLink";
 import { Input } from "@/components/ui/input";
 import { 
   Card, 
@@ -737,7 +738,9 @@ export default function Customers() {
                           <TableCell className="max-w-[200px]">
                             <div className="flex items-start text-sm text-muted-foreground line-clamp-2">
                               <MapPin className="mr-2 h-3.5 w-3.5 mt-0.5 shrink-0" />
-                              {client.address || <span className="italic">No address</span>}
+                              {client.address
+                                ? <AddressLink address={client.address} className="text-muted-foreground text-sm" />
+                                : <span className="italic">No address</span>}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -1127,7 +1130,7 @@ export default function Customers() {
                               {building.address && (
                                 <div className="flex items-start gap-1 mt-1">
                                   <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
-                                  <p className="text-[11px] text-muted-foreground leading-tight">{building.address}</p>
+                                  <AddressLink address={building.address} className="text-[11px] text-muted-foreground leading-tight" />
                                 </div>
                               )}
                             </div>

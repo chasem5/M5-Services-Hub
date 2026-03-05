@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { AddressLink } from "@/components/AddressLink";
 import { 
   Card, 
   CardContent, 
@@ -218,7 +219,7 @@ function BuildingActivityRow({
       <div className="flex items-start justify-between pl-2 py-1 group/building">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium truncate">{building.name}</p>
-          {building.address && <p className="text-[11px] text-muted-foreground truncate">{building.address}</p>}
+          {building.address && <AddressLink address={building.address} className="text-[11px] text-muted-foreground truncate" />}
           {building.notes && <p className="text-[11px] text-muted-foreground italic truncate">{building.notes}</p>}
           <button
             type="button"
@@ -1130,7 +1131,9 @@ export default function ClientDetail() {
                       </div>
                       <div className="text-sm">
                         <p className="font-medium">Location</p>
-                        <p className="text-muted-foreground">{client.address || "No address"}</p>
+                        {client.address
+                          ? <AddressLink address={client.address} className="text-muted-foreground text-sm" />
+                          : <p className="text-muted-foreground">No address</p>}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -1420,7 +1423,7 @@ export default function ClientDetail() {
                             <div>
                               <h4 className="font-semibold text-base">{office.name}</h4>
                               <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                                {office.address && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{office.address}</span>}
+                                {office.address && <AddressLink address={office.address} showIcon className="text-xs text-muted-foreground" iconClassName="h-3 w-3" />}
                                 {office.phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{office.phone}</span>}
                                 <span>{officeContacts.length} contact{officeContacts.length !== 1 ? "s" : ""}</span>
                               </div>
@@ -1953,7 +1956,7 @@ export default function ClientDetail() {
                             </span>
                           </div>
                           {b.type === "building" && <p className="text-[11px] text-muted-foreground truncate">{b.contactName}</p>}
-                          {b.address && <p className="text-xs text-muted-foreground mt-0.5 truncate">{b.address}</p>}
+                          {b.address && <AddressLink address={b.address} className="text-xs text-muted-foreground mt-0.5 truncate" />}
                           {!b.lat && <p className="text-[10px] text-amber-500 mt-0.5 italic">No location — edit to add address</p>}
                         </div>
                       </div>
