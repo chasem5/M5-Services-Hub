@@ -98,6 +98,7 @@ import {
   type ClientOffice,
   type ClientContact,
   type ContactBuilding,
+  type BdSpendEntry,
   type Lead, 
   type Estimate,
   type ActivityLog
@@ -492,6 +493,9 @@ export default function ClientDetail() {
   const clientId = parseInt(id!);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [isAddSpendOpen, setIsAddSpendOpen] = useState(false);
+  const [spendFormData, setSpendFormData] = useState({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "", contactId: "" });
+  const [isSubmittingSpend, setIsSubmittingSpend] = useState(false);
   const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
   const [isEditContactDialogOpen, setIsEditContactDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<ClientContact | null>(null);
@@ -542,6 +546,10 @@ export default function ClientDetail() {
 
   const { data: allContacts = [] } = useQuery<ClientContact[]>({
     queryKey: ["/api/client-contacts"],
+  });
+
+  const { data: spendEntries = [], isLoading: isLoadingSpend } = useQuery<BdSpendEntry[]>({
+    queryKey: ["/api/clients", clientId, "spend"],
   });
 
   // Mutations
@@ -952,6 +960,27 @@ export default function ClientDetail() {
                       />
                       <FormField
                         control={clientForm.control}
+                        name="annualRevenue"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Annual Revenue from This Client ($)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1000"
+                                placeholder="e.g. 120000"
+                                {...field}
+                                value={field.value ?? ""}
+                                data-testid="input-edit-client-annual-revenue"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={clientForm.control}
                         name="notes"
                         render={({ field }) => (
                           <FormItem>
@@ -1075,6 +1104,194 @@ export default function ClientDetail() {
                         {contacts?.find(c => c.isPrimary)?.name || "Not set"}
                       </span>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Spending Card */}
+                <Card className="border-none shadow-sm bg-card col-span-full lg:col-span-1">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-lg">BD Spending</CardTitle>
+                        <CardDescription>Business development spend vs. revenue</CardDescription>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => setIsAddSpendOpen(!isAddSpendOpen)} data-testid="button-toggle-add-spend">
+                        {isAddSpendOpen ? "Cancel" : "Log Spend"}
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Stats */}
+                    {(() => {
+                      const totalSpend = spendEntries.reduce((s, e) => s + parseFloat(e.amount), 0);
+                      const revenue = client.annualRevenue ? parseFloat(client.annualRevenue) : null;
+                      const net = revenue != null ? revenue - totalSpend : null;
+                      const roi = revenue != null && totalSpend > 0 ? revenue / totalSpend : null;
+                      const roiColor = roi == null ? "" : roi >= 3 ? "text-green-600" : roi >= 1 ? "text-amber-600" : "text-red-600";
+                      return (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-lg bg-muted/40 p-3">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">BD Spend</p>
+                            <p className="text-lg font-bold mt-0.5" data-testid="stat-total-spend">{totalSpend > 0 ? `$${totalSpend.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-3">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Annual Revenue</p>
+                            <p className="text-lg font-bold mt-0.5" data-testid="stat-annual-revenue">{revenue != null && revenue > 0 ? `$${revenue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-3">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Net</p>
+                            <p className={`text-lg font-bold mt-0.5 ${net != null ? net >= 0 ? "text-green-600" : "text-red-600" : ""}`} data-testid="stat-net">
+                              {net != null ? `${net >= 0 ? "+" : ""}$${Math.abs(net).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-3">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ROI Ratio</p>
+                            <p className={`text-lg font-bold mt-0.5 ${roiColor}`} data-testid="stat-roi">{roi != null ? `${roi.toFixed(1)}×` : "—"}</p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Add spend form */}
+                    {isAddSpendOpen && (
+                      <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground block mb-1">Amount ($)</label>
+                            <input type="number" min="0" step="0.01" placeholder="0.00"
+                              value={spendFormData.amount}
+                              onChange={e => setSpendFormData(f => ({ ...f, amount: e.target.value }))}
+                              className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                              data-testid="input-detail-spend-amount"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground block mb-1">Date</label>
+                            <input type="date"
+                              value={spendFormData.date}
+                              onChange={e => setSpendFormData(f => ({ ...f, date: e.target.value }))}
+                              className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                              data-testid="input-detail-spend-date"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+                          <select value={spendFormData.category}
+                            onChange={e => setSpendFormData(f => ({ ...f, category: e.target.value }))}
+                            className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            data-testid="select-detail-spend-category"
+                          >
+                            <option value="meals_entertainment">Meals & Entertainment</option>
+                            <option value="gifts">Gifts</option>
+                            <option value="travel">Travel</option>
+                            <option value="events">Events</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground block mb-1">Contact (optional)</label>
+                          <select value={spendFormData.contactId}
+                            onChange={e => setSpendFormData(f => ({ ...f, contactId: e.target.value }))}
+                            className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            data-testid="select-detail-spend-contact"
+                          >
+                            <option value="">No specific contact</option>
+                            {contacts?.map(c => (
+                              <option key={c.id} value={String(c.id)}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
+                          <input type="text" placeholder="e.g. Lunch at Nobu"
+                            value={spendFormData.description}
+                            onChange={e => setSpendFormData(f => ({ ...f, description: e.target.value }))}
+                            className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            data-testid="input-detail-spend-description"
+                          />
+                        </div>
+                        <button
+                          disabled={!spendFormData.amount || isSubmittingSpend}
+                          onClick={async () => {
+                            if (!spendFormData.amount) return;
+                            setIsSubmittingSpend(true);
+                            try {
+                              await apiRequest("POST", `/api/clients/${clientId}/spend`, {
+                                amount: spendFormData.amount,
+                                category: spendFormData.category,
+                                date: new Date(spendFormData.date).toISOString(),
+                                description: spendFormData.description || null,
+                                contactId: spendFormData.contactId ? parseInt(spendFormData.contactId) : null,
+                              });
+                              queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "spend"] });
+                              queryClient.invalidateQueries({ queryKey: ["/api/spend/client-totals"] });
+                              queryClient.invalidateQueries({ queryKey: ["/api/spend/contact-totals"] });
+                              setSpendFormData({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "", contactId: "" });
+                              setIsAddSpendOpen(false);
+                              toast({ title: "Spend logged", description: `$${parseFloat(spendFormData.amount).toFixed(0)} recorded` });
+                            } catch (err: any) {
+                              toast({ title: "Error", description: err.message, variant: "destructive" });
+                            } finally {
+                              setIsSubmittingSpend(false);
+                            }
+                          }}
+                          className="w-full h-8 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          data-testid="button-detail-submit-spend"
+                        >
+                          {isSubmittingSpend ? "Saving..." : "Save"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Spend log */}
+                    {spendEntries.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Spend Log</p>
+                        <div className="space-y-1.5">
+                          {spendEntries.map(entry => {
+                            const contactName = entry.contactId ? contacts?.find(c => c.id === entry.contactId)?.name : null;
+                            const catLabels: Record<string, string> = {
+                              meals_entertainment: "Meals", gifts: "Gifts", travel: "Travel", events: "Events", other: "Other"
+                            };
+                            return (
+                              <div key={entry.id} className="flex items-center gap-2 text-sm p-2 rounded-md hover:bg-muted/30 group" data-testid={`spend-entry-${entry.id}`}>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-medium">${parseFloat(entry.amount).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                      {catLabels[entry.category] ?? entry.category}
+                                    </span>
+                                    {contactName && <span className="text-muted-foreground text-xs">{contactName}</span>}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                                    <span>{new Date(entry.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                                    {entry.description && <span className="truncate">· {entry.description}</span>}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm("Delete this spend entry?")) return;
+                                    await apiRequest("DELETE", `/api/spend/${entry.id}`);
+                                    queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "spend"] });
+                                    queryClient.invalidateQueries({ queryKey: ["/api/spend/client-totals"] });
+                                    queryClient.invalidateQueries({ queryKey: ["/api/spend/contact-totals"] });
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all shrink-0"
+                                  data-testid={`button-delete-spend-${entry.id}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {spendEntries.length === 0 && !isAddSpendOpen && (
+                      <p className="text-sm text-muted-foreground italic text-center py-4">No spend logged yet. Click "Log Spend" to add an entry.</p>
+                    )}
                   </CardContent>
                 </Card>
               </div>

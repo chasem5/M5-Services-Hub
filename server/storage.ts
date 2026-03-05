@@ -6,6 +6,7 @@ import {
   clientOffices,
   clientContacts,
   contactBuildings,
+  bdSpendEntries,
   leads,
   tasks,
   reminders,
@@ -23,6 +24,8 @@ import {
   type InsertClientOffice,
   type ClientContact,
   type InsertClientContact,
+  type BdSpendEntry,
+  type InsertBdSpendEntry,
   type Lead,
   type InsertLead,
   type Task,
@@ -138,6 +141,14 @@ export interface IStorage {
   deletePipelineStage(id: number): Promise<void>;
   reorderPipelineStages(orderedIds: number[]): Promise<PipelineStage[]>;
   seedDefaultPipelineStages(): Promise<void>;
+
+  // BD Spend
+  getSpendByClient(clientId: number): Promise<BdSpendEntry[]>;
+  getSpendByContact(contactId: number): Promise<BdSpendEntry[]>;
+  createSpendEntry(data: InsertBdSpendEntry): Promise<BdSpendEntry>;
+  deleteSpendEntry(id: number): Promise<void>;
+  getAllClientSpendTotals(): Promise<{ clientId: number; total: string }[]>;
+  getAllContactSpendTotals(): Promise<{ contactId: number; total: string }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -523,6 +534,51 @@ export class DatabaseStorage implements IStorage {
       { label: "Lost", slug: "lost", sortOrder: 5, color: "red" },
     ];
     await db.insert(pipelineStages).values(defaults);
+  }
+
+  // BD Spend
+  async getSpendByClient(clientId: number): Promise<BdSpendEntry[]> {
+    return await db.select().from(bdSpendEntries)
+      .where(eq(bdSpendEntries.clientId, clientId))
+      .orderBy(desc(bdSpendEntries.date));
+  }
+
+  async getSpendByContact(contactId: number): Promise<BdSpendEntry[]> {
+    return await db.select().from(bdSpendEntries)
+      .where(eq(bdSpendEntries.contactId, contactId))
+      .orderBy(desc(bdSpendEntries.date));
+  }
+
+  async createSpendEntry(data: InsertBdSpendEntry): Promise<BdSpendEntry> {
+    const [entry] = await db.insert(bdSpendEntries).values(data).returning();
+    return entry;
+  }
+
+  async deleteSpendEntry(id: number): Promise<void> {
+    await db.delete(bdSpendEntries).where(eq(bdSpendEntries.id, id));
+  }
+
+  async getAllClientSpendTotals(): Promise<{ clientId: number; total: string }[]> {
+    const rows = await db
+      .select({
+        clientId: bdSpendEntries.clientId,
+        total: sql<string>`coalesce(sum(${bdSpendEntries.amount}), 0)`,
+      })
+      .from(bdSpendEntries)
+      .groupBy(bdSpendEntries.clientId);
+    return rows;
+  }
+
+  async getAllContactSpendTotals(): Promise<{ contactId: number; total: string }[]> {
+    const rows = await db
+      .select({
+        contactId: bdSpendEntries.contactId,
+        total: sql<string>`coalesce(sum(${bdSpendEntries.amount}), 0)`,
+      })
+      .from(bdSpendEntries)
+      .where(sql`${bdSpendEntries.contactId} is not null`)
+      .groupBy(bdSpendEntries.contactId);
+    return rows.map(r => ({ contactId: r.contactId as number, total: r.total }));
   }
 }
 

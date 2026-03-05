@@ -15,6 +15,7 @@ import {
   insertEstimateLineItemSchema, 
   insertProposalSchema,
   insertPipelineStageSchema,
+  insertBdSpendEntrySchema,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -645,6 +646,38 @@ export async function registerRoutes(
     const { orderedIds } = z.object({ orderedIds: z.array(z.number()) }).parse(req.body);
     const stages = await storage.reorderPipelineStages(orderedIds);
     res.json(stages);
+  });
+
+  // BD Spend — aggregate totals (must be before :id routes to avoid param conflict)
+  app.get("/api/spend/client-totals", isAuthenticated, async (_req, res) => {
+    const totals = await storage.getAllClientSpendTotals();
+    res.json(totals);
+  });
+
+  app.get("/api/spend/contact-totals", isAuthenticated, async (_req, res) => {
+    const totals = await storage.getAllContactSpendTotals();
+    res.json(totals);
+  });
+
+  // BD Spend — per-client entries
+  app.get("/api/clients/:id/spend", isAuthenticated, async (req, res) => {
+    const clientId = parseInt(req.params.id);
+    const entries = await storage.getSpendByClient(clientId);
+    res.json(entries);
+  });
+
+  app.post("/api/clients/:id/spend", isAuthenticated, async (req, res) => {
+    const clientId = parseInt(req.params.id);
+    const userId = (req as any).user.claims.sub;
+    const parsed = insertBdSpendEntrySchema.parse({ ...req.body, clientId, createdBy: userId });
+    const entry = await storage.createSpendEntry(parsed);
+    res.status(201).json(entry);
+  });
+
+  app.delete("/api/spend/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    await storage.deleteSpendEntry(id);
+    res.sendStatus(204);
   });
 
   return httpServer;

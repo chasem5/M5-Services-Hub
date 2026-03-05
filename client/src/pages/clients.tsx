@@ -23,6 +23,7 @@ import {
   ArrowUpDown,
   Linkedin,
   X,
+  DollarSign,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 
@@ -132,7 +133,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertClientSchema, type Client, type ClientContact } from "@shared/schema";
+import { insertClientSchema, type Client, type ClientContact, type BdSpendEntry } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -149,13 +150,16 @@ export default function Customers() {
   const [contactSearch, setContactSearch] = useState("");
   const [contactCompanyFilter, setContactCompanyFilter] = useState("all");
   const [contactStatusFilter, setContactStatusFilter] = useState("all");
-  const [contactSortField, setContactSortField] = useState<"name" | "company" | "title" | "status">("name");
+  const [contactSortField, setContactSortField] = useState<"name" | "company" | "title" | "status" | "spend">("name");
   const [contactSortDir, setContactSortDir] = useState<"asc" | "desc">("asc");
   const [industryFilter, setIndustryFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ClientContact | null>(null);
+  const [logSpendContactId, setLogSpendContactId] = useState<number | null>(null);
+  const [spendForm, setSpendForm] = useState({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "" });
+  const [isLoggingSpend, setIsLoggingSpend] = useState(false);
   const companiesFileRef = useRef<HTMLInputElement>(null);
   const contactsFileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -166,6 +170,14 @@ export default function Customers() {
 
   const { data: allContacts = [], isLoading: isLoadingContacts } = useQuery<ClientContact[]>({
     queryKey: ["/api/client-contacts"],
+  });
+
+  const { data: clientSpendTotals = [] } = useQuery<{ clientId: number; total: string }[]>({
+    queryKey: ["/api/spend/client-totals"],
+  });
+
+  const { data: contactSpendTotals = [] } = useQuery<{ contactId: number; total: string }[]>({
+    queryKey: ["/api/spend/contact-totals"],
   });
 
   const createClientMutation = useMutation({
@@ -284,6 +296,23 @@ export default function Customers() {
   const getCompanyName = (clientId: number) =>
     clients?.find(c => c.id === clientId)?.name ?? "Unknown Company";
 
+  const spendByClientId = Object.fromEntries(clientSpendTotals.map(t => [t.clientId, parseFloat(t.total)]));
+  const spendByContactId = Object.fromEntries(contactSpendTotals.map(t => [t.contactId, parseFloat(t.total)]));
+
+  const formatMoney = (v: number | null | undefined) =>
+    v != null && v > 0 ? `$${v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—";
+
+  const getRoiBadge = (revenue: string | null | undefined, spend: number) => {
+    if (!revenue || spend <= 0) return null;
+    const rev = parseFloat(revenue);
+    if (rev <= 0) return null;
+    const ratio = rev / spend;
+    const label = `${ratio.toFixed(1)}× ROI`;
+    if (ratio >= 3) return { label, color: "text-green-700 bg-green-50 border-green-200" };
+    if (ratio >= 1) return { label, color: "text-amber-700 bg-amber-50 border-amber-200" };
+    return { label, color: "text-red-700 bg-red-50 border-red-200" };
+  };
+
   const statusOrder: Record<string, number> = { active: 0, likely_left: 1, unverified: 2 };
   const filteredContacts = allContacts
     .filter(contact => {
@@ -312,6 +341,8 @@ export default function Customers() {
         const aOrder = a.employmentStatus ? (statusOrder[a.employmentStatus] ?? 9) : 9;
         const bOrder = b.employmentStatus ? (statusOrder[b.employmentStatus] ?? 9) : 9;
         cmp = aOrder - bOrder;
+      } else if (contactSortField === "spend") {
+        cmp = (spendByContactId[a.id] ?? 0) - (spendByContactId[b.id] ?? 0);
       }
       return contactSortDir === "asc" ? cmp : -cmp;
     });
@@ -494,6 +525,27 @@ export default function Customers() {
                 />
                 <FormField
                   control={form.control}
+                  name="annualRevenue"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Annual Revenue from This Client ($)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          placeholder="e.g. 120000"
+                          {...field}
+                          value={field.value ?? ""}
+                          data-testid="input-customer-annual-revenue"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="notes"
                   render={({ field }) => (
                     <FormItem>
@@ -590,6 +642,8 @@ export default function Customers() {
                         <TableHead className="font-bold">Industry</TableHead>
                         <TableHead className="font-bold">Contact Info</TableHead>
                         <TableHead className="font-bold">Address</TableHead>
+                        <TableHead className="font-bold">Revenue</TableHead>
+                        <TableHead className="font-bold">BD Spend</TableHead>
                         <TableHead className="w-[80px]"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -662,6 +716,31 @@ export default function Customers() {
                               <MapPin className="mr-2 h-3.5 w-3.5 mt-0.5 shrink-0" />
                               {client.address || <span className="italic">No address</span>}
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm font-medium" data-testid={`text-revenue-${client.id}`}>
+                              {client.annualRevenue && parseFloat(client.annualRevenue) > 0
+                                ? `$${parseFloat(client.annualRevenue).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/yr`
+                                : <span className="text-muted-foreground italic text-xs">Not set</span>}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              const spend = spendByClientId[client.id] ?? 0;
+                              const roi = getRoiBadge(client.annualRevenue, spend);
+                              return (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-medium" data-testid={`text-spend-${client.id}`}>
+                                    {formatMoney(spend)}
+                                  </span>
+                                  {roi && (
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${roi.color}`} data-testid={`badge-roi-${client.id}`}>
+                                      {roi.label}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell>
                             <DropdownMenu>
@@ -817,23 +896,30 @@ export default function Customers() {
                           );
                         })}
                         <TableHead className="font-bold">Contact Info</TableHead>
-                        <TableHead
-                          className="font-bold cursor-pointer select-none hover:text-foreground"
-                          onClick={() => {
-                            if (contactSortField === "status") setContactSortDir(d => d === "asc" ? "desc" : "asc");
-                            else { setContactSortField("status"); setContactSortDir("asc"); }
-                          }}
-                          data-testid="th-sort-status"
-                        >
-                          <span className="inline-flex items-center gap-1">
-                            Status
-                            {contactSortField === "status"
-                              ? contactSortDir === "asc"
-                                ? <ChevronUp className="h-3.5 w-3.5" />
-                                : <ChevronDown className="h-3.5 w-3.5" />
-                              : <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />}
-                          </span>
-                        </TableHead>
+                        {(["status", "spend"] as const).map(field => {
+                          const labels = { status: "Status", spend: "BD Spend" };
+                          const active = contactSortField === field;
+                          return (
+                            <TableHead
+                              key={field}
+                              className="font-bold cursor-pointer select-none hover:text-foreground"
+                              onClick={() => {
+                                if (active) setContactSortDir(d => d === "asc" ? "desc" : "asc");
+                                else { setContactSortField(field); setContactSortDir("asc"); }
+                              }}
+                              data-testid={`th-sort-${field}`}
+                            >
+                              <span className="inline-flex items-center gap-1">
+                                {labels[field]}
+                                {active
+                                  ? contactSortDir === "asc"
+                                    ? <ChevronUp className="h-3.5 w-3.5" />
+                                    : <ChevronDown className="h-3.5 w-3.5" />
+                                  : <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />}
+                              </span>
+                            </TableHead>
+                          );
+                        })}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -914,6 +1000,11 @@ export default function Customers() {
                                 <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />Open to Work
                               </span>
                             )}
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm font-medium" data-testid={`text-contact-spend-${contact.id}`}>
+                              {formatMoney(spendByContactId[contact.id])}
+                            </span>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1053,6 +1144,110 @@ export default function Customers() {
                       </div>
                     </div>
                   )}
+                  {/* BD Spend */}
+                  <div className="pt-2 border-t">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="text-sm font-medium">BD Spend</span>
+                        <span className="text-sm font-semibold text-primary" data-testid={`text-dialog-spend-${sc.id}`}>
+                          {formatMoney(spendByContactId[sc.id])}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setLogSpendContactId(logSpendContactId === sc.id ? null : sc.id)}
+                        className="text-xs text-primary hover:underline font-medium"
+                        data-testid={`button-log-spend-${sc.id}`}
+                      >
+                        {logSpendContactId === sc.id ? "Cancel" : "Log Spend"}
+                      </button>
+                    </div>
+                    {logSpendContactId === sc.id && (
+                      <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground block mb-1">Amount ($)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={spendForm.amount}
+                              onChange={e => setSpendForm(f => ({ ...f, amount: e.target.value }))}
+                              className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                              data-testid="input-spend-amount"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground block mb-1">Date</label>
+                            <input
+                              type="date"
+                              value={spendForm.date}
+                              onChange={e => setSpendForm(f => ({ ...f, date: e.target.value }))}
+                              className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                              data-testid="input-spend-date"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+                          <select
+                            value={spendForm.category}
+                            onChange={e => setSpendForm(f => ({ ...f, category: e.target.value }))}
+                            className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            data-testid="select-spend-category"
+                          >
+                            <option value="meals_entertainment">Meals & Entertainment</option>
+                            <option value="gifts">Gifts</option>
+                            <option value="travel">Travel</option>
+                            <option value="events">Events</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Lunch at Nobu"
+                            value={spendForm.description}
+                            onChange={e => setSpendForm(f => ({ ...f, description: e.target.value }))}
+                            className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            data-testid="input-spend-description"
+                          />
+                        </div>
+                        <button
+                          disabled={!spendForm.amount || isLoggingSpend}
+                          onClick={async () => {
+                            if (!spendForm.amount) return;
+                            setIsLoggingSpend(true);
+                            try {
+                              await apiRequest("POST", `/api/clients/${sc.clientId}/spend`, {
+                                contactId: sc.id,
+                                amount: spendForm.amount,
+                                category: spendForm.category,
+                                date: new Date(spendForm.date).toISOString(),
+                                description: spendForm.description || null,
+                              });
+                              queryClient.invalidateQueries({ queryKey: ["/api/spend/client-totals"] });
+                              queryClient.invalidateQueries({ queryKey: ["/api/spend/contact-totals"] });
+                              queryClient.invalidateQueries({ queryKey: ["/api/clients", sc.clientId, "spend"] });
+                              setSpendForm({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "" });
+                              setLogSpendContactId(null);
+                              toast({ title: "Spend logged", description: `$${parseFloat(spendForm.amount).toFixed(0)} recorded` });
+                            } catch (err: any) {
+                              toast({ title: "Error", description: err.message, variant: "destructive" });
+                            } finally {
+                              setIsLoggingSpend(false);
+                            }
+                          }}
+                          className="w-full h-8 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          data-testid="button-submit-spend"
+                        >
+                          {isLoggingSpend ? "Saving..." : "Save"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   {/* Go to full company profile */}
                   <div className="pt-2 border-t">
                     <Link

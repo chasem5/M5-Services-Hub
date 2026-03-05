@@ -16,6 +16,7 @@ export const clients = pgTable("clients", {
   website: varchar("website"),
   notes: text("notes"),
   serviceNeeds: text("service_needs").array().default([]),
+  annualRevenue: decimal("annual_revenue", { precision: 12, scale: 2 }),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -46,6 +47,18 @@ export const clientContacts = pgTable("client_contacts", {
   linkedinUrl: varchar("linkedin_url"),
   profilePictureUrl: varchar("profile_picture_url"),
   employmentStatus: varchar("employment_status"),
+});
+
+export const bdSpendEntries = pgTable("bd_spend_entries", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull(),
+  contactId: integer("contact_id").references(() => clientContacts.id),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  category: varchar("category").notNull().default("other"), // meals_entertainment | gifts | travel | events | other
+  date: timestamp("date").notNull(),
+  description: text("description"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const contactBuildings = pgTable("contact_buildings", {
@@ -169,7 +182,13 @@ export const activityLogs = pgTable("activity_logs", {
 
 // Zod Schemas
 export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true });
-export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  annualRevenue: z.coerce.string().optional().nullable(),
+});
+export const insertBdSpendEntrySchema = createInsertSchema(bdSpendEntries).omit({ id: true, createdAt: true }).extend({
+  date: z.coerce.date(),
+  amount: z.coerce.string(),
+});
 export const insertClientOfficeSchema = createInsertSchema(clientOffices).omit({ id: true, createdAt: true }).extend({
   lat: z.coerce.string().optional().nullable(),
   lng: z.coerce.string().optional().nullable(),
@@ -189,6 +208,8 @@ export const insertProposalSchema = createInsertSchema(proposals).omit({ id: tru
 export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ id: true, createdAt: true });
 
 // Types
+export type BdSpendEntry = typeof bdSpendEntries.$inferSelect;
+export type InsertBdSpendEntry = z.infer<typeof insertBdSpendEntrySchema>;
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type ClientOffice = typeof clientOffices.$inferSelect;
