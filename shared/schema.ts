@@ -167,7 +167,10 @@ export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientOfficeSchema = createInsertSchema(clientOffices).omit({ id: true, createdAt: true });
 export const insertClientContactSchema = createInsertSchema(clientContacts).omit({ id: true });
-export const insertContactBuildingSchema = createInsertSchema(contactBuildings).omit({ id: true, createdAt: true });
+export const insertContactBuildingSchema = createInsertSchema(contactBuildings).omit({ id: true, createdAt: true }).extend({
+  lat: z.coerce.string().optional().nullable(),
+  lng: z.coerce.string().optional().nullable(),
+});
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertReminderSchema = createInsertSchema(reminders).omit({ id: true, createdAt: true });
