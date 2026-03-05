@@ -45,6 +45,7 @@ export const clientContacts = pgTable("client_contacts", {
   serviceNeeds: text("service_needs").array().default([]),
   linkedinUrl: varchar("linkedin_url"),
   profilePictureUrl: varchar("profile_picture_url"),
+  employmentStatus: varchar("employment_status"),
 });
 
 export const contactBuildings = pgTable("contact_buildings", {

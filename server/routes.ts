@@ -171,6 +171,74 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+  // Batch employment verification via Apollo.io
+  app.post("/api/clients/:id/verify-employment", isAuthenticated, async (req, res) => {
+    const apiKey = process.env.APOLLO_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ message: "APOLLO_API_KEY is not configured." });
+    }
+    const clientId = parseInt(req.params.id as string);
+    const client = await storage.getClient(clientId);
+    if (!client) return res.status(404).json({ message: "Client not found" });
+
+    const contacts = await storage.listClientContacts(clientId);
+    const results: { contactId: number; name: string; status: string; currentEmployer: string | null }[] = [];
+
+    for (const contact of contacts) {
+      if (!contact.linkedinUrl) {
+        await storage.updateClientContact(contact.id, { employmentStatus: "unverified" });
+        results.push({ contactId: contact.id, name: contact.name, status: "unverified", currentEmployer: null });
+        continue;
+      }
+
+      try {
+        const apolloRes = await fetch("https://api.apollo.io/api/v1/people/match", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+            "X-Api-Key": apiKey,
+          },
+          body: JSON.stringify({ linkedin_url: contact.linkedinUrl }),
+        });
+
+        if (!apolloRes.ok) {
+          results.push({ contactId: contact.id, name: contact.name, status: "unverified", currentEmployer: null });
+          continue;
+        }
+
+        const data: any = await apolloRes.json();
+        const person = data?.person;
+        if (!person) {
+          results.push({ contactId: contact.id, name: contact.name, status: "unverified", currentEmployer: null });
+          continue;
+        }
+
+        // Determine current employer from organization_name or employment_history
+        let currentEmployer: string | null = person.organization_name || null;
+        if (!currentEmployer && person.employment_history?.length) {
+          const current = person.employment_history.find((e: any) => !e.end_date);
+          if (current) currentEmployer = current.organization_name || null;
+        }
+
+        // Fuzzy match: check if client name appears in employer or vice versa
+        const clientNameLower = client.name.toLowerCase();
+        const employerLower = (currentEmployer || "").toLowerCase();
+        const isMatch =
+          employerLower.includes(clientNameLower) ||
+          clientNameLower.includes(employerLower.split(" ")[0]);
+
+        const status = currentEmployer ? (isMatch ? "active" : "likely_left") : "unverified";
+        await storage.updateClientContact(contact.id, { employmentStatus: status });
+        results.push({ contactId: contact.id, name: contact.name, status, currentEmployer });
+      } catch {
+        results.push({ contactId: contact.id, name: contact.name, status: "unverified", currentEmployer: null });
+      }
+    }
+
+    res.json(results);
+  });
+
   // All buildings for all contacts of a client (for portfolio map)
   app.get("/api/clients/:id/all-buildings", isAuthenticated, async (req, res) => {
     const clientId = parseInt(req.params.id as string);

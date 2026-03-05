@@ -109,6 +109,18 @@ function OrgNode({ contact, contacts, allContacts, onUpdateReportsTo, onEditCont
                     Reports to {manager!.name}
                   </p>
                 )}
+                {contact.employmentStatus === "active" && (
+                  <div className="flex items-center justify-center gap-1 mt-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                    <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">Active</span>
+                  </div>
+                )}
+                {contact.employmentStatus === "likely_left" && (
+                  <div className="flex items-center justify-center gap-1 mt-1.5">
+                    <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">May have left</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

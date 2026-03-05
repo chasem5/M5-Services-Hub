@@ -32,6 +32,7 @@ import {
   Map,
   Linkedin,
   AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import {
@@ -665,6 +666,27 @@ export default function ClientDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "offices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
       toast({ title: "Office deleted", description: "Contacts have been moved to unassigned." });
+    },
+  });
+
+  const verifyEmploymentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/clients/${clientId}/verify-employment`);
+      if (!res.ok) throw new Error((await res.json()).message || "Verification failed");
+      return res.json() as Promise<{ contactId: number; name: string; status: string; currentEmployer: string | null }[]>;
+    },
+    onSuccess: (results) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+      const active = results.filter(r => r.status === "active").length;
+      const left = results.filter(r => r.status === "likely_left").length;
+      const unverified = results.filter(r => r.status === "unverified").length;
+      toast({
+        title: "Employment verified",
+        description: `${active} active, ${left} may have left, ${unverified} unverified (no LinkedIn)`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Verification failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1563,15 +1585,27 @@ export default function ClientDetail() {
                     Visual hierarchy of contacts. Click any node to view details or change reporting relationships.
                   </CardDescription>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsContactDialogOpen(true)}
-                  data-testid="button-add-contact-org"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Contact
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => verifyEmploymentMutation.mutate()}
+                    disabled={verifyEmploymentMutation.isPending}
+                    data-testid="button-verify-employment"
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${verifyEmploymentMutation.isPending ? "animate-spin" : ""}`} />
+                    {verifyEmploymentMutation.isPending ? "Verifying..." : "Verify via LinkedIn"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsContactDialogOpen(true)}
+                    data-testid="button-add-contact-org"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Contact
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {isLoadingContacts ? (
