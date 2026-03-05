@@ -19,6 +19,8 @@ import {
   activityLogs,
   pipelineStages,
   pipelineViews,
+  meetings,
+  meetingActions,
   type User,
   type UpsertUser,
   type Client,
@@ -55,6 +57,10 @@ import {
   type InsertTaskLabelDefinition,
   type TaskColumn,
   type InsertTaskColumn,
+  type Meeting,
+  type InsertMeeting,
+  type MeetingAction,
+  type InsertMeetingAction,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -179,6 +185,18 @@ export interface IStorage {
   updateTaskColumn(id: number, data: Partial<InsertTaskColumn>): Promise<TaskColumn>;
   deleteTaskColumn(id: number): Promise<void>;
   seedDefaultTaskColumns(): Promise<void>;
+
+  // Meetings
+  listMeetings(userId: string): Promise<Meeting[]>;
+  getMeeting(id: number): Promise<Meeting | undefined>;
+  createMeeting(data: InsertMeeting): Promise<Meeting>;
+  updateMeeting(id: number, data: Partial<InsertMeeting>): Promise<Meeting>;
+  deleteMeeting(id: number): Promise<void>;
+
+  // Meeting Actions
+  listMeetingActions(meetingId: number): Promise<MeetingAction[]>;
+  createMeetingAction(data: InsertMeetingAction): Promise<MeetingAction>;
+  updateMeetingAction(id: number, data: Partial<MeetingAction>): Promise<MeetingAction>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -689,6 +707,46 @@ export class DatabaseStorage implements IStorage {
     for (const col of defaults) {
       await db.execute(sql`INSERT INTO task_columns (name, slug, sort_order, is_default) VALUES (${col.name}, ${col.slug}, ${col.sortOrder}, ${col.isDefault}) ON CONFLICT (slug) DO NOTHING`);
     }
+  }
+
+  // Meetings
+  async listMeetings(userId: string): Promise<Meeting[]> {
+    return await db.select().from(meetings).where(eq(meetings.createdBy, userId)).orderBy(desc(meetings.date));
+  }
+
+  async getMeeting(id: number): Promise<Meeting | undefined> {
+    const [meeting] = await db.select().from(meetings).where(eq(meetings.id, id));
+    return meeting;
+  }
+
+  async createMeeting(data: InsertMeeting): Promise<Meeting> {
+    const [meeting] = await db.insert(meetings).values(data).returning();
+    return meeting;
+  }
+
+  async updateMeeting(id: number, data: Partial<InsertMeeting>): Promise<Meeting> {
+    const [meeting] = await db.update(meetings).set(data).where(eq(meetings.id, id)).returning();
+    return meeting;
+  }
+
+  async deleteMeeting(id: number): Promise<void> {
+    await db.delete(meetingActions).where(eq(meetingActions.meetingId, id));
+    await db.delete(meetings).where(eq(meetings.id, id));
+  }
+
+  // Meeting Actions
+  async listMeetingActions(meetingId: number): Promise<MeetingAction[]> {
+    return await db.select().from(meetingActions).where(eq(meetingActions.meetingId, meetingId));
+  }
+
+  async createMeetingAction(data: InsertMeetingAction): Promise<MeetingAction> {
+    const [action] = await db.insert(meetingActions).values(data).returning();
+    return action;
+  }
+
+  async updateMeetingAction(id: number, data: Partial<MeetingAction>): Promise<MeetingAction> {
+    const [action] = await db.update(meetingActions).set(data).where(eq(meetingActions.id, id)).returning();
+    return action;
   }
 }
 

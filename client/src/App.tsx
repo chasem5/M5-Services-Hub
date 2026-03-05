@@ -15,6 +15,8 @@ import EstimateDetail from "@/pages/estimate-detail";
 import ServiceCatalog from "@/pages/service-catalog";
 import Proposals from "@/pages/proposals";
 import Settings from "@/pages/settings";
+import Meetings from "@/pages/meetings";
+import MeetingDetail from "@/pages/meeting-detail";
 
 function Router() {
   return (
@@ -24,6 +26,8 @@ function Router() {
       <Route path="/customers" component={Customers} />
       <Route path="/customers/:id" component={CustomerDetail} />
       <Route path="/tasks" component={Tasks} />
+      <Route path="/meetings" component={Meetings} />
+      <Route path="/meetings/:id" component={MeetingDetail} />
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/service-catalog" component={ServiceCatalog} />

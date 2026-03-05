@@ -7,7 +7,8 @@ import {
   BookOpen, 
   ClipboardList, 
   Settings,
-  LogOut
+  LogOut,
+  Mic,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -32,6 +33,7 @@ const navItems = [
   { title: "Leads", icon: Target, url: "/leads" },
   { title: "Customers", icon: Users, url: "/customers" },
   { title: "Tasks", icon: CheckSquare, url: "/tasks" },
+  { title: "Meetings", icon: Mic, url: "/meetings" },
   { title: "Estimates", icon: FileText, url: "/estimates" },
   { title: "Service Catalog", icon: BookOpen, url: "/service-catalog" },
   { title: "Proposals", icon: ClipboardList, url: "/proposals" },

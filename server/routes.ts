@@ -837,5 +837,258 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     res.sendStatus(204);
   });
 
+  // ── Meetings ─────────────────────────────────────────────────────────────────
+
+  app.get("/api/meetings", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const meetingList = await storage.listMeetings(userId);
+    // Attach action counts
+    const withCounts = await Promise.all(
+      meetingList.map(async (m) => {
+        const actions = await storage.listMeetingActions(m.id);
+        return { ...m, actionCount: actions.length, pendingCount: actions.filter((a) => a.status === "pending").length };
+      })
+    );
+    res.json(withCounts);
+  });
+
+  app.post("/api/meetings", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const { title } = z.object({ title: z.string().min(1) }).parse(req.body);
+    const meeting = await storage.createMeeting({ title, createdBy: userId, status: "recording" });
+    res.json(meeting);
+  });
+
+  app.get("/api/meetings/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const meeting = await storage.getMeeting(id);
+    if (!meeting) return res.status(404).json({ message: "Meeting not found" });
+    const actions = await storage.listMeetingActions(id);
+    res.json({ ...meeting, actions });
+  });
+
+  app.put("/api/meetings/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const data = z.object({
+      title: z.string().optional(),
+      status: z.string().optional(),
+      rawTranscript: z.string().optional(),
+      summary: z.string().optional(),
+    }).parse(req.body);
+    const meeting = await storage.updateMeeting(id, data);
+    res.json(meeting);
+  });
+
+  app.delete("/api/meetings/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    await storage.deleteMeeting(id);
+    res.sendStatus(204);
+  });
+
+  // Transcribe an audio chunk using Whisper
+  app.post("/api/meetings/:id/transcribe", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const meeting = await storage.getMeeting(id);
+    if (!meeting) return res.status(404).json({ message: "Meeting not found" });
+
+    try {
+      const { openai } = await import("./openai");
+      const { default: formidable } = await import("formidable");
+      const { createReadStream } = await import("fs");
+
+      const form = formidable({ maxFileSize: 25 * 1024 * 1024 });
+      const [, files] = await form.parse(req);
+      const audioFile = Array.isArray(files.audio) ? files.audio[0] : files.audio;
+
+      if (!audioFile) return res.status(400).json({ message: "No audio file provided" });
+
+      const transcription = await openai.audio.transcriptions.create({
+        file: createReadStream(audioFile.filepath) as any,
+        model: "whisper-1",
+      });
+
+      const newText = transcription.text;
+      const updatedTranscript = (meeting.rawTranscript || "") + (meeting.rawTranscript ? " " : "") + newText;
+      await storage.updateMeeting(id, { rawTranscript: updatedTranscript });
+
+      res.json({ text: newText, fullTranscript: updatedTranscript });
+    } catch (err: any) {
+      console.error("Transcription error:", err);
+      res.status(500).json({ message: err.message || "Transcription failed" });
+    }
+  });
+
+  // Analyze full transcript with GPT-4o and create action suggestions
+  app.post("/api/meetings/:id/analyze", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const meeting = await storage.getMeeting(id);
+    if (!meeting) return res.status(404).json({ message: "Meeting not found" });
+    if (!meeting.rawTranscript) return res.status(400).json({ message: "No transcript to analyze" });
+
+    await storage.updateMeeting(id, { status: "processing" });
+
+    try {
+      const { openai } = await import("./openai");
+
+      const systemPrompt = `You are an AI assistant for M5 Services, a facility maintenance company.
+Analyze the following meeting transcript and extract actionable items to create or update in their CRM.
+
+Return a JSON object with two keys:
+- "summary": A concise 2-4 sentence summary of the meeting.
+- "actions": An array of action objects. Each object must have:
+  - "type": one of "create_task", "update_lead", "update_client", "create_contact", "note"
+  - "description": A clear, human-readable description of what will happen (1 sentence).
+  - "payload": An object with relevant fields:
+    
+    For create_task: { "title": string, "description": string (optional), "priority": "low"|"medium"|"high" (optional), "dueDate": "YYYY-MM-DD" (optional), "assignedTo": null }
+    For update_lead: { "leadTitle": string (fuzzy match name), "stage": string (optional), "assignedTo": null (optional), "notes": string (optional), "value": number (optional) }
+    For update_client: { "clientName": string (fuzzy match name), "phone": string (optional), "email": string (optional), "address": string (optional), "notes": string (optional) }
+    For create_contact: { "name": string, "clientName": string (fuzzy match for parent company), "title": string (optional), "email": string (optional), "phone": string (optional) }
+    For note: { "text": string }
+
+Only include items that are clearly mentioned or implied in the transcript. Do not invent items.
+Return only valid JSON, no markdown.`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Meeting transcript:\n\n${meeting.rawTranscript}` },
+        ],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 2000,
+      });
+
+      const raw = completion.choices[0].message.content || "{}";
+      const parsed = JSON.parse(raw);
+      const summary: string = parsed.summary || "";
+      const actionItems: any[] = Array.isArray(parsed.actions) ? parsed.actions : [];
+
+      // Save actions
+      for (const item of actionItems) {
+        await storage.createMeetingAction({
+          meetingId: id,
+          type: item.type,
+          description: item.description,
+          payload: item.payload || {},
+          status: "pending",
+        });
+      }
+
+      await storage.updateMeeting(id, { status: "review", summary });
+
+      const actions = await storage.listMeetingActions(id);
+      res.json({ summary, actions });
+    } catch (err: any) {
+      console.error("Analysis error:", err);
+      await storage.updateMeeting(id, { status: "recording" });
+      res.status(500).json({ message: err.message || "Analysis failed" });
+    }
+  });
+
+  // Approve a meeting action — execute it against the CRM
+  app.patch("/api/meeting-actions/:id/approve", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const [action] = await storage.listMeetingActions(0).then(() => []).catch(() => []);
+
+    // Fetch the action directly
+    const actions = await storage.listMeetingActions(
+      (await storage.getMeeting(0).catch(() => undefined))?.id ?? -1
+    );
+    // We need to find the action by ID — do a direct query
+    const { ilike } = await import("drizzle-orm");
+    const { db } = await import("./db");
+    const { meetingActions: maTable, tasks: tasksTable, clients: clientsTable, clientContacts: contactsTable, leads: leadsTable } = await import("@shared/schema");
+
+    const [targetAction] = await db.select().from(maTable).where(eq(maTable.id, id));
+    if (!targetAction) return res.status(404).json({ message: "Action not found" });
+    if (targetAction.status !== "pending") return res.status(400).json({ message: "Action already processed" });
+
+    const payload = targetAction.payload as Record<string, any>;
+
+    try {
+      switch (targetAction.type) {
+        case "create_task": {
+          await db.insert(tasksTable).values({
+            title: payload.title,
+            description: payload.description || null,
+            priority: payload.priority || "medium",
+            status: "todo",
+            dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
+            sortOrder: 0,
+            checklist: [],
+            labels: [],
+          });
+          break;
+        }
+        case "update_lead": {
+          if (payload.leadTitle) {
+            const [lead] = await db.select().from(leadsTable).where(ilike(leadsTable.title, `%${payload.leadTitle}%`));
+            if (lead) {
+              const updateData: Record<string, any> = {};
+              if (payload.stage) updateData.stage = payload.stage;
+              if (payload.notes) updateData.notes = payload.notes;
+              if (payload.value) updateData.value = String(payload.value);
+              if (Object.keys(updateData).length > 0) {
+                await db.update(leadsTable).set(updateData).where(eq(leadsTable.id, lead.id));
+              }
+            }
+          }
+          break;
+        }
+        case "update_client": {
+          if (payload.clientName) {
+            const [client] = await db.select().from(clientsTable).where(ilike(clientsTable.name, `%${payload.clientName}%`));
+            if (client) {
+              const updateData: Record<string, any> = {};
+              if (payload.phone) updateData.phone = payload.phone;
+              if (payload.email) updateData.email = payload.email;
+              if (payload.address) updateData.address = payload.address;
+              if (payload.notes) updateData.notes = payload.notes;
+              if (Object.keys(updateData).length > 0) {
+                await db.update(clientsTable).set(updateData).where(eq(clientsTable.id, client.id));
+              }
+            }
+          }
+          break;
+        }
+        case "create_contact": {
+          let clientId: number | undefined;
+          if (payload.clientName) {
+            const [client] = await db.select().from(clientsTable).where(ilike(clientsTable.name, `%${payload.clientName}%`));
+            clientId = client?.id;
+          }
+          if (clientId) {
+            await db.insert(contactsTable).values({
+              name: payload.name,
+              clientId,
+              title: payload.title || null,
+              email: payload.email || null,
+              phone: payload.phone || null,
+              isPrimary: false,
+            });
+          }
+          break;
+        }
+        case "note":
+        default:
+          break;
+      }
+
+      const updated = await storage.updateMeetingAction(id, { status: "approved", appliedAt: new Date() });
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Apply action error:", err);
+      res.status(500).json({ message: err.message || "Failed to apply action" });
+    }
+  });
+
+  // Decline a meeting action
+  app.patch("/api/meeting-actions/:id/decline", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const updated = await storage.updateMeetingAction(id, { status: "declined" });
+    res.json(updated);
+  });
+
   return httpServer;
 }

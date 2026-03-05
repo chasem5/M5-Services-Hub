@@ -212,6 +212,27 @@ export const activityLogs = pgTable("activity_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const meetings = pgTable("meetings", {
+  id: serial("id").primaryKey(),
+  title: varchar("title").notNull(),
+  date: timestamp("date").defaultNow().notNull(),
+  status: varchar("status").default("recording").notNull(),
+  rawTranscript: text("raw_transcript").default(""),
+  summary: text("summary"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const meetingActions = pgTable("meeting_actions", {
+  id: serial("id").primaryKey(),
+  meetingId: integer("meeting_id").references(() => meetings.id).notNull(),
+  type: varchar("type").notNull(),
+  description: text("description").notNull(),
+  payload: jsonb("payload").notNull().default({}),
+  status: varchar("status").default("pending").notNull(),
+  appliedAt: timestamp("applied_at"),
+});
+
 // Zod Schemas
 export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true }).extend({
@@ -289,3 +310,13 @@ export type TaskLabelDefinition = typeof taskLabelDefinitions.$inferSelect;
 export type InsertTaskLabelDefinition = z.infer<typeof insertTaskLabelDefinitionSchema>;
 export type TaskColumn = typeof taskColumns.$inferSelect;
 export type InsertTaskColumn = z.infer<typeof insertTaskColumnSchema>;
+
+export const insertMeetingSchema = createInsertSchema(meetings).omit({ id: true, createdAt: true }).extend({
+  date: z.coerce.date().optional(),
+});
+export const insertMeetingActionSchema = createInsertSchema(meetingActions).omit({ id: true, appliedAt: true });
+
+export type Meeting = typeof meetings.$inferSelect;
+export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
+export type MeetingAction = typeof meetingActions.$inferSelect;
+export type InsertMeetingAction = z.infer<typeof insertMeetingActionSchema>;
