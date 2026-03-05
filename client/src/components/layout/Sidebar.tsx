@@ -30,7 +30,7 @@ import { Separator } from "@/components/ui/separator";
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, url: "/" },
   { title: "Leads", icon: Target, url: "/leads" },
-  { title: "Clients", icon: Users, url: "/clients" },
+  { title: "Customers", icon: Users, url: "/customers" },
   { title: "Tasks", icon: CheckSquare, url: "/tasks" },
   { title: "Estimates", icon: FileText, url: "/estimates" },
   { title: "Service Catalog", icon: BookOpen, url: "/service-catalog" },

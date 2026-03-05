@@ -90,6 +90,11 @@ export async function registerRoutes(
   });
 
   // Client Contacts
+  app.get("/api/client-contacts", isAuthenticated, async (_req, res) => {
+    const contacts = await storage.listAllClientContacts();
+    res.json(contacts);
+  });
+
   app.get("/api/clients/:id/contacts", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     const contacts = await storage.listClientContacts(id);

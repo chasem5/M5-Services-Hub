@@ -195,8 +195,8 @@ export default function ClientDetail() {
   if (!client) {
     return (
       <div className="p-6 text-center">
-        <h2 className="text-2xl font-bold">Client not found</h2>
-        <Button variant="ghost" onClick={() => setLocation("/clients")}>Back to Clients</Button>
+        <h2 className="text-2xl font-bold">Customer not found</h2>
+        <Button variant="ghost" onClick={() => setLocation("/customers")}>Back to Customers</Button>
       </div>
     );
   }
@@ -204,13 +204,13 @@ export default function ClientDetail() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/clients")}>
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/customers")}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-heading font-bold">{client.name}</h1>
-            <Badge variant="outline" className="h-6">Client ID: {client.id}</Badge>
+            <Badge variant="outline" className="h-6">Customer ID: {client.id}</Badge>
           </div>
           <p className="text-muted-foreground">{client.industry || "No industry specified"}</p>
         </div>

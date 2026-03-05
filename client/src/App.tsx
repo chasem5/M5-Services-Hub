@@ -7,8 +7,8 @@ import { ProtectedLayout } from "@/components/layout/ProtectedLayout";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Leads from "@/pages/leads";
-import Clients from "@/pages/clients";
-import ClientDetail from "@/pages/client-detail";
+import Customers from "@/pages/clients";
+import CustomerDetail from "@/pages/client-detail";
 import Tasks from "@/pages/tasks";
 import Estimates from "@/pages/estimates";
 import EstimateDetail from "@/pages/estimate-detail";
@@ -21,8 +21,8 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/leads" component={Leads} />
-      <Route path="/clients" component={Clients} />
-      <Route path="/clients/:id" component={ClientDetail} />
+      <Route path="/customers" component={Customers} />
+      <Route path="/customers/:id" component={CustomerDetail} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/:id" component={EstimateDetail} />

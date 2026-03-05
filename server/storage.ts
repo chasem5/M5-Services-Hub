@@ -53,6 +53,7 @@ export interface IStorage {
   deleteClient(id: number): Promise<void>;
 
   // Client Contacts
+  listAllClientContacts(): Promise<ClientContact[]>;
   listClientContacts(clientId: number): Promise<ClientContact[]>;
   createClientContact(contact: InsertClientContact): Promise<ClientContact>;
   deleteClientContact(id: number): Promise<void>;
@@ -168,6 +169,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Client Contacts
+  async listAllClientContacts(): Promise<ClientContact[]> {
+    return await db.select().from(clientContacts);
+  }
+
   async listClientContacts(clientId: number): Promise<ClientContact[]> {
     return await db.select().from(clientContacts).where(eq(clientContacts.clientId, clientId));
   }

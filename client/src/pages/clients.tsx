@@ -10,8 +10,9 @@ import {
   Globe, 
   MapPin,
   ExternalLink,
-  Edit,
-  Trash2
+  Trash2,
+  Users,
+  Star,
 } from "lucide-react";
 import { Link } from "wouter";
 import { 
@@ -27,9 +28,7 @@ import { Input } from "@/components/ui/input";
 import { 
   Card, 
   CardContent, 
-  CardHeader, 
-  CardTitle,
-  CardDescription
+  CardHeader,
 } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -64,22 +63,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertClientSchema, type Client } from "@shared/schema";
+import { insertClientSchema, type Client, type ClientContact } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export default function Clients() {
+export default function Customers() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [contactSearch, setContactSearch] = useState("");
   const [industryFilter, setIndustryFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: clients, isLoading } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
+  });
+
+  const { data: allContacts = [], isLoading: isLoadingContacts } = useQuery<ClientContact[]>({
+    queryKey: ["/api/client-contacts"],
   });
 
   const createClientMutation = useMutation({
@@ -91,17 +96,10 @@ export default function Clients() {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       setIsCreateDialogOpen(false);
       form.reset();
-      toast({
-        title: "Success",
-        description: "Client created successfully",
-      });
+      toast({ title: "Success", description: "Customer created successfully" });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -111,10 +109,7 @@ export default function Clients() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      toast({
-        title: "Success",
-        description: "Client deleted successfully",
-      });
+      toast({ title: "Success", description: "Customer deleted successfully" });
     },
   });
 
@@ -145,25 +140,38 @@ export default function Clients() {
     return matchesSearch && matchesIndustry;
   });
 
+  const getCompanyName = (clientId: number) =>
+    clients?.find(c => c.id === clientId)?.name ?? "Unknown Company";
+
+  const filteredContacts = allContacts.filter(contact => {
+    const term = contactSearch.toLowerCase();
+    return (
+      contact.name.toLowerCase().includes(term) ||
+      contact.email?.toLowerCase().includes(term) ||
+      contact.title?.toLowerCase().includes(term) ||
+      getCompanyName(contact.clientId).toLowerCase().includes(term)
+    );
+  });
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-heading font-bold">Clients</h1>
+          <h1 className="text-3xl font-heading font-bold">Customers</h1>
           <p className="text-muted-foreground text-lg">Manage your customer database and relationships</p>
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="h-11 px-6 font-medium" data-testid="button-add-client">
+            <Button className="h-11 px-6 font-medium" data-testid="button-add-customer">
               <Plus className="mr-2 h-5 w-5" />
-              Add Client
+              Add Company
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
-              <DialogTitle>Add New Client</DialogTitle>
+              <DialogTitle>Add New Company</DialogTitle>
               <DialogDescription>
-                Create a new client profile. Fill in the company details below.
+                Create a new customer company. Contacts can be added from the company detail page.
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -176,7 +184,7 @@ export default function Clients() {
                       <FormItem className="col-span-2">
                         <FormLabel>Company Name</FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter company name" {...field} data-testid="input-client-name" />
+                          <Input placeholder="Enter company name" {...field} data-testid="input-customer-name" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -189,7 +197,7 @@ export default function Clients() {
                       <FormItem>
                         <FormLabel>Industry</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g. Healthcare" {...field} value={field.value || ""} data-testid="input-client-industry" />
+                          <Input placeholder="e.g. Healthcare" {...field} value={field.value || ""} data-testid="input-customer-industry" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -202,7 +210,7 @@ export default function Clients() {
                       <FormItem>
                         <FormLabel>Phone</FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter phone number" {...field} value={field.value || ""} data-testid="input-client-phone" />
+                          <Input placeholder="Enter phone number" {...field} value={field.value || ""} data-testid="input-customer-phone" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -215,7 +223,7 @@ export default function Clients() {
                       <FormItem>
                         <FormLabel>Email</FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter email address" {...field} value={field.value || ""} data-testid="input-client-email" />
+                          <Input placeholder="Enter email address" {...field} value={field.value || ""} data-testid="input-customer-email" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -228,7 +236,7 @@ export default function Clients() {
                       <FormItem>
                         <FormLabel>Website</FormLabel>
                         <FormControl>
-                          <Input placeholder="https://..." {...field} value={field.value || ""} data-testid="input-client-website" />
+                          <Input placeholder="https://..." {...field} value={field.value || ""} data-testid="input-customer-website" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -247,7 +255,7 @@ export default function Clients() {
                           className="resize-none"
                           {...field} 
                           value={field.value || ""}
-                          data-testid="textarea-client-address"
+                          data-testid="textarea-customer-address"
                         />
                       </FormControl>
                       <FormMessage />
@@ -266,7 +274,7 @@ export default function Clients() {
                           className="resize-none"
                           {...field} 
                           value={field.value || ""}
-                          data-testid="textarea-client-notes"
+                          data-testid="textarea-customer-notes"
                         />
                       </FormControl>
                       <FormMessage />
@@ -278,9 +286,9 @@ export default function Clients() {
                     type="submit" 
                     className="w-full sm:w-auto h-11 px-8"
                     disabled={createClientMutation.isPending}
-                    data-testid="button-submit-client"
+                    data-testid="button-submit-customer"
                   >
-                    {createClientMutation.isPending ? "Creating..." : "Create Client"}
+                    {createClientMutation.isPending ? "Creating..." : "Create Company"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -289,162 +297,281 @@ export default function Clients() {
         </Dialog>
       </div>
 
-      <Card className="border-none shadow-sm bg-card">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col md:flex-row md:items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by name, email or industry..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-10"
-                data-testid="input-search-clients"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Select value={industryFilter} onValueChange={setIndustryFilter}>
-                <SelectTrigger className="w-[180px] h-10" data-testid="select-industry-filter">
-                  <SelectValue placeholder="All Industries" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Industries</SelectItem>
-                  {industries.map((ind) => (
-                    <SelectItem key={ind} value={ind!}>{ind}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="flex items-center gap-4">
-                  <Skeleton className="h-12 w-full" />
+      <Tabs defaultValue="companies">
+        <TabsList className="mb-4">
+          <TabsTrigger value="companies" className="flex items-center gap-2" data-testid="tab-companies">
+            <Building2 className="h-4 w-4" />
+            Companies
+            {clients && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{clients.length}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="contacts" className="flex items-center gap-2" data-testid="tab-contacts">
+            <Users className="h-4 w-4" />
+            Contacts
+            {allContacts.length > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{allContacts.length}</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ── Companies Tab ── */}
+        <TabsContent value="companies">
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col md:flex-row md:items-center gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by name, email or industry..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10 h-10"
+                    data-testid="input-search-customers"
+                  />
                 </div>
-              ))}
-            </div>
-          ) : filteredClients && filteredClients.length > 0 ? (
-            <div className="rounded-md border border-border/50 overflow-hidden">
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead className="font-bold">Client Name</TableHead>
-                    <TableHead className="font-bold">Industry</TableHead>
-                    <TableHead className="font-bold">Contact Info</TableHead>
-                    <TableHead className="font-bold">Address</TableHead>
-                    <TableHead className="w-[80px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredClients.map((client) => (
-                    <TableRow key={client.id} className="hover:bg-muted/30 transition-colors">
-                      <TableCell className="font-medium">
-                        <Link 
-                          href={`/clients/${client.id}`}
-                          className="flex items-center gap-3 text-primary hover:underline group"
-                          data-testid={`link-client-detail-${client.id}`}
-                        >
-                          <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                            <Building2 className="h-5 w-5" />
-                          </div>
-                          <span className="text-base">{client.name}</span>
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        {client.industry ? (
-                          <Badge variant="secondary" className="font-medium px-2.5 py-0.5">
-                            {client.industry}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground italic text-sm">Not specified</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1.5">
-                          {client.email && (
-                            <div className="flex items-center text-sm text-muted-foreground">
-                              <Mail className="mr-2 h-3.5 w-3.5" />
-                              {client.email}
-                            </div>
-                          )}
-                          {client.phone && (
-                            <div className="flex items-center text-sm text-muted-foreground">
-                              <Phone className="mr-2 h-3.5 w-3.5" />
-                              {client.phone}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-[200px]">
-                        <div className="flex items-start text-sm text-muted-foreground line-clamp-2">
-                          <MapPin className="mr-2 h-3.5 w-3.5 mt-0.5 shrink-0" />
-                          {client.address || <span className="italic">No address</span>}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-client-actions-${client.id}`}>
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-[160px]">
-                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem asChild>
-                              <Link href={`/clients/${client.id}`} className="cursor-pointer">
-                                <ExternalLink className="mr-2 h-4 w-4" />
-                                View Details
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              className="text-destructive focus:text-destructive cursor-pointer"
-                              onClick={() => {
-                                if (confirm("Are you sure you want to delete this client?")) {
-                                  deleteClientMutation.mutate(client.id);
-                                }
-                              }}
-                              data-testid={`button-delete-client-${client.id}`}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed border-border/50">
-              <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
-                <Building2 className="h-6 w-6 text-muted-foreground" />
+                <Select value={industryFilter} onValueChange={setIndustryFilter}>
+                  <SelectTrigger className="w-[180px] h-10" data-testid="select-industry-filter">
+                    <SelectValue placeholder="All Industries" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Industries</SelectItem>
+                    {industries.map((ind) => (
+                      <SelectItem key={ind} value={ind!}>{ind}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <h3 className="text-lg font-semibold">No clients found</h3>
-              <p className="text-muted-foreground max-w-sm mx-auto mt-1">
-                {searchTerm || industryFilter !== "all" 
-                  ? "Try adjusting your search or filters to find what you're looking for." 
-                  : "Get started by adding your first client to the system."}
-              </p>
-              {!searchTerm && industryFilter === "all" && (
-                <Button 
-                  variant="outline" 
-                  className="mt-6 h-10" 
-                  onClick={() => setIsCreateDialogOpen(true)}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add First Client
-                </Button>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : filteredClients && filteredClients.length > 0 ? (
+                <div className="rounded-md border border-border/50 overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow>
+                        <TableHead className="font-bold">Company Name</TableHead>
+                        <TableHead className="font-bold">Industry</TableHead>
+                        <TableHead className="font-bold">Contact Info</TableHead>
+                        <TableHead className="font-bold">Address</TableHead>
+                        <TableHead className="w-[80px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredClients.map((client) => (
+                        <TableRow key={client.id} className="hover:bg-muted/30 transition-colors">
+                          <TableCell className="font-medium">
+                            <Link 
+                              href={`/customers/${client.id}`}
+                              className="flex items-center gap-3 text-primary hover:underline group"
+                              data-testid={`link-customer-detail-${client.id}`}
+                            >
+                              <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                                <Building2 className="h-5 w-5" />
+                              </div>
+                              <span className="text-base">{client.name}</span>
+                            </Link>
+                          </TableCell>
+                          <TableCell>
+                            {client.industry ? (
+                              <Badge variant="secondary" className="font-medium px-2.5 py-0.5">
+                                {client.industry}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground italic text-sm">Not specified</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1.5">
+                              {client.email && (
+                                <div className="flex items-center text-sm text-muted-foreground">
+                                  <Mail className="mr-2 h-3.5 w-3.5" />
+                                  {client.email}
+                                </div>
+                              )}
+                              {client.phone && (
+                                <div className="flex items-center text-sm text-muted-foreground">
+                                  <Phone className="mr-2 h-3.5 w-3.5" />
+                                  {client.phone}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="max-w-[200px]">
+                            <div className="flex items-start text-sm text-muted-foreground line-clamp-2">
+                              <MapPin className="mr-2 h-3.5 w-3.5 mt-0.5 shrink-0" />
+                              {client.address || <span className="italic">No address</span>}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-customer-actions-${client.id}`}>
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-[160px]">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/customers/${client.id}`} className="cursor-pointer">
+                                    <ExternalLink className="mr-2 h-4 w-4" />
+                                    View Details
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  className="text-destructive focus:text-destructive cursor-pointer"
+                                  onClick={() => {
+                                    if (confirm("Are you sure you want to delete this customer?")) {
+                                      deleteClientMutation.mutate(client.id);
+                                    }
+                                  }}
+                                  data-testid={`button-delete-customer-${client.id}`}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed border-border/50">
+                  <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
+                    <Building2 className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold">No companies found</h3>
+                  <p className="text-muted-foreground max-w-sm mx-auto mt-1">
+                    {searchTerm || industryFilter !== "all" 
+                      ? "Try adjusting your search or filters." 
+                      : "Get started by adding your first customer company."}
+                  </p>
+                  {!searchTerm && industryFilter === "all" && (
+                    <Button 
+                      variant="outline" 
+                      className="mt-6 h-10" 
+                      onClick={() => setIsCreateDialogOpen(true)}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add First Company
+                    </Button>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Contacts Tab ── */}
+        <TabsContent value="contacts">
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-3">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search contacts..."
+                  value={contactSearch}
+                  onChange={(e) => setContactSearch(e.target.value)}
+                  className="pl-10 h-10"
+                  data-testid="input-search-contacts"
+                />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoadingContacts ? (
+                <div className="space-y-4">
+                  {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              ) : filteredContacts.length > 0 ? (
+                <div className="rounded-md border border-border/50 overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow>
+                        <TableHead className="font-bold">Name</TableHead>
+                        <TableHead className="font-bold">Company</TableHead>
+                        <TableHead className="font-bold">Title</TableHead>
+                        <TableHead className="font-bold">Contact Info</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredContacts.map((contact) => (
+                        <TableRow key={contact.id} className="hover:bg-muted/30 transition-colors" data-testid={`row-contact-${contact.id}`}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">
+                                {contact.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-medium text-sm">{contact.name}</p>
+                                {contact.isPrimary && (
+                                  <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
+                                    <Star className="h-2.5 w-2.5 fill-current" />
+                                    Primary
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Link
+                              href={`/customers/${contact.clientId}`}
+                              className="flex items-center gap-1.5 text-primary hover:underline text-sm"
+                              data-testid={`link-contact-company-${contact.id}`}
+                            >
+                              <Building2 className="h-3.5 w-3.5" />
+                              {getCompanyName(contact.clientId)}
+                            </Link>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-muted-foreground">{contact.title || <span className="italic">No title</span>}</span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              {contact.email && (
+                                <div className="flex items-center text-sm text-muted-foreground">
+                                  <Mail className="mr-2 h-3.5 w-3.5" />
+                                  {contact.email}
+                                </div>
+                              )}
+                              {contact.phone && (
+                                <div className="flex items-center text-sm text-muted-foreground">
+                                  <Phone className="mr-2 h-3.5 w-3.5" />
+                                  {contact.phone}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed border-border/50">
+                  <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
+                    <Users className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold">No contacts found</h3>
+                  <p className="text-muted-foreground max-w-sm mx-auto mt-1">
+                    {contactSearch
+                      ? "Try adjusting your search."
+                      : "Add contacts from a company's detail page."}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

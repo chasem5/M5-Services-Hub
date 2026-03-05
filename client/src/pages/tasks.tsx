@@ -635,7 +635,7 @@ export default function TasksPage() {
                         </div>
                       </div>
                       <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/clients`}>View</Link>
+                        <Link href={`/customers`}>View</Link>
                       </Button>
                     </div>
                   )}
