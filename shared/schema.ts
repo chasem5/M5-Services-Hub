@@ -36,6 +36,8 @@ export const leads = pgTable("leads", {
   clientId: integer("client_id").references(() => clients.id),
   stage: varchar("stage", { enum: ["new_lead", "contacted", "qualified", "proposal_sent", "won", "lost"] }).default("new_lead").notNull(),
   value: decimal("value", { precision: 12, scale: 2 }).default("0").notNull(),
+  confidenceScore: integer("confidence_score").default(50),
+  tags: text("tags").array().default([]),
   assignedTo: varchar("assigned_to").references(() => users.id),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
