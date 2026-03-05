@@ -1190,6 +1190,7 @@ export default function ClientDetail() {
                 ) : (
                   <OrgChart
                     contacts={contacts || []}
+                    offices={offices || []}
                     onUpdateReportsTo={(contactId, reportsTo) => {
                       updateContactMutation.mutate({
                         contactId,

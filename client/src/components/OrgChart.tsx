@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ClientContact } from "@shared/schema";
+import { ClientContact, ClientOffice } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,10 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Mail, Phone, UserCircle2, Star, Edit2, Check, AlertTriangle } from "lucide-react";
+import { Mail, Phone, UserCircle2, Star, Edit2, Check, AlertTriangle, Building2, Users } from "lucide-react";
 
 interface OrgChartProps {
   contacts: ClientContact[];
+  offices?: ClientOffice[];
   onUpdateReportsTo: (contactId: number, reportsTo: number | null) => void;
   onEditContact: (contact: ClientContact) => void;
   isUpdating: boolean;
@@ -27,6 +28,7 @@ interface OrgChartProps {
 interface OrgNodeProps {
   contact: ClientContact;
   contacts: ClientContact[];
+  allContacts: ClientContact[];
   onUpdateReportsTo: (contactId: number, reportsTo: number | null) => void;
   onEditContact: (contact: ClientContact) => void;
   isUpdating: boolean;
@@ -51,7 +53,7 @@ function getDescendantIds(contactId: number, contacts: ClientContact[]): Set<num
   return result;
 }
 
-function OrgNode({ contact, contacts, onUpdateReportsTo, onEditContact, isUpdating, ancestors = new Set() }: OrgNodeProps) {
+function OrgNode({ contact, contacts, allContacts, onUpdateReportsTo, onEditContact, isUpdating, ancestors = new Set() }: OrgNodeProps) {
   const [editingReportsTo, setEditingReportsTo] = useState(false);
   const [pendingReportsTo, setPendingReportsTo] = useState<string>(
     contact.reportsTo?.toString() || "none"
@@ -61,8 +63,8 @@ function OrgNode({ contact, contacts, onUpdateReportsTo, onEditContact, isUpdati
     setPendingReportsTo(contact.reportsTo?.toString() || "none");
   }, [contact.reportsTo]);
 
-  const descendantIds = getDescendantIds(contact.id, contacts);
-  const eligibleManagers = contacts.filter(
+  const descendantIds = getDescendantIds(contact.id, allContacts);
+  const eligibleManagers = allContacts.filter(
     c => c.id !== contact.id && !descendantIds.has(c.id)
   );
 
@@ -70,6 +72,9 @@ function OrgNode({ contact, contacts, onUpdateReportsTo, onEditContact, isUpdati
   const children = contacts.filter(
     c => c.reportsTo === contact.id && !ancestors.has(c.id)
   );
+
+  const manager = allContacts.find(c => c.id === contact.reportsTo);
+  const managerInDifferentGroup = manager && !contacts.find(c => c.id === manager.id);
 
   const handleSaveReportsTo = () => {
     const val = pendingReportsTo === "none" ? null : parseInt(pendingReportsTo);
@@ -98,6 +103,11 @@ function OrgNode({ contact, contacts, onUpdateReportsTo, onEditContact, isUpdati
                 </div>
                 {contact.title && (
                   <p className="text-xs text-muted-foreground leading-tight mt-0.5">{contact.title}</p>
+                )}
+                {managerInDifferentGroup && (
+                  <p className="text-[10px] text-primary/70 leading-tight mt-1 italic">
+                    Reports to {manager!.name}
+                  </p>
                 )}
               </div>
             </CardContent>
@@ -177,7 +187,7 @@ function OrgNode({ contact, contacts, onUpdateReportsTo, onEditContact, isUpdati
                 <div className="flex items-center justify-between">
                   <span className="text-sm">
                     {contact.reportsTo
-                      ? contacts.find(c => c.id === contact.reportsTo)?.name || "Unknown"
+                      ? allContacts.find(c => c.id === contact.reportsTo)?.name || "Unknown"
                       : <span className="text-muted-foreground italic">Top level</span>
                     }
                   </span>
@@ -213,12 +223,13 @@ function OrgNode({ contact, contacts, onUpdateReportsTo, onEditContact, isUpdati
                 }}
               />
             )}
-            {children.map((child, idx) => (
+            {children.map((child) => (
               <div key={child.id} className="flex flex-col items-center px-4">
                 <div className="w-px h-6 bg-border" />
                 <OrgNode
                   contact={child}
                   contacts={contacts}
+                  allContacts={allContacts}
                   onUpdateReportsTo={onUpdateReportsTo}
                   onEditContact={onEditContact}
                   isUpdating={isUpdating}
@@ -246,10 +257,70 @@ function detectCycles(contacts: ClientContact[]): boolean {
   return false;
 }
 
-export function OrgChart({ contacts, onUpdateReportsTo, onEditContact, isUpdating }: OrgChartProps) {
+function OfficeSection({
+  label,
+  icon,
+  contacts,
+  allContacts,
+  onUpdateReportsTo,
+  onEditContact,
+  isUpdating,
+  accent = false,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  contacts: ClientContact[];
+  allContacts: ClientContact[];
+  onUpdateReportsTo: (contactId: number, reportsTo: number | null) => void;
+  onEditContact: (contact: ClientContact) => void;
+  isUpdating: boolean;
+  accent?: boolean;
+}) {
+  const roots = contacts.filter(c => !contacts.find(m => m.id === c.reportsTo));
+
+  if (contacts.length === 0) return null;
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className={`flex items-center gap-2 px-4 py-2 rounded-full border mb-6 text-sm font-semibold shadow-sm ${
+        accent
+          ? "bg-muted/60 border-border text-muted-foreground"
+          : "bg-primary/8 border-primary/25 text-primary"
+      }`}>
+        {icon}
+        {label}
+        <span className={`ml-1 text-xs font-normal rounded-full px-1.5 py-0.5 ${
+          accent ? "bg-muted text-muted-foreground" : "bg-primary/15 text-primary"
+        }`}>
+          {contacts.length}
+        </span>
+      </div>
+      <div
+        className={`rounded-xl border-2 border-dashed p-6 min-w-[200px] ${
+          accent ? "border-border/60 bg-muted/20" : "border-primary/20 bg-primary/3"
+        }`}
+      >
+        <div className="flex gap-16 justify-center min-w-max">
+          {roots.map(root => (
+            <OrgNode
+              key={root.id}
+              contact={root}
+              contacts={contacts}
+              allContacts={allContacts}
+              onUpdateReportsTo={onUpdateReportsTo}
+              onEditContact={onEditContact}
+              isUpdating={isUpdating}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function OrgChart({ contacts, offices = [], onUpdateReportsTo, onEditContact, isUpdating }: OrgChartProps) {
   const hasCycles = detectCycles(contacts);
-  const rootContacts = contacts.filter(c => !c.reportsTo);
-  const displayRoots = rootContacts.length > 0 ? rootContacts : contacts;
+  const hasOffices = offices.length > 0;
 
   if (contacts.length === 0) {
     return (
@@ -261,30 +332,74 @@ export function OrgChart({ contacts, onUpdateReportsTo, onEditContact, isUpdatin
     );
   }
 
+  const cycleWarning = hasCycles && (
+    <div className="flex items-start gap-3 mb-6 mx-8 p-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+      <div>
+        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Circular reporting relationship detected</p>
+        <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+          Click any contact node and use the "Reports To" editor to fix the hierarchy.
+        </p>
+      </div>
+    </div>
+  );
+
+  if (!hasOffices) {
+    const rootContacts = contacts.filter(c => !c.reportsTo);
+    const displayRoots = rootContacts.length > 0 ? rootContacts : contacts;
+    return (
+      <div className="overflow-auto min-h-[400px] py-8">
+        {cycleWarning}
+        <div className="flex gap-16 justify-center min-w-max px-8">
+          {displayRoots.map(root => (
+            <OrgNode
+              key={root.id}
+              contact={root}
+              contacts={contacts}
+              allContacts={contacts}
+              onUpdateReportsTo={onUpdateReportsTo}
+              onEditContact={onEditContact}
+              isUpdating={isUpdating}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const unassigned = contacts.filter(c => !c.officeId);
+
   return (
     <div className="overflow-auto min-h-[400px] py-8">
-      {hasCycles && (
-        <div className="flex items-start gap-3 mb-6 mx-8 p-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
-          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Circular reporting relationship detected</p>
-            <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
-              Click any contact node and use the "Reports To" editor to fix the hierarchy.
-            </p>
-          </div>
-        </div>
-      )}
-      <div className="flex gap-16 justify-center min-w-max px-8">
-        {displayRoots.map(root => (
-          <OrgNode
-            key={root.id}
-            contact={root}
-            contacts={contacts}
+      {cycleWarning}
+      <div className="flex flex-wrap gap-10 justify-center min-w-max px-8">
+        {offices.map(office => {
+          const officeContacts = contacts.filter(c => c.officeId === office.id);
+          return (
+            <OfficeSection
+              key={office.id}
+              label={office.name}
+              icon={<Building2 className="h-3.5 w-3.5" />}
+              contacts={officeContacts}
+              allContacts={contacts}
+              onUpdateReportsTo={onUpdateReportsTo}
+              onEditContact={onEditContact}
+              isUpdating={isUpdating}
+            />
+          );
+        })}
+        {unassigned.length > 0 && (
+          <OfficeSection
+            label="Unassigned"
+            icon={<Users className="h-3.5 w-3.5" />}
+            contacts={unassigned}
+            allContacts={contacts}
             onUpdateReportsTo={onUpdateReportsTo}
             onEditContact={onEditContact}
             isUpdating={isUpdating}
+            accent
           />
-        ))}
+        )}
       </div>
     </div>
   );
