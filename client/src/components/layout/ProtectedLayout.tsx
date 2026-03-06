@@ -40,19 +40,44 @@ function AnnouncementsBadge() {
   );
 }
 
+function getRelativeTime(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}hr ago`;
+}
+
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState(() => new Date());
+  const [, forceUpdate] = useState(0);
   const touchStartY = useRef(0);
   const isPulling = useRef(false);
   const mainRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => forceUpdate(n => n + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") setLastRefreshed(new Date());
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   const triggerRefresh = useCallback(async () => {
     setIsRefreshing(true);
     setPullDistance(0);
     await queryClient.invalidateQueries({});
+    setLastRefreshed(new Date());
     setTimeout(() => setIsRefreshing(false), 800);
   }, []);
 
@@ -167,6 +192,9 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
               <div className="h-6 w-px bg-border hidden md:block" />
               <GlobalSearchTrigger onClick={() => setSearchOpen(true)} />
             </div>
+            <span className="hidden sm:block text-xs text-muted-foreground/50 ml-auto mr-2 tabular-nums select-none">
+              Updated {getRelativeTime(lastRefreshed)}
+            </span>
             <div className="flex items-center gap-2">
               <AnnouncementsBadge />
               <RemindersDropdown />
