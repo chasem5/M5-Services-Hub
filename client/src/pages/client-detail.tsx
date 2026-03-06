@@ -1128,7 +1128,12 @@ export default function ClientDetail() {
                           <FormItem>
                             <FormLabel>Address</FormLabel>
                             <FormControl>
-                              <Textarea {...field} className="min-h-[100px]" data-testid="textarea-edit-client-address" />
+                              <AddressAutocomplete
+                                value={field.value || ""}
+                                onChange={(addr) => field.onChange(addr)}
+                                placeholder="Search address..."
+                                data-testid="input-edit-client-address"
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>

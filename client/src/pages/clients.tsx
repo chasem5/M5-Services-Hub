@@ -95,6 +95,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { AddressLink } from "@/components/AddressLink";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { TierBadge } from "@/components/TierBadge";
 import { Input } from "@/components/ui/input";
 import { 
@@ -534,12 +535,11 @@ export default function Customers() {
                     <FormItem>
                       <FormLabel>Address</FormLabel>
                       <FormControl>
-                        <Textarea 
-                          placeholder="Enter physical address" 
-                          className="resize-none"
-                          {...field} 
+                        <AddressAutocomplete
                           value={field.value || ""}
-                          data-testid="textarea-customer-address"
+                          onChange={(addr) => field.onChange(addr)}
+                          placeholder="Search address..."
+                          data-testid="input-customer-address"
                         />
                       </FormControl>
                       <FormMessage />
