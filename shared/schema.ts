@@ -239,7 +239,7 @@ export const meetingActions = pgTable("meeting_actions", {
 export const invites = pgTable("invites", {
   id: serial("id").primaryKey(),
   email: varchar("email").notNull(),
-  role: varchar("role", { enum: ["admin", "manager", "member"] }).notNull().default("member"),
+  role: varchar("role").notNull().default("member"),
   token: varchar("token").notNull().unique(),
   invitedBy: varchar("invited_by").references(() => users.id),
   usedBy: varchar("used_by").references(() => users.id),
@@ -361,7 +361,7 @@ export type MeetingAction = typeof meetingActions.$inferSelect;
 export type InsertMeetingAction = z.infer<typeof insertMeetingActionSchema>;
 
 export const insertInviteSchema = createInsertSchema(invites).omit({ id: true, createdAt: true, usedAt: true, usedBy: true }).extend({
-  role: z.enum(["admin", "manager", "member"]).default("member"),
+  role: z.string().default("member"),
   expiresAt: z.coerce.date(),
 });
 export type Invite = typeof invites.$inferSelect;

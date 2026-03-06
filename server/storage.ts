@@ -216,6 +216,8 @@ export interface IStorage {
   // Role Configs
   listRoleConfigs(): Promise<RoleConfig[]>;
   updateRoleConfig(roleKey: string, displayName: string): Promise<RoleConfig>;
+  createRoleConfig(roleKey: string, displayName: string): Promise<RoleConfig>;
+  deleteRoleConfig(roleKey: string): Promise<void>;
 
   // Role Permissions
   listRolePermissions(): Promise<RolePermission[]>;
@@ -831,6 +833,18 @@ export class DatabaseStorage implements IStorage {
     }
     const [config] = await db.update(roleConfigs).set({ displayName }).where(eq(roleConfigs.roleKey, roleKey)).returning();
     return config;
+  }
+
+  async createRoleConfig(roleKey: string, displayName: string): Promise<RoleConfig> {
+    const [config] = await db.insert(roleConfigs).values({ roleKey, displayName }).returning();
+    return config;
+  }
+
+  async deleteRoleConfig(roleKey: string): Promise<void> {
+    if (roleKey === "admin") throw new Error("Cannot delete the admin role");
+    await db.update(users).set({ role: "member" }).where(eq(users.role, roleKey));
+    await db.delete(rolePermissions).where(eq(rolePermissions.roleKey, roleKey));
+    await db.delete(roleConfigs).where(eq(roleConfigs.roleKey, roleKey));
   }
 
   // Role Permissions

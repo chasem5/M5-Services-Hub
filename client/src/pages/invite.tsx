@@ -10,13 +10,7 @@ import { SiReplit } from "react-icons/si";
 import { CheckCircle2, XCircle, Loader2, ShieldCheck, UserCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
-  manager: "Manager",
-  member: "Team Member",
-};
-
-const ROLE_DESCRIPTIONS: Record<string, string> = {
+const DEFAULT_ROLE_DESCRIPTIONS: Record<string, string> = {
   admin: "Full access — manage all data and team members",
   manager: "Can view all data across the team",
   member: "Access to your own assigned leads, tasks, and customers",
@@ -29,7 +23,7 @@ export default function InvitePage() {
   const { toast } = useToast();
   const [consumed, setConsumed] = useState(false);
 
-  const { data: invite, isLoading, error } = useQuery<{ email: string; role: string }>({
+  const { data: invite, isLoading, error } = useQuery<{ email: string; role: string; roleDisplayName: string }>({
     queryKey: ["/api/invite", token],
     queryFn: async () => {
       const res = await fetch(`/api/invite/${token}`);
@@ -155,8 +149,10 @@ export default function InvitePage() {
               <div>
                 <p className="text-muted-foreground text-xs uppercase tracking-wide font-medium mb-0.5">Your Role</p>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="font-semibold">{ROLE_LABELS[invite.role] || invite.role}</Badge>
-                  <span className="text-muted-foreground text-xs">{ROLE_DESCRIPTIONS[invite.role]}</span>
+                  <Badge variant="outline" className="font-semibold">{invite.roleDisplayName}</Badge>
+                  {DEFAULT_ROLE_DESCRIPTIONS[invite.role] && (
+                    <span className="text-muted-foreground text-xs">{DEFAULT_ROLE_DESCRIPTIONS[invite.role]}</span>
+                  )}
                 </div>
               </div>
             </div>

@@ -36,6 +36,7 @@ import {
   Lock,
   Settings2,
   Pencil,
+  Plus,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -104,8 +105,10 @@ export default function AdminPage() {
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [savedPermission, setSavedPermission] = useState<string | null>(null);
   const [savedLabel, setSavedLabel] = useState<string | null>(null);
-  const [managerLabel, setManagerLabel] = useState("");
-  const [memberLabel, setMemberLabel] = useState("");
+  const [roleLabelEdits, setRoleLabelEdits] = useState<Record<string, string>>({});
+  const [showAddRole, setShowAddRole] = useState(false);
+  const [newRoleDisplayName, setNewRoleDisplayName] = useState("");
+  const [deleteRoleKey, setDeleteRoleKey] = useState<string | null>(null);
   const { register, handleSubmit, reset, setValue, watch } = useForm({ defaultValues: { email: "", role: "member" } });
 
   if (currentUser && currentUser.role !== "admin") {
@@ -126,10 +129,12 @@ export default function AdminPage() {
   });
 
   useEffect(() => {
-    const managerCfg = roleConfigs.find(c => c.roleKey === "manager");
-    const memberCfg = roleConfigs.find(c => c.roleKey === "member");
-    if (managerCfg && !managerLabel) setManagerLabel(managerCfg.displayName);
-    if (memberCfg && !memberLabel) setMemberLabel(memberCfg.displayName);
+    const edits: Record<string, string> = {};
+    for (const cfg of roleConfigs) {
+      if (cfg.roleKey === "admin") continue;
+      if (!(cfg.roleKey in roleLabelEdits)) edits[cfg.roleKey] = cfg.displayName;
+    }
+    if (Object.keys(edits).length > 0) setRoleLabelEdits(prev => ({ ...edits, ...prev }));
   }, [roleConfigs]);
 
   const { data: permissions = [] } = useQuery<RolePermission[]>({
@@ -148,6 +153,31 @@ export default function AdminPage() {
     onError: () => toast({ title: "Error saving label", variant: "destructive" }),
   });
 
+  const createRoleMutation = useMutation({
+    mutationFn: (displayName: string) =>
+      apiRequest("POST", "/api/role-configs", { displayName }).then(r => r.json()),
+    onSuccess: (config: RoleConfig) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/role-configs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/permissions"] });
+      setNewRoleDisplayName("");
+      setShowAddRole(false);
+      toast({ title: `Role "${config.displayName}" created` });
+    },
+    onError: (err: any) => toast({ title: err?.message ?? "Error creating role", variant: "destructive" }),
+  });
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: (roleKey: string) => apiRequest("DELETE", `/api/role-configs/${roleKey}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/role-configs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setDeleteRoleKey(null);
+      toast({ title: "Role deleted" });
+    },
+    onError: () => toast({ title: "Error deleting role", variant: "destructive" }),
+  });
+
   const updatePermissionMutation = useMutation({
     mutationFn: ({ roleKey, module, accessLevel }: { roleKey: string; module: string; accessLevel: string }) =>
       apiRequest("PATCH", "/api/permissions", { roleKey, module, accessLevel }).then(r => r.json()),
@@ -164,6 +194,12 @@ export default function AdminPage() {
     const found = permissions.find(p => p.roleKey === roleKey && p.module === module);
     return found?.accessLevel ?? "own_only";
   };
+
+  const getRoleLabel = (roleKey: string) => {
+    return roleConfigs.find(c => c.roleKey === roleKey)?.displayName ?? roleKey;
+  };
+
+  const nonAdminRoles = roleConfigs.filter(c => c.roleKey !== "admin");
 
   const updateRoleMutation = useMutation({
     mutationFn: ({ id, role }: { id: string; role: string }) =>
@@ -274,9 +310,9 @@ export default function AdminPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="manager">Manager</SelectItem>
-                        <SelectItem value="member">Member</SelectItem>
+                        {roleConfigs.map(cfg => (
+                          <SelectItem key={cfg.roleKey} value={cfg.roleKey}>{cfg.displayName}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <Button
@@ -322,9 +358,9 @@ export default function AdminPage() {
                     <SelectValue placeholder="Role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="manager">Manager</SelectItem>
-                    <SelectItem value="member">Member</SelectItem>
+                    {roleConfigs.map(cfg => (
+                      <SelectItem key={cfg.roleKey} value={cfg.roleKey}>{cfg.displayName}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button type="submit" disabled={createInviteMutation.isPending} className="shrink-0" data-testid="button-generate-invite">
@@ -365,8 +401,8 @@ export default function AdminPage() {
                       <p className="text-sm font-medium truncate">{inv.email}</p>
                       <p className="text-xs text-muted-foreground">
                         Expires {format(new Date(inv.expiresAt), "MMM d, yyyy")} &middot;{" "}
-                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${ROLE_COLORS[inv.role]}`}>
-                          {ROLE_LABELS[inv.role]}
+                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${ROLE_COLORS[inv.role] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                          {getRoleLabel(inv.role)}
                         </Badge>
                       </p>
                     </div>
@@ -401,8 +437,8 @@ export default function AdminPage() {
                       <p className="text-sm font-medium truncate text-muted-foreground">{inv.email}</p>
                       <p className="text-xs text-muted-foreground">
                         Accepted {inv.usedAt ? format(new Date(inv.usedAt), "MMM d, yyyy") : ""} &middot;{" "}
-                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${ROLE_COLORS[inv.role]}`}>
-                          {ROLE_LABELS[inv.role]}
+                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${ROLE_COLORS[inv.role] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                          {getRoleLabel(inv.role)}
                         </Badge>
                       </p>
                     </div>
@@ -426,7 +462,7 @@ export default function AdminPage() {
                       <p className="text-xs text-muted-foreground">
                         Expired {format(new Date(inv.expiresAt), "MMM d, yyyy")} &middot;{" "}
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
-                          {ROLE_LABELS[inv.role]}
+                          {getRoleLabel(inv.role)}
                         </Badge>
                       </p>
                     </div>
@@ -455,70 +491,98 @@ export default function AdminPage() {
         <TabsContent value="permissions" className="pt-4 space-y-6">
           <Card className="border-none shadow-sm bg-card">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Pencil className="h-4 w-4 text-primary" />
-                Role Labels
-              </CardTitle>
-              <CardDescription>Customize the display name shown for each role across the app.</CardDescription>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Pencil className="h-4 w-4 text-primary" />
+                    Roles
+                  </CardTitle>
+                  <CardDescription className="mt-1">Customize display names and create additional roles for your team.</CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 shrink-0"
+                  onClick={() => { setShowAddRole(v => !v); setNewRoleDisplayName(""); }}
+                  data-testid="button-add-role"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Role
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {showAddRole && (
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-dashed border-primary/40 bg-primary/5">
+                  <Input
+                    value={newRoleDisplayName}
+                    onChange={(e) => setNewRoleDisplayName(e.target.value)}
+                    placeholder="e.g. Field Technician"
+                    className="max-w-xs"
+                    data-testid="input-new-role-name"
+                    onKeyDown={(e) => { if (e.key === "Enter" && newRoleDisplayName.trim()) createRoleMutation.mutate(newRoleDisplayName.trim()); }}
+                    autoFocus
+                  />
+                  <Button
+                    size="sm"
+                    disabled={!newRoleDisplayName.trim() || createRoleMutation.isPending}
+                    onClick={() => createRoleMutation.mutate(newRoleDisplayName.trim())}
+                    data-testid="button-confirm-add-role"
+                  >
+                    {createRoleMutation.isPending ? "Creating..." : "Create Role"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowAddRole(false)} data-testid="button-cancel-add-role">
+                    Cancel
+                  </Button>
+                </div>
+              )}
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 w-24 shrink-0">
+                <div className="flex items-center gap-2 w-28 shrink-0">
                   <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs font-semibold px-2 py-0.5">
                     <Lock className="h-3 w-3 mr-1" />
                     Admin
                   </Badge>
                 </div>
                 <Input value="Admin" disabled className="max-w-xs opacity-50" />
-                <span className="text-xs text-muted-foreground">Cannot be renamed</span>
+                <span className="text-xs text-muted-foreground">Cannot be renamed or deleted</span>
               </div>
-              <Separator />
-              <div className="flex items-center gap-3">
-                <div className="w-24 shrink-0">
-                  <Badge className="bg-blue-100 text-blue-700 border-blue-200 border text-xs font-semibold px-2 py-0.5">Manager</Badge>
+              {nonAdminRoles.length > 0 && <Separator />}
+              {nonAdminRoles.map((cfg) => (
+                <div key={cfg.roleKey} className="flex items-center gap-3">
+                  <div className="w-28 shrink-0">
+                    <Badge className="bg-slate-100 text-slate-600 border-slate-200 border text-xs font-semibold px-2 py-0.5 max-w-full truncate">
+                      {cfg.roleKey}
+                    </Badge>
+                  </div>
+                  <Input
+                    value={roleLabelEdits[cfg.roleKey] ?? cfg.displayName}
+                    onChange={(e) => setRoleLabelEdits(prev => ({ ...prev, [cfg.roleKey]: e.target.value }))}
+                    placeholder={cfg.displayName}
+                    className="max-w-xs"
+                    data-testid={`input-role-label-${cfg.roleKey}`}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={updateLabelMutation.isPending}
+                    onClick={() => updateLabelMutation.mutate({ roleKey: cfg.roleKey, displayName: roleLabelEdits[cfg.roleKey] ?? cfg.displayName })}
+                    className="gap-1.5"
+                    data-testid={`button-save-role-label-${cfg.roleKey}`}
+                  >
+                    {savedLabel === cfg.roleKey ? <Check className="h-3.5 w-3.5 text-green-600" /> : null}
+                    {savedLabel === cfg.roleKey ? "Saved" : "Save"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => setDeleteRoleKey(cfg.roleKey)}
+                    data-testid={`button-delete-role-${cfg.roleKey}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-                <Input
-                  value={managerLabel}
-                  onChange={(e) => setManagerLabel(e.target.value)}
-                  placeholder="Manager"
-                  className="max-w-xs"
-                  data-testid="input-manager-label"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={updateLabelMutation.isPending}
-                  onClick={() => updateLabelMutation.mutate({ roleKey: "manager", displayName: managerLabel })}
-                  className="gap-1.5"
-                  data-testid="button-save-manager-label"
-                >
-                  {savedLabel === "manager" ? <Check className="h-3.5 w-3.5 text-green-600" /> : null}
-                  {savedLabel === "manager" ? "Saved" : "Save"}
-                </Button>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-24 shrink-0">
-                  <Badge className="bg-slate-100 text-slate-600 border-slate-200 border text-xs font-semibold px-2 py-0.5">Member</Badge>
-                </div>
-                <Input
-                  value={memberLabel}
-                  onChange={(e) => setMemberLabel(e.target.value)}
-                  placeholder="Member"
-                  className="max-w-xs"
-                  data-testid="input-member-label"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={updateLabelMutation.isPending}
-                  onClick={() => updateLabelMutation.mutate({ roleKey: "member", displayName: memberLabel })}
-                  className="gap-1.5"
-                  data-testid="button-save-member-label"
-                >
-                  {savedLabel === "member" ? <Check className="h-3.5 w-3.5 text-green-600" /> : null}
-                  {savedLabel === "member" ? "Saved" : "Save"}
-                </Button>
-              </div>
+              ))}
             </CardContent>
           </Card>
 
@@ -537,14 +601,15 @@ export default function AdminPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3 w-1/2">Section</th>
-                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 w-1/6">Admin</th>
-                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 w-1/6">
-                        {roleConfigs.find(c => c.roleKey === "manager")?.displayName ?? "Manager"}
-                      </th>
-                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 w-1/6">
-                        {roleConfigs.find(c => c.roleKey === "member")?.displayName ?? "Member"}
-                      </th>
+                      <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3 min-w-[180px]">Section</th>
+                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 min-w-[120px]">Admin</th>
+                      {nonAdminRoles.map(cfg => (
+                        <th key={cfg.roleKey} className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 min-w-[160px]">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {cfg.displayName}
+                          </div>
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -560,48 +625,29 @@ export default function AdminPage() {
                             Full Access
                           </Badge>
                         </td>
-                        <td className="px-4 py-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Select
-                              value={getPermLevel("manager", mod.key)}
-                              onValueChange={(val) => updatePermissionMutation.mutate({ roleKey: "manager", module: mod.key, accessLevel: val })}
-                              disabled={updatePermissionMutation.isPending}
-                            >
-                              <SelectTrigger className="h-8 text-xs w-32" data-testid={`select-perm-manager-${mod.key}`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ACCESS_LEVELS.map(a => (
-                                  <SelectItem key={a.value} value={a.value} className="text-xs">{a.label}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {savedPermission === `manager-${mod.key}` && (
-                              <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Select
-                              value={getPermLevel("member", mod.key)}
-                              onValueChange={(val) => updatePermissionMutation.mutate({ roleKey: "member", module: mod.key, accessLevel: val })}
-                              disabled={updatePermissionMutation.isPending}
-                            >
-                              <SelectTrigger className="h-8 text-xs w-32" data-testid={`select-perm-member-${mod.key}`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ACCESS_LEVELS.map(a => (
-                                  <SelectItem key={a.value} value={a.value} className="text-xs">{a.label}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {savedPermission === `member-${mod.key}` && (
-                              <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                            )}
-                          </div>
-                        </td>
+                        {nonAdminRoles.map(cfg => (
+                          <td key={cfg.roleKey} className="px-4 py-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Select
+                                value={getPermLevel(cfg.roleKey, mod.key)}
+                                onValueChange={(val) => updatePermissionMutation.mutate({ roleKey: cfg.roleKey, module: mod.key, accessLevel: val })}
+                                disabled={updatePermissionMutation.isPending}
+                              >
+                                <SelectTrigger className="h-8 text-xs w-32" data-testid={`select-perm-${cfg.roleKey}-${mod.key}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {ACCESS_LEVELS.map(a => (
+                                    <SelectItem key={a.value} value={a.value} className="text-xs">{a.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {savedPermission === `${cfg.roleKey}-${mod.key}` && (
+                                <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                              )}
+                            </div>
+                          </td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>
@@ -637,6 +683,27 @@ export default function AdminPage() {
               data-testid="button-confirm-remove-user"
             >
               Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deleteRoleKey} onOpenChange={(o) => !o && setDeleteRoleKey(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Role?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Any team members currently assigned to <strong>{getRoleLabel(deleteRoleKey ?? "")}</strong> will be reassigned to Member. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteRoleKey && deleteRoleMutation.mutate(deleteRoleKey)}
+              data-testid="button-confirm-delete-role"
+            >
+              Delete Role
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

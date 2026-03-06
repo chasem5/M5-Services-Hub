@@ -46,6 +46,20 @@ async function hasModuleAccess(req: any, module: string): Promise<boolean> {
   return (perm?.accessLevel ?? "own_only") !== "none";
 }
 
+// Middleware: allow if user is admin OR has 'full' access to a module
+function requireModuleFullAccess(module: string) {
+  return async (req: any, res: any, next: any) => {
+    const userId = req.user?.claims?.sub;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(401).json({ message: "Not authenticated" });
+    if (user.role === "admin") return next();
+    const perm = await storage.getRolePermission(user.role, module);
+    if (perm?.accessLevel === "full") return next();
+    return res.status(403).json({ message: "Forbidden" });
+  };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -83,7 +97,11 @@ export async function registerRoutes(
 
   app.put("/api/users/:id/role", isAuthenticated, requireRole(["admin"]), async (req, res) => {
     const id = req.params.id as string;
-    const { role } = z.object({ role: z.enum(["admin", "manager", "member"]) }).parse(req.body);
+    const { role } = z.object({ role: z.string().min(1) }).parse(req.body);
+    const configs = await storage.listRoleConfigs();
+    if (!configs.find(c => c.roleKey === role)) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
     const user = await storage.updateUserRole(id, role);
     res.json(user);
   });
@@ -104,8 +122,12 @@ export async function registerRoutes(
     const userId = (req as any).user.claims.sub;
     const { email, role } = z.object({
       email: z.string().email(),
-      role: z.enum(["admin", "manager", "member"]).default("member"),
+      role: z.string().min(1).default("member"),
     }).parse(req.body);
+    const configs = await storage.listRoleConfigs();
+    if (!configs.find(c => c.roleKey === role)) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
     const token = randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     const invite = await storage.createInvite({ email, role, token, invitedBy: userId, expiresAt });
@@ -124,7 +146,10 @@ export async function registerRoutes(
     if (!invite) return res.status(404).json({ message: "Invite not found" });
     if (invite.usedAt) return res.status(410).json({ message: "Invite already used" });
     if (new Date() > new Date(invite.expiresAt)) return res.status(410).json({ message: "Invite expired" });
-    res.json({ email: invite.email, role: invite.role });
+    const configs = await storage.listRoleConfigs();
+    const roleCfg = configs.find(c => c.roleKey === invite.role);
+    const roleDisplayName = roleCfg?.displayName ?? invite.role;
+    res.json({ email: invite.email, role: invite.role, roleDisplayName });
   });
 
   // Consume invite (authenticated, any role)
@@ -732,7 +757,7 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     res.json(items);
   });
 
-  app.post("/api/service-catalog", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.post("/api/service-catalog", isAuthenticated, requireModuleFullAccess("service_catalog"), async (req, res) => {
     const itemData = insertServiceCatalogSchema.parse(req.body);
     const item = await storage.createServiceCatalogItem(itemData);
     res.json(item);
@@ -745,14 +770,14 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     res.json(item);
   });
 
-  app.put("/api/service-catalog/:id", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.put("/api/service-catalog/:id", isAuthenticated, requireModuleFullAccess("service_catalog"), async (req, res) => {
     const id = parseInt(req.params.id as string);
     const itemData = insertServiceCatalogSchema.partial().parse(req.body);
     const item = await storage.updateServiceCatalogItem(id, itemData);
     res.json(item);
   });
 
-  app.delete("/api/service-catalog/:id", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.delete("/api/service-catalog/:id", isAuthenticated, requireModuleFullAccess("service_catalog"), async (req, res) => {
     const id = parseInt(req.params.id as string);
     await storage.deleteServiceCatalogItem(id);
     res.sendStatus(204);
@@ -863,27 +888,27 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     res.json(stages);
   });
 
-  app.post("/api/pipeline-stages", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.post("/api/pipeline-stages", isAuthenticated, requireModuleFullAccess("leads"), async (req, res) => {
     const stages = await storage.listPipelineStages();
     const data = insertPipelineStageSchema.parse({ ...req.body, sortOrder: stages.length });
     const stage = await storage.createPipelineStage(data);
     res.json(stage);
   });
 
-  app.put("/api/pipeline-stages/:id", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.put("/api/pipeline-stages/:id", isAuthenticated, requireModuleFullAccess("leads"), async (req, res) => {
     const id = parseInt(req.params.id as string);
     const data = insertPipelineStageSchema.partial().parse(req.body);
     const stage = await storage.updatePipelineStage(id, data);
     res.json(stage);
   });
 
-  app.delete("/api/pipeline-stages/:id", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.delete("/api/pipeline-stages/:id", isAuthenticated, requireModuleFullAccess("leads"), async (req, res) => {
     const id = parseInt(req.params.id as string);
     await storage.deletePipelineStage(id);
     res.sendStatus(204);
   });
 
-  app.post("/api/pipeline-stages/reorder", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.post("/api/pipeline-stages/reorder", isAuthenticated, requireModuleFullAccess("leads"), async (req, res) => {
     const { orderedIds } = z.object({ orderedIds: z.array(z.number()) }).parse(req.body);
     const stages = await storage.reorderPipelineStages(orderedIds);
     res.json(stages);
@@ -1180,12 +1205,34 @@ Return only valid JSON, no markdown.`;
     res.json(configs);
   });
 
+  app.post("/api/role-configs", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const { displayName } = z.object({ displayName: z.string().min(1).max(50) }).parse(req.body);
+    const roleKey = displayName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    const configs = await storage.listRoleConfigs();
+    if (configs.find(c => c.roleKey === roleKey)) {
+      return res.status(400).json({ message: "A role with that name already exists" });
+    }
+    const config = await storage.createRoleConfig(roleKey, displayName);
+    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals"];
+    for (const module of MODULES) {
+      await storage.upsertRolePermission(roleKey, module, "own_only");
+    }
+    res.json(config);
+  });
+
   app.patch("/api/role-configs/:roleKey", isAuthenticated, requireRole(["admin"]), async (req, res) => {
     const roleKey = req.params.roleKey as string;
     if (roleKey === "admin") return res.status(400).json({ message: "Cannot rename the admin role" });
     const { displayName } = z.object({ displayName: z.string().min(1).max(50) }).parse(req.body);
     const config = await storage.updateRoleConfig(roleKey, displayName);
     res.json(config);
+  });
+
+  app.delete("/api/role-configs/:roleKey", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const roleKey = req.params.roleKey as string;
+    if (roleKey === "admin") return res.status(400).json({ message: "Cannot delete the admin role" });
+    await storage.deleteRoleConfig(roleKey);
+    res.sendStatus(204);
   });
 
   // Role Permissions (admin only)
@@ -1196,10 +1243,15 @@ Return only valid JSON, no markdown.`;
 
   app.patch("/api/permissions", isAuthenticated, requireRole(["admin"]), async (req, res) => {
     const { roleKey, module, accessLevel } = z.object({
-      roleKey: z.enum(["manager", "member"]),
+      roleKey: z.string().min(1),
       module: z.string(),
       accessLevel: z.enum(["full", "view_all", "own_only", "none"]),
     }).parse(req.body);
+    if (roleKey === "admin") return res.status(400).json({ message: "Cannot modify admin permissions" });
+    const configs = await storage.listRoleConfigs();
+    if (!configs.find(c => c.roleKey === roleKey)) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
     const perm = await storage.upsertRolePermission(roleKey, module, accessLevel);
     res.json(perm);
   });
