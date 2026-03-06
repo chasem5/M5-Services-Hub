@@ -9,6 +9,7 @@ import {
   Settings,
   LogOut,
   Mic,
+  ShieldCheck,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -27,6 +28,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, url: "/" },
@@ -40,9 +42,16 @@ const navItems = [
   { title: "Settings", icon: Settings, url: "/settings" },
 ];
 
+const ROLE_BADGE: Record<string, string> = {
+  admin: "bg-red-100 text-red-700 border-red-200",
+  manager: "bg-blue-100 text-blue-700 border-blue-200",
+  member: "bg-slate-100 text-slate-600 border-slate-200",
+};
+
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   return (
     <Sidebar variant="sidebar" collapsible="icon">
@@ -78,6 +87,21 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+              {isAdmin && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/admin"}
+                    tooltip="Admin"
+                    className={location === "/admin" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                  >
+                    <Link href="/admin" data-testid="link-admin">
+                      <ShieldCheck className={location === "/admin" ? "text-primary" : ""} />
+                      <span>Team Admin</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -96,9 +120,12 @@ export function AppSidebar() {
             <p className="text-sm font-semibold truncate">
               {user?.firstName} {user?.lastName}
             </p>
-            <p className="text-xs text-muted-foreground truncate uppercase tracking-wider font-medium">
-              {user?.role}
-            </p>
+            <Badge
+              variant="outline"
+              className={`text-[10px] px-1.5 py-0 h-4 mt-0.5 font-semibold border ${user?.role ? ROLE_BADGE[user.role] : ""}`}
+            >
+              {user?.role?.toUpperCase()}
+            </Badge>
           </div>
           <Button 
             variant="ghost" 

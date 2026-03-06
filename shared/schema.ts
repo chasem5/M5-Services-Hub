@@ -236,6 +236,18 @@ export const meetingActions = pgTable("meeting_actions", {
   appliedAt: timestamp("applied_at"),
 });
 
+export const invites = pgTable("invites", {
+  id: serial("id").primaryKey(),
+  email: varchar("email").notNull(),
+  role: varchar("role", { enum: ["admin", "manager", "member"] }).notNull().default("member"),
+  token: varchar("token").notNull().unique(),
+  invitedBy: varchar("invited_by").references(() => users.id),
+  usedBy: varchar("used_by").references(() => users.id),
+  usedAt: timestamp("used_at"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Zod Schemas
 export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true }).extend({
@@ -327,3 +339,10 @@ export type Meeting = typeof meetings.$inferSelect;
 export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
 export type MeetingAction = typeof meetingActions.$inferSelect;
 export type InsertMeetingAction = z.infer<typeof insertMeetingActionSchema>;
+
+export const insertInviteSchema = createInsertSchema(invites).omit({ id: true, createdAt: true, usedAt: true, usedBy: true }).extend({
+  role: z.enum(["admin", "manager", "member"]).default("member"),
+  expiresAt: z.coerce.date(),
+});
+export type Invite = typeof invites.$inferSelect;
+export type InsertInvite = z.infer<typeof insertInviteSchema>;

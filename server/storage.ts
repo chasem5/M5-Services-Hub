@@ -21,6 +21,7 @@ import {
   pipelineViews,
   meetings,
   meetingActions,
+  invites,
   type User,
   type UpsertUser,
   type Client,
@@ -61,6 +62,8 @@ import {
   type InsertMeeting,
   type MeetingAction,
   type InsertMeetingAction,
+  type Invite,
+  type InsertInvite,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -68,9 +71,17 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   listUsers(): Promise<User[]>;
   updateUserRole(id: string, role: string): Promise<User>;
+  deleteUser(id: string): Promise<void>;
+
+  // Invites
+  createInvite(data: InsertInvite): Promise<Invite>;
+  listInvites(): Promise<Invite[]>;
+  getInviteByToken(token: string): Promise<Invite | undefined>;
+  consumeInvite(token: string, userId: string): Promise<Invite>;
+  deleteInvite(id: number): Promise<void>;
 
   // Clients
-  listClients(): Promise<Client[]>;
+  listClients(userId?: string): Promise<Client[]>;
   getClient(id: number): Promise<Client | undefined>;
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: number, client: Partial<InsertClient>): Promise<Client>;
@@ -99,7 +110,7 @@ export interface IStorage {
   getBuildingActivity(buildingId: number): Promise<{ leads: Lead[]; estimates: Estimate[] }>;
 
   // Leads
-  listLeads(): Promise<Lead[]>;
+  listLeads(userId?: string): Promise<Lead[]>;
   getLead(id: number): Promise<Lead | undefined>;
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: number, lead: Partial<InsertLead>): Promise<Lead>;
@@ -107,7 +118,7 @@ export interface IStorage {
   deleteLead(id: number): Promise<void>;
 
   // Tasks
-  listTasks(): Promise<Task[]>;
+  listTasks(userId?: string): Promise<Task[]>;
   getTask(id: number): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, task: Partial<InsertTask>): Promise<Task>;
@@ -126,7 +137,7 @@ export interface IStorage {
   deleteServiceCatalogItem(id: number): Promise<void>;
 
   // Estimates
-  listEstimates(): Promise<Estimate[]>;
+  listEstimates(userId?: string): Promise<Estimate[]>;
   getEstimate(id: number): Promise<Estimate | undefined>;
   createEstimate(estimate: InsertEstimate): Promise<Estimate>;
   updateEstimate(id: number, estimate: Partial<InsertEstimate>): Promise<Estimate>;
@@ -219,8 +230,43 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async deleteUser(id: string): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
+  }
+
+  // Invites
+  async createInvite(data: InsertInvite): Promise<Invite> {
+    const [invite] = await db.insert(invites).values(data).returning();
+    return invite;
+  }
+
+  async listInvites(): Promise<Invite[]> {
+    return await db.select().from(invites).orderBy(desc(invites.createdAt));
+  }
+
+  async getInviteByToken(token: string): Promise<Invite | undefined> {
+    const [invite] = await db.select().from(invites).where(eq(invites.token, token));
+    return invite;
+  }
+
+  async consumeInvite(token: string, userId: string): Promise<Invite> {
+    const [invite] = await db
+      .update(invites)
+      .set({ usedBy: userId, usedAt: new Date() })
+      .where(eq(invites.token, token))
+      .returning();
+    return invite;
+  }
+
+  async deleteInvite(id: number): Promise<void> {
+    await db.delete(invites).where(eq(invites.id, id));
+  }
+
   // Clients
-  async listClients(): Promise<Client[]> {
+  async listClients(userId?: string): Promise<Client[]> {
+    if (userId) {
+      return await db.select().from(clients).where(eq(clients.createdBy, userId)).orderBy(desc(clients.createdAt));
+    }
     return await db.select().from(clients).orderBy(desc(clients.createdAt));
   }
 
@@ -325,7 +371,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Leads
-  async listLeads(): Promise<Lead[]> {
+  async listLeads(userId?: string): Promise<Lead[]> {
+    if (userId) {
+      return await db.select().from(leads).where(eq(leads.assignedTo, userId)).orderBy(desc(leads.createdAt));
+    }
     return await db.select().from(leads).orderBy(desc(leads.createdAt));
   }
 
@@ -362,7 +411,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Tasks
-  async listTasks(): Promise<Task[]> {
+  async listTasks(userId?: string): Promise<Task[]> {
+    if (userId) {
+      return await db.select().from(tasks).where(eq(tasks.assignedTo, userId)).orderBy(desc(tasks.createdAt));
+    }
     return await db.select().from(tasks).orderBy(desc(tasks.createdAt));
   }
 
@@ -441,7 +493,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Estimates
-  async listEstimates(): Promise<Estimate[]> {
+  async listEstimates(userId?: string): Promise<Estimate[]> {
+    if (userId) {
+      return await db.select().from(estimates).where(eq(estimates.createdBy, userId)).orderBy(desc(estimates.createdAt));
+    }
     return await db.select().from(estimates).orderBy(desc(estimates.createdAt));
   }
 

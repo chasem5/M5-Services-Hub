@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import { isAuthenticated, requireRole } from "./replit_integrations/auth/replitAuth";
 import { 
@@ -20,6 +21,14 @@ import {
   insertTaskColumnSchema,
 } from "@shared/schema";
 import { z } from "zod";
+
+// Helper to get role-scoped userId for list queries
+async function getScopedUserId(req: any): Promise<string | undefined> {
+  const userId = req.user?.claims?.sub;
+  if (!userId) return undefined;
+  const user = await storage.getUser(userId);
+  return user?.role === "member" ? userId : undefined;
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -61,9 +70,63 @@ export async function registerRoutes(
     res.json(user);
   });
 
+  app.delete("/api/users/:id", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const id = req.params.id as string;
+    await storage.deleteUser(id);
+    res.sendStatus(204);
+  });
+
+  // Invites
+  app.get("/api/invites", isAuthenticated, requireRole(["admin"]), async (_req, res) => {
+    const all = await storage.listInvites();
+    res.json(all);
+  });
+
+  app.post("/api/invites", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const { email, role } = z.object({
+      email: z.string().email(),
+      role: z.enum(["admin", "manager", "member"]).default("member"),
+    }).parse(req.body);
+    const token = randomUUID();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const invite = await storage.createInvite({ email, role, token, invitedBy: userId, expiresAt });
+    res.json(invite);
+  });
+
+  app.delete("/api/invites/:id", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    await storage.deleteInvite(id);
+    res.sendStatus(204);
+  });
+
+  // Public invite token validation (no auth required)
+  app.get("/api/invite/:token", async (req, res) => {
+    const invite = await storage.getInviteByToken(req.params.token);
+    if (!invite) return res.status(404).json({ message: "Invite not found" });
+    if (invite.usedAt) return res.status(410).json({ message: "Invite already used" });
+    if (new Date() > new Date(invite.expiresAt)) return res.status(410).json({ message: "Invite expired" });
+    res.json({ email: invite.email, role: invite.role });
+  });
+
+  // Consume invite (authenticated, any role)
+  app.post("/api/invite/consume", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const { token } = z.object({ token: z.string() }).parse(req.body);
+    const invite = await storage.getInviteByToken(token);
+    if (!invite) return res.status(404).json({ message: "Invite not found" });
+    if (invite.usedAt) return res.status(410).json({ message: "Invite already used" });
+    if (new Date() > new Date(invite.expiresAt)) return res.status(410).json({ message: "Invite expired" });
+    await storage.consumeInvite(token, userId);
+    await storage.updateUserRole(userId, invite.role);
+    const updatedUser = await storage.getUser(userId);
+    res.json(updatedUser);
+  });
+
   // Clients
-  app.get("/api/clients", isAuthenticated, async (_req, res) => {
-    const clients = await storage.listClients();
+  app.get("/api/clients", isAuthenticated, async (req, res) => {
+    const scopedUserId = await getScopedUserId(req);
+    const clients = await storage.listClients(scopedUserId);
     res.json(clients);
   });
 
@@ -407,8 +470,9 @@ export async function registerRoutes(
   });
 
   // Leads
-  app.get("/api/leads", isAuthenticated, async (_req, res) => {
-    const leads = await storage.listLeads();
+  app.get("/api/leads", isAuthenticated, async (req, res) => {
+    const scopedUserId = await getScopedUserId(req);
+    const leads = await storage.listLeads(scopedUserId);
     res.json(leads);
   });
 
@@ -525,8 +589,9 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
   });
 
   // Tasks
-  app.get("/api/tasks", isAuthenticated, async (_req, res) => {
-    const tasks = await storage.listTasks();
+  app.get("/api/tasks", isAuthenticated, async (req, res) => {
+    const scopedUserId = await getScopedUserId(req);
+    const tasks = await storage.listTasks(scopedUserId);
     res.json(tasks);
   });
 
@@ -676,8 +741,9 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
   });
 
   // Estimates
-  app.get("/api/estimates", isAuthenticated, async (_req, res) => {
-    const estimates = await storage.listEstimates();
+  app.get("/api/estimates", isAuthenticated, async (req, res) => {
+    const scopedUserId = await getScopedUserId(req);
+    const estimates = await storage.listEstimates(scopedUserId);
     res.json(estimates);
   });
 

@@ -8,10 +8,25 @@ import { SiReplit } from "react-icons/si";
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger } from "@/components/GlobalSearch";
 import { Search } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user || isLoading) return;
+    const pendingToken = localStorage.getItem("pendingInviteToken");
+    if (!pendingToken) return;
+    localStorage.removeItem("pendingInviteToken");
+    apiRequest("POST", "/api/invite/consume", { token: pendingToken })
+      .then(r => r.json())
+      .then(updatedUser => {
+        queryClient.setQueryData(["/api/auth/user"], updatedUser);
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      })
+      .catch(() => {});
+  }, [user, isLoading]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

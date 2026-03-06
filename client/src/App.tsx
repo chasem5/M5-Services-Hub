@@ -17,24 +17,29 @@ import Proposals from "@/pages/proposals";
 import Settings from "@/pages/settings";
 import Meetings from "@/pages/meetings";
 import MeetingDetail from "@/pages/meeting-detail";
+import InvitePage from "@/pages/invite";
+import AdminPage from "@/pages/admin";
 
-function Router() {
+function ProtectedRouter() {
   return (
-    <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/leads" component={Leads} />
-      <Route path="/customers" component={Customers} />
-      <Route path="/customers/:id" component={CustomerDetail} />
-      <Route path="/tasks" component={Tasks} />
-      <Route path="/meetings" component={Meetings} />
-      <Route path="/meetings/:id" component={MeetingDetail} />
-      <Route path="/estimates" component={Estimates} />
-      <Route path="/estimates/:id" component={EstimateDetail} />
-      <Route path="/service-catalog" component={ServiceCatalog} />
-      <Route path="/proposals" component={Proposals} />
-      <Route path="/settings" component={Settings} />
-      <Route component={NotFound} />
-    </Switch>
+    <ProtectedLayout>
+      <Switch>
+        <Route path="/" component={Dashboard} />
+        <Route path="/leads" component={Leads} />
+        <Route path="/customers" component={Customers} />
+        <Route path="/customers/:id" component={CustomerDetail} />
+        <Route path="/tasks" component={Tasks} />
+        <Route path="/meetings" component={Meetings} />
+        <Route path="/meetings/:id" component={MeetingDetail} />
+        <Route path="/estimates" component={Estimates} />
+        <Route path="/estimates/:id" component={EstimateDetail} />
+        <Route path="/service-catalog" component={ServiceCatalog} />
+        <Route path="/proposals" component={Proposals} />
+        <Route path="/settings" component={Settings} />
+        <Route path="/admin" component={AdminPage} />
+        <Route component={NotFound} />
+      </Switch>
+    </ProtectedLayout>
   );
 }
 
@@ -42,9 +47,10 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <ProtectedLayout>
-          <Router />
-        </ProtectedLayout>
+        <Switch>
+          <Route path="/invite/:token" component={InvitePage} />
+          <Route component={ProtectedRouter} />
+        </Switch>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
