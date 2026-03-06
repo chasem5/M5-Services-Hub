@@ -36,7 +36,6 @@ import {
   RefreshCw,
   Upload,
   Pencil,
-  Camera,
   Smartphone,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
@@ -2690,8 +2689,8 @@ export default function ClientDetail() {
                   render={({ field }) => (
                     <FormItem className="col-span-2">
                       <FormLabel>Profile Photo</FormLabel>
-                      <div className="flex gap-3 items-center">
-                        <div className="h-12 w-12 rounded-full overflow-hidden border bg-primary/10 flex items-center justify-center">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-full overflow-hidden border bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0">
                           {field.value && !contactPhotoPreviewError ? (
                             <img
                               src={field.value?.startsWith("https://storage.googleapis.com/") && editingContact ? `/api/contacts/${editingContact.id}/photo-img` : field.value}
@@ -2707,54 +2706,11 @@ export default function ClientDetail() {
                               .slice(0, 2) || "?"
                           )}
                         </div>
-                        <div className="flex flex-col gap-1">
-                          <input
-                            type="file"
-                            id="contact-photo-upload"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              const formData = new FormData();
-                              formData.append("photo", file);
-                              const res = await fetch("/api/contacts/" + editingContact?.id + "/photo", {
-                                method: "POST",
-                                body: formData,
-                                credentials: "include",
-                              });
-                              if (!res.ok) {
-                                toast({ title: "Upload failed", variant: "destructive" });
-                                return;
-                              }
-                              const data = await res.json();
-                              field.onChange(data.url);
-                              queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
-                              toast({ title: "Photo updated" });
-                            }}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => document.getElementById("contact-photo-upload")?.click()}
-                            data-testid="button-change-photo"
-                          >
-                            <Camera className="h-3.5 w-3.5 mr-1" />
-                            Change Photo
-                          </Button>
-                          {field.value && (
-                            <button
-                              type="button"
-                              className="text-xs text-muted-foreground hover:text-destructive text-left"
-                              onClick={() => field.onChange("")}
-                              data-testid="button-remove-photo"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {field.value
+                            ? <span className="flex items-center gap-1"><SiLinkedin className="h-3 w-3 text-[#0A66C2]" /> Synced from LinkedIn</span>
+                            : "Use the LinkedIn sync button to pull a profile photo"}
+                        </p>
                       </div>
                       <FormMessage />
                     </FormItem>

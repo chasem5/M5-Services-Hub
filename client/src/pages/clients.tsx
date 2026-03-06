@@ -1783,7 +1783,21 @@ export default function Customers() {
                                 </div>
                               )}
                               <div>
-                                <p className="font-medium text-sm">{contact.name}</p>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-medium text-sm">{contact.name}</p>
+                                  {contact.linkedinUrl && (
+                                    <a
+                                      href={contact.linkedinUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      title="LinkedIn profile"
+                                      data-testid={`icon-linkedin-${contact.id}`}
+                                    >
+                                      <SiLinkedin className="h-3.5 w-3.5 text-[#0A66C2] shrink-0" />
+                                    </a>
+                                  )}
+                                </div>
                                 {contact.isPrimary && (
                                   <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
                                     <Star className="h-2.5 w-2.5 fill-current" />
