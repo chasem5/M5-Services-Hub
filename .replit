@@ -41,8 +41,3 @@ waitForPort = 5000
 
 [agent]
 integrations = ["javascript_openai_ai_integrations:2.0.0"]
-
-[userenv]
-
-[userenv.shared]
-INITIAL_ADMIN_EMAIL = "chase@m5svcs.com"

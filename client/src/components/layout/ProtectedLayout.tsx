@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { SiReplit } from "react-icons/si";
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger } from "@/components/GlobalSearch";
-import { Search } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
@@ -88,15 +87,6 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
               <SidebarTrigger data-testid="button-sidebar-toggle" />
               <div className="h-6 w-px bg-border hidden md:block" />
               <GlobalSearchTrigger onClick={() => setSearchOpen(true)} />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="md:hidden h-9 w-9"
-                onClick={() => setSearchOpen(true)}
-                data-testid="button-global-search-mobile"
-              >
-                <Search className="h-4 w-4" />
-              </Button>
             </div>
             <div className="flex items-center gap-2">
               <RemindersDropdown />
