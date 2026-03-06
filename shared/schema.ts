@@ -248,7 +248,27 @@ export const invites = pgTable("invites", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const roleConfigs = pgTable("role_configs", {
+  roleKey: varchar("role_key").primaryKey(),
+  displayName: varchar("display_name").notNull(),
+});
+
+export const rolePermissions = pgTable("role_permissions", {
+  id: serial("id").primaryKey(),
+  roleKey: varchar("role_key").notNull(),
+  module: varchar("module").notNull(),
+  accessLevel: varchar("access_level").notNull().default("own_only"),
+});
+
 // Zod Schemas
+export const insertRoleConfigSchema = createInsertSchema(roleConfigs);
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ id: true });
+
+export type RoleConfig = typeof roleConfigs.$inferSelect;
+export type InsertRoleConfig = z.infer<typeof insertRoleConfigSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+
 export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   annualRevenue: z.coerce.string().optional().nullable(),

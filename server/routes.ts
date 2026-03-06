@@ -22,12 +22,28 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 
-// Helper to get role-scoped userId for list queries
-async function getScopedUserId(req: any): Promise<string | undefined> {
+// Helper to get role-scoped userId for list queries based on dynamic permissions
+async function getScopedUserId(req: any, module: string): Promise<string | undefined> {
   const userId = req.user?.claims?.sub;
   if (!userId) return undefined;
   const user = await storage.getUser(userId);
-  return user?.role === "member" ? userId : undefined;
+  if (!user) return undefined;
+  if (user.role === "admin") return undefined;
+  const perm = await storage.getRolePermission(user.role, module);
+  const level = perm?.accessLevel ?? "own_only";
+  if (level === "own_only") return userId;
+  return undefined;
+}
+
+// Helper to check if user has any access to a module (returns false if 'none')
+async function hasModuleAccess(req: any, module: string): Promise<boolean> {
+  const userId = req.user?.claims?.sub;
+  if (!userId) return false;
+  const user = await storage.getUser(userId);
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  const perm = await storage.getRolePermission(user.role, module);
+  return (perm?.accessLevel ?? "own_only") !== "none";
 }
 
 export async function registerRoutes(
@@ -38,6 +54,8 @@ export async function registerRoutes(
   await storage.seedDefaultPipelineStages();
   // Seed default task columns on startup
   await storage.seedDefaultTaskColumns();
+  // Seed default role permissions and configs on startup
+  await storage.seedDefaultPermissions();
 
   // Helper to log activity
   const logActivity = async (req: any, entityType: any, entityId: number, action: string, metadata?: any) => {
@@ -125,7 +143,7 @@ export async function registerRoutes(
 
   // Clients
   app.get("/api/clients", isAuthenticated, async (req, res) => {
-    const scopedUserId = await getScopedUserId(req);
+    const scopedUserId = await getScopedUserId(req, "customers");
     const clients = await storage.listClients(scopedUserId);
     res.json(clients);
   });
@@ -471,7 +489,7 @@ export async function registerRoutes(
 
   // Leads
   app.get("/api/leads", isAuthenticated, async (req, res) => {
-    const scopedUserId = await getScopedUserId(req);
+    const scopedUserId = await getScopedUserId(req, "leads");
     const leads = await storage.listLeads(scopedUserId);
     res.json(leads);
   });
@@ -590,7 +608,7 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
 
   // Tasks
   app.get("/api/tasks", isAuthenticated, async (req, res) => {
-    const scopedUserId = await getScopedUserId(req);
+    const scopedUserId = await getScopedUserId(req, "tasks");
     const tasks = await storage.listTasks(scopedUserId);
     res.json(tasks);
   });
@@ -742,7 +760,7 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
 
   // Estimates
   app.get("/api/estimates", isAuthenticated, async (req, res) => {
-    const scopedUserId = await getScopedUserId(req);
+    const scopedUserId = await getScopedUserId(req, "estimates");
     const estimates = await storage.listEstimates(scopedUserId);
     res.json(estimates);
   });
@@ -1154,6 +1172,64 @@ Return only valid JSON, no markdown.`;
     const id = parseInt(req.params.id as string);
     const updated = await storage.updateMeetingAction(id, { status: "declined" });
     res.json(updated);
+  });
+
+  // Role Configs (admin only)
+  app.get("/api/role-configs", isAuthenticated, requireRole(["admin"]), async (_req, res) => {
+    const configs = await storage.listRoleConfigs();
+    res.json(configs);
+  });
+
+  app.patch("/api/role-configs/:roleKey", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const roleKey = req.params.roleKey as string;
+    if (roleKey === "admin") return res.status(400).json({ message: "Cannot rename the admin role" });
+    const { displayName } = z.object({ displayName: z.string().min(1).max(50) }).parse(req.body);
+    const config = await storage.updateRoleConfig(roleKey, displayName);
+    res.json(config);
+  });
+
+  // Role Permissions (admin only)
+  app.get("/api/permissions", isAuthenticated, requireRole(["admin"]), async (_req, res) => {
+    const perms = await storage.listRolePermissions();
+    res.json(perms);
+  });
+
+  app.patch("/api/permissions", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const { roleKey, module, accessLevel } = z.object({
+      roleKey: z.enum(["manager", "member"]),
+      module: z.string(),
+      accessLevel: z.enum(["full", "view_all", "own_only", "none"]),
+    }).parse(req.body);
+    const perm = await storage.upsertRolePermission(roleKey, module, accessLevel);
+    res.json(perm);
+  });
+
+  // My permissions (any authenticated user)
+  app.get("/api/my-permissions", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals"];
+
+    let permissions: Record<string, string>;
+    if (user.role === "admin") {
+      permissions = Object.fromEntries(MODULES.map(m => [m, "full"]));
+    } else {
+      const perms = await storage.listRolePermissions();
+      const rolePerms = perms.filter(p => p.roleKey === user.role);
+      permissions = Object.fromEntries(MODULES.map(m => {
+        const found = rolePerms.find(p => p.module === m);
+        return [m, found?.accessLevel ?? "own_only"];
+      }));
+    }
+
+    const configs = await storage.listRoleConfigs();
+    const roleConfig = configs.find(c => c.roleKey === user.role);
+    const displayName = roleConfig?.displayName ?? user.role;
+
+    res.json({ role: user.role, displayName, permissions });
   });
 
   return httpServer;

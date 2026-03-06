@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -33,6 +33,9 @@ import {
   Users,
   Mail,
   Link as LinkIcon,
+  Lock,
+  Settings2,
+  Pencil,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -56,6 +59,24 @@ const ROLE_COLORS: Record<string, string> = {
   member: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
+const MODULE_DEFS = [
+  { key: "dashboard", label: "Dashboard", description: "Summary stats, metrics and activity feed" },
+  { key: "leads", label: "Lead Pipeline", description: "Kanban board for tracking potential deals" },
+  { key: "customers", label: "Customers", description: "Customer database, contacts and buildings" },
+  { key: "tasks", label: "Tasks", description: "Task board and assignments" },
+  { key: "meetings", label: "Meetings", description: "Meeting notes and AI action items" },
+  { key: "estimates", label: "Estimates", description: "Job estimates and line items" },
+  { key: "service_catalog", label: "Service Catalog", description: "Standard services and pricing" },
+  { key: "proposals", label: "Proposals", description: "Client proposal documents" },
+];
+
+const ACCESS_LEVELS = [
+  { value: "full", label: "Full Access", description: "Create, edit, delete and view all records" },
+  { value: "view_all", label: "View All", description: "View all records, only edit own" },
+  { value: "own_only", label: "Own Only", description: "See and manage only their own records" },
+  { value: "none", label: "No Access", description: "Section hidden, no access" },
+];
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
@@ -71,6 +92,9 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+interface RoleConfig { roleKey: string; displayName: string; }
+interface RolePermission { id: number; roleKey: string; module: string; accessLevel: string; }
+
 export default function AdminPage() {
   const [, setLocation] = useLocation();
   const { user: currentUser } = useAuth();
@@ -78,6 +102,10 @@ export default function AdminPage() {
   const [removeUserId, setRemoveUserId] = useState<string | null>(null);
   const [cancelInviteId, setCancelInviteId] = useState<number | null>(null);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const [savedPermission, setSavedPermission] = useState<string | null>(null);
+  const [savedLabel, setSavedLabel] = useState<string | null>(null);
+  const [managerLabel, setManagerLabel] = useState("");
+  const [memberLabel, setMemberLabel] = useState("");
   const { register, handleSubmit, reset, setValue, watch } = useForm({ defaultValues: { email: "", role: "member" } });
 
   if (currentUser && currentUser.role !== "admin") {
@@ -92,6 +120,50 @@ export default function AdminPage() {
   const { data: invites = [], isLoading: invitesLoading } = useQuery<Invite[]>({
     queryKey: ["/api/invites"],
   });
+
+  const { data: roleConfigs = [] } = useQuery<RoleConfig[]>({
+    queryKey: ["/api/role-configs"],
+  });
+
+  useEffect(() => {
+    const managerCfg = roleConfigs.find(c => c.roleKey === "manager");
+    const memberCfg = roleConfigs.find(c => c.roleKey === "member");
+    if (managerCfg && !managerLabel) setManagerLabel(managerCfg.displayName);
+    if (memberCfg && !memberLabel) setMemberLabel(memberCfg.displayName);
+  }, [roleConfigs]);
+
+  const { data: permissions = [] } = useQuery<RolePermission[]>({
+    queryKey: ["/api/permissions"],
+  });
+
+  const updateLabelMutation = useMutation({
+    mutationFn: ({ roleKey, displayName }: { roleKey: string; displayName: string }) =>
+      apiRequest("PATCH", `/api/role-configs/${roleKey}`, { displayName }).then(r => r.json()),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/role-configs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-permissions"] });
+      setSavedLabel(vars.roleKey);
+      setTimeout(() => setSavedLabel(null), 2000);
+    },
+    onError: () => toast({ title: "Error saving label", variant: "destructive" }),
+  });
+
+  const updatePermissionMutation = useMutation({
+    mutationFn: ({ roleKey, module, accessLevel }: { roleKey: string; module: string; accessLevel: string }) =>
+      apiRequest("PATCH", "/api/permissions", { roleKey, module, accessLevel }).then(r => r.json()),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-permissions"] });
+      setSavedPermission(`${vars.roleKey}-${vars.module}`);
+      setTimeout(() => setSavedPermission(null), 2000);
+    },
+    onError: () => toast({ title: "Error saving permission", variant: "destructive" }),
+  });
+
+  const getPermLevel = (roleKey: string, module: string) => {
+    const found = permissions.find(p => p.roleKey === roleKey && p.module === module);
+    return found?.accessLevel ?? "own_only";
+  };
 
   const updateRoleMutation = useMutation({
     mutationFn: ({ id, role }: { id: string; role: string }) =>
@@ -161,6 +233,10 @@ export default function AdminPage() {
             {pendingInvites.length > 0 && (
               <Badge className="ml-1 h-5 px-1.5 bg-primary text-primary-foreground">{pendingInvites.length}</Badge>
             )}
+          </TabsTrigger>
+          <TabsTrigger value="permissions" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
+            <Settings2 className="h-4 w-4" />
+            Permissions
           </TabsTrigger>
         </TabsList>
 
@@ -374,6 +450,174 @@ export default function AdminPage() {
               No invitations yet. Generate one above to bring your team onboard.
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="permissions" className="pt-4 space-y-6">
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Pencil className="h-4 w-4 text-primary" />
+                Role Labels
+              </CardTitle>
+              <CardDescription>Customize the display name shown for each role across the app.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 w-24 shrink-0">
+                  <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs font-semibold px-2 py-0.5">
+                    <Lock className="h-3 w-3 mr-1" />
+                    Admin
+                  </Badge>
+                </div>
+                <Input value="Admin" disabled className="max-w-xs opacity-50" />
+                <span className="text-xs text-muted-foreground">Cannot be renamed</span>
+              </div>
+              <Separator />
+              <div className="flex items-center gap-3">
+                <div className="w-24 shrink-0">
+                  <Badge className="bg-blue-100 text-blue-700 border-blue-200 border text-xs font-semibold px-2 py-0.5">Manager</Badge>
+                </div>
+                <Input
+                  value={managerLabel}
+                  onChange={(e) => setManagerLabel(e.target.value)}
+                  placeholder="Manager"
+                  className="max-w-xs"
+                  data-testid="input-manager-label"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={updateLabelMutation.isPending}
+                  onClick={() => updateLabelMutation.mutate({ roleKey: "manager", displayName: managerLabel })}
+                  className="gap-1.5"
+                  data-testid="button-save-manager-label"
+                >
+                  {savedLabel === "manager" ? <Check className="h-3.5 w-3.5 text-green-600" /> : null}
+                  {savedLabel === "manager" ? "Saved" : "Save"}
+                </Button>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-24 shrink-0">
+                  <Badge className="bg-slate-100 text-slate-600 border-slate-200 border text-xs font-semibold px-2 py-0.5">Member</Badge>
+                </div>
+                <Input
+                  value={memberLabel}
+                  onChange={(e) => setMemberLabel(e.target.value)}
+                  placeholder="Member"
+                  className="max-w-xs"
+                  data-testid="input-member-label"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={updateLabelMutation.isPending}
+                  onClick={() => updateLabelMutation.mutate({ roleKey: "member", displayName: memberLabel })}
+                  className="gap-1.5"
+                  data-testid="button-save-member-label"
+                >
+                  {savedLabel === "member" ? <Check className="h-3.5 w-3.5 text-green-600" /> : null}
+                  {savedLabel === "member" ? "Saved" : "Save"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-primary" />
+                Section Access
+              </CardTitle>
+              <CardDescription>
+                Control what each role can see and do in every section. Changes take effect immediately.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3 w-1/2">Section</th>
+                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 w-1/6">Admin</th>
+                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 w-1/6">
+                        {roleConfigs.find(c => c.roleKey === "manager")?.displayName ?? "Manager"}
+                      </th>
+                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 w-1/6">
+                        {roleConfigs.find(c => c.roleKey === "member")?.displayName ?? "Member"}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {MODULE_DEFS.map((mod) => (
+                      <tr key={mod.key} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-6 py-4">
+                          <p className="text-sm font-medium">{mod.label}</p>
+                          <p className="text-xs text-muted-foreground">{mod.description}</p>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs font-medium gap-1">
+                            <Lock className="h-3 w-3" />
+                            Full Access
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Select
+                              value={getPermLevel("manager", mod.key)}
+                              onValueChange={(val) => updatePermissionMutation.mutate({ roleKey: "manager", module: mod.key, accessLevel: val })}
+                              disabled={updatePermissionMutation.isPending}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-32" data-testid={`select-perm-manager-${mod.key}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ACCESS_LEVELS.map(a => (
+                                  <SelectItem key={a.value} value={a.value} className="text-xs">{a.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {savedPermission === `manager-${mod.key}` && (
+                              <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Select
+                              value={getPermLevel("member", mod.key)}
+                              onValueChange={(val) => updatePermissionMutation.mutate({ roleKey: "member", module: mod.key, accessLevel: val })}
+                              disabled={updatePermissionMutation.isPending}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-32" data-testid={`select-perm-member-${mod.key}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ACCESS_LEVELS.map(a => (
+                                  <SelectItem key={a.value} value={a.value} className="text-xs">{a.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {savedPermission === `member-${mod.key}` && (
+                              <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-6 py-4 border-t bg-muted/20 rounded-b-lg">
+                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                  {ACCESS_LEVELS.map(a => (
+                    <span key={a.value} className="flex items-center gap-1">
+                      <span className="font-medium text-foreground">{a.label}:</span> {a.description}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 

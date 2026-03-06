@@ -22,6 +22,8 @@ import {
   meetings,
   meetingActions,
   invites,
+  roleConfigs,
+  rolePermissions,
   type User,
   type UpsertUser,
   type Client,
@@ -64,6 +66,8 @@ import {
   type InsertMeetingAction,
   type Invite,
   type InsertInvite,
+  type RoleConfig,
+  type RolePermission,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -208,6 +212,16 @@ export interface IStorage {
   listMeetingActions(meetingId: number): Promise<MeetingAction[]>;
   createMeetingAction(data: InsertMeetingAction): Promise<MeetingAction>;
   updateMeetingAction(id: number, data: Partial<MeetingAction>): Promise<MeetingAction>;
+
+  // Role Configs
+  listRoleConfigs(): Promise<RoleConfig[]>;
+  updateRoleConfig(roleKey: string, displayName: string): Promise<RoleConfig>;
+
+  // Role Permissions
+  listRolePermissions(): Promise<RolePermission[]>;
+  getRolePermission(roleKey: string, module: string): Promise<RolePermission | undefined>;
+  upsertRolePermission(roleKey: string, module: string, accessLevel: string): Promise<RolePermission>;
+  seedDefaultPermissions(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -802,6 +816,82 @@ export class DatabaseStorage implements IStorage {
   async updateMeetingAction(id: number, data: Partial<MeetingAction>): Promise<MeetingAction> {
     const [action] = await db.update(meetingActions).set(data).where(eq(meetingActions.id, id)).returning();
     return action;
+  }
+
+  // Role Configs
+  async listRoleConfigs(): Promise<RoleConfig[]> {
+    return await db.select().from(roleConfigs);
+  }
+
+  async updateRoleConfig(roleKey: string, displayName: string): Promise<RoleConfig> {
+    const existing = await db.select().from(roleConfigs).where(eq(roleConfigs.roleKey, roleKey));
+    if (existing.length === 0) {
+      const [config] = await db.insert(roleConfigs).values({ roleKey, displayName }).returning();
+      return config;
+    }
+    const [config] = await db.update(roleConfigs).set({ displayName }).where(eq(roleConfigs.roleKey, roleKey)).returning();
+    return config;
+  }
+
+  // Role Permissions
+  async listRolePermissions(): Promise<RolePermission[]> {
+    return await db.select().from(rolePermissions);
+  }
+
+  async getRolePermission(roleKey: string, module: string): Promise<RolePermission | undefined> {
+    const [perm] = await db.select().from(rolePermissions).where(
+      and(eq(rolePermissions.roleKey, roleKey), eq(rolePermissions.module, module))
+    );
+    return perm;
+  }
+
+  async upsertRolePermission(roleKey: string, module: string, accessLevel: string): Promise<RolePermission> {
+    const existing = await this.getRolePermission(roleKey, module);
+    if (existing) {
+      const [perm] = await db.update(rolePermissions).set({ accessLevel }).where(eq(rolePermissions.id, existing.id)).returning();
+      return perm;
+    }
+    const [perm] = await db.insert(rolePermissions).values({ roleKey, module, accessLevel }).returning();
+    return perm;
+  }
+
+  async seedDefaultPermissions(): Promise<void> {
+    const defaults: { roleKey: string; module: string; accessLevel: string }[] = [
+      { roleKey: "manager", module: "dashboard", accessLevel: "full" },
+      { roleKey: "manager", module: "leads", accessLevel: "full" },
+      { roleKey: "manager", module: "customers", accessLevel: "full" },
+      { roleKey: "manager", module: "tasks", accessLevel: "full" },
+      { roleKey: "manager", module: "meetings", accessLevel: "full" },
+      { roleKey: "manager", module: "estimates", accessLevel: "full" },
+      { roleKey: "manager", module: "service_catalog", accessLevel: "full" },
+      { roleKey: "manager", module: "proposals", accessLevel: "full" },
+      { roleKey: "member", module: "dashboard", accessLevel: "view_all" },
+      { roleKey: "member", module: "leads", accessLevel: "own_only" },
+      { roleKey: "member", module: "customers", accessLevel: "own_only" },
+      { roleKey: "member", module: "tasks", accessLevel: "own_only" },
+      { roleKey: "member", module: "meetings", accessLevel: "own_only" },
+      { roleKey: "member", module: "estimates", accessLevel: "own_only" },
+      { roleKey: "member", module: "service_catalog", accessLevel: "view_all" },
+      { roleKey: "member", module: "proposals", accessLevel: "view_all" },
+    ];
+    for (const d of defaults) {
+      const existing = await this.getRolePermission(d.roleKey, d.module);
+      if (!existing) {
+        await db.insert(rolePermissions).values(d);
+      }
+    }
+
+    const roleConfigDefaults = [
+      { roleKey: "admin", displayName: "Admin" },
+      { roleKey: "manager", displayName: "Manager" },
+      { roleKey: "member", displayName: "Member" },
+    ];
+    for (const r of roleConfigDefaults) {
+      const existing = await db.select().from(roleConfigs).where(eq(roleConfigs.roleKey, r.roleKey));
+      if (existing.length === 0) {
+        await db.insert(roleConfigs).values(r);
+      }
+    }
   }
 }
 

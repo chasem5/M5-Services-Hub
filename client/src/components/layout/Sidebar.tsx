@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
   SidebarContent,
@@ -30,15 +31,18 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 
-const navItems = [
-  { title: "Dashboard", icon: LayoutDashboard, url: "/" },
-  { title: "Leads", icon: Target, url: "/leads" },
-  { title: "Customers", icon: Users, url: "/customers" },
-  { title: "Tasks", icon: CheckSquare, url: "/tasks" },
-  { title: "Meetings", icon: Mic, url: "/meetings" },
-  { title: "Estimates", icon: FileText, url: "/estimates" },
-  { title: "Service Catalog", icon: BookOpen, url: "/service-catalog" },
-  { title: "Proposals", icon: ClipboardList, url: "/proposals" },
+const ALL_NAV_ITEMS = [
+  { title: "Dashboard", icon: LayoutDashboard, url: "/", module: "dashboard" },
+  { title: "Leads", icon: Target, url: "/leads", module: "leads" },
+  { title: "Customers", icon: Users, url: "/customers", module: "customers" },
+  { title: "Tasks", icon: CheckSquare, url: "/tasks", module: "tasks" },
+  { title: "Meetings", icon: Mic, url: "/meetings", module: "meetings" },
+  { title: "Estimates", icon: FileText, url: "/estimates", module: "estimates" },
+  { title: "Service Catalog", icon: BookOpen, url: "/service-catalog", module: "service_catalog" },
+  { title: "Proposals", icon: ClipboardList, url: "/proposals", module: "proposals" },
+];
+
+const ALWAYS_VISIBLE_ITEMS = [
   { title: "Settings", icon: Settings, url: "/settings" },
 ];
 
@@ -48,10 +52,30 @@ const ROLE_BADGE: Record<string, string> = {
   member: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
+interface MyPermissions {
+  role: string;
+  displayName: string;
+  permissions: Record<string, string>;
+}
+
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const isAdmin = user?.role === "admin";
+
+  const { data: myPerms } = useQuery<MyPermissions>({
+    queryKey: ["/api/my-permissions"],
+    enabled: !!user,
+    staleTime: 30000,
+  });
+
+  const visibleNavItems = ALL_NAV_ITEMS.filter(item => {
+    if (!myPerms) return true;
+    const level = myPerms.permissions[item.module];
+    return level && level !== "none";
+  });
+
+  const displayName = myPerms?.displayName ?? user?.role ?? "";
 
   return (
     <Sidebar variant="sidebar" collapsible="icon">
@@ -69,12 +93,30 @@ export function AppSidebar() {
           <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Main Menu</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {visibleNavItems.map((item) => {
                 const isActive = location === item.url;
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton 
                       asChild 
+                      isActive={isActive}
+                      tooltip={item.title}
+                      className={isActive ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                    >
+                      <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
+                        <item.icon className={isActive ? "text-primary" : ""} />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+              {ALWAYS_VISIBLE_ITEMS.map((item) => {
+                const isActive = location === item.url;
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
                       isActive={isActive}
                       tooltip={item.title}
                       className={isActive ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
@@ -124,7 +166,7 @@ export function AppSidebar() {
               variant="outline"
               className={`text-[10px] px-1.5 py-0 h-4 mt-0.5 font-semibold border ${user?.role ? ROLE_BADGE[user.role] : ""}`}
             >
-              {user?.role?.toUpperCase()}
+              {displayName.toUpperCase()}
             </Badge>
           </div>
           <Button 

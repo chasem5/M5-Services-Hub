@@ -32,9 +32,18 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 - `shared/schema.ts` — All Drizzle table definitions + Zod insert schemas
 - `shared/models/auth.ts` — Auth tables (users with role, sessions)
 
+## Role & Permissions System
+
+- **Roles:** `admin` (full access + user management), `manager`, `member` — role display names are customizable
+- **`role_configs` table:** stores custom display names per role (e.g., Manager → "Supervisor", Member → "Technician")
+- **`role_permissions` table:** stores per-role, per-module access levels (full | view_all | own_only | none)
+- **`GET /api/my-permissions`:** returns current user's permissions map + custom display name; used by sidebar to conditionally render nav items
+- **Admin Portal (`/admin`):** Team Members tab (role change, remove user), Invitations tab (generate/copy links), Permissions tab (rename roles + module access matrix)
+- **`invites` table:** token-based invite flow; admin generates link → employee visits `/invite/:token` → Replit login → role assigned
+
 ## Database Schema
 
-Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`
+Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`, `role_configs`, `role_permissions`, `invites`
 
 - `leads.building_id` → FK to `contact_buildings` (optional, links a lead to a specific portfolio building)
 - `estimates.building_id` → FK to `contact_buildings` (optional, links an estimate to a specific portfolio building)
