@@ -133,8 +133,8 @@ export default function Dashboard() {
         <h1 className="text-3xl font-heading font-bold tracking-tight">Dashboard</h1>
       </div>
 
-      {/* Metric Cards — 7 cards */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
+      {/* Metric Cards — grid-cols-9: currency cards span 2, count cards span 1 */}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-9">
         <MetricCard
           title="Active Leads"
           value={stats?.activeLeads}
@@ -148,6 +148,8 @@ export default function Dashboard() {
           icon={DollarSign}
           loading={statsLoading}
           dataTestId="text-pipeline-value"
+          className="lg:col-span-2"
+          large
         />
         <MetricCard
           title="Open Tasks"
@@ -169,6 +171,8 @@ export default function Dashboard() {
           icon={TrendingUp}
           loading={statsLoading}
           dataTestId="text-monthly-revenue"
+          className="lg:col-span-2"
+          large
         />
         <MetricCard
           title="Win Rate"
@@ -567,6 +571,8 @@ function MetricCard({
   dataTestId,
   accentColor,
   iconColor,
+  className,
+  large,
 }: {
   title: string;
   value?: string | number;
@@ -575,9 +581,11 @@ function MetricCard({
   dataTestId: string;
   accentColor?: string;
   iconColor?: string;
+  className?: string;
+  large?: boolean;
 }) {
   return (
-    <Card className="shadow-sm border-border/40 bg-card">
+    <Card className={cn("shadow-sm border-border/40 bg-card", className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-tight">
           {title}
@@ -586,10 +594,14 @@ function MetricCard({
       </CardHeader>
       <CardContent>
         {loading ? (
-          <Skeleton className="h-7 w-20" />
+          <Skeleton className={cn("h-7 w-20", large && "h-8 w-28")} />
         ) : (
           <div
-            className={cn("text-xl font-heading font-bold leading-tight break-words min-w-0", accentColor)}
+            className={cn(
+              "font-heading font-bold leading-tight break-words min-w-0",
+              large ? "text-2xl" : "text-xl",
+              accentColor
+            )}
             data-testid={dataTestId}
           >
             {value ?? 0}
