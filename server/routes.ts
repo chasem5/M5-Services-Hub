@@ -35,6 +35,11 @@ import webpush from "web-push";
 const upload = multer({ storage: multer.memoryStorage() });
 const objectStorageService = new ObjectStorageService();
 
+function parseStoragePath(fullPath: string): { bucketName: string; objectName: string } {
+  const parts = fullPath.replace(/^\//, "").split("/");
+  return { bucketName: parts[0], objectName: parts.slice(1).join("/") };
+}
+
 // Helper to get role-scoped userId for list queries based on dynamic permissions
 async function getScopedUserId(req: any, module: string): Promise<string | undefined> {
   const userId = req.user?.claims?.sub;
@@ -211,7 +216,7 @@ export async function registerRoutes(
       if (!entityDir.endsWith("/")) entityDir = `${entityDir}/`;
       const fullPath = `${entityDir}${entityIdInPath}`;
 
-      const { bucketName, objectName } = (objectStorageService as any).parseObjectPath(fullPath);
+      const { bucketName, objectName } = parseStoragePath(fullPath);
       const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
       const storageFile = bucket.file(objectName);
 
@@ -408,9 +413,9 @@ export async function registerRoutes(
   app.patch("/api/clients/bulk", isAuthenticated, async (req, res) => {
     const { ids, data } = z.object({
       ids: z.array(z.number()),
-      data: insertClientSchema.partial()
+      data: z.record(z.unknown())
     }).parse(req.body);
-    await storage.bulkUpdateClients(ids, data);
+    await storage.bulkUpdateClients(ids, data as any);
     res.sendStatus(204);
   });
 
@@ -461,9 +466,9 @@ export async function registerRoutes(
   app.patch("/api/contacts/bulk", isAuthenticated, async (req, res) => {
     const { ids, data } = z.object({
       ids: z.array(z.number()),
-      data: insertClientContactSchema.partial()
+      data: z.record(z.unknown())
     }).parse(req.body);
-    await storage.bulkUpdateClientContacts(ids, data);
+    await storage.bulkUpdateClientContacts(ids, data as any);
     res.sendStatus(204);
   });
 
@@ -2342,7 +2347,7 @@ Respond with this JSON:
       const ext = r.file.mimetype.split("/")[1] || "jpg";
       let entityDir = objectStorageService.getPrivateObjectDir();
       const fullPath = `${entityDir}/avatars/${userId}.${ext}`;
-      const { bucketName, objectName } = (objectStorageService as any).parseObjectPath(fullPath);
+      const { bucketName, objectName } = parseStoragePath(fullPath);
       const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
       const gcsFile = bucket.file(objectName);
       await gcsFile.save(r.file.buffer, { metadata: { contentType: r.file.mimetype } });
@@ -2363,7 +2368,7 @@ Respond with this JSON:
       const ext = r.file.mimetype.split("/")[1] || "jpg";
       let entityDir = objectStorageService.getPrivateObjectDir();
       const fullPath = `${entityDir}/logos/client_${clientId}.${ext}`;
-      const { bucketName, objectName } = (objectStorageService as any).parseObjectPath(fullPath);
+      const { bucketName, objectName } = parseStoragePath(fullPath);
       const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
       const gcsFile = bucket.file(objectName);
       await gcsFile.save(r.file.buffer, { metadata: { contentType: r.file.mimetype } });

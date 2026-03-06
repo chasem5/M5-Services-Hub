@@ -40,6 +40,7 @@ import {
   ScanLine,
   Settings,
   Tag,
+  Pencil,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 const MapView = lazy(() => import("@/pages/map").then(m => ({ default: m.MapView })));
@@ -535,6 +536,14 @@ export default function Customers() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       toast({ title: "Success", description: "Customer deleted successfully" });
+    },
+  });
+
+  const deleteContactMutation = useMutation({
+    mutationFn: (c: { id: number; clientId: number }) => apiRequest("DELETE", `/api/clients/${c.clientId}/contacts/${c.id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+      toast({ title: "Contact deleted" });
     },
   });
 
@@ -1893,16 +1902,35 @@ export default function Customers() {
                             </span>
                           </TableCell>
                           <TableCell onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-primary"
-                              title="Export to Phone"
-                              onClick={() => window.open(`/api/contacts/${contact.id}/vcard`, "_blank")}
-                              data-testid={`button-export-vcard-${contact.id}`}
-                            >
-                              <Smartphone className="h-3.5 w-3.5" />
-                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`button-contact-actions-${contact.id}`}>
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => window.location.href = '/clients/' + contact.clientId}>
+                                  <Pencil className="mr-2 h-4 w-4" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => window.open('/api/contacts/' + contact.id + '/vcard', '_blank')}>
+                                  <Smartphone className="mr-2 h-4 w-4" />
+                                  Export to Phone
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem 
+                                  className="text-destructive"
+                                  onClick={() => {
+                                    if (window.confirm("Delete this contact?")) {
+                                      deleteContactMutation.mutate({ id: contact.id, clientId: contact.clientId });
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       ))}

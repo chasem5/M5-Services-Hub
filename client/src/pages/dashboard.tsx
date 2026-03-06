@@ -13,7 +13,10 @@ import {
   Trophy,
   AlertTriangle,
   Users,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
+import { useState } from "react";
 import { formatDistanceToNow, format, parseISO } from "date-fns";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -104,6 +107,7 @@ const stageLabels: Record<string, string> = {
 export default function Dashboard() {
   const { user } = useAuth();
   const isAdminOrManager = user?.role === "admin" || user?.role === "manager";
+  const [activityExpanded, setActivityExpanded] = useState(false);
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard"],
@@ -551,45 +555,6 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Activity Feed */}
-      <Card className="shadow-sm border-border/40 bg-card">
-        <CardHeader>
-          <CardTitle className="text-lg font-heading font-bold">Recent Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {activitiesLoading ? (
-            <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
-            </div>
-          ) : recentActivities?.length ? (
-            <div className="space-y-6 relative before:absolute before:inset-0 before:ml-4 before:h-full before:w-0.5 before:bg-border/50">
-              {recentActivities.map((log) => (
-                <div key={log.id} className="relative flex items-start gap-4 pl-10">
-                  <div className="absolute left-2.5 top-1.5 h-3.5 w-3.5 rounded-full border-2 border-primary bg-background flex items-center justify-center z-10" />
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm">
-                      <span className="font-semibold text-foreground">
-                        {log.action.charAt(0).toUpperCase() + log.action.slice(1)}
-                      </span>{" "}
-                      {log.entityType}{" "}
-                      <span className="text-muted-foreground">#{log.entityId}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                      <Clock className="h-3 w-3" />
-                      {getRelativeTime(log.createdAt)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-10 text-muted-foreground italic border-2 border-dashed rounded-lg">
-              No recent activity recorded
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Team Performance Section */}
       {isAdminOrManager && (
         <Card className="shadow-sm border-border/40 bg-card">
@@ -655,6 +620,65 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Recent Activity — collapsible, at bottom */}
+      <Card className="shadow-sm border-border/40 bg-card">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-lg font-heading font-bold">Recent Activity</CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground"
+            onClick={() => setActivityExpanded(!activityExpanded)}
+            data-testid="button-toggle-activity"
+          >
+            {activityExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {activitiesLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
+          ) : recentActivities?.length ? (
+            <>
+              <div className="space-y-5 relative before:absolute before:inset-0 before:ml-4 before:h-full before:w-0.5 before:bg-border/50">
+                {(activityExpanded ? recentActivities : recentActivities.slice(0, 5)).map((log) => (
+                  <div key={log.id} className="relative flex items-start gap-4 pl-10">
+                    <div className="absolute left-2.5 top-1.5 h-3.5 w-3.5 rounded-full border-2 border-primary bg-background flex items-center justify-center z-10" />
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm">
+                        <span className="font-semibold text-foreground">
+                          {log.action.charAt(0).toUpperCase() + log.action.slice(1)}
+                        </span>{" "}
+                        {log.entityType}{" "}
+                        <span className="text-muted-foreground">#{log.entityId}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <Clock className="h-3 w-3" />
+                        {getRelativeTime(log.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {recentActivities.length > 5 && (
+                <button
+                  onClick={() => setActivityExpanded(!activityExpanded)}
+                  className="mt-4 text-xs text-primary hover:underline w-full text-center"
+                  data-testid="button-activity-expand"
+                >
+                  {activityExpanded ? "Show less" : `Show all ${recentActivities.length} activities`}
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-10 text-muted-foreground italic border-2 border-dashed rounded-lg">
+              No recent activity recorded
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

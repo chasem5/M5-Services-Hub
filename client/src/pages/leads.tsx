@@ -703,6 +703,8 @@ export default function Leads() {
   const [newViewName, setNewViewName] = useState("");
   const [newViewStages, setNewViewStages] = useState<string[]>([]);
   const [newViewServiceTypes, setNewViewServiceTypes] = useState<string[]>([]);
+  const [newViewTiers, setNewViewTiers] = useState<string[]>([]);
+  const [newViewTags, setNewViewTags] = useState<string[]>([]);
   const [editingView, setEditingView] = useState<PipelineView | null>(null);
   // AI summaries cache: leadId -> summary string
   const [aiSummaries, setAiSummaries] = useState<Record<number, string>>({});
@@ -1056,16 +1058,18 @@ export default function Leads() {
   });
 
   const activeView = pipelineViews.find(v => v.id === activeViewId) ?? null;
-  const activeFilters = activeView ? (activeView.filters as { stages?: string[]; serviceTypes?: string[] }) : null;
+  const activeFilters = activeView ? (activeView.filters as { stages?: string[]; serviceTypes?: string[]; tiers?: string[]; tags?: string[] }) : null;
 
   const filteredLeads = leads?.filter((lead) => {
     const matchesSearch = lead.title.toLowerCase().includes(search.toLowerCase());
     const matchesStage = stageFilter === "all" || lead.stage === stageFilter;
     const matchesViewStage = !activeFilters?.stages?.length || activeFilters.stages.includes(lead.stage);
     const matchesViewService = !activeFilters?.serviceTypes?.length || (lead.serviceType != null && activeFilters.serviceTypes.includes(lead.serviceType));
+    const matchesViewTier = !activeFilters?.tiers?.length || (lead.tier != null && activeFilters.tiers.includes(lead.tier));
+    const matchesViewTag = !activeFilters?.tags?.length || (lead.tags && activeFilters.tags.some(t => lead.tags!.includes(t)));
     const matchesTier = tierFilter === "all" || lead.tier === tierFilter;
     const matchesTag = tagFilter === "all" || (lead.tags && lead.tags.includes(tagFilter));
-    return matchesSearch && matchesStage && matchesViewStage && matchesViewService && matchesTier && matchesTag;
+    return matchesSearch && matchesStage && matchesViewStage && matchesViewService && matchesViewTier && matchesViewTag && matchesTier && matchesTag;
   });
 
   const getClientName = (clientId: number | null) => {
@@ -1185,26 +1189,27 @@ export default function Leads() {
             <p className="text-muted-foreground">Manage your sales pipeline and track opportunities</p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center bg-muted rounded-md p-1 border">
-              <Button
-                variant={view === "kanban" ? "secondary" : "ghost"}
-                size="sm"
-                onClick={() => setView("kanban")}
-                className="h-8"
-              >
-                <LayoutGrid className="h-4 w-4 mr-2" />
-                Board
-              </Button>
-              <Button
-                variant={view === "list" ? "secondary" : "ghost"}
-                size="sm"
-                onClick={() => setView("list")}
-                className="h-8"
-              >
-                <List className="h-4 w-4 mr-2" />
-                List
-              </Button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5" data-testid="button-view-selector">
+                  {view === "kanban" ? <LayoutGrid className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
+                  {view === "kanban" ? "Board" : "List"}
+                  <ChevronDown className="h-3 w-3 ml-0.5 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-36">
+                <DropdownMenuItem onClick={() => setView("kanban")} className="gap-2" data-testid="option-view-board">
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  Board
+                  {view === "kanban" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setView("list")} className="gap-2" data-testid="option-view-list">
+                  <List className="h-3.5 w-3.5" />
+                  List
+                  {view === "list" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               onClick={() => setIsManageStagesOpen(true)}
@@ -1249,6 +1254,8 @@ export default function Leads() {
             setNewViewName("");
             setNewViewStages([]);
             setNewViewServiceTypes([]);
+            setNewViewTiers([]);
+            setNewViewTags([]);
             setIsManageViewsOpen(true);
           }} data-testid="button-manage-views">
             <BookmarkPlus className="h-3.5 w-3.5" />
@@ -3119,7 +3126,15 @@ export default function Leads() {
       </Dialog>
 
       {/* Pipeline Views Dialog */}
-      <Dialog open={isManageViewsOpen} onOpenChange={setIsManageViewsOpen}>
+      <Dialog open={isManageViewsOpen} onOpenChange={(open) => {
+        setIsManageViewsOpen(open);
+        if (!open) {
+          setNewViewStages([]);
+          setNewViewServiceTypes([]);
+          setNewViewTiers([]);
+          setNewViewTags([]);
+        }
+      }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -3209,13 +3224,81 @@ export default function Leads() {
               <p className="text-xs text-muted-foreground">Leave blank to include all service types.</p>
             </div>
 
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Filter by Tier</Label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: "tier_1", label: "Tier 1" },
+                  { value: "tier_2", label: "Tier 2" },
+                  { value: "tier_3", label: "Tier 3" },
+                ].map((opt) => {
+                  const arr = editingView
+                    ? ((editingView.filters as any)?.tiers ?? []) as string[]
+                    : newViewTiers;
+                  const selected = arr.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        if (editingView) {
+                          const curr = ((editingView.filters as any)?.tiers ?? []) as string[];
+                          const next = selected ? curr.filter(s => s !== opt.value) : [...curr, opt.value];
+                          setEditingView({ ...editingView, filters: { ...(editingView.filters as any), tiers: next } });
+                        } else {
+                          setNewViewTiers(selected ? newViewTiers.filter(s => s !== opt.value) : [...newViewTiers, opt.value]);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md border transition-colors font-medium ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+                      data-testid={`button-view-tier-${opt.value}`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">Leave blank to include all tiers.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Filter by Tag</Label>
+              <div className="flex flex-wrap gap-2">
+                {dealTags.map((tag) => {
+                  const arr = editingView
+                    ? ((editingView.filters as any)?.tags ?? []) as string[]
+                    : newViewTags;
+                  const selected = arr.includes(tag.name);
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => {
+                        if (editingView) {
+                          const curr = ((editingView.filters as any)?.tags ?? []) as string[];
+                          const next = selected ? curr.filter(s => s !== tag.name) : [...curr, tag.name];
+                          setEditingView({ ...editingView, filters: { ...(editingView.filters as any), tags: next } });
+                        } else {
+                          setNewViewTags(selected ? newViewTags.filter(s => s !== tag.name) : [...newViewTags, tag.name]);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md border transition-colors font-medium ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+                      data-testid={`button-view-tag-${tag.name}`}
+                    >
+                      {tag.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">Leave blank to include all tags.</p>
+            </div>
+
             {/* Existing views list */}
             {!editingView && pipelineViews.length > 0 && (
               <div className="space-y-1.5 border-t pt-3">
                 <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Saved Views</Label>
                 <div className="space-y-1.5">
                   {pipelineViews.map((v) => {
-                    const filters = v.filters as { stages?: string[]; serviceTypes?: string[] };
+                    const filters = v.filters as { stages?: string[]; serviceTypes?: string[]; tiers?: string[]; tags?: string[] };
                     return (
                       <div key={v.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted/50">
                         <div className="flex-1 min-w-0">
@@ -3224,6 +3307,8 @@ export default function Leads() {
                             {[
                               filters.stages?.length ? `${filters.stages.length} stage(s)` : null,
                               filters.serviceTypes?.length ? `${filters.serviceTypes.length} service(s)` : null,
+                              filters.tiers?.length ? `${filters.tiers.length} tier(s)` : null,
+                              filters.tags?.length ? `${filters.tags.length} tag(s)` : null,
                             ].filter(Boolean).join(" · ") || "No filters"}
                           </p>
                         </div>
@@ -3277,7 +3362,12 @@ export default function Leads() {
                 <Button
                   onClick={() => createViewMutation.mutate({
                     name: newViewName.trim(),
-                    filters: { stages: newViewStages, serviceTypes: newViewServiceTypes },
+                    filters: { 
+                      stages: newViewStages, 
+                      serviceTypes: newViewServiceTypes,
+                      tiers: newViewTiers,
+                      tags: newViewTags,
+                    },
                   })}
                   disabled={createViewMutation.isPending || !newViewName.trim()}
                   data-testid="button-create-view"

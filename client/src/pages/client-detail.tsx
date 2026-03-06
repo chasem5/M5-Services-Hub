@@ -34,8 +34,8 @@ import {
   Linkedin,
   AlertCircle,
   RefreshCw,
-  Smartphone,
-  Tag,
+  Upload,
+  Pencil,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import {
@@ -51,6 +51,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AttachmentsPanel } from "@/components/AttachmentsPanel";
 import { SearchableSelect } from "@/components/SearchableSelect";
@@ -462,27 +469,38 @@ function ContactCard({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary"
-              onClick={() => window.open(`/api/contacts/${contact.id}/vcard`, "_blank")}
-              title="Export to Phone"
-              data-testid={`button-export-vcard-${contact.id}`}>
-              <Smartphone className="h-4 w-4" />
-            </Button>
-            {onAddToPortfolio && (
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary"
-                onClick={() => onAddToPortfolio(contact.id)} data-testid={`button-add-to-portfolio-${contact.id}`}
-                title="Add to Portfolio">
-                <Plus className="h-4 w-4" />
-              </Button>
-            )}
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={() => onEdit(contact)} data-testid={`button-edit-contact-${contact.id}`}>
-              <Edit className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
-              onClick={() => onDelete(contact.id)} data-testid={`button-delete-contact-${contact.id}`}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" data-testid={`button-contact-more-${contact.id}`}>
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onEdit(contact)} data-testid={`button-edit-contact-${contact.id}`}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit Contact
+                </DropdownMenuItem>
+                {onAddToPortfolio && (
+                  <DropdownMenuItem onClick={() => onAddToPortfolio(contact.id)} data-testid={`button-add-to-portfolio-${contact.id}`}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add to Portfolio
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => window.open(`/api/contacts/${contact.id}/vcard`, "_blank")} data-testid={`button-export-vcard-${contact.id}`}>
+                  <Smartphone className="h-4 w-4 mr-2" />
+                  Export to Phone
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={() => onDelete(contact.id)} 
+                  className="text-destructive focus:text-destructive"
+                  data-testid={`button-delete-contact-${contact.id}`}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Contact
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -1191,6 +1209,95 @@ export default function ClientDetail() {
                 <CardContent>
                   <Form {...clientForm}>
                     <form onSubmit={clientForm.handleSubmit(onUpdateClient)} className="space-y-4">
+                      {/* Logo Section */}
+                      <div className="space-y-3 pb-4 border-b">
+                        <FormLabel>Company Logo</FormLabel>
+                        <div className="flex items-center gap-4">
+                          <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center overflow-hidden border">
+                            {clientForm.watch("logoUrl") ? (
+                              <img 
+                                src={clientForm.watch("logoUrl")} 
+                                alt="Logo Preview" 
+                                className="h-full w-full object-contain"
+                              />
+                            ) : (
+                              <Building2 className="h-8 w-8 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs"
+                                onClick={() => {
+                                  const website = clientForm.getValues("website");
+                                  if (!website) {
+                                    toast({ title: "No website", description: "Please enter a website URL first", variant: "destructive" });
+                                    return;
+                                  }
+                                  try {
+                                    const domain = new URL(website.startsWith("http") ? website : `https://${website}`).hostname.replace("www.", "");
+                                    clientForm.setValue("logoUrl", `https://logo.clearbit.com/${domain}`);
+                                  } catch (e) {
+                                    toast({ title: "Invalid website", description: "Could not extract domain from website URL", variant: "destructive" });
+                                  }
+                                }}
+                                data-testid="button-logo-autofetch"
+                              >
+                                <Globe className="h-3.5 w-3.5 mr-1.5" />
+                                Auto-fetch
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs"
+                                onClick={() => document.getElementById("logo-upload")?.click()}
+                                data-testid="button-logo-upload"
+                              >
+                                <Upload className="h-3.5 w-3.5 mr-1.5" />
+                                Upload
+                              </Button>
+                              <input
+                                id="logo-upload"
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const formData = new FormData();
+                                  formData.append("file", file);
+                                  formData.append("entityType", "client");
+                                  formData.append("entityId", String(clientId));
+                                  try {
+                                    const res = await apiRequest("POST", "/api/attachments/upload", formData);
+                                    if (!res.ok) throw new Error("Upload failed");
+                                    const data = await res.json();
+                                    clientForm.setValue("logoUrl", data.objectKey);
+                                    toast({ title: "Logo uploaded", description: "Company logo has been updated." });
+                                  } catch (err) {
+                                    toast({ title: "Upload failed", variant: "destructive" });
+                                  }
+                                }}
+                              />
+                            </div>
+                            {clientForm.watch("logoUrl") && (
+                              <button
+                                type="button"
+                                className="text-[11px] text-muted-foreground hover:text-destructive w-fit transition-colors"
+                                onClick={() => clientForm.setValue("logoUrl", "")}
+                                data-testid="button-logo-remove"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField
                           control={clientForm.control}
@@ -1728,39 +1835,6 @@ export default function ClientDetail() {
                         <FormItem>
                           <FormLabel>Full Name</FormLabel>
                           <FormControl><Input placeholder="Enter contact name" {...field} data-testid="input-contact-name" /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField control={contactForm.control} name={"profilePictureUrl" as any}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Profile Picture URL</FormLabel>
-                          <div className="flex gap-2">
-                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-xs overflow-hidden border">
-                              {field.value ? (
-                                <img
-                                  src={field.value}
-                                  alt="Preview"
-                                  className="h-full w-full object-cover"
-                                  onError={(e) => {
-                                    (e.currentTarget as HTMLImageElement).style.display = "none";
-                                    (e.currentTarget.parentElement as HTMLElement).innerHTML = "P";
-                                  }}
-                                />
-                              ) : (
-                                "P"
-                              )}
-                            </div>
-                            <FormControl>
-                              <Input
-                                placeholder="https://example.com/photo.jpg"
-                                {...field}
-                                value={field.value || ""}
-                                data-testid="input-contact-profile-picture"
-                              />
-                            </FormControl>
-                          </div>
                           <FormMessage />
                         </FormItem>
                       )}
