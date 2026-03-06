@@ -1301,13 +1301,10 @@ export default function Customers() {
                               <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors shrink-0 overflow-hidden">
                                 {client.logoUrl ? (
                                   <img 
-                                    src={client.logoUrl.startsWith("objects/") ? `/api/attachments/stream/${client.logoUrl.split("/").pop()}` : client.logoUrl} 
+                                    src={client.logoUrl.startsWith("https://storage.googleapis.com/") ? `/api/clients/${client.id}/logo-img` : client.logoUrl} 
                                     alt={client.name}
                                     className="h-full w-full object-cover"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).style.display = 'none';
-                                      (e.target as HTMLImageElement).parentElement!.innerHTML = '<Building2 class="h-5 w-5" />';
-                                    }}
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                   />
                                 ) : (
                                   <Building2 className="h-5 w-5" />

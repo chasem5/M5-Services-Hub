@@ -37,6 +37,7 @@ import {
   Upload,
   Pencil,
   Camera,
+  Smartphone,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import {
@@ -445,6 +446,7 @@ function ContactCard({
   const [isAddingBuilding, setIsAddingBuilding] = useState(false);
   const [editingBuilding, setEditingBuilding] = useState<ContactBuilding | null>(null);
   const [expandedBuildingId, setExpandedBuildingId] = useState<number | null>(null);
+  const [avatarError, setAvatarError] = useState(false);
   const [addName, setAddName] = useState("");
   const [addAddress, setAddAddress] = useState("");
   const [addLat, setAddLat] = useState<number | null>(null);
@@ -550,16 +552,12 @@ function ContactCard({
         <div className="flex justify-between">
           <div className="flex gap-3">
             <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-sm overflow-hidden">
-              {(contact as any).profilePictureUrl ? (
+              {(contact as any).profilePictureUrl && !avatarError ? (
                 <img
-                  src={(contact as any).profilePictureUrl}
+                  src={(contact as any).profilePictureUrl?.startsWith("https://storage.googleapis.com/") ? `/api/contacts/${contact.id}/photo-img` : (contact as any).profilePictureUrl}
                   alt={contact.name}
                   className="h-full w-full object-cover"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).style.display = "none";
-                    (e.currentTarget.parentElement as HTMLElement).innerHTML =
-                      contact.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
-                  }}
+                  onError={() => setAvatarError(true)}
                 />
               ) : (
                 contact.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
@@ -895,6 +893,8 @@ export default function ClientDetail() {
   const [portfolioPickerContactId, setPortfolioPickerContactId] = useState<number | null>(null);
   const [portfolioPickerPortfolioId, setPortfolioPickerPortfolioId] = useState<string>("none");
   const [portfolioPickerRole, setPortfolioPickerRole] = useState<string>("");
+  const [logoImgError, setLogoImgError] = useState(false);
+  const [contactPhotoPreviewError, setContactPhotoPreviewError] = useState(false);
 
   // Queries
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
@@ -1229,6 +1229,7 @@ export default function ClientDetail() {
       linkedinUrl: (contact as any).linkedinUrl || "",
       profilePictureUrl: (contact as any).profilePictureUrl || "",
     });
+    setContactPhotoPreviewError(false);
     setIsEditContactDialogOpen(true);
   };
 
@@ -1272,15 +1273,12 @@ export default function ClientDetail() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-xl overflow-hidden border">
-          {(client as any).logoUrl ? (
+          {(client as any).logoUrl && !logoImgError ? (
             <img
-              src={(client as any).logoUrl}
+              src={`/api/clients/${clientId}/logo-img`}
               alt={client.name}
               className="h-full w-full object-contain"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-                (e.currentTarget.parentElement as HTMLElement).innerHTML = client.name[0].toUpperCase();
-              }}
+              onError={() => setLogoImgError(true)}
               data-testid="img-client-logo"
             />
           ) : (
@@ -1355,7 +1353,7 @@ export default function ClientDetail() {
                           <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center overflow-hidden border">
                             {clientForm.watch("logoUrl") ? (
                               <img 
-                                src={clientForm.watch("logoUrl")} 
+                                src={clientForm.watch("logoUrl")?.startsWith("https://storage.googleapis.com/") ? `/api/clients/${clientId}/logo-img` : clientForm.watch("logoUrl")} 
                                 alt="Logo Preview" 
                                 className="h-full w-full object-contain"
                               />
@@ -2680,20 +2678,11 @@ export default function ClientDetail() {
                       <FormLabel>Profile Photo</FormLabel>
                       <div className="flex gap-3 items-center">
                         <div className="h-12 w-12 rounded-full overflow-hidden border bg-primary/10 flex items-center justify-center">
-                          {field.value ? (
+                          {field.value && !contactPhotoPreviewError ? (
                             <img
-                              src={field.value}
+                              src={field.value?.startsWith("https://storage.googleapis.com/") && editingContact ? `/api/contacts/${editingContact.id}/photo-img` : field.value}
                               className="h-full w-full object-cover"
-                              onError={(e) => {
-                                (e.currentTarget as HTMLImageElement).style.display = "none";
-                                const fallback = editContactForm.watch("name")
-                                  ?.split(" ")
-                                  .map((n: string) => n[0])
-                                  .join("")
-                                  .toUpperCase()
-                                  .slice(0, 2) || "?";
-                                (e.currentTarget.parentElement as HTMLElement).innerHTML = fallback;
-                              }}
+                              onError={() => setContactPhotoPreviewError(true)}
                             />
                           ) : (
                             editContactForm.watch("name")

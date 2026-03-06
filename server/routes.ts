@@ -2474,7 +2474,8 @@ Respond with this JSON:
       const { bucketName, objectName } = parseStoragePath(fullPath);
       const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
       const gcsFile = bucket.file(objectName);
-      await gcsFile.save(r.file.buffer, { metadata: { contentType: r.file.mimetype } });
+      await gcsFile.save(r.file.buffer, { contentType: r.file.mimetype });
+      try { await gcsFile.makePublic(); } catch (_) {}
       const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
       const user = await storage.updateUserProfile(userId, { profileImageUrl: publicUrl });
       res.json({ url: publicUrl, user });
@@ -2495,12 +2496,56 @@ Respond with this JSON:
       const { bucketName, objectName } = parseStoragePath(fullPath);
       const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
       const gcsFile = bucket.file(objectName);
-      await gcsFile.save(r.file.buffer, { metadata: { contentType: r.file.mimetype } });
+      await gcsFile.save(r.file.buffer, { contentType: r.file.mimetype });
+      try { await gcsFile.makePublic(); } catch (_) {}
       const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
       const client = await storage.updateClient(clientId, { logoUrl: publicUrl } as any);
       res.json({ url: publicUrl, client });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Proxy route for serving stored images (logo, contact photos) through the backend
+  app.get("/api/clients/:id/logo-img", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = Number(req.params.id);
+      const client = await storage.getClient(clientId);
+      if (!client || !(client as any).logoUrl) return res.status(404).end();
+      const logoUrl: string = (client as any).logoUrl;
+      const { bucketName, objectName } = parseStoragePath(logoUrl.replace("https://storage.googleapis.com/", ""));
+      const { objectStorageClient: gcsClient } = await import("./replit_integrations/object_storage/objectStorage");
+      const [buf] = await gcsClient.bucket(bucketName).file(objectName).download();
+      const ext = objectName.split(".").pop()?.toLowerCase() || "jpeg";
+      const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
+      res.setHeader("Content-Type", mimeMap[ext] || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.send(buf);
+    } catch (e: any) {
+      res.status(500).end();
+    }
+  });
+
+  app.get("/api/contacts/:id/photo-img", isAuthenticated, async (req, res) => {
+    try {
+      const contactId = Number(req.params.id);
+      const contact = await storage.getClientContact(contactId);
+      if (!contact || !contact.profilePictureUrl) return res.status(404).end();
+      const photoUrl: string = contact.profilePictureUrl;
+      // Only proxy GCS URLs, not external (LinkedIn) URLs
+      if (!photoUrl.startsWith("https://storage.googleapis.com/")) {
+        return res.redirect(photoUrl);
+      }
+      const { bucketName, objectName } = parseStoragePath(photoUrl.replace("https://storage.googleapis.com/", ""));
+      const { objectStorageClient: gcsClient } = await import("./replit_integrations/object_storage/objectStorage");
+      const [buf] = await gcsClient.bucket(bucketName).file(objectName).download();
+      const ext = objectName.split(".").pop()?.toLowerCase() || "jpeg";
+      const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
+      res.setHeader("Content-Type", mimeMap[ext] || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.send(buf);
+    } catch (e: any) {
+      res.status(500).end();
     }
   });
 
@@ -2515,7 +2560,9 @@ Respond with this JSON:
       const fullPath = entityDir + "contact_photos/contact_" + contactId + "." + ext;
       const { bucketName, objectName } = parseStoragePath(fullPath);
       const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
-      await bucket.file(objectName).save(r.file.buffer, { metadata: { contentType: r.file.mimetype } });
+      const gcsPhotoFile = bucket.file(objectName);
+      await gcsPhotoFile.save(r.file.buffer, { contentType: r.file.mimetype });
+      try { await gcsPhotoFile.makePublic(); } catch (_) {}
       const publicUrl = "https://storage.googleapis.com/" + bucketName + "/" + objectName;
       const updated = await storage.updateClientContact(contactId, { profilePictureUrl: publicUrl });
       res.json({ url: publicUrl, contact: updated });
