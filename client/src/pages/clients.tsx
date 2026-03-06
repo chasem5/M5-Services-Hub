@@ -1956,9 +1956,11 @@ export default function Customers() {
                                 <DropdownMenuItem 
                                   className="text-destructive"
                                   onClick={() => {
-                                    if (window.confirm("Delete this contact?")) {
-                                      deleteContactMutation.mutate({ id: contact.id, clientId: contact.clientId });
-                                    }
+                                    setDeleteConfirm({
+                                      label: `Delete "${contact.name}"`,
+                                      description: "This will permanently remove the contact and cannot be undone.",
+                                      onConfirm: () => deleteContactMutation.mutate({ id: contact.id, clientId: contact.clientId }),
+                                    });
                                   }}
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
@@ -1988,66 +1990,10 @@ export default function Customers() {
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      <Popover open={isBulkContactEditOpen} onOpenChange={setIsBulkContactEditOpen}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" size="sm" className="h-9">
-                            <Settings className="h-4 w-4 mr-2" />
-                            Bulk Edit
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-80 p-4" align="center">
-                          <div className="space-y-4">
-                            <h4 className="font-medium">Bulk Edit Contacts</h4>
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium text-muted-foreground">Company</label>
-                              <Select onValueChange={(val) => {
-                                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { clientId: parseInt(val) } });
-                              }}>
-                                <SelectTrigger className="h-9">
-                                  <SelectValue placeholder="Select company..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {clients?.map(c => (
-                                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium text-muted-foreground">Stage</label>
-                              <Select onValueChange={(val) => {
-                                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { stageId: val === "none" ? null : parseInt(val) } });
-                              }}>
-                                <SelectTrigger className="h-9">
-                                  <SelectValue placeholder="Select stage..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">No Stage</SelectItem>
-                                  {contactStages.map(s => (
-                                    <SelectItem key={s.id} value={String(s.id)}>{s.label}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium text-muted-foreground">Tier</label>
-                              <Select onValueChange={(val) => {
-                                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { tier: val === "none" ? null : val } });
-                              }}>
-                                <SelectTrigger className="h-9">
-                                  <SelectValue placeholder="Select tier..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">No Tier</SelectItem>
-                                  <SelectItem value="tier_1">Tier 1</SelectItem>
-                                  <SelectItem value="tier_2">Tier 2</SelectItem>
-                                  <SelectItem value="tier_3">Tier 3</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
+                      <Button variant="outline" size="sm" className="h-9" onClick={() => setIsBulkContactEditOpen(true)}>
+                        <Settings className="h-4 w-4 mr-2" />
+                        Bulk Edit
+                      </Button>
 
                       <Button
                         variant="destructive"
@@ -2894,6 +2840,70 @@ export default function Customers() {
             >
               {vcfSaving ? "Saving..." : `Import ${vcfImportContacts.length} Contact${vcfImportContacts.length !== 1 ? "s" : ""}`}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isBulkContactEditOpen} onOpenChange={setIsBulkContactEditOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Bulk Edit Contacts</DialogTitle>
+            <DialogDescription>{selectedContacts.length} contact{selectedContacts.length !== 1 ? "s" : ""} selected</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Company</label>
+              <Select onValueChange={(val) => {
+                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { clientId: parseInt(val) } });
+                setIsBulkContactEditOpen(false);
+              }}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Move to company..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients?.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Stage</label>
+              <Select onValueChange={(val) => {
+                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { stageId: val === "none" ? null : parseInt(val) } });
+                setIsBulkContactEditOpen(false);
+              }}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Set stage..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Stage</SelectItem>
+                  {contactStages.map(s => (
+                    <SelectItem key={s.id} value={String(s.id)}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Tier</label>
+              <Select onValueChange={(val) => {
+                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { tier: val === "none" ? null : val } });
+                setIsBulkContactEditOpen(false);
+              }}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Set tier..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Tier</SelectItem>
+                  <SelectItem value="tier_1">Tier 1</SelectItem>
+                  <SelectItem value="tier_2">Tier 2</SelectItem>
+                  <SelectItem value="tier_3">Tier 3</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBulkContactEditOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
