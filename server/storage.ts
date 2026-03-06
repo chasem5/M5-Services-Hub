@@ -777,9 +777,10 @@ export class DatabaseStorage implements IStorage {
           db.select({ count: sql<number>`count(*)` }).from(tasks).where(and(eq(tasks.assignedTo, user.id), eq(tasks.status, "done"), sql`${tasks.createdAt} >= ${firstOfMonth}`)),
         ]);
 
+        const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username || null;
         return {
           userId: user.id,
-          name: user.username,
+          name: displayName,
           email: user.email,
           leadsAssigned: leadsAssigned[0].count,
           leadsWon: leadsWon[0].count,

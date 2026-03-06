@@ -619,10 +619,10 @@ export default function Dashboard() {
                         <td className="py-3 pr-4">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-8 w-8">
-                              <AvatarFallback>{stat.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                              <AvatarFallback>{(stat.name || stat.email || '??').substring(0, 2).toUpperCase()}</AvatarFallback>
                             </Avatar>
                             <div className="min-w-0">
-                              <p className="font-medium truncate">{stat.name}</p>
+                              <p className="font-medium truncate">{stat.name || stat.email || 'Unknown'}</p>
                               <p className="text-xs text-muted-foreground truncate">{stat.email}</p>
                             </div>
                           </div>
