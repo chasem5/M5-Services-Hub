@@ -22,44 +22,49 @@ import AdminPage from "@/pages/admin";
 import EmailSync from "@/pages/email-sync";
 import Announcements from "@/pages/announcements";
 import { VersionChecker } from "@/components/VersionChecker";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function ProtectedRouter() {
   return (
     <ProtectedLayout>
-      <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/leads" component={Leads} />
-        <Route path="/customers" component={Customers} />
-        <Route path="/customers/:id" component={CustomerDetail} />
-        <Route path="/tasks" component={Tasks} />
-        <Route path="/meetings" component={Meetings} />
-        <Route path="/meetings/:id" component={MeetingDetail} />
-        <Route path="/estimates" component={Estimates} />
-        <Route path="/estimates/:id" component={EstimateDetail} />
-        <Route path="/service-catalog" component={ServiceCatalog} />
-        <Route path="/proposals" component={Proposals} />
-        <Route path="/settings" component={Settings} />
-        <Route path="/admin" component={AdminPage} />
-        <Route path="/email" component={EmailSync} />
-        <Route path="/announcements" component={Announcements} />
-        <Route component={NotFound} />
-      </Switch>
+      <ErrorBoundary>
+        <Switch>
+          <Route path="/" component={Dashboard} />
+          <Route path="/leads" component={Leads} />
+          <Route path="/customers" component={Customers} />
+          <Route path="/customers/:id" component={CustomerDetail} />
+          <Route path="/tasks" component={Tasks} />
+          <Route path="/meetings" component={Meetings} />
+          <Route path="/meetings/:id" component={MeetingDetail} />
+          <Route path="/estimates" component={Estimates} />
+          <Route path="/estimates/:id" component={EstimateDetail} />
+          <Route path="/service-catalog" component={ServiceCatalog} />
+          <Route path="/proposals" component={Proposals} />
+          <Route path="/settings" component={Settings} />
+          <Route path="/admin" component={AdminPage} />
+          <Route path="/email" component={EmailSync} />
+          <Route path="/announcements" component={Announcements} />
+          <Route component={NotFound} />
+        </Switch>
+      </ErrorBoundary>
     </ProtectedLayout>
   );
 }
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <VersionChecker />
-        <Switch>
-          <Route path="/invite/:token" component={InvitePage} />
-          <Route component={ProtectedRouter} />
-        </Switch>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <VersionChecker />
+          <Switch>
+            <Route path="/invite/:token" component={InvitePage} />
+            <Route component={ProtectedRouter} />
+          </Switch>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
