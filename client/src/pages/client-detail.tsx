@@ -1927,8 +1927,8 @@ export default function ClientDetail() {
               </CardHeader>
               <CardContent>
                 {leads && leads.length > 0 ? (
-                  <div className="rounded-md border overflow-hidden">
-                    <Table>
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table className="min-w-[500px]">
                       <TableHeader className="bg-muted/50">
                         <TableRow>
                           <TableHead className="font-bold">Lead Title</TableHead>
@@ -1976,8 +1976,8 @@ export default function ClientDetail() {
               </CardHeader>
               <CardContent>
                 {estimates && estimates.length > 0 ? (
-                  <div className="rounded-md border overflow-hidden">
-                    <Table>
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table className="min-w-[500px]">
                       <TableHeader className="bg-muted/50">
                         <TableRow>
                           <TableHead className="font-bold">Estimate Title</TableHead>

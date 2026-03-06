@@ -630,8 +630,8 @@ export default function Leads() {
 
   return (
     <div className="flex flex-col h-full bg-muted">
-      <header className="flex flex-col gap-4 p-6 bg-background border-b shadow-sm">
-        <div className="flex items-center justify-between gap-4">
+      <header className="flex flex-col gap-3 p-4 md:p-6 bg-background border-b shadow-sm">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-heading font-bold">Lead Management</h1>
             <p className="text-muted-foreground">Manage your sales pipeline and track opportunities</p>
@@ -708,7 +708,7 @@ export default function Leads() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="hidden sm:flex items-center gap-4">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -766,7 +766,7 @@ export default function Leads() {
             ))}
           </div>
         ) : view === "kanban" ? (
-          <div className="flex h-full overflow-x-auto p-6 gap-6">
+          <div className="flex h-full overflow-x-auto p-4 md:p-6 gap-6">
             {stages.map((stage) => {
               const sc = getStageColors(stage.color);
               const weightedVal = getStageWeightedValue(stage.slug);

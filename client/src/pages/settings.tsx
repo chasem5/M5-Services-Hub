@@ -104,7 +104,7 @@ export default function Settings() {
   if (!currentUser) return null;
 
   return (
-    <div className="container mx-auto p-6 space-y-8">
+    <div className="container mx-auto p-4 md:p-6 space-y-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-heading font-bold text-primary tracking-tight">Settings</h1>
         <p className="text-muted-foreground">Manage your account and team preferences.</p>
@@ -260,8 +260,8 @@ export default function Settings() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-0">
-              <Table>
+            <CardContent className="p-0 overflow-x-auto">
+              <Table className="min-w-[550px]">
                 <TableHeader className="bg-muted/50">
                   <TableRow>
                     <TableHead className="pl-6">User</TableHead>

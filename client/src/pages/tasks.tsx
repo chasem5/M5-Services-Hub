@@ -764,7 +764,7 @@ export default function TasksPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-background border-b shadow-sm shrink-0">
+      <header className="flex items-center justify-between flex-wrap gap-3 px-4 md:px-6 py-4 bg-background border-b shadow-sm shrink-0">
         <div>
           <h1 className="text-2xl font-heading font-bold">Tasks</h1>
           <p className="text-sm text-muted-foreground">{tasks.length} task{tasks.length !== 1 ? "s" : ""} total</p>

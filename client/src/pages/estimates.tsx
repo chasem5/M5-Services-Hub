@@ -184,7 +184,7 @@ export default function Estimates() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-heading font-bold">Estimates</h1>
@@ -371,8 +371,8 @@ export default function Estimates() {
               ))}
             </div>
           ) : filteredEstimates && filteredEstimates.length > 0 ? (
-            <div className="rounded-md border border-border/50 overflow-hidden">
-              <Table>
+            <div className="rounded-md border border-border/50 overflow-x-auto">
+              <Table className="min-w-[550px]">
                 <TableHeader className="bg-muted/50">
                   <TableRow>
                     <TableHead className="font-bold">Title</TableHead>

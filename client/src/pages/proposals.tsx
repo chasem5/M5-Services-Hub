@@ -188,7 +188,7 @@ export default function Proposals() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-heading font-bold">Proposals</h1>
@@ -333,8 +333,8 @@ export default function Proposals() {
               ))}
             </div>
           ) : filteredProposals && filteredProposals.length > 0 ? (
-            <div className="rounded-md border border-border/50 overflow-hidden">
-              <Table>
+            <div className="rounded-md border border-border/50 overflow-x-auto">
+              <Table className="min-w-[600px]">
                 <TableHeader className="bg-muted/50">
                   <TableRow>
                     <TableHead className="font-bold">Proposal</TableHead>

@@ -371,7 +371,7 @@ export default function Customers() {
     });
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       {/* Hidden file inputs for import */}
       <input
         ref={companiesFileRef}
@@ -698,8 +698,8 @@ export default function Customers() {
                   ))}
                 </div>
               ) : filteredClients && filteredClients.length > 0 ? (
-                <div className="rounded-md border border-border/50 overflow-hidden">
-                  <Table>
+                <div className="rounded-md border border-border/50 overflow-x-auto">
+                  <Table className="min-w-[700px]">
                     <TableHeader className="bg-muted/50">
                       <TableRow>
                         <TableHead className="font-bold">Company Name</TableHead>
@@ -949,8 +949,8 @@ export default function Customers() {
                   {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
                 </div>
               ) : filteredContacts.length > 0 ? (
-                <div className="rounded-md border border-border/50 overflow-hidden">
-                  <Table>
+                <div className="rounded-md border border-border/50 overflow-x-auto">
+                  <Table className="min-w-[700px]">
                     <TableHeader className="bg-muted/50">
                       <TableRow>
                         {(["name", "company", "title"] as const).map(field => {
