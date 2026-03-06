@@ -10,6 +10,7 @@ import {
   LogOut,
   Mic,
   ShieldCheck,
+  Mail,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -40,6 +41,7 @@ const ALL_NAV_ITEMS = [
   { title: "Estimates", icon: FileText, url: "/estimates", module: "estimates" },
   { title: "Service Catalog", icon: BookOpen, url: "/service-catalog", module: "service_catalog" },
   { title: "Proposals", icon: ClipboardList, url: "/proposals", module: "proposals" },
+  { title: "Email Sync", icon: Mail, url: "/email", module: "email_sync" },
 ];
 
 const ALWAYS_VISIBLE_ITEMS = [

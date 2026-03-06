@@ -564,6 +564,96 @@ const SERVICE_NEEDS = [
   { key: "property_assessment", label: "Property Assessment", Icon: ClipboardList, color: "text-primary" },
 ] as const;
 
+interface EmailMsg {
+  id: number;
+  direction: string;
+  fromEmail: string;
+  fromName: string | null;
+  subject: string | null;
+  aiSummary: string | null;
+  aiSentiment: string | null;
+  aiSuggestedTasks: { title: string; priority: string; dueInDays?: number }[] | null;
+  requiresResponse: boolean;
+  receivedAt: string;
+  fullBody: string | null;
+}
+
+function ClientEmailsTab({ clientId }: { clientId: number }) {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const { data: emails = [], isLoading } = useQuery<EmailMsg[]>({
+    queryKey: ["/api/email-messages", clientId],
+    queryFn: () => fetch(`/api/email-messages?clientId=${clientId}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-32 text-gray-400"><RefreshCw className="h-4 w-4 animate-spin mr-2" /> Loading emails...</div>;
+  }
+
+  if (emails.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-48 text-center text-gray-400">
+        <Mail className="h-10 w-10 mb-3 text-gray-300" />
+        <p className="font-medium text-gray-600">No emails linked yet</p>
+        <p className="text-sm mt-1">Sync your Gmail to see communication history with this client.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {emails.map((email) => {
+        const sentimentColor = email.aiSentiment === "urgent" || email.aiSentiment === "negative" ? "text-red-600 bg-red-50 border-red-200" : email.aiSentiment === "positive" ? "text-green-700 bg-green-50 border-green-200" : "text-gray-500 bg-gray-50 border-gray-200";
+        return (
+          <div key={email.id} className="border border-gray-200 rounded-lg bg-white shadow-sm overflow-hidden" data-testid={`email-item-${email.id}`}>
+            <div className="px-4 py-3 flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className={`inline-flex items-center gap-1 text-xs font-medium border rounded px-1.5 py-0.5 ${email.direction === "inbound" ? "text-blue-700 bg-blue-50 border-blue-200" : "text-gray-600 bg-gray-50 border-gray-200"}`}>
+                    {email.direction === "inbound" ? "Inbound" : "Outbound"}
+                  </span>
+                  {email.aiSentiment && (
+                    <span className={`inline-flex items-center text-xs border rounded px-1.5 py-0.5 ${sentimentColor}`}>
+                      {email.aiSentiment.charAt(0).toUpperCase() + email.aiSentiment.slice(1)}
+                    </span>
+                  )}
+                  {email.requiresResponse && (
+                    <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                      <AlertCircle className="h-3 w-3" /> Needs Response
+                    </span>
+                  )}
+                </div>
+                <p className="font-semibold text-gray-900 text-sm truncate">{email.subject ?? "(no subject)"}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {email.direction === "inbound" ? `From: ${email.fromName ?? email.fromEmail}` : `To: ${email.fromEmail}`}
+                  {" · "}{new Date(email.receivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </p>
+                {email.aiSummary && (
+                  <p className="text-xs text-gray-600 mt-2 leading-relaxed"><span className="font-medium">AI:</span> {email.aiSummary}</p>
+                )}
+                {(email.aiSuggestedTasks?.length ?? 0) > 0 && (
+                  <p className="text-xs text-primary mt-1 font-medium">{email.aiSuggestedTasks!.length} suggested task{email.aiSuggestedTasks!.length !== 1 ? "s" : ""}</p>
+                )}
+              </div>
+              <button
+                className="text-gray-400 hover:text-gray-600 shrink-0 mt-0.5"
+                onClick={() => setExpandedId(expandedId === email.id ? null : email.id)}
+                data-testid={`button-expand-email-${email.id}`}
+              >
+                {expandedId === email.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+            </div>
+            {expandedId === email.id && email.fullBody && (
+              <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+                <pre className="text-xs text-gray-600 whitespace-pre-wrap font-sans leading-relaxed max-h-52 overflow-y-auto">{email.fullBody}</pre>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
   const clientId = parseInt(id!);
@@ -946,6 +1036,10 @@ export default function ClientDetail() {
           <TabsTrigger value="activity" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
             <History className="mr-2 h-4 w-4" />
             Activity
+          </TabsTrigger>
+          <TabsTrigger value="emails" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium" data-testid="tab-emails">
+            <Mail className="mr-2 h-4 w-4" />
+            Emails
           </TabsTrigger>
         </TabsList>
 
@@ -2027,6 +2121,18 @@ export default function ClientDetail() {
               </CardHeader>
               <CardContent className="h-[600px] pt-6">
                 <ActivityTimeline entityType="client" entityId={clientId} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="emails" className="m-0">
+            <Card className="border-none shadow-sm bg-card">
+              <CardHeader className="pb-0">
+                <CardTitle>Email History</CardTitle>
+                <CardDescription>Gmail communications linked to this client, analyzed by AI</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <ClientEmailsTab clientId={clientId} />
               </CardContent>
             </Card>
           </TabsContent>

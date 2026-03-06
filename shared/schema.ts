@@ -248,6 +248,36 @@ export const invites = pgTable("invites", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const emailMessages = pgTable("email_messages", {
+  id: serial("id").primaryKey(),
+  gmailMessageId: varchar("gmail_message_id").notNull().unique(),
+  gmailThreadId: varchar("gmail_thread_id").notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  direction: varchar("direction").notNull().default("inbound"),
+  fromEmail: varchar("from_email").notNull(),
+  fromName: varchar("from_name"),
+  toEmails: text("to_emails").array().default([]),
+  subject: varchar("subject"),
+  bodySnippet: varchar("body_snippet"),
+  fullBody: text("full_body"),
+  receivedAt: timestamp("received_at").notNull(),
+  clientId: integer("client_id").references(() => clients.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  contactId: integer("contact_id").references(() => clientContacts.id),
+  aiSummary: text("ai_summary"),
+  aiSuggestedTasks: jsonb("ai_suggested_tasks"),
+  aiSentiment: varchar("ai_sentiment"),
+  aiStageSuggestion: varchar("ai_stage_suggestion"),
+  requiresResponse: boolean("requires_response").default(false).notNull(),
+  followUpReminderCreated: boolean("follow_up_reminder_created").default(false).notNull(),
+  isProcessed: boolean("is_processed").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertEmailMessageSchema = createInsertSchema(emailMessages).omit({ id: true, createdAt: true });
+export type EmailMessage = typeof emailMessages.$inferSelect;
+export type InsertEmailMessage = z.infer<typeof insertEmailMessageSchema>;
+
 export const roleConfigs = pgTable("role_configs", {
   roleKey: varchar("role_key").primaryKey(),
   displayName: varchar("display_name").notNull(),

@@ -69,6 +69,7 @@ const MODULE_DEFS = [
   { key: "estimates", label: "Estimates", description: "Job estimates and line items" },
   { key: "service_catalog", label: "Service Catalog", description: "Standard services and pricing" },
   { key: "proposals", label: "Proposals", description: "Client proposal documents" },
+  { key: "email_sync", label: "Email Sync", description: "Gmail sync, AI analysis and follow-up reminders" },
 ];
 
 const ACCESS_LEVELS = [

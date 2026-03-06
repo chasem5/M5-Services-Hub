@@ -19,6 +19,7 @@ import {
   insertBdSpendEntrySchema,
   insertTaskLabelDefinitionSchema,
   insertTaskColumnSchema,
+  insertEmailMessageSchema,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -1217,7 +1218,7 @@ Return only valid JSON, no markdown.`;
       return res.status(400).json({ message: "A role with that name already exists" });
     }
     const config = await storage.createRoleConfig(roleKey, displayName);
-    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals"];
+    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals", "email_sync"];
     for (const module of MODULES) {
       await storage.upsertRolePermission(roleKey, module, "own_only");
     }
@@ -1260,6 +1261,225 @@ Return only valid JSON, no markdown.`;
     res.json(perm);
   });
 
+  // Email Sync
+  app.post("/api/email/sync", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const { getGmailMessages, getUserGmailAddress } = await import("./gmail");
+      const { openai } = await import("./openai");
+
+      const [rawEmails, myAddress] = await Promise.all([
+        getGmailMessages(50),
+        getUserGmailAddress(),
+      ]);
+
+      const allClients = await storage.listClients();
+      const allContacts = await storage.listAllClientContacts();
+      const allLeads = await storage.listLeads();
+
+      const clientEmailMap = new Map<string, number>();
+      for (const c of allClients) {
+        if (c.email) clientEmailMap.set(c.email.toLowerCase(), c.id);
+      }
+      const contactEmailMap = new Map<string, { clientId: number | null; contactId: number }>(); 
+      for (const ct of allContacts) {
+        if (ct.email) contactEmailMap.set(ct.email.toLowerCase(), { clientId: ct.clientId, contactId: ct.id });
+      }
+
+      const clientContext = allClients.slice(0, 30).map(c => ({ id: c.id, name: c.name, email: c.email }));
+      const leadContext = allLeads.slice(0, 30).map(l => ({ id: l.id, title: l.title, stage: l.stage, clientId: l.clientId }));
+
+      let newEmails = 0;
+      const savedEmails: any[] = [];
+
+      for (const raw of rawEmails) {
+        const direction = raw.fromEmail.toLowerCase() === myAddress.toLowerCase() ? "outbound" : "inbound";
+
+        let clientId: number | null = null;
+        let contactId: number | null = null;
+
+        const fromLower = raw.fromEmail.toLowerCase();
+        if (clientEmailMap.has(fromLower)) {
+          clientId = clientEmailMap.get(fromLower)!;
+        } else if (contactEmailMap.has(fromLower)) {
+          const match = contactEmailMap.get(fromLower)!;
+          clientId = match.clientId;
+          contactId = match.contactId;
+        } else {
+          for (const to of raw.toEmails) {
+            const toLower = to.toLowerCase();
+            if (clientEmailMap.has(toLower)) { clientId = clientEmailMap.get(toLower)!; break; }
+            if (contactEmailMap.has(toLower)) { const m = contactEmailMap.get(toLower)!; clientId = m.clientId; contactId = m.contactId; break; }
+          }
+        }
+
+        const leadId = clientId ? (allLeads.find(l => l.clientId === clientId)?.id ?? null) : null;
+
+        let aiResult = { summary: "", suggestedTasks: [] as any[], sentiment: "neutral", stageSuggestion: null as string | null, requiresResponse: false };
+        try {
+          const prompt = `You are an assistant for M5 Services, a facility maintenance company. Analyze this email and respond with ONLY valid JSON.
+
+Email:
+From: ${raw.fromName} <${raw.fromEmail}>
+Subject: ${raw.subject}
+Body: ${raw.fullBody.slice(0, 2000)}
+
+Known clients: ${JSON.stringify(clientContext.slice(0, 15))}
+Active leads: ${JSON.stringify(leadContext.slice(0, 10))}
+Direction: ${direction} (${direction === "inbound" ? "client emailed M5" : "M5 emailed client"})
+
+Respond with this JSON:
+{
+  "summary": "1-2 sentence summary of the email",
+  "suggestedTasks": [{"title": "task title", "priority": "high|medium|low", "dueInDays": 1}],
+  "sentiment": "positive|neutral|negative|urgent",
+  "stageSuggestion": null or one of: "new_lead|qualification|proposal|negotiation|won|lost",
+  "requiresResponse": true or false (true only if inbound and M5 should reply — exclude automated/notifications/newsletters)
+}`;
+
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 500,
+          });
+          const parsed = JSON.parse(completion.choices[0].message.content ?? "{}");
+          aiResult = {
+            summary: parsed.summary ?? "",
+            suggestedTasks: Array.isArray(parsed.suggestedTasks) ? parsed.suggestedTasks.slice(0, 5) : [],
+            sentiment: parsed.sentiment ?? "neutral",
+            stageSuggestion: parsed.stageSuggestion ?? null,
+            requiresResponse: direction === "inbound" ? (parsed.requiresResponse ?? false) : false,
+          };
+        } catch {}
+
+        const msgData: any = {
+          gmailMessageId: raw.gmailMessageId,
+          gmailThreadId: raw.gmailThreadId,
+          userId,
+          direction,
+          fromEmail: raw.fromEmail,
+          fromName: raw.fromName ?? null,
+          toEmails: raw.toEmails,
+          subject: raw.subject,
+          bodySnippet: raw.bodySnippet,
+          fullBody: raw.fullBody,
+          receivedAt: raw.receivedAt,
+          clientId: clientId ?? null,
+          leadId: leadId ?? null,
+          contactId: contactId ?? null,
+          aiSummary: aiResult.summary,
+          aiSuggestedTasks: aiResult.suggestedTasks,
+          aiSentiment: aiResult.sentiment,
+          aiStageSuggestion: aiResult.stageSuggestion,
+          requiresResponse: aiResult.requiresResponse,
+          followUpReminderCreated: false,
+          isProcessed: true,
+        };
+
+        const existing = await storage.listEmailMessages({ userId });
+        const alreadyExists = existing.some(e => e.gmailMessageId === raw.gmailMessageId);
+        if (!alreadyExists) newEmails++;
+
+        await storage.upsertEmailMessage(msgData);
+        savedEmails.push({ ...msgData, clientId, leadId });
+      }
+
+      const unresponded = await storage.listUnrespondedInboundEmails(2, userId);
+      let remindersCreated = 0;
+      for (const email of unresponded) {
+        await storage.createReminder({
+          userId,
+          title: `Follow up needed: "${(email.subject ?? "").slice(0, 60)}"`,
+          message: `This client email hasn't been responded to in over 2 days. ${email.aiSummary ? `Summary: ${email.aiSummary}` : ""}`,
+          dueAt: new Date(),
+          relatedLeadId: email.leadId ?? null,
+          relatedClientId: email.clientId ?? null,
+        } as any);
+        await storage.updateEmailMessage(email.id, { followUpReminderCreated: true });
+        remindersCreated++;
+      }
+
+      res.json({ newEmails, totalSynced: rawEmails.length, remindersCreated });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message ?? "Email sync failed" });
+    }
+  });
+
+  app.get("/api/email-messages", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    const clientId = req.query.clientId ? parseInt(req.query.clientId as string) : undefined;
+    const leadId = req.query.leadId ? parseInt(req.query.leadId as string) : undefined;
+    const filters = clientId ? { clientId } : leadId ? { leadId } : { userId };
+    const msgs = await storage.listEmailMessages(filters);
+    res.json(msgs);
+  });
+
+  app.patch("/api/email-messages/:id/link", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { clientId, leadId, contactId } = z.object({
+      clientId: z.number().nullable().optional(),
+      leadId: z.number().nullable().optional(),
+      contactId: z.number().nullable().optional(),
+    }).parse(req.body);
+    const updated = await storage.updateEmailMessage(id, {
+      ...(clientId !== undefined ? { clientId: clientId ?? null } : {}),
+      ...(leadId !== undefined ? { leadId: leadId ?? null } : {}),
+      ...(contactId !== undefined ? { contactId: contactId ?? null } : {}),
+    });
+    res.json(updated);
+  });
+
+  app.post("/api/email-messages/:id/create-tasks", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    const id = parseInt(req.params.id);
+    const { tasks: taskList } = z.object({
+      tasks: z.array(z.object({
+        title: z.string(),
+        priority: z.string().optional(),
+        dueInDays: z.number().optional(),
+      })),
+    }).parse(req.body);
+
+    const email = await storage.getEmailMessage(id);
+    if (!email) return res.status(404).json({ message: "Email not found" });
+
+    const created = [];
+    for (const t of taskList) {
+      const dueDate = t.dueInDays ? new Date(Date.now() + t.dueInDays * 86400000) : null;
+      const task = await storage.createTask({
+        title: t.title,
+        priority: (t.priority as any) ?? "medium",
+        status: "todo",
+        assignedTo: userId,
+        clientId: email.clientId ?? null,
+        leadId: email.leadId ?? null,
+        dueDate,
+        description: `Created from email: "${email.subject}"`,
+        labels: [],
+        checklist: [],
+        columnId: null,
+      } as any);
+      created.push(task);
+    }
+    res.json(created);
+  });
+
+  app.patch("/api/email-messages/:id/apply-stage", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { leadId, stage } = z.object({ leadId: z.number(), stage: z.string() }).parse(req.body);
+    const lead = await storage.updateLeadStage(leadId, stage);
+    const email = await storage.getEmailMessage(id);
+    await storage.createActivityLog({
+      entityType: "lead",
+      entityId: leadId,
+      action: "stage_changed",
+      details: `Stage updated to "${stage}" based on email: "${email?.subject}"`,
+      userId: (req as any).user?.claims?.sub,
+    } as any);
+    res.json(lead);
+  });
+
   // My permissions (any authenticated user)
   app.get("/api/my-permissions", isAuthenticated, async (req, res) => {
     const userId = (req as any).user?.claims?.sub;
@@ -1267,7 +1487,7 @@ Return only valid JSON, no markdown.`;
     const user = await storage.getUser(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals"];
+    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals", "email_sync"];
 
     let permissions: Record<string, string>;
     if (user.role === "admin") {
