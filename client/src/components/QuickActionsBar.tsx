@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Target, Users, Building2, CheckSquare } from "lucide-react";
+import { Plus, Target, Users, Building2, CheckSquare, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatPhoneNumber } from "@/lib/phone";
 import type { Client, ClientContact, Lead, PipelineStage, User } from "@shared/schema";
+import { CardScannerDialog } from "@/components/CardScannerDialog";
 
 export type ActiveDialog = "deal" | "contact" | "company" | "task" | null;
 
@@ -43,6 +44,8 @@ interface QuickActionsBarProps {
 export function QuickActionsBar({ externalDialog, onExternalOpen, showButton = true }: QuickActionsBarProps) {
   const { toast } = useToast();
   const [internalDialog, setInternalDialog] = useState<ActiveDialog>(null);
+
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const isExternal = externalDialog !== undefined && onExternalOpen !== undefined;
   const activeDialog = isExternal ? externalDialog : internalDialog;
@@ -84,9 +87,15 @@ export function QuickActionsBar({ externalDialog, onExternalOpen, showButton = t
               <CheckSquare className="mr-2 h-4 w-4 text-primary" />
               Add Task
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setScannerOpen(true)} data-testid="quick-action-scan">
+              <CreditCard className="mr-2 h-4 w-4 text-primary" />
+              Scan Card
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+
+      <CardScannerDialog open={scannerOpen} onClose={() => setScannerOpen(false)} clients={clients} />
 
       <AddDealDialog
         open={activeDialog === "deal"}

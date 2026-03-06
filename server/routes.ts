@@ -732,6 +732,78 @@ export async function registerRoutes(
     res.json({ created, errors });
   });
 
+  // Contact card/signature scanner (AI vision)
+  app.post("/api/contacts/scan-image", isAuthenticated, async (req, res) => {
+    const { imageBase64, mimeType } = req.body as { imageBase64: string; mimeType: string };
+    if (!imageBase64) return res.status(400).json({ message: "imageBase64 is required" });
+    try {
+      const { openai } = await import("./openai");
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        max_completion_tokens: 500,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType || "image/jpeg"};base64,${imageBase64}`,
+                  detail: "high",
+                },
+              },
+              {
+                type: "text",
+                text: `Extract contact information from this business card or email signature screenshot. Return ONLY a JSON object with these fields (use null for any field not found):
+{
+  "name": string | null,
+  "title": string | null,
+  "email": string | null,
+  "phone": string | null,
+  "company": string | null,
+  "linkedinUrl": string | null,
+  "notes": string | null
+}
+Do not include any other text, just the JSON.`,
+              },
+            ],
+          },
+        ],
+      });
+      const raw = completion.choices[0]?.message?.content?.trim() || "{}";
+      const cleaned = raw.replace(/^```json\s*|^```\s*|\s*```$/g, "");
+      const parsed = JSON.parse(cleaned);
+      res.json(parsed);
+    } catch (e: any) {
+      console.error("scan-image error:", e);
+      res.status(500).json({ message: e.message || "Failed to scan image" });
+    }
+  });
+
+  // Export contact as vCard
+  app.get("/api/contacts/:id/vcard", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const contact = await storage.getClientContact(id);
+    if (!contact) return res.status(404).json({ message: "Contact not found" });
+    const client = await storage.getClient(contact.clientId);
+    const safeName = (contact.name || "contact").replace(/[^a-zA-Z0-9_\-]/g, "_");
+    const lines: string[] = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      `FN:${contact.name || ""}`,
+    ];
+    if (contact.title) lines.push(`TITLE:${contact.title}`);
+    if (client?.name) lines.push(`ORG:${client.name}`);
+    if (contact.email) lines.push(`EMAIL;TYPE=WORK:${contact.email}`);
+    if (contact.phone) lines.push(`TEL;TYPE=WORK:${contact.phone}`);
+    if (contact.linkedinUrl) lines.push(`URL:${contact.linkedinUrl}`);
+    lines.push("END:VCARD");
+    const vcard = lines.join("\r\n");
+    res.setHeader("Content-Type", "text/vcard; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${safeName}.vcf"`);
+    res.send(vcard);
+  });
+
   // Leads
   app.get("/api/leads", isAuthenticated, async (req, res) => {
     const scopedUserId = await getScopedUserId(req, "leads");

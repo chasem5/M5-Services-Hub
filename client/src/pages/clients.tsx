@@ -35,6 +35,9 @@ import {
   Sparkles,
   Zap,
   ClipboardList,
+  Smartphone,
+  CreditCard,
+  ScanLine,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 const MapView = lazy(() => import("@/pages/map").then(m => ({ default: m.MapView })));
@@ -157,6 +160,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PortfolioManager } from "@/components/PortfolioManager";
+import { CardScannerDialog } from "@/components/CardScannerDialog";
 
 interface ImportResult {
   created: number;
@@ -379,6 +383,11 @@ export default function Customers() {
   const [contactTierFilter, setContactTierFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [vcfImportOpen, setVcfImportOpen] = useState(false);
+  const [vcfImportContacts, setVcfImportContacts] = useState<Array<{ name: string | null; title: string | null; email: string | null; phone: string | null; company: string | null; linkedinUrl: string | null }>>([]);
+  const [vcfAssignClientId, setVcfAssignClientId] = useState<string>("");
+  const [vcfSaving, setVcfSaving] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ClientContact | null>(null);
@@ -387,6 +396,7 @@ export default function Customers() {
   const [isLoggingSpend, setIsLoggingSpend] = useState(false);
   const companiesFileRef = useRef<HTMLInputElement>(null);
   const contactsFileRef = useRef<HTMLInputElement>(null);
+  const vcfFileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const { data: clients, isLoading } = useQuery<Client[]>({
@@ -490,6 +500,36 @@ export default function Customers() {
       [["Acme Corp", "Jane Smith", "Property Manager", "jane@acme.com", "555-5678", "true", "https://linkedin.com/in/janesmith", "tier_1", "janitorial", "active", "Main Office"]]
     );
     downloadCSV("m5-contacts-template.csv", csv);
+  };
+
+  const handleVcfImport = async (file: File) => {
+    const text = await file.text();
+    const vcards = text.split(/BEGIN:VCARD/i).slice(1);
+    if (!vcards.length) {
+      toast({ title: "No contacts found", description: "The file didn't contain any vCard entries", variant: "destructive" });
+      return;
+    }
+    const parsed = vcards.map(block => {
+      const get = (key: string) => {
+        const m = block.match(new RegExp(`^${key}[^:]*:(.*)$`, "im"));
+        return m ? m[1].trim() : null;
+      };
+      return {
+        name: get("FN") || get("N")?.replace(/;/g, " ").trim() || null,
+        title: get("TITLE"),
+        email: get("EMAIL"),
+        phone: get("TEL"),
+        company: get("ORG"),
+        linkedinUrl: get("URL"),
+      };
+    }).filter(c => c.name);
+
+    if (!parsed.length) {
+      toast({ title: "No contacts found", description: "Could not extract any contacts from the file", variant: "destructive" });
+      return;
+    }
+    setVcfImportContacts(parsed);
+    setVcfImportOpen(true);
   };
 
   const handleImportFile = async (file: File, type: "companies" | "contacts") => {
@@ -662,6 +702,18 @@ export default function Customers() {
         }}
         data-testid="input-import-contacts-file"
       />
+      <input
+        ref={vcfFileRef}
+        type="file"
+        accept=".vcf,.vcard"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleVcfImport(file);
+          e.target.value = "";
+        }}
+        data-testid="input-import-vcf-file"
+      />
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
         <div>
@@ -706,6 +758,30 @@ export default function Customers() {
               <DropdownMenuItem onClick={downloadContactsTemplate} data-testid="button-template-contacts">
                 <FileText className="mr-2 h-4 w-4 text-muted-foreground" /> Template
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => vcfFileRef.current?.click()} data-testid="button-import-vcf">
+                <Smartphone className="mr-2 h-4 w-4" /> Import vCard (.vcf)
+              </DropdownMenuItem>
+              {"contacts" in navigator && (
+                <DropdownMenuItem onClick={async () => {
+                  try {
+                    const results = await (navigator as any).contacts.select(["name", "email", "tel", "organization"], { multiple: true });
+                    if (!results?.length) return;
+                    const parsed = results.map((r: any) => ({
+                      name: r.name?.[0] || null,
+                      title: null,
+                      email: r.email?.[0] || null,
+                      phone: r.tel?.[0] || null,
+                      company: r.organization?.[0] || null,
+                      linkedinUrl: null,
+                    })).filter((c: any) => c.name);
+                    if (parsed.length) { setVcfImportContacts(parsed); setVcfImportOpen(true); }
+                  } catch (e: any) {
+                    toast({ title: "Could not open contacts", description: e.message, variant: "destructive" });
+                  }
+                }} data-testid="button-pick-from-phone">
+                  <CreditCard className="mr-2 h-4 w-4" /> Pick from Phone
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -729,10 +805,16 @@ export default function Customers() {
               >
                 <Users className="mr-2 h-4 w-4" /> Add Contact
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsScannerOpen(true)} data-testid="button-scan-card-dropdown">
+                <ScanLine className="mr-2 h-4 w-4" /> Scan Card
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Card Scanner Dialog */}
+      <CardScannerDialog open={isScannerOpen} onClose={() => setIsScannerOpen(false)} clients={clients ?? []} />
 
       {/* Add Company dialog (controlled) */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -1200,6 +1282,7 @@ export default function Customers() {
                             </TableHead>
                           );
                         })}
+                        <TableHead className="font-bold w-8"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1288,6 +1371,18 @@ export default function Customers() {
                             <span className="text-sm font-medium" data-testid={`text-contact-spend-${contact.id}`}>
                               {formatMoney(spendByContactId[contact.id])}
                             </span>
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-primary"
+                              title="Export to Phone"
+                              onClick={() => window.open(`/api/contacts/${contact.id}/vcard`, "_blank")}
+                              data-testid={`button-export-vcard-${contact.id}`}
+                            >
+                              <Smartphone className="h-3.5 w-3.5" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1830,6 +1925,75 @@ export default function Customers() {
           </div>
           <DialogFooter>
             <Button onClick={() => setImportResult(null)} data-testid="button-close-import-result">Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* vCard Import Dialog */}
+      <Dialog open={vcfImportOpen} onOpenChange={(o) => { if (!o) { setVcfImportOpen(false); setVcfAssignClientId(""); } }}>
+        <DialogContent className="sm:max-w-[500px] max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Import Contacts from vCard</DialogTitle>
+            <DialogDescription>
+              {vcfImportContacts.length} contact{vcfImportContacts.length !== 1 ? "s" : ""} found. Assign them to a company to save.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto flex-1 space-y-3 pr-1">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Assign all to company <span className="text-destructive">*</span></label>
+              <SearchableSelect
+                options={(clients ?? []).map(c => ({ value: String(c.id), label: c.name }))}
+                value={vcfAssignClientId}
+                onValueChange={setVcfAssignClientId}
+                placeholder="Select company..."
+                data-testid="select-vcf-company"
+              />
+            </div>
+            <div className="space-y-2">
+              {vcfImportContacts.map((c, i) => (
+                <div key={i} className="rounded-lg border p-3 text-sm space-y-0.5">
+                  <p className="font-medium">{c.name}</p>
+                  {c.title && <p className="text-muted-foreground">{c.title}</p>}
+                  {c.company && <p className="text-muted-foreground text-xs">From: {c.company}</p>}
+                  {c.email && <p className="text-muted-foreground text-xs">{c.email}</p>}
+                  {c.phone && <p className="text-muted-foreground text-xs">{c.phone}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => { setVcfImportOpen(false); setVcfAssignClientId(""); }} data-testid="button-vcf-cancel">Cancel</Button>
+            <Button
+              disabled={!vcfAssignClientId || vcfSaving}
+              onClick={async () => {
+                if (!vcfAssignClientId) return;
+                setVcfSaving(true);
+                let created = 0;
+                for (const c of vcfImportContacts) {
+                  if (!c.name) continue;
+                  try {
+                    await apiRequest("POST", `/api/clients/${vcfAssignClientId}/contacts`, {
+                      name: c.name,
+                      title: c.title || null,
+                      email: c.email || null,
+                      phone: c.phone || null,
+                      linkedinUrl: c.linkedinUrl || null,
+                      isPrimary: false,
+                      serviceNeeds: [],
+                    });
+                    created++;
+                  } catch {}
+                }
+                await queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+                setVcfSaving(false);
+                setVcfImportOpen(false);
+                setVcfAssignClientId("");
+                toast({ title: `${created} contact${created !== 1 ? "s" : ""} imported` });
+              }}
+              data-testid="button-vcf-save"
+            >
+              {vcfSaving ? "Saving..." : `Import ${vcfImportContacts.length} Contact${vcfImportContacts.length !== 1 ? "s" : ""}`}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
