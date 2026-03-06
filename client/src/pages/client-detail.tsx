@@ -1118,19 +1118,6 @@ export default function ClientDetail() {
                             </FormItem>
                           )}
                         />
-                        <FormField
-                          control={clientForm.control}
-                          name="email"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Company Email</FormLabel>
-                              <FormControl>
-                                <Input {...field} data-testid="input-edit-client-email" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
                       </div>
                       <FormField
                         control={clientForm.control}
@@ -1240,23 +1227,6 @@ export default function ClientDetail() {
                         </div>
                       );
                     })}
-                  </CardContent>
-                </Card>
-
-                <Card className="border-none shadow-sm bg-card">
-                  <CardHeader>
-                    <CardTitle className="text-lg">Quick Info</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0">
-                        <Mail className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div className="text-sm">
-                        <p className="font-medium">Company Email</p>
-                        <p className="text-muted-foreground">{client.email || "No email"}</p>
-                      </div>
-                    </div>
                   </CardContent>
                 </Card>
 

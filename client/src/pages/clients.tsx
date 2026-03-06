@@ -30,6 +30,11 @@ import {
   Map,
   LayoutGrid,
   Layers,
+  HardHat,
+  Wrench,
+  Sparkles,
+  Zap,
+  ClipboardList,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 const MapView = lazy(() => import("@/pages/map").then(m => ({ default: m.MapView })));
@@ -127,11 +132,15 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { formatPhoneNumber } from "@/lib/phone";
 import {
   Select,
   SelectContent,
@@ -143,7 +152,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertClientSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate } from "@shared/schema";
+import { insertClientSchema, insertClientContactSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -349,6 +358,14 @@ function BuildingsList({ buildings, offices, contacts, clients: clientsList, lea
   );
 }
 
+const SERVICE_NEEDS = [
+  { key: "building_engineering", label: "Building Engineer", Icon: HardHat, color: "text-orange-500" },
+  { key: "facility_solutions", label: "Facility Solutions", Icon: Wrench, color: "text-blue-500" },
+  { key: "janitorial", label: "Janitorial", Icon: Sparkles, color: "text-teal-500" },
+  { key: "special_projects", label: "Special Projects", Icon: Zap, color: "text-purple-500" },
+  { key: "property_assessment", label: "Property Assessment", Icon: ClipboardList, color: "text-primary" },
+] as const;
+
 export default function Customers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [buildingSearch, setBuildingSearch] = useState("");
@@ -362,6 +379,7 @@ export default function Customers() {
   const [tierFilter, setTierFilter] = useState("all");
   const [contactTierFilter, setContactTierFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ClientContact | null>(null);
@@ -513,6 +531,43 @@ export default function Customers() {
 
   const onSubmit = (data: any) => {
     createClientMutation.mutate(data);
+  };
+
+  const contactForm = useForm({
+    resolver: zodResolver(insertClientContactSchema),
+    defaultValues: {
+      name: "",
+      title: "",
+      email: "",
+      phone: "",
+      clientId: undefined as number | undefined,
+      isPrimary: false,
+      serviceNeeds: [] as string[],
+    },
+  });
+
+  const createContactMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/client-contacts", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+      setIsAddContactOpen(false);
+      contactForm.reset();
+      toast({ title: "Contact added successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to add contact", variant: "destructive" });
+    },
+  });
+
+  const onAddContact = (data: any) => {
+    const payload = {
+      ...data,
+      linkedinUrl: data.linkedinUrl || null,
+      tier: data.tier === "none" ? null : (data.tier || null),
+      reportsTo: data.reportsTo || null,
+      serviceNeeds: data.serviceNeeds || [],
+    };
+    createContactMutation.mutate(payload);
   };
 
   const industries = Array.from(new Set(clients?.map(c => c.industry).filter(Boolean) || []));
@@ -1089,6 +1144,28 @@ export default function Customers() {
         <TabsContent value="contacts">
           <Card className="border-none shadow-sm bg-card">
             <CardHeader className="pb-3 space-y-3">
+              {/* Title + Add Contact */}
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-lg">All Contacts</h3>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    contactForm.reset({
+                      name: "",
+                      title: "",
+                      email: "",
+                      phone: "",
+                      clientId: contactCompanyFilter !== "all" ? parseInt(contactCompanyFilter) : undefined,
+                      isPrimary: false,
+                      serviceNeeds: [],
+                    });
+                    setIsAddContactOpen(true);
+                  }}
+                  data-testid="button-add-contact"
+                >
+                  <Plus className="h-4 w-4 mr-1" />Add Contact
+                </Button>
+              </div>
               {/* Search + filters row */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative flex-1 min-w-[180px] max-w-xs">
@@ -1316,12 +1393,180 @@ export default function Customers() {
                   <p className="text-muted-foreground max-w-sm mx-auto mt-1">
                     {contactSearch
                       ? "Try adjusting your search."
-                      : "Add contacts from a company's detail page."}
+                      : "No contacts yet. Click 'Add Contact' to create one."}
                   </p>
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {/* Add Contact Dialog */}
+          <Dialog open={isAddContactOpen} onOpenChange={setIsAddContactOpen}>
+            <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>Add Contact</DialogTitle>
+                <DialogDescription>Create a new contact and associate them with a company.</DialogDescription>
+              </DialogHeader>
+              <Form {...contactForm}>
+                <form onSubmit={contactForm.handleSubmit(onAddContact)} className="space-y-4 py-2 overflow-y-auto flex-1 pr-1">
+                  <FormField control={contactForm.control} name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Full Name <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input placeholder="Enter contact name" {...field} data-testid="input-new-contact-name" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField control={contactForm.control} name={"clientId" as any}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Company <span className="text-destructive">*</span></FormLabel>
+                        <SearchableSelect
+                          options={(clients || []).map(c => ({ value: c.id.toString(), label: c.name }))}
+                          value={field.value?.toString() || ""}
+                          onChange={(val) => field.onChange(val ? parseInt(val) : undefined)}
+                          placeholder="Select company..."
+                          searchPlaceholder="Search companies..."
+                          data-testid="select-new-contact-company"
+                        />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField control={contactForm.control} name="title"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Job Title</FormLabel>
+                        <FormControl><Input placeholder="e.g. Operations Manager" {...field} value={field.value || ""} data-testid="input-new-contact-title" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField control={contactForm.control} name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl><Input placeholder="email@example.com" {...field} value={field.value || ""} data-testid="input-new-contact-email" /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField control={contactForm.control} name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="(555) 012-3456"
+                              {...field}
+                              value={field.value || ""}
+                              onChange={(e) => field.onChange(formatPhoneNumber(e.target.value))}
+                              data-testid="input-new-contact-phone"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField control={contactForm.control} name={"linkedinUrl" as any}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-1.5">
+                          <SiLinkedin className="h-3.5 w-3.5 text-[#0A66C2]" />
+                          LinkedIn Profile URL
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="https://linkedin.com/in/username"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-new-contact-linkedin"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div>
+                    <FormLabel className="text-sm font-medium">Service Needs</FormLabel>
+                    <p className="text-xs text-muted-foreground mb-2 mt-0.5">Which M5 services does this contact require?</p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {SERVICE_NEEDS.map(s => {
+                        const current: string[] = (contactForm.watch("serviceNeeds") as string[]) ?? [];
+                        const checked = current.includes(s.key);
+                        return (
+                          <div
+                            key={s.key}
+                            role="checkbox"
+                            aria-checked={checked}
+                            tabIndex={0}
+                            className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors select-none ${checked ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                            onClick={() => {
+                              const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
+                              contactForm.setValue("serviceNeeds", next);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === " " || e.key === "Enter") {
+                                const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
+                                contactForm.setValue("serviceNeeds", next);
+                              }
+                            }}
+                            data-testid={`toggle-new-contact-service-${s.key}`}
+                          >
+                            <s.Icon className={`h-4 w-4 shrink-0 ${s.color}`} />
+                            <span className="text-sm">{s.label}</span>
+                            {checked && <CheckCircle2 className="h-4 w-4 text-primary ml-auto" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <FormField control={contactForm.control} name={"tier" as any}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Tier</FormLabel>
+                        <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-new-contact-tier">
+                              <SelectValue placeholder="No Tier" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No Tier</SelectItem>
+                            <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                            <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                            <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField control={contactForm.control} name="isPrimary"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                        <FormControl>
+                          <Checkbox checked={field.value} onCheckedChange={field.onChange} data-testid="checkbox-new-contact-primary" />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                          <FormLabel>Primary Contact</FormLabel>
+                          <FormDescription>Mark this person as the main point of contact.</FormDescription>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter className="pt-2">
+                    <Button type="submit" className="w-full h-11" disabled={createContactMutation.isPending} data-testid="button-submit-new-contact">
+                      {createContactMutation.isPending ? "Adding..." : "Add Contact"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* ── Buildings Tab ── */}
