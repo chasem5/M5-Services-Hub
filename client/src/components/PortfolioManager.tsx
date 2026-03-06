@@ -54,14 +54,15 @@ interface PortfolioManagerProps {
   allBuildings: ContactBuilding[];
   allContacts: ClientContact[];
   clients: Client[];
+  filterClientId?: number;
 }
 
-export function PortfolioManager({ allBuildings, allContacts, clients }: PortfolioManagerProps) {
+export function PortfolioManager({ allBuildings, allContacts, clients, filterClientId }: PortfolioManagerProps) {
   const { toast } = useToast();
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newClientId, setNewClientId] = useState<string>("none");
+  const [newClientId, setNewClientId] = useState<string>(filterClientId ? String(filterClientId) : "none");
   const [newDescription, setNewDescription] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
@@ -72,9 +73,20 @@ export function PortfolioManager({ allBuildings, allContacts, clients }: Portfol
   const [contactSearch, setContactSearch] = useState("");
   const [newRole, setNewRole] = useState("");
 
-  const { data: portfolios = [], isLoading } = useQuery<BuildingPortfolio[]>({
-    queryKey: ["/api/portfolios"],
+  const portfolioQueryKey = filterClientId
+    ? ["/api/portfolios", { clientId: filterClientId }]
+    : ["/api/portfolios"];
+
+  const { data: portfoliosRaw = [], isLoading } = useQuery<BuildingPortfolio[]>({
+    queryKey: portfolioQueryKey,
+    queryFn: async () => {
+      const url = filterClientId ? `/api/portfolios?clientId=${filterClientId}` : "/api/portfolios";
+      const res = await fetch(url, { credentials: "include" });
+      return res.json();
+    },
   });
+
+  const portfolios = portfoliosRaw;
 
   const { data: detailPortfolio, isLoading: isLoadingDetail } = useQuery<PortfolioWithDetails>({
     queryKey: ["/api/portfolios", selectedPortfolioId],
@@ -88,7 +100,7 @@ export function PortfolioManager({ allBuildings, allContacts, clients }: Portfol
       queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
       setShowCreateForm(false);
       setNewName("");
-      setNewClientId("none");
+      setNewClientId(filterClientId ? String(filterClientId) : "none");
       setNewDescription("");
       toast({ title: "Portfolio created" });
     },

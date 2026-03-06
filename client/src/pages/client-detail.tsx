@@ -105,12 +105,14 @@ import {
   type BdSpendEntry,
   type Lead, 
   type Estimate,
-  type ActivityLog
+  type ActivityLog,
+  type BuildingPortfolio
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { OrgChart } from "@/components/OrgChart";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { BuildingsMap } from "@/components/BuildingsMap";
+import { PortfolioManager } from "@/components/PortfolioManager";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -283,10 +285,12 @@ function ContactCard({
   contact,
   onEdit,
   onDelete,
+  onAddToPortfolio,
 }: {
   contact: ClientContact;
   onEdit: (c: ClientContact) => void;
   onDelete: (id: number) => void;
+  onAddToPortfolio?: (contactId: number) => void;
 }) {
   const [isPortfolioOpen, setIsPortfolioOpen] = useState(false);
   const [isAddingBuilding, setIsAddingBuilding] = useState(false);
@@ -414,6 +418,13 @@ function ContactCard({
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {onAddToPortfolio && (
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary"
+                onClick={() => onAddToPortfolio(contact.id)} data-testid={`button-add-to-portfolio-${contact.id}`}
+                title="Add to Portfolio">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
               onClick={() => onEdit(contact)} data-testid={`button-edit-contact-${contact.id}`}>
               <Edit className="h-4 w-4" />
@@ -676,6 +687,10 @@ export default function ClientDetail() {
   const [editOfficeLat, setEditOfficeLat] = useState<number | null>(null);
   const [editOfficeLng, setEditOfficeLng] = useState<number | null>(null);
   const [defaultOfficeId, setDefaultOfficeId] = useState<number | null>(null);
+  const [addContactPortfolioId, setAddContactPortfolioId] = useState<string>("none");
+  const [portfolioPickerContactId, setPortfolioPickerContactId] = useState<number | null>(null);
+  const [portfolioPickerPortfolioId, setPortfolioPickerPortfolioId] = useState<string>("none");
+  const [portfolioPickerRole, setPortfolioPickerRole] = useState<string>("");
 
   // Queries
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
@@ -708,6 +723,14 @@ export default function ClientDetail() {
     queryKey: ["/api/clients"],
   });
 
+  const { data: clientPortfolios = [] } = useQuery<BuildingPortfolio[]>({
+    queryKey: ["/api/portfolios", { clientId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/portfolios?clientId=${clientId}`, { credentials: "include" });
+      return res.json();
+    },
+  });
+
   const { data: allBuildings = [] } = useQuery<Array<{ id: number; name: string; address?: string | null; lat?: string | null; lng?: string | null; notes?: string | null; contactName: string; contactId: number | null; type: "building" | "office" }>>({
     queryKey: ["/api/clients", clientId, "all-buildings"],
   });
@@ -737,9 +760,15 @@ export default function ClientDetail() {
       const res = await apiRequest("POST", `/api/clients/${clientId}/contacts`, data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async (newContact: ClientContact) => {
+      if (addContactPortfolioId !== "none") {
+        await apiRequest("POST", `/api/portfolios/${addContactPortfolioId}/contacts`, { contactId: newContact.id, role: null });
+        queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/portfolios", { clientId }] });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
       setIsContactDialogOpen(false);
+      setAddContactPortfolioId("none");
       contactForm.reset();
       toast({ title: "Success", description: "Contact added successfully" });
     },
@@ -1617,6 +1646,7 @@ export default function ClientDetail() {
                                 contact={contact}
                                 onEdit={openEditContact}
                                 onDelete={(id) => { if (confirm("Delete this contact?")) deleteContactMutation.mutate(id); }}
+                                onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
                               />
                             ))}
                           </div>
@@ -1669,6 +1699,7 @@ export default function ClientDetail() {
                               contact={contact}
                               onEdit={openEditContact}
                               onDelete={(id) => { if (confirm("Delete this contact?")) deleteContactMutation.mutate(id); }}
+                              onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
                             />
                           ))}
                         </div>
@@ -1839,6 +1870,22 @@ export default function ClientDetail() {
                         </FormItem>
                       )}
                     />
+                    {clientPortfolios.length > 0 && (
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">Assign to Portfolio <span className="text-muted-foreground font-normal">(optional)</span></label>
+                        <Select value={addContactPortfolioId} onValueChange={setAddContactPortfolioId}>
+                          <SelectTrigger data-testid="select-add-contact-portfolio">
+                            <SelectValue placeholder="Select portfolio (optional)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No portfolio</SelectItem>
+                            {clientPortfolios.map(p => (
+                              <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                     <DialogFooter className="pt-4">
                       <Button type="submit" className="w-full h-11" disabled={createContactMutation.isPending} data-testid="button-submit-contact">
                         {createContactMutation.isPending ? "Adding..." : "Add Contact"}
@@ -1846,6 +1893,64 @@ export default function ClientDetail() {
                     </DialogFooter>
                   </form>
                 </Form>
+              </DialogContent>
+            </Dialog>
+
+            {/* Add to Portfolio Dialog */}
+            <Dialog open={portfolioPickerContactId !== null} onOpenChange={open => { if (!open) { setPortfolioPickerContactId(null); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } }}>
+              <DialogContent className="sm:max-w-[380px]">
+                <DialogHeader>
+                  <DialogTitle>Add to Portfolio</DialogTitle>
+                  <DialogDescription>
+                    Assign {contacts?.find(c => c.id === portfolioPickerContactId)?.name ?? "this contact"} to a portfolio for {client?.name}.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 py-2">
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Portfolio</label>
+                    <Select value={portfolioPickerPortfolioId} onValueChange={setPortfolioPickerPortfolioId}>
+                      <SelectTrigger data-testid="select-portfolio-picker">
+                        <SelectValue placeholder="Select a portfolio" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Select a portfolio…</SelectItem>
+                        {clientPortfolios.map(p => (
+                          <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Role in Portfolio <span className="text-muted-foreground font-normal">(optional)</span></label>
+                    <Input
+                      placeholder="e.g. Decision Maker, Facility Manager"
+                      value={portfolioPickerRole}
+                      onChange={e => setPortfolioPickerRole(e.target.value)}
+                      data-testid="input-portfolio-picker-role"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => { setPortfolioPickerContactId(null); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); }}>Cancel</Button>
+                  <Button
+                    disabled={portfolioPickerPortfolioId === "none"}
+                    onClick={async () => {
+                      if (!portfolioPickerContactId || portfolioPickerPortfolioId === "none") return;
+                      await apiRequest("POST", `/api/portfolios/${portfolioPickerPortfolioId}/contacts`, { contactId: portfolioPickerContactId, role: portfolioPickerRole.trim() || null });
+                      queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/portfolios", { clientId }] });
+                      setPortfolioPickerContactId(null);
+                      setPortfolioPickerPortfolioId("none");
+                      setPortfolioPickerRole("");
+                      const contactName = contacts?.find(c => c.id === portfolioPickerContactId)?.name ?? "Contact";
+                      const portfolioName = clientPortfolios.find(p => String(p.id) === portfolioPickerPortfolioId)?.name ?? "portfolio";
+                      toast({ title: "Added to portfolio", description: `${contactName} added to ${portfolioName}` });
+                    }}
+                    data-testid="button-confirm-add-to-portfolio"
+                  >
+                    Add to Portfolio
+                  </Button>
+                </DialogFooter>
               </DialogContent>
             </Dialog>
 
@@ -2120,6 +2225,30 @@ export default function ClientDetail() {
                     ))}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Company Portfolios section */}
+            <Card className="border-none shadow-sm bg-card mt-4">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Company Portfolios</CardTitle>
+                <CardDescription>Manage building portfolios linked to {client.name}</CardDescription>
+              </CardHeader>
+              <CardContent className="pb-6 px-0">
+                <PortfolioManager
+                  filterClientId={clientId}
+                  allBuildings={(allBuildings as any[]).filter(b => b.type === "building").map(b => ({
+                    id: b.id,
+                    name: b.name,
+                    address: b.address ?? null,
+                    lat: b.lat ?? null,
+                    lng: b.lng ?? null,
+                    notes: null,
+                    contactId: b.contactId,
+                  }))}
+                  allContacts={contacts ?? []}
+                  clients={client ? [client] : []}
+                />
               </CardContent>
             </Card>
           </TabsContent>
