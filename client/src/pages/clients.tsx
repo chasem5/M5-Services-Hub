@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, lazy, Suspense } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   Plus, 
@@ -30,7 +30,7 @@ import {
   Map,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
-import { MapView } from "@/pages/map";
+const MapView = lazy(() => import("@/pages/map").then(m => ({ default: m.MapView })));
 
 // ── CSV utilities ────────────────────────────────────────────────────────────
 
@@ -1270,7 +1270,9 @@ export default function Customers() {
         {/* ── Map Tab ── */}
         <TabsContent value="map">
           <div className="rounded-lg border overflow-hidden" style={{ height: "640px" }}>
-            <MapView />
+            <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground">Loading map...</div>}>
+              <MapView />
+            </Suspense>
           </div>
         </TabsContent>
       </Tabs>
