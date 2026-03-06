@@ -70,6 +70,10 @@ export async function registerRoutes(
   await storage.seedDefaultTaskColumns();
   // Seed default role permissions and configs on startup
   await storage.seedDefaultPermissions();
+  // Promote initial admin on startup if env var is set
+  if (process.env.INITIAL_ADMIN_EMAIL) {
+    await storage.seedInitialAdmin(process.env.INITIAL_ADMIN_EMAIL);
+  }
 
   // Helper to log activity
   const logActivity = async (req: any, entityType: any, entityId: number, action: string, metadata?: any) => {

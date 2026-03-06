@@ -224,6 +224,7 @@ export interface IStorage {
   getRolePermission(roleKey: string, module: string): Promise<RolePermission | undefined>;
   upsertRolePermission(roleKey: string, module: string, accessLevel: string): Promise<RolePermission>;
   seedDefaultPermissions(): Promise<void>;
+  seedInitialAdmin(email: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -906,6 +907,10 @@ export class DatabaseStorage implements IStorage {
         await db.insert(roleConfigs).values(r);
       }
     }
+  }
+
+  async seedInitialAdmin(email: string): Promise<void> {
+    await db.update(users).set({ role: "admin" }).where(eq(users.email, email));
   }
 }
 
