@@ -20,6 +20,7 @@ import MeetingDetail from "@/pages/meeting-detail";
 import InvitePage from "@/pages/invite";
 import AdminPage from "@/pages/admin";
 import EmailSync from "@/pages/email-sync";
+import Announcements from "@/pages/announcements";
 
 function ProtectedRouter() {
   return (
@@ -39,6 +40,7 @@ function ProtectedRouter() {
         <Route path="/settings" component={Settings} />
         <Route path="/admin" component={AdminPage} />
         <Route path="/email" component={EmailSync} />
+        <Route path="/announcements" component={Announcements} />
         <Route component={NotFound} />
       </Switch>
     </ProtectedLayout>

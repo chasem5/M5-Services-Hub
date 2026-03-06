@@ -70,6 +70,7 @@ const MODULE_DEFS = [
   { key: "service_catalog", label: "Service Catalog", description: "Standard services and pricing" },
   { key: "proposals", label: "Proposals", description: "Client proposal documents" },
   { key: "email_sync", label: "Email Sync", description: "Gmail sync, AI analysis and follow-up reminders" },
+  { key: "announcements", label: "Announcements", description: "Company broadcasts, task assignments and reminders" },
 ];
 
 const ACCESS_LEVELS = [

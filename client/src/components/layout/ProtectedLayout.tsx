@@ -5,9 +5,37 @@ import { AppSidebar } from "@/components/layout/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SiReplit } from "react-icons/si";
+import { Megaphone } from "lucide-react";
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger } from "@/components/GlobalSearch";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
+
+function AnnouncementsBadge() {
+  const { data } = useQuery<{ count: number }>({
+    queryKey: ["/api/announcements/unread-count"],
+    refetchInterval: 60000,
+  });
+  const count = data?.count ?? 0;
+  return (
+    <Link href="/announcements">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="relative"
+        data-testid="button-announcements-badge"
+      >
+        <Megaphone className="h-5 w-5" />
+        {count > 0 && (
+          <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[10px] font-bold text-white flex items-center justify-center">
+            {count > 9 ? "9+" : count}
+          </span>
+        )}
+      </Button>
+    </Link>
+  );
+}
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -89,6 +117,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
               <GlobalSearchTrigger onClick={() => setSearchOpen(true)} />
             </div>
             <div className="flex items-center gap-2">
+              <AnnouncementsBadge />
               <RemindersDropdown />
             </div>
           </header>

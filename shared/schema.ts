@@ -278,6 +278,33 @@ export const insertEmailMessageSchema = createInsertSchema(emailMessages).omit({
 export type EmailMessage = typeof emailMessages.$inferSelect;
 export type InsertEmailMessage = z.infer<typeof insertEmailMessageSchema>;
 
+export const announcements = pgTable("announcements", {
+  id: serial("id").primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  priority: varchar("priority", { length: 20 }).notNull().default("normal"),
+  type: varchar("type", { length: 20 }).notNull().default("announcement"),
+  targetUserIds: text("target_user_ids").array(),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const announcementReads = pgTable("announcement_reads", {
+  id: serial("id").primaryKey(),
+  announcementId: integer("announcement_id").references(() => announcements.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  readAt: timestamp("read_at").defaultNow().notNull(),
+});
+
+export const insertAnnouncementSchema = createInsertSchema(announcements).omit({ id: true, createdAt: true }).extend({
+  targetUserIds: z.array(z.string()).optional().nullable(),
+  priority: z.enum(["normal", "urgent"]).default("normal"),
+  type: z.enum(["announcement", "task", "reminder"]).default("announcement"),
+});
+export type Announcement = typeof announcements.$inferSelect;
+export type InsertAnnouncement = z.infer<typeof insertAnnouncementSchema>;
+export type AnnouncementRead = typeof announcementReads.$inferSelect;
+
 export const roleConfigs = pgTable("role_configs", {
   roleKey: varchar("role_key").primaryKey(),
   displayName: varchar("display_name").notNull(),

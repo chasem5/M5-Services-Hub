@@ -25,6 +25,8 @@ import {
   roleConfigs,
   rolePermissions,
   emailMessages,
+  announcements,
+  announcementReads,
   type User,
   type UpsertUser,
   type Client,
@@ -71,6 +73,8 @@ import {
   type RolePermission,
   type EmailMessage,
   type InsertEmailMessage,
+  type Announcement,
+  type InsertAnnouncement,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -238,6 +242,13 @@ export interface IStorage {
   upsertEmailMessage(data: InsertEmailMessage): Promise<EmailMessage>;
   updateEmailMessage(id: number, data: Partial<InsertEmailMessage>): Promise<EmailMessage>;
   listUnrespondedInboundEmails(olderThanDays: number, userId: string): Promise<EmailMessage[]>;
+
+  // Announcements
+  listAnnouncements(userId: string): Promise<Announcement[]>;
+  getUnreadAnnouncementCount(userId: string): Promise<number>;
+  createAnnouncement(data: InsertAnnouncement): Promise<Announcement>;
+  markAnnouncementRead(announcementId: number, userId: string): Promise<void>;
+  markAllAnnouncementsRead(userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -894,6 +905,7 @@ export class DatabaseStorage implements IStorage {
       { roleKey: "manager", module: "service_catalog", accessLevel: "full" },
       { roleKey: "manager", module: "proposals", accessLevel: "full" },
       { roleKey: "manager", module: "email_sync", accessLevel: "full" },
+      { roleKey: "manager", module: "announcements", accessLevel: "full" },
       { roleKey: "member", module: "dashboard", accessLevel: "view_all" },
       { roleKey: "member", module: "leads", accessLevel: "own_only" },
       { roleKey: "member", module: "customers", accessLevel: "own_only" },
@@ -903,6 +915,7 @@ export class DatabaseStorage implements IStorage {
       { roleKey: "member", module: "service_catalog", accessLevel: "view_all" },
       { roleKey: "member", module: "proposals", accessLevel: "view_all" },
       { roleKey: "member", module: "email_sync", accessLevel: "own_only" },
+      { roleKey: "member", module: "announcements", accessLevel: "view_all" },
     ];
     for (const d of defaults) {
       const existing = await this.getRolePermission(d.roleKey, d.module);
@@ -1029,6 +1042,49 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return results;
+  }
+
+  // Announcements
+  async listAnnouncements(userId: string): Promise<Announcement[]> {
+    const all = await db.select().from(announcements).orderBy(desc(announcements.createdAt));
+    return all.filter((a) => !a.targetUserIds || a.targetUserIds.includes(userId));
+  }
+
+  async getUnreadAnnouncementCount(userId: string): Promise<number> {
+    const visible = await this.listAnnouncements(userId);
+    if (visible.length === 0) return 0;
+    const reads = await db
+      .select()
+      .from(announcementReads)
+      .where(eq(announcementReads.userId, userId));
+    const readIds = new Set(reads.map((r) => r.announcementId));
+    return visible.filter((a) => !readIds.has(a.id)).length;
+  }
+
+  async createAnnouncement(data: InsertAnnouncement): Promise<Announcement> {
+    const [created] = await db.insert(announcements).values(data).returning();
+    return created;
+  }
+
+  async markAnnouncementRead(announcementId: number, userId: string): Promise<void> {
+    const existing = await db
+      .select()
+      .from(announcementReads)
+      .where(and(eq(announcementReads.announcementId, announcementId), eq(announcementReads.userId, userId)));
+    if (existing.length === 0) {
+      await db.insert(announcementReads).values({ announcementId, userId });
+    }
+  }
+
+  async markAllAnnouncementsRead(userId: string): Promise<void> {
+    const visible = await this.listAnnouncements(userId);
+    const reads = await db.select().from(announcementReads).where(eq(announcementReads.userId, userId));
+    const readIds = new Set(reads.map((r) => r.announcementId));
+    for (const a of visible) {
+      if (!readIds.has(a.id)) {
+        await db.insert(announcementReads).values({ announcementId: a.id, userId });
+      }
+    }
   }
 }
 

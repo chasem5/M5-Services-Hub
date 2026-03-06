@@ -756,6 +756,98 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     res.json(reminder);
   });
 
+  // Announcements
+  app.get("/api/announcements", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const items = await storage.listAnnouncements(userId);
+      const reads = await (async () => {
+        const { db } = await import("./db");
+        const { announcementReads } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        return db.select().from(announcementReads).where(eq(announcementReads.userId, userId));
+      })();
+      const readIds = new Set(reads.map((r: any) => r.announcementId));
+      const withRead = items.map((a) => ({ ...a, isRead: readIds.has(a.id) }));
+      res.json(withRead);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/announcements/unread-count", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const count = await storage.getUnreadAnnouncementCount(userId);
+      res.json({ count });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/announcements", isAuthenticated, requireModuleFullAccess("announcements"), async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const { insertAnnouncementSchema } = await import("@shared/schema");
+      const data = insertAnnouncementSchema.parse({ ...req.body, createdBy: userId });
+      const announcement = await storage.createAnnouncement(data);
+
+      const targetIds: string[] = data.targetUserIds?.length
+        ? data.targetUserIds
+        : (await storage.listUsers()).map((u: any) => u.id).filter((id: string) => id !== userId);
+
+      if (data.type === "task" && data.title) {
+        const { insertTaskSchema } = await import("@shared/schema");
+        for (const targetUserId of targetIds) {
+          const taskData = insertTaskSchema.parse({
+            title: data.title,
+            description: data.message || null,
+            assignedTo: targetUserId,
+            priority: data.priority === "urgent" ? "high" : "medium",
+            status: "todo",
+          });
+          await storage.createTask(taskData);
+        }
+      } else if (data.type === "reminder" && data.title) {
+        const { insertReminderSchema } = await import("@shared/schema");
+        for (const targetUserId of targetIds) {
+          const reminderData = insertReminderSchema.parse({
+            userId: targetUserId,
+            title: data.title,
+            message: data.message || null,
+            dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          });
+          await storage.createReminder(reminderData);
+        }
+      }
+
+      res.json(announcement);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/announcements/:id/read", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const announcementId = parseInt(req.params.id);
+      await storage.markAnnouncementRead(announcementId, userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/announcements/read-all", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      await storage.markAllAnnouncementsRead(userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Service Catalog
   app.get("/api/service-catalog", isAuthenticated, async (_req, res) => {
     const items = await storage.listServiceCatalog();
@@ -1218,7 +1310,7 @@ Return only valid JSON, no markdown.`;
       return res.status(400).json({ message: "A role with that name already exists" });
     }
     const config = await storage.createRoleConfig(roleKey, displayName);
-    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals", "email_sync"];
+    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals", "email_sync", "announcements"];
     for (const module of MODULES) {
       await storage.upsertRolePermission(roleKey, module, "own_only");
     }
@@ -1553,7 +1645,7 @@ Respond with this JSON:
     const user = await storage.getUser(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals", "email_sync"];
+    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals", "email_sync", "announcements"];
 
     let permissions: Record<string, string>;
     if (user.role === "admin") {
