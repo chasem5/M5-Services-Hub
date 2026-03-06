@@ -633,21 +633,77 @@ export class DatabaseStorage implements IStorage {
 
   // Dashboard
   async getDashboardStats(): Promise<any> {
-    const activeLeads = await db.select({ count: sql<number>`count(*)` }).from(leads).where(sql`${leads.stage} NOT IN ('won', 'lost')`);
-    const pipelineValue = await db.select({ total: sql<string>`sum(${leads.value})` }).from(leads).where(sql`${leads.stage} NOT IN ('won', 'lost')`);
-    const openTasks = await db.select({ count: sql<number>`count(*)` }).from(tasks).where(sql`${tasks.status} != 'done'`);
-    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const tasksDueToday = await db.select({ count: sql<number>`count(*)` }).from(tasks).where(and(sql`${tasks.dueDate} >= ${today}`, sql`${tasks.dueDate} < ${tomorrow}`));
-    
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const monthlyRevenue = await db.select({ total: sql<string>`sum(${leads.value})` }).from(leads).where(and(eq(leads.stage, 'won'), sql`${leads.updatedAt} >= ${firstDayOfMonth}`));
 
-    const leadStageCounts = await db.select({ stage: leads.stage, count: sql<number>`count(*)` }).from(leads).groupBy(leads.stage);
+    const [
+      activeLeads,
+      pipelineValue,
+      openTasks,
+      tasksDueToday,
+      monthlyRevenue,
+      leadStageCounts,
+      wonLeads,
+      lostLeads,
+      overdueTasks,
+      estimateStatusCounts,
+      bdSpendThisMonth,
+    ] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(leads).where(sql`${leads.stage} NOT IN ('won', 'lost')`),
+      db.select({ total: sql<string>`sum(${leads.value})` }).from(leads).where(sql`${leads.stage} NOT IN ('won', 'lost')`),
+      db.select({ count: sql<number>`count(*)` }).from(tasks).where(sql`${tasks.status} != 'done'`),
+      db.select({ count: sql<number>`count(*)` }).from(tasks).where(and(sql`${tasks.dueDate} >= ${today}`, sql`${tasks.dueDate} < ${tomorrow}`)),
+      db.select({ total: sql<string>`sum(${leads.value})` }).from(leads).where(and(eq(leads.stage, 'won'), sql`${leads.updatedAt} >= ${firstDayOfMonth}`)),
+      db.select({ stage: leads.stage, count: sql<number>`count(*)` }).from(leads).groupBy(leads.stage),
+      db.select({ count: sql<number>`count(*)` }).from(leads).where(eq(leads.stage, 'won')),
+      db.select({ count: sql<number>`count(*)` }).from(leads).where(eq(leads.stage, 'lost')),
+      db.select({ count: sql<number>`count(*)` }).from(tasks).where(and(sql`${tasks.status} != 'done'`, sql`${tasks.dueDate} < ${today}`, sql`${tasks.dueDate} IS NOT NULL`)),
+      db.select({ status: estimates.status, count: sql<number>`count(*)` }).from(estimates).groupBy(estimates.status),
+      db.select({ total: sql<string>`sum(${bdSpendEntries.amount})` }).from(bdSpendEntries).where(sql`${bdSpendEntries.date} >= ${firstDayOfMonth}`),
+    ]);
+
+    // Win rate
+    const won = Number(wonLeads[0].count);
+    const lost = Number(lostLeads[0].count);
+    const winRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 100) : null;
+
+    // Revenue by month — last 6 months
+    const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+    const revenueRows = await db
+      .select({
+        month: sql<string>`TO_CHAR(${leads.updatedAt}, 'YYYY-MM')`,
+        revenue: sql<string>`sum(${leads.value})`,
+      })
+      .from(leads)
+      .where(and(eq(leads.stage, 'won'), sql`${leads.updatedAt} >= ${sixMonthsAgo}`))
+      .groupBy(sql`TO_CHAR(${leads.updatedAt}, 'YYYY-MM')`)
+      .orderBy(sql`TO_CHAR(${leads.updatedAt}, 'YYYY-MM')`);
+
+    // Fill in all 6 months (even empty ones)
+    const revenueByMonth: { month: string; revenue: string }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const found = revenueRows.find(r => r.month === key);
+      revenueByMonth.push({ month: key, revenue: found?.revenue || "0" });
+    }
+
+    // Top 5 clients by open pipeline value
+    const topClientsRows = await db
+      .select({
+        clientId: clients.id,
+        name: clients.name,
+        pipelineValue: sql<string>`sum(${leads.value})`,
+      })
+      .from(leads)
+      .innerJoin(clients, eq(leads.clientId, clients.id))
+      .where(sql`${leads.stage} NOT IN ('won', 'lost') AND ${leads.clientId} IS NOT NULL`)
+      .groupBy(clients.id, clients.name)
+      .orderBy(sql`sum(${leads.value}) DESC`)
+      .limit(5);
 
     return {
       activeLeads: activeLeads[0].count,
@@ -655,7 +711,13 @@ export class DatabaseStorage implements IStorage {
       openTasks: openTasks[0].count,
       tasksDueToday: tasksDueToday[0].count,
       monthlyRevenue: monthlyRevenue[0].total || "0",
-      leadStageCounts
+      leadStageCounts,
+      winRate,
+      overdueTasks: overdueTasks[0].count,
+      revenueByMonth,
+      estimateStatusCounts,
+      bdSpendThisMonth: bdSpendThisMonth[0].total || "0",
+      topClients: topClientsRows,
     };
   }
 
