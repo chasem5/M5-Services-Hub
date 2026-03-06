@@ -229,6 +229,9 @@ export interface IStorage {
   seedDefaultPermissions(): Promise<void>;
   seedInitialAdmin(email: string): Promise<void>;
 
+  // Gmail Tokens
+  updateGmailTokens(userId: string, data: { gmailAccessToken: string; gmailRefreshToken: string | null; gmailTokenExpiry: Date | null; gmailEmail: string | null; gmailConnected: boolean }): Promise<User>;
+
   // Email Messages
   listEmailMessages(filters?: { clientId?: number; leadId?: number; userId?: string }): Promise<EmailMessage[]>;
   getEmailMessage(id: number): Promise<EmailMessage | undefined>;
@@ -923,6 +926,32 @@ export class DatabaseStorage implements IStorage {
 
   async seedInitialAdmin(email: string): Promise<void> {
     await db.update(users).set({ role: "admin" }).where(eq(users.email, email));
+  }
+
+  // Gmail Tokens
+  async updateGmailTokens(
+    userId: string,
+    data: {
+      gmailAccessToken: string;
+      gmailRefreshToken: string | null;
+      gmailTokenExpiry: Date | null;
+      gmailEmail: string | null;
+      gmailConnected: boolean;
+    }
+  ): Promise<User> {
+    const [updated] = await db
+      .update(users)
+      .set({
+        gmailAccessToken: data.gmailAccessToken,
+        gmailRefreshToken: data.gmailRefreshToken,
+        gmailTokenExpiry: data.gmailTokenExpiry,
+        gmailEmail: data.gmailEmail,
+        gmailConnected: data.gmailConnected,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
   }
 
   // Email Messages

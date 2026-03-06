@@ -1261,6 +1261,67 @@ Return only valid JSON, no markdown.`;
     res.json(perm);
   });
 
+  // Gmail OAuth routes
+  app.get("/api/auth/gmail/connect", isAuthenticated, async (req, res) => {
+    try {
+      const { getGmailAuthUrl, buildRedirectUri } = await import("./gmail");
+      const userId = (req as any).user?.claims?.sub;
+      const host = req.get("host") ?? req.hostname;
+      const redirectUri = buildRedirectUri(host);
+      const url = getGmailAuthUrl(redirectUri, userId);
+      res.json({ url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/auth/gmail/callback", async (req, res) => {
+    const { code, state: userId, error } = req.query as Record<string, string>;
+    if (error || !code || !userId) {
+      return res.redirect("/settings?gmail=error");
+    }
+    try {
+      const { exchangeCodeForTokens, buildRedirectUri } = await import("./gmail");
+      const host = req.get("host") ?? req.hostname;
+      const redirectUri = buildRedirectUri(host);
+      const tokens = await exchangeCodeForTokens(code, redirectUri);
+      await storage.updateGmailTokens(userId, {
+        gmailAccessToken: tokens.access_token,
+        gmailRefreshToken: tokens.refresh_token,
+        gmailTokenExpiry: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+        gmailEmail: tokens.email,
+        gmailConnected: true,
+      });
+      res.redirect("/settings?gmail=connected");
+    } catch (err: any) {
+      console.error("Gmail OAuth callback error:", err);
+      res.redirect("/settings?gmail=error");
+    }
+  });
+
+  app.delete("/api/auth/gmail/disconnect", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      await storage.updateGmailTokens(userId, {
+        gmailAccessToken: "",
+        gmailRefreshToken: null,
+        gmailTokenExpiry: null,
+        gmailEmail: null,
+        gmailConnected: false,
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/auth/gmail/status", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ connected: user.gmailConnected, gmailEmail: user.gmailEmail ?? null });
+  });
+
   // Email Sync
   app.post("/api/email/sync", isAuthenticated, async (req, res) => {
     try {
@@ -1268,9 +1329,14 @@ Return only valid JSON, no markdown.`;
       const { getGmailMessages, getUserGmailAddress } = await import("./gmail");
       const { openai } = await import("./openai");
 
+      const currentUser = await storage.getUser(userId);
+      if (!currentUser || !currentUser.gmailConnected) {
+        return res.status(400).json({ message: "Connect your Gmail account in Settings before syncing." });
+      }
+
       const [rawEmails, myAddress] = await Promise.all([
-        getGmailMessages(50),
-        getUserGmailAddress(),
+        getGmailMessages(currentUser, 50),
+        getUserGmailAddress(currentUser),
       ]);
 
       const allClients = await storage.listClients();
