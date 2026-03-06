@@ -156,7 +156,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertClientSchema, insertClientContactSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate, type ContactStage } from "@shared/schema";
+import { insertClientSchema, insertClientContactSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate, type ContactStage, type User } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -386,8 +386,10 @@ export default function Customers() {
   const [tierFilter, setTierFilter] = useState("all");
   const [contactTierFilter, setContactTierFilter] = useState("all");
   const [contactStageFilter, setContactStageFilter] = useState("all");
+  const [contactOwnerFilter, setContactOwnerFilter] = useState("all");
   const [stageManagerOpen, setStageManagerOpen] = useState(false);
   const [openStagePickerId, setOpenStagePickerId] = useState<number | null>(null);
+  const [openOwnerPickerId, setOpenOwnerPickerId] = useState<number | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -424,6 +426,10 @@ export default function Customers() {
 
   const { data: contactStages = [] } = useQuery<ContactStage[]>({
     queryKey: ["/api/contact-stages"],
+  });
+
+  const { data: users = [] } = useQuery<Pick<User, "id" | "firstName" | "lastName" | "email">[]>({
+    queryKey: ["/api/users"],
   });
 
   const { data: allBuildings = [], isLoading: isLoadingBuildings } = useQuery<ContactBuilding[]>({
@@ -594,6 +600,7 @@ export default function Customers() {
       isPrimary: false,
       serviceNeeds: [] as string[],
       stageId: null as number | null,
+      ownerId: null as string | null,
     },
   });
 
@@ -619,6 +626,31 @@ export default function Customers() {
     },
     onError: () => toast({ title: "Failed to update stage", variant: "destructive" }),
   });
+
+  const updateContactOwnerMutation = useMutation({
+    mutationFn: ({ id, ownerId }: { id: number; ownerId: string | null }) =>
+      apiRequest("PATCH", `/api/contacts/${id}`, { ownerId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+      setOpenOwnerPickerId(null);
+    },
+    onError: () => toast({ title: "Failed to update owner", variant: "destructive" }),
+  });
+
+  const getUserDisplayName = (userId: string | null | undefined) => {
+    if (!userId) return null;
+    const u = users.find(u => u.id === userId);
+    return u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email : null;
+  };
+
+  const getUserInitials = (userId: string | null | undefined) => {
+    if (!userId) return null;
+    const u = users.find(u => u.id === userId);
+    if (!u) return null;
+    const first = u.firstName?.[0] ?? "";
+    const last = u.lastName?.[0] ?? "";
+    return (first + last).toUpperCase() || (u.email?.[0]?.toUpperCase() ?? "?");
+  };
 
   const onAddContact = (data: any) => {
     const payload = {
@@ -679,7 +711,9 @@ export default function Customers() {
       const matchesTier = contactTierFilter === "all" || contact.tier === contactTierFilter;
       const matchesStage = contactStageFilter === "all" ||
         (contactStageFilter === "none" ? !contact.stageId : contact.stageId === Number(contactStageFilter));
-      return matchesSearch && matchesCompany && matchesStatus && matchesTier && matchesStage;
+      const matchesOwner = contactOwnerFilter === "all" ||
+        (contactOwnerFilter === "none" ? !(contact as any).ownerId : (contact as any).ownerId === contactOwnerFilter);
+      return matchesSearch && matchesCompany && matchesStatus && matchesTier && matchesStage && matchesOwner;
     })
     .sort((a, b) => {
       let cmp = 0;
@@ -1244,6 +1278,21 @@ export default function Customers() {
                     ))}
                   </SelectContent>
                 </Select>
+                {/* Owner filter */}
+                <Select value={contactOwnerFilter} onValueChange={setContactOwnerFilter}>
+                  <SelectTrigger className="w-[150px] h-10" data-testid="select-contact-owner-filter">
+                    <SelectValue placeholder="All Owners" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Owners</SelectItem>
+                    <SelectItem value="none">No Owner</SelectItem>
+                    {users.map(u => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {/* Manage stages button */}
                 <Button
                   variant="outline"
@@ -1255,9 +1304,9 @@ export default function Customers() {
                   <Settings className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Stages</span>
                 </Button>
-                {(contactSearch || contactCompanyFilter !== "all" || contactStatusFilter !== "all" || contactTierFilter !== "all" || contactStageFilter !== "all") && (
+                {(contactSearch || contactCompanyFilter !== "all" || contactStatusFilter !== "all" || contactTierFilter !== "all" || contactStageFilter !== "all" || contactOwnerFilter !== "all") && (
                   <button
-                    onClick={() => { setContactSearch(""); setContactCompanyFilter("all"); setContactStatusFilter("all"); setContactTierFilter("all"); setContactStageFilter("all"); }}
+                    onClick={() => { setContactSearch(""); setContactCompanyFilter("all"); setContactStatusFilter("all"); setContactTierFilter("all"); setContactStageFilter("all"); setContactOwnerFilter("all"); }}
                     className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground h-10 px-3 rounded-md border border-border/50 hover:bg-muted/50 transition-colors"
                     data-testid="button-clear-contact-filters"
                   >
@@ -1305,6 +1354,7 @@ export default function Customers() {
                         })}
                         <TableHead className="font-bold">Contact Info</TableHead>
                         <TableHead className="font-bold">Stage</TableHead>
+                        <TableHead className="font-bold">Owner</TableHead>
                         <TableHead className="font-bold">Tier</TableHead>
                         {(["status", "spend"] as const).map(field => {
                           const labels = { status: "Status", spend: "BD Spend" };
@@ -1432,6 +1482,53 @@ export default function Customers() {
                                       {stage.label}
                                     </span>
                                     {contact.stageId === stage.id && <span className="ml-auto text-primary text-xs">✓</span>}
+                                  </button>
+                                ))}
+                              </PopoverContent>
+                            </Popover>
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Popover
+                              open={openOwnerPickerId === contact.id}
+                              onOpenChange={(v) => setOpenOwnerPickerId(v ? contact.id : null)}
+                            >
+                              <PopoverTrigger asChild>
+                                <button
+                                  className="flex items-center gap-1.5 text-xs hover:opacity-80 transition-opacity"
+                                  data-testid={`button-owner-${contact.id}`}
+                                >
+                                  {(contact as any).ownerId ? (
+                                    <>
+                                      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                                        {getUserInitials((contact as any).ownerId)}
+                                      </span>
+                                      <span className="text-foreground font-medium">{getUserDisplayName((contact as any).ownerId)}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-muted-foreground/60 italic text-[11px]">Unassigned</span>
+                                  )}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-48 p-1" align="start">
+                                <button
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-muted/60 text-muted-foreground"
+                                  onClick={() => updateContactOwnerMutation.mutate({ id: contact.id, ownerId: null })}
+                                >
+                                  <span className="h-5 w-5 rounded-full border-2 border-dashed border-muted-foreground/40" />
+                                  Unassigned
+                                </button>
+                                {users.map(u => (
+                                  <button
+                                    key={u.id}
+                                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-muted/60"
+                                    onClick={() => updateContactOwnerMutation.mutate({ id: contact.id, ownerId: u.id })}
+                                    data-testid={`option-owner-${u.id}-contact-${contact.id}`}
+                                  >
+                                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                                      {getUserInitials(u.id)}
+                                    </span>
+                                    <span className="truncate">{`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email}</span>
+                                    {(contact as any).ownerId === u.id && <span className="ml-auto text-primary text-xs">✓</span>}
                                   </button>
                                 ))}
                               </PopoverContent>
@@ -1658,6 +1755,30 @@ export default function Customers() {
                                 <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(s.color)}`}>
                                   {s.label}
                                 </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField control={contactForm.control} name={"ownerId" as any}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Relationship Owner</FormLabel>
+                        <Select
+                          value={field.value ?? "none"}
+                          onValueChange={(v) => field.onChange(v === "none" ? null : v)}
+                        >
+                          <SelectTrigger data-testid="select-new-contact-owner">
+                            <SelectValue placeholder="Unassigned" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Unassigned</SelectItem>
+                            {users.map(u => (
+                              <SelectItem key={u.id} value={u.id}>
+                                {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email}
                               </SelectItem>
                             ))}
                           </SelectContent>

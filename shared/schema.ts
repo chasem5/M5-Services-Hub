@@ -46,6 +46,7 @@ export const clientContacts = pgTable("client_contacts", {
   clientId: integer("client_id").references(() => clients.id).notNull(),
   officeId: integer("office_id").references(() => clientOffices.id),
   stageId: integer("stage_id").references(() => contactStages.id),
+  ownerId: varchar("owner_id").references(() => users.id),
   name: varchar("name").notNull(),
   title: varchar("title"),
   email: varchar("email"),

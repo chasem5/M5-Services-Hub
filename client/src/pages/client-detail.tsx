@@ -415,6 +415,14 @@ function ContactCard({
                     </span>
                   ) : null;
                 })()}
+                {(contact as any).ownerId && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border border-border/50 bg-muted/40 text-muted-foreground" data-testid={`badge-contact-owner-${contact.id}`}>
+                    <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary">
+                      {getUserInitials((contact as any).ownerId)}
+                    </span>
+                    {getUserDisplayName((contact as any).ownerId)}
+                  </span>
+                )}
                 {(contact as any).linkedinUrl && (
                   <a
                     href={(contact as any).linkedinUrl}
@@ -759,6 +767,24 @@ export default function ClientDetail() {
     queryKey: ["/api/contact-stages"],
   });
 
+  const { data: users = [] } = useQuery<{id: string; firstName: string|null; lastName: string|null; email: string|null}[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const getUserDisplayName = (userId: string) => {
+    const u = users.find(u => u.id === userId);
+    if (!u) return "Unknown";
+    return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || "Unknown";
+  };
+
+  const getUserInitials = (userId: string) => {
+    const u = users.find(u => u.id === userId);
+    if (!u) return "?";
+    const first = u.firstName?.[0] ?? "";
+    const last = u.lastName?.[0] ?? "";
+    return (first + last).toUpperCase() || (u.email?.[0]?.toUpperCase() ?? "?");
+  };
+
   const { data: allContacts = [] } = useQuery<ClientContact[]>({
     queryKey: ["/api/client-contacts"],
   });
@@ -968,6 +994,7 @@ export default function ClientDetail() {
       isPrimary: false,
       tier: null as string | null,
       stageId: null as number | null,
+      ownerId: null as string | null,
       reportsTo: undefined as number | undefined,
       serviceNeeds: [] as string[],
     },
@@ -982,6 +1009,7 @@ export default function ClientDetail() {
       isPrimary: false,
       tier: null as string | null,
       stageId: null as number | null,
+      ownerId: null as string | null,
       reportsTo: null as number | null,
       officeId: null as number | null,
       clientId: clientId,
@@ -1007,6 +1035,7 @@ export default function ClientDetail() {
       isPrimary: contact.isPrimary,
       tier: (contact as any).tier ?? null,
       stageId: (contact as any).stageId ?? null,
+      ownerId: (contact as any).ownerId ?? null,
       reportsTo: contact.reportsTo ?? null,
       officeId: contact.officeId ?? null,
       clientId: contact.clientId,
@@ -1836,6 +1865,32 @@ export default function ClientDetail() {
                         </FormItem>
                       )}
                     />
+                    <FormField control={contactForm.control} name={"ownerId" as any}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Relationship Owner</FormLabel>
+                          <Select
+                            value={field.value ?? "none"}
+                            onValueChange={(v) => field.onChange(v === "none" ? null : v)}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-add-contact-owner">
+                                <SelectValue placeholder="Unassigned" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">Unassigned</SelectItem>
+                              {users.map(u => (
+                                <SelectItem key={u.id} value={u.id}>
+                                  {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField control={contactForm.control} name="isPrimary"
                       render={({ field }) => (
                         <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
@@ -2558,6 +2613,35 @@ export default function ClientDetail() {
                             <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(s.color)}`}>
                               {s.label}
                             </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editContactForm.control}
+                name={"ownerId" as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Relationship Owner</FormLabel>
+                    <Select
+                      value={field.value ?? "none"}
+                      onValueChange={(v) => field.onChange(v === "none" ? null : v)}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-contact-owner">
+                          <SelectValue placeholder="Unassigned" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">Unassigned</SelectItem>
+                        {users.map(u => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email}
                           </SelectItem>
                         ))}
                       </SelectContent>
