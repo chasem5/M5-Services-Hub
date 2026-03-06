@@ -25,6 +25,7 @@ import {
   roleConfigs,
   rolePermissions,
   emailMessages,
+  leadNotes,
   announcements,
   announcementReads,
   type User,
@@ -73,6 +74,8 @@ import {
   type RolePermission,
   type EmailMessage,
   type InsertEmailMessage,
+  type LeadNote,
+  type InsertLeadNote,
   type Announcement,
   type InsertAnnouncement,
 } from "@shared/schema";
@@ -235,6 +238,11 @@ export interface IStorage {
 
   // Gmail Tokens
   updateGmailTokens(userId: string, data: { gmailAccessToken: string; gmailRefreshToken: string | null; gmailTokenExpiry: Date | null; gmailEmail: string | null; gmailConnected: boolean }): Promise<User>;
+
+  // Lead Notes
+  listLeadNotes(leadId: number): Promise<LeadNote[]>;
+  createLeadNote(data: InsertLeadNote): Promise<LeadNote>;
+  deleteLeadNote(id: number): Promise<void>;
 
   // Email Messages
   listEmailMessages(filters?: { clientId?: number; leadId?: number; userId?: string }): Promise<EmailMessage[]>;
@@ -1042,6 +1050,20 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return results;
+  }
+
+  // Lead Notes
+  async listLeadNotes(leadId: number): Promise<LeadNote[]> {
+    return db.select().from(leadNotes).where(eq(leadNotes.leadId, leadId)).orderBy(desc(leadNotes.createdAt));
+  }
+
+  async createLeadNote(data: InsertLeadNote): Promise<LeadNote> {
+    const [note] = await db.insert(leadNotes).values(data).returning();
+    return note;
+  }
+
+  async deleteLeadNote(id: number): Promise<void> {
+    await db.delete(leadNotes).where(eq(leadNotes.id, id));
   }
 
   // Announcements

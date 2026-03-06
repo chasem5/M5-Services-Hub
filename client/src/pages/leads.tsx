@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatDistanceToNow } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   Lead, 
@@ -50,6 +51,8 @@ import {
   Eye,
   SlidersHorizontal,
   BookmarkPlus,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import {
   Card,
@@ -196,6 +199,140 @@ function getLeadNumericValue(lead: { value: string | number; valueType?: string 
     return TIER_VALUES[lead.valueTier] ?? 0;
   }
   return Number(lead.value);
+}
+
+interface LeadNote {
+  id: number;
+  leadId: number;
+  userId: string;
+  content: string;
+  createdAt: string;
+}
+
+function LeadNotesTab({ leadId }: { leadId: number }) {
+  const [draft, setDraft] = useState("");
+  const { toast } = useToast();
+  const { data: notes = [], isLoading } = useQuery<LeadNote[]>({
+    queryKey: ["/api/leads", leadId, "notes"],
+    queryFn: async () => {
+      const res = await fetch(`/api/leads/${leadId}/notes`, { credentials: "include" });
+      return res.json();
+    },
+  });
+
+  const { data: users = [] } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string | null }[]>({
+    queryKey: ["/api/users"],
+  });
+
+  function getUserName(userId: string) {
+    const u = users.find((m) => m.id === userId);
+    if (!u) return "Team Member";
+    if (u.firstName || u.lastName) return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim();
+    return u.email ?? "Team Member";
+  }
+
+  const addMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const res = await apiRequest("POST", `/api/leads/${leadId}/notes`, { content });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", leadId, "notes"] });
+      setDraft("");
+    },
+    onError: () => toast({ title: "Failed to save note", variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (noteId: number) => {
+      await apiRequest("DELETE", `/api/leads/${leadId}/notes/${noteId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", leadId, "notes"] });
+    },
+  });
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (draft.trim()) addMutation.mutate(draft.trim());
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <div className="relative">
+          <Textarea
+            placeholder="Log an interaction, call, meeting note... (Ctrl+Enter to save)"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={3}
+            className="pr-12 resize-none"
+            data-testid="textarea-lead-note-draft"
+          />
+          <Button
+            size="icon"
+            className="absolute bottom-2 right-2 h-7 w-7"
+            onClick={() => { if (draft.trim()) addMutation.mutate(draft.trim()); }}
+            disabled={!draft.trim() || addMutation.isPending}
+            data-testid="button-save-lead-note"
+          >
+            <Send className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Ctrl+Enter to save quickly</p>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2].map((i) => <div key={i} className="h-14 rounded bg-muted animate-pulse" />)}
+        </div>
+      ) : notes.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No notes yet — log your first interaction above</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {notes.map((note) => (
+            <div
+              key={note.id}
+              className="group flex gap-3 p-3 rounded-lg border bg-card hover:bg-muted/40 transition-colors"
+              data-testid={`card-lead-note-${note.id}`}
+            >
+              <div className="flex-shrink-0 mt-0.5">
+                <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
+                  <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.content}</p>
+                <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+                  <span>{getUserName(note.userId)}</span>
+                  <span>·</span>
+                  <span title={new Date(note.createdAt).toLocaleString()}>
+                    {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+                  </span>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-muted-foreground hover:text-destructive"
+                onClick={() => deleteMutation.mutate(note.id)}
+                disabled={deleteMutation.isPending}
+                data-testid={`button-delete-note-${note.id}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Leads() {
@@ -1504,8 +1641,9 @@ export default function Leads() {
               </SheetHeader>
 
               <Tabs defaultValue="details" className="mt-6">
-                <TabsList className="w-full grid grid-cols-3">
+                <TabsList className="w-full grid grid-cols-4">
                   <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="notes" data-testid="tab-notes">Notes</TabsTrigger>
                   <TabsTrigger value="tasks">
                     Tasks
                     {detailLeadTasks.length > 0 && (
@@ -1974,6 +2112,10 @@ export default function Leads() {
                       </div>
                     </>
                   )}
+                </TabsContent>
+
+                <TabsContent value="notes" className="py-4">
+                  {selectedLead && <LeadNotesTab leadId={selectedLead.id} />}
                 </TabsContent>
 
                 <TabsContent value="tasks" className="py-4 space-y-3">

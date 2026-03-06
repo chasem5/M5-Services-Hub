@@ -560,6 +560,39 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  // Lead Notes
+  app.get("/api/leads/:id/notes", isAuthenticated, async (req, res) => {
+    try {
+      const leadId = parseInt(req.params.id as string);
+      const notes = await storage.listLeadNotes(leadId);
+      res.json(notes);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/leads/:id/notes", isAuthenticated, async (req, res) => {
+    try {
+      const leadId = parseInt(req.params.id as string);
+      const userId = (req as any).user?.claims?.sub;
+      const { content } = z.object({ content: z.string().min(1) }).parse(req.body);
+      const note = await storage.createLeadNote({ leadId, userId, content });
+      res.json(note);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/leads/:leadId/notes/:noteId", isAuthenticated, async (req, res) => {
+    try {
+      const noteId = parseInt(req.params.noteId as string);
+      await storage.deleteLeadNote(noteId);
+      res.sendStatus(204);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // AI Summary for a lead
   app.post("/api/leads/:id/ai-summary", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
