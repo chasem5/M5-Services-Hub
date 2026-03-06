@@ -210,9 +210,11 @@ export default function MeetingDetailPage() {
   const [editTitleValue, setEditTitleValue] = useState("");
   const [actioningIds, setActioningIds] = useState<Record<number, "approve" | "decline">>({});
 
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const chunkFlushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   const { data: meeting, isLoading } = useQuery<Meeting>({
@@ -321,8 +323,11 @@ export default function MeetingDetailPage() {
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
-  const sendChunk = useCallback(async (blob: Blob) => {
-    if (blob.size < 1000) return;
+  const sendChunk = useCallback(async (blob: Blob, isFinal = false): Promise<boolean> => {
+    if (blob.size < 100) {
+      if (isFinal) toast({ title: "No audio detected. Try speaking closer to the mic.", variant: "destructive" });
+      return false;
+    }
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
     try {
@@ -334,11 +339,14 @@ export default function MeetingDetailPage() {
       if (res.ok) {
         const { text } = await res.json();
         if (text) setLiveTranscript((prev) => prev + (prev ? " " : "") + text);
+        return true;
       }
+      if (isFinal) toast({ title: "Transcription failed. You can type or paste your notes below.", variant: "destructive" });
     } catch {
-      // silent — keep recording
+      if (isFinal) toast({ title: "Transcription failed. Check your connection and try again.", variant: "destructive" });
     }
-  }, [meetingId]);
+    return false;
+  }, [meetingId, toast]);
 
   const startRecording = async () => {
     try {
@@ -358,11 +366,12 @@ export default function MeetingDetailPage() {
       chunkIntervalRef.current = setInterval(() => {
         if (recorder.state === "recording") {
           recorder.requestData();
-          setTimeout(() => {
+          const t = setTimeout(() => {
             const blob = new Blob(chunksRef.current, { type: "audio/webm" });
             chunksRef.current = [];
             sendChunk(blob);
           }, 500);
+          chunkFlushTimeoutRef.current = t;
         }
       }, 15000);
     } catch {
@@ -371,18 +380,26 @@ export default function MeetingDetailPage() {
   };
 
   const stopRecording = () => {
+    // Cancel both the interval and any pending flush timeout to avoid race conditions
     if (chunkIntervalRef.current) clearInterval(chunkIntervalRef.current);
+    if (chunkFlushTimeoutRef.current) clearTimeout(chunkFlushTimeoutRef.current);
+    chunkFlushTimeoutRef.current = null;
+
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
+
+    setIsRecording(false);
+    setIsTranscribing(true);
 
     recorder.onstop = async () => {
       const blob = new Blob(chunksRef.current, { type: "audio/webm" });
       chunksRef.current = [];
-      await sendChunk(blob);
+      await sendChunk(blob, true);
       recorder.stream.getTracks().forEach((t) => t.stop());
+      setIsTranscribing(false);
+      toast({ title: "Recording stopped. Review your transcript then click Finish & Analyze." });
     };
     recorder.stop();
-    setIsRecording(false);
   };
 
   const handleSavePaste = () => {
@@ -516,7 +533,7 @@ export default function MeetingDetailPage() {
           {!showReview && !isProcessing && (
             <Button
               onClick={analyzeMutation.mutate}
-              disabled={!transcript.trim() || analyzeMutation.isPending || isRecording}
+              disabled={!transcript.trim() || analyzeMutation.isPending || isRecording || isTranscribing}
               data-testid="button-analyze"
             >
               {analyzeMutation.isPending ? (
@@ -568,7 +585,12 @@ export default function MeetingDetailPage() {
               {/* Record controls */}
               {inputMode === "record" && (
                 <div className="flex items-center gap-3">
-                  {!isRecording ? (
+                  {isTranscribing ? (
+                    <Button disabled className="gap-2" data-testid="button-transcribing">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Transcribing…
+                    </Button>
+                  ) : !isRecording ? (
                     <Button onClick={startRecording} className="gap-2" data-testid="button-start-recording">
                       <Mic className="h-4 w-4" />
                       Start Recording
@@ -580,7 +602,9 @@ export default function MeetingDetailPage() {
                     </Button>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    {isRecording
+                    {isTranscribing
+                      ? "Processing your audio, please wait…"
+                      : isRecording
                       ? "Audio is being transcribed every 15 seconds…"
                       : "Click to start capturing your meeting audio via microphone."}
                   </p>
