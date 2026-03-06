@@ -241,7 +241,7 @@ export function CardScannerDialog({ open, onClose, clients }: CardScannerDialogP
               <SearchableSelect
                 options={clientOptions}
                 value={selectedClientId}
-                onValueChange={setSelectedClientId}
+                onChange={setSelectedClientId}
                 placeholder="Assign to company..."
                 data-testid="select-scanned-company"
               />
