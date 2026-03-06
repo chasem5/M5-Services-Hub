@@ -127,7 +127,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Form,
@@ -664,148 +663,109 @@ export default function Customers() {
         data-testid="input-import-contacts-file"
       />
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-3xl font-heading font-bold">Customers</h1>
           <p className="text-muted-foreground text-lg">Manage your customer database and relationships</p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Import / Export dropdown */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Import / Export — compact icon button */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="h-11 px-4 font-medium" disabled={isImporting} data-testid="button-import-export">
+              <Button variant="outline" size="sm" className="h-9 px-3 text-muted-foreground" disabled={isImporting} data-testid="button-import-export">
                 {isImporting ? (
-                  <><Upload className="mr-2 h-4 w-4 animate-pulse" />Importing...</>
+                  <Upload className="h-4 w-4 animate-pulse" />
                 ) : (
-                  <><FileText className="mr-2 h-4 w-4" />Import / Export<ChevronDown className="ml-2 h-4 w-4" /></>
+                  <><ArrowUpDown className="h-4 w-4" /><ChevronDown className="ml-1 h-3 w-3 opacity-60" /></>
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="flex items-center gap-2">
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="flex items-center gap-2 text-xs">
                 <Building2 className="h-3.5 w-3.5" /> Companies
               </DropdownMenuLabel>
               <DropdownMenuItem onClick={exportCompanies} data-testid="button-export-companies">
-                <Download className="mr-2 h-4 w-4" /> Export Companies CSV
+                <Download className="mr-2 h-4 w-4" /> Export CSV
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => companiesFileRef.current?.click()} data-testid="button-import-companies">
-                <Upload className="mr-2 h-4 w-4" /> Import Companies CSV
+                <Upload className="mr-2 h-4 w-4" /> Import CSV
               </DropdownMenuItem>
               <DropdownMenuItem onClick={downloadCompaniesTemplate} data-testid="button-template-companies">
-                <FileText className="mr-2 h-4 w-4 text-muted-foreground" /> Download Template
+                <FileText className="mr-2 h-4 w-4 text-muted-foreground" /> Template
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuLabel className="flex items-center gap-2">
+              <DropdownMenuLabel className="flex items-center gap-2 text-xs">
                 <Users className="h-3.5 w-3.5" /> Contacts
               </DropdownMenuLabel>
               <DropdownMenuItem onClick={exportContacts} data-testid="button-export-contacts">
-                <Download className="mr-2 h-4 w-4" /> Export Contacts CSV
+                <Download className="mr-2 h-4 w-4" /> Export CSV
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => contactsFileRef.current?.click()} data-testid="button-import-contacts">
-                <Upload className="mr-2 h-4 w-4" /> Import Contacts CSV
+                <Upload className="mr-2 h-4 w-4" /> Import CSV
               </DropdownMenuItem>
               <DropdownMenuItem onClick={downloadContactsTemplate} data-testid="button-template-contacts">
-                <FileText className="mr-2 h-4 w-4 text-muted-foreground" /> Download Template
+                <FileText className="mr-2 h-4 w-4 text-muted-foreground" /> Template
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="h-11 px-6 font-medium" data-testid="button-add-customer">
-                <Plus className="mr-2 h-5 w-5" />
-                Add Company
+          {/* Single Add dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="h-9 px-4 font-medium" data-testid="button-add-dropdown">
+                <Plus className="mr-1.5 h-4 w-4" />Add<ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-70" />
               </Button>
-            </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={() => setIsCreateDialogOpen(true)} data-testid="button-add-company">
+                <Building2 className="mr-2 h-4 w-4" /> Add Company
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  contactForm.reset({ name: "", title: "", email: "", phone: "", clientId: contactCompanyFilter !== "all" ? parseInt(contactCompanyFilter) : undefined, isPrimary: false, serviceNeeds: [] });
+                  setIsAddContactOpen(true);
+                }}
+                data-testid="button-add-contact-dropdown"
+              >
+                <Users className="mr-2 h-4 w-4" /> Add Contact
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Add Company dialog (controlled) */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>Add New Company</DialogTitle>
               <DialogDescription>
-                Create a new customer company. Contacts can be added from the company detail page.
+                Create a new customer company.
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem className="col-span-2">
-                        <FormLabel>Company Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter company name" {...field} data-testid="input-customer-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="industry"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Industry</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. Healthcare" {...field} value={field.value || ""} data-testid="input-customer-industry" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter phone number" {...field} value={field.value || ""} data-testid="input-customer-phone" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter email address" {...field} value={field.value || ""} data-testid="input-customer-email" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="website"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Website</FormLabel>
-                        <FormControl>
-                          <Input placeholder="https://..." {...field} value={field.value || ""} data-testid="input-customer-website" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
                 <FormField
                   control={form.control}
-                  name="address"
+                  name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Address</FormLabel>
+                      <FormLabel>Company Name</FormLabel>
                       <FormControl>
-                        <AddressAutocomplete
-                          value={field.value || ""}
-                          onChange={(addr) => field.onChange(addr)}
-                          placeholder="Search address..."
-                          data-testid="input-customer-address"
-                        />
+                        <Input placeholder="Enter company name" {...field} data-testid="input-customer-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="industry"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Industry</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. Property Management" {...field} value={field.value || ""} data-testid="input-customer-industry" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -888,8 +848,6 @@ export default function Customers() {
             </Form>
           </DialogContent>
         </Dialog>
-        </div>
-      </div>
 
       <Tabs defaultValue="companies">
         <TabsList className="mb-4">
@@ -970,8 +928,6 @@ export default function Customers() {
                         <TableHead className="font-bold">Company Name</TableHead>
                         <TableHead className="font-bold">Tier</TableHead>
                         <TableHead className="font-bold">Industry</TableHead>
-                        <TableHead className="font-bold">Contact Info</TableHead>
-                        <TableHead className="font-bold">Address</TableHead>
                         <TableHead className="font-bold">Revenue</TableHead>
                         <TableHead className="font-bold">BD Spend</TableHead>
                         <TableHead className="w-[80px]"></TableHead>
@@ -1027,30 +983,6 @@ export default function Customers() {
                             ) : (
                               <span className="text-muted-foreground italic text-sm">Not specified</span>
                             )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1.5">
-                              {client.email && (
-                                <div className="flex items-center text-sm text-muted-foreground">
-                                  <Mail className="mr-2 h-3.5 w-3.5" />
-                                  {client.email}
-                                </div>
-                              )}
-                              {client.phone && (
-                                <div className="flex items-center text-sm text-muted-foreground">
-                                  <Phone className="mr-2 h-3.5 w-3.5" />
-                                  {client.phone}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="max-w-[200px]">
-                            <div className="flex items-start text-sm text-muted-foreground line-clamp-2">
-                              <MapPin className="mr-2 h-3.5 w-3.5 mt-0.5 shrink-0" />
-                              {client.address
-                                ? <AddressLink address={client.address} className="text-muted-foreground text-sm" />
-                                : <span className="italic">No address</span>}
-                            </div>
                           </TableCell>
                           <TableCell>
                             <span className="text-sm font-medium" data-testid={`text-revenue-${client.id}`}>
@@ -1143,29 +1075,7 @@ export default function Customers() {
         {/* ── Contacts Tab ── */}
         <TabsContent value="contacts">
           <Card className="border-none shadow-sm bg-card">
-            <CardHeader className="pb-3 space-y-3">
-              {/* Title + Add Contact */}
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-lg">All Contacts</h3>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    contactForm.reset({
-                      name: "",
-                      title: "",
-                      email: "",
-                      phone: "",
-                      clientId: contactCompanyFilter !== "all" ? parseInt(contactCompanyFilter) : undefined,
-                      isPrimary: false,
-                      serviceNeeds: [],
-                    });
-                    setIsAddContactOpen(true);
-                  }}
-                  data-testid="button-add-contact"
-                >
-                  <Plus className="h-4 w-4 mr-1" />Add Contact
-                </Button>
-              </div>
+            <CardHeader className="pb-3">
               {/* Search + filters row */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative flex-1 min-w-[180px] max-w-xs">
