@@ -116,6 +116,7 @@ export interface IStorage {
 
   // Client Offices
   listClientOffices(clientId: number): Promise<ClientOffice[]>;
+  listAllClientOffices(): Promise<ClientOffice[]>;
   createClientOffice(office: InsertClientOffice): Promise<ClientOffice>;
   updateClientOffice(id: number, data: Partial<InsertClientOffice>): Promise<ClientOffice>;
   deleteClientOffice(id: number): Promise<void>;
@@ -389,6 +390,10 @@ export class DatabaseStorage implements IStorage {
   // Client Offices
   async listClientOffices(clientId: number): Promise<ClientOffice[]> {
     return await db.select().from(clientOffices).where(eq(clientOffices.clientId, clientId)).orderBy(clientOffices.name);
+  }
+
+  async listAllClientOffices(): Promise<ClientOffice[]> {
+    return await db.select().from(clientOffices).orderBy(clientOffices.name);
   }
 
   async createClientOffice(office: InsertClientOffice): Promise<ClientOffice> {

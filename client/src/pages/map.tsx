@@ -66,10 +66,9 @@ export function MapView() {
   const { data: locations = [], isLoading: isLoadingLocations } = useQuery<GeocodedLocation[]>({
     queryKey: ["/api/map-locations"],
     queryFn: async () => {
-      // In a real app, we'd have a single endpoint for this.
-      // For now, let's fetch buildings and offices and leads to combine them.
-      const [buildings, leads, clients] = await Promise.all([
+      const [buildings, offices, leads, clients] = await Promise.all([
         fetch("/api/all-buildings").then(res => res.json()),
+        fetch("/api/all-offices").then(res => res.json()),
         fetch("/api/leads").then(res => res.json()),
         fetch("/api/clients").then(res => res.json()),
       ]);
@@ -77,12 +76,25 @@ export function MapView() {
       const clientMap = new Map(clients.map((c: any) => [c.id, c]));
       const leadMap = new Map(leads.map((l: any) => [l.buildingId, l]));
 
-      return buildings.map((b: any) => ({
+      const buildingItems: GeocodedLocation[] = buildings.map((b: any) => ({
         ...b,
-        type: "building",
+        type: "building" as const,
         lead: leadMap.get(b.id),
         client: clientMap.get(leadMap.get(b.id)?.clientId),
       }));
+
+      const officeItems: GeocodedLocation[] = offices.map((o: any) => ({
+        id: o.id,
+        name: o.name,
+        address: o.address,
+        lat: o.lat,
+        lng: o.lng,
+        type: "office" as const,
+        clientId: o.clientId,
+        client: clientMap.get(o.clientId),
+      }));
+
+      return [...buildingItems, ...officeItems];
     }
   });
 

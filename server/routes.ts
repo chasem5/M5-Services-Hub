@@ -577,6 +577,12 @@ export async function registerRoutes(
     res.json(buildings);
   });
 
+  // All offices across all clients (for map and buildings list)
+  app.get("/api/all-offices", isAuthenticated, async (_req, res) => {
+    const offices = await storage.listAllClientOffices();
+    res.json(offices);
+  });
+
   // Contact Buildings
   app.get("/api/contacts/:contactId/buildings", isAuthenticated, async (req, res) => {
     const contactId = parseInt(req.params.contactId as string);

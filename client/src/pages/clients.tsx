@@ -143,7 +143,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertClientSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type Lead, type Estimate } from "@shared/schema";
+import { insertClientSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -159,6 +159,7 @@ interface ImportResult {
 // ── BuildingsList component ───────────────────────────────────────────────────
 interface BuildingsListProps {
   buildings: ContactBuilding[];
+  offices: ClientOffice[];
   contacts: ClientContact[];
   clients: Client[];
   leads: Lead[];
@@ -166,7 +167,18 @@ interface BuildingsListProps {
   search: string;
 }
 
-function BuildingsList({ buildings, contacts, clients: clientsList, leads, estimates, search }: BuildingsListProps) {
+function BuildingsList({ buildings, offices, contacts, clients: clientsList, leads, estimates, search }: BuildingsListProps) {
+  const filteredOffices = offices.filter(o => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    const company = clientsList.find(cl => cl.id === o.clientId);
+    return (
+      o.name.toLowerCase().includes(q) ||
+      (o.address ?? "").toLowerCase().includes(q) ||
+      (company?.name ?? "").toLowerCase().includes(q)
+    );
+  });
+
   const filtered = buildings.filter(b => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -181,22 +193,74 @@ function BuildingsList({ buildings, contacts, clients: clientsList, leads, estim
     );
   });
 
-  if (filtered.length === 0) {
+  if (filtered.length === 0 && filteredOffices.length === 0) {
     return (
       <div className="text-center py-16">
         <Landmark className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
         <p className="font-medium text-muted-foreground">
-          {search ? "No buildings match your search." : "No buildings in portfolio yet."}
+          {search ? "No locations match your search." : "No buildings or offices yet."}
         </p>
         <p className="text-sm text-muted-foreground mt-1">
-          Add buildings from a contact's profile on the company detail page.
+          Add offices on a company's detail page, and buildings from a contact's profile.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-6">
+    <div>
+    {filteredOffices.length > 0 && (
+      <div className="px-6 pt-4 pb-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+          <Building2 className="h-3.5 w-3.5" />
+          Office Locations
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {filteredOffices.map(office => {
+            const company = clientsList.find(cl => cl.id === office.clientId);
+            return (
+              <div
+                key={`office-${office.id}`}
+                className="bg-muted/30 border border-dashed rounded-xl p-4 flex flex-col gap-2"
+                data-testid={`card-office-${office.id}`}
+              >
+                <div className="flex items-start gap-2">
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-sm leading-tight truncate">{office.name}</h3>
+                    {office.address && (
+                      <AddressLink address={office.address} className="text-[11px] text-muted-foreground leading-tight mt-0.5" />
+                    )}
+                  </div>
+                </div>
+                {company && (
+                  <Link
+                    href={`/customers/${company.id}`}
+                    className="flex items-center gap-1.5 text-[11px] font-medium text-primary hover:underline truncate"
+                    data-testid={`link-office-company-${office.id}`}
+                  >
+                    <ChevronRight className="h-3 w-3 shrink-0" />
+                    {company.name}
+                  </Link>
+                )}
+                {office.phone && (
+                  <span className="text-[11px] text-muted-foreground">{office.phone}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )}
+    {filtered.length > 0 && (
+      <div>
+        <div className="px-6 pt-4 pb-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+            <Landmark className="h-3.5 w-3.5" />
+            Contact Buildings
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 px-6 pb-6">
       {filtered.map(building => {
         const contact = contacts.find(c => c.id === building.contactId);
         const company = clientsList.find(cl => cl.id === contact?.clientId);
@@ -278,6 +342,9 @@ function BuildingsList({ buildings, contacts, clients: clientsList, leads, estim
           </div>
         );
       })}
+        </div>
+      </div>
+    )}
     </div>
   );
 }
@@ -323,6 +390,10 @@ export default function Customers() {
 
   const { data: allBuildings = [], isLoading: isLoadingBuildings } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/all-buildings"],
+  });
+
+  const { data: allOffices = [] } = useQuery<ClientOffice[]>({
+    queryKey: ["/api/all-offices"],
   });
 
   const { data: allLeads = [] } = useQuery<Lead[]>({
@@ -776,9 +847,9 @@ export default function Customers() {
           </TabsTrigger>
           <TabsTrigger value="buildings" className="flex items-center gap-2" data-testid="tab-buildings">
             <Landmark className="h-4 w-4" />
-            Buildings & Map
-            {allBuildings.length > 0 && (
-              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{allBuildings.length}</Badge>
+            Buildings
+            {(allBuildings.length + allOffices.length) > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{allBuildings.length + allOffices.length}</Badge>
             )}
           </TabsTrigger>
         </TabsList>
@@ -1306,6 +1377,7 @@ export default function Customers() {
                   ) : (
                     <BuildingsList
                       buildings={allBuildings}
+                      offices={allOffices}
                       contacts={allContacts}
                       clients={clients ?? []}
                       leads={allLeads}
