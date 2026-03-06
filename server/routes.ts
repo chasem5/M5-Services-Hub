@@ -399,6 +399,21 @@ export async function registerRoutes(
     res.sendStatus(204);
   });
 
+  app.delete("/api/clients/bulk", isAuthenticated, async (req, res) => {
+    const { ids } = z.object({ ids: z.array(z.number()) }).parse(req.body);
+    await storage.deleteBulkClients(ids);
+    res.sendStatus(204);
+  });
+
+  app.patch("/api/clients/bulk", isAuthenticated, async (req, res) => {
+    const { ids, data } = z.object({
+      ids: z.array(z.number()),
+      data: insertClientSchema.partial()
+    }).parse(req.body);
+    await storage.bulkUpdateClients(ids, data);
+    res.sendStatus(204);
+  });
+
   // Client Contacts
   app.get("/api/client-contacts", isAuthenticated, async (_req, res) => {
     const contacts = await storage.listAllClientContacts();
@@ -434,6 +449,21 @@ export async function registerRoutes(
   app.delete("/api/clients/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
     const contactId = parseInt(req.params.contactId as string);
     await storage.deleteClientContact(contactId);
+    res.sendStatus(204);
+  });
+
+  app.delete("/api/contacts/bulk", isAuthenticated, async (req, res) => {
+    const { ids } = z.object({ ids: z.array(z.number()) }).parse(req.body);
+    await storage.deleteBulkClientContacts(ids);
+    res.sendStatus(204);
+  });
+
+  app.patch("/api/contacts/bulk", isAuthenticated, async (req, res) => {
+    const { ids, data } = z.object({
+      ids: z.array(z.number()),
+      data: insertClientContactSchema.partial()
+    }).parse(req.body);
+    await storage.bulkUpdateClientContacts(ids, data);
     res.sendStatus(204);
   });
 
@@ -812,6 +842,27 @@ Do not include any other text, just the JSON.`,
     res.setHeader("Content-Type", "text/vcard; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${safeName}.vcf"`);
     res.send(vcard);
+  });
+
+  // Deal Tags
+  app.get("/api/deal-tags", isAuthenticated, async (_req, res) => {
+    const tags = await storage.listDealTags();
+    res.json(tags);
+  });
+
+  app.post("/api/deal-tags", isAuthenticated, async (req, res) => {
+    const { name, color } = z.object({
+      name: z.string().min(1),
+      color: z.string().optional().default("gray"),
+    }).parse(req.body);
+    const tag = await storage.createDealTag({ name, color });
+    res.json(tag);
+  });
+
+  app.delete("/api/deal-tags/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    await storage.deleteDealTag(id);
+    res.sendStatus(204);
   });
 
   // Leads
@@ -1591,7 +1642,7 @@ Return only valid JSON, no markdown.`;
       (await storage.getMeeting(0).catch(() => undefined))?.id ?? -1
     );
     // We need to find the action by ID — do a direct query
-    const { ilike } = await import("drizzle-orm");
+    const { ilike, eq } = await import("drizzle-orm");
     const { db } = await import("./db");
     const { meetingActions: maTable, tasks: tasksTable, clients: clientsTable, clientContacts: contactsTable, leads: leadsTable } = await import("@shared/schema");
 
@@ -2247,6 +2298,111 @@ Respond with this JSON:
   app.delete("/api/portfolios/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
     await storage.removeContactFromPortfolio(Number(req.params.id), Number(req.params.contactId));
     res.status(204).end();
+  });
+
+  // Deal Tags
+  app.get("/api/deal-tags", isAuthenticated, async (_req, res) => {
+    const tags = await storage.listDealTags();
+    res.json(tags);
+  });
+
+  app.post("/api/deal-tags", isAuthenticated, async (req, res) => {
+    const { name, color } = req.body;
+    if (!name?.trim()) return res.status(400).json({ message: "Name required" });
+    try {
+      const tag = await storage.createDealTag({ name: name.toLowerCase().trim(), color: color || "gray" });
+      res.status(201).json(tag);
+    } catch (e: any) {
+      if (e.code === "23505") return res.status(409).json({ message: "Tag already exists" });
+      throw e;
+    }
+  });
+
+  app.delete("/api/deal-tags/:id", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    await storage.deleteDealTag(Number(req.params.id));
+    res.status(204).end();
+  });
+
+  // User Profile Self-Edit
+  app.patch("/api/users/me", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const { firstName, lastName, phone, profileImageUrl } = req.body;
+    const user = await storage.updateUserProfile(userId, { firstName, lastName, phone, profileImageUrl });
+    res.json(user);
+  });
+
+  // Profile picture upload for users
+  app.post("/api/users/me/avatar", isAuthenticated, upload.single("avatar"), async (req, res) => {
+    const r = req as any;
+    const userId = r.user?.claims?.sub;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!r.file) return res.status(400).json({ message: "No file uploaded" });
+    try {
+      const ext = r.file.mimetype.split("/")[1] || "jpg";
+      let entityDir = objectStorageService.getPrivateObjectDir();
+      const fullPath = `${entityDir}/avatars/${userId}.${ext}`;
+      const { bucketName, objectName } = (objectStorageService as any).parseObjectPath(fullPath);
+      const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
+      const gcsFile = bucket.file(objectName);
+      await gcsFile.save(r.file.buffer, { metadata: { contentType: r.file.mimetype } });
+      const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
+      const user = await storage.updateUserProfile(userId, { profileImageUrl: publicUrl });
+      res.json({ url: publicUrl, user });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Company logo upload
+  app.post("/api/clients/:id/logo", isAuthenticated, upload.single("logo"), async (req, res) => {
+    const r = req as any;
+    const clientId = Number(req.params.id);
+    if (!r.file) return res.status(400).json({ message: "No file uploaded" });
+    try {
+      const ext = r.file.mimetype.split("/")[1] || "jpg";
+      let entityDir = objectStorageService.getPrivateObjectDir();
+      const fullPath = `${entityDir}/logos/client_${clientId}.${ext}`;
+      const { bucketName, objectName } = (objectStorageService as any).parseObjectPath(fullPath);
+      const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
+      const gcsFile = bucket.file(objectName);
+      await gcsFile.save(r.file.buffer, { metadata: { contentType: r.file.mimetype } });
+      const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
+      const client = await storage.updateClient(clientId, { logoUrl: publicUrl } as any);
+      res.json({ url: publicUrl, client });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Bulk Delete / Update — Clients
+  app.post("/api/clients/bulk-delete", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ message: "ids required" });
+    await storage.deleteBulkClients(ids.map(Number));
+    res.status(204).end();
+  });
+
+  app.post("/api/clients/bulk-update", isAuthenticated, async (req, res) => {
+    const { ids, data } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ message: "ids required" });
+    await storage.bulkUpdateClients(ids.map(Number), data);
+    res.json({ updated: ids.length });
+  });
+
+  // Bulk Delete / Update — Contacts
+  app.post("/api/contacts/bulk-delete", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ message: "ids required" });
+    await storage.deleteBulkClientContacts(ids.map(Number));
+    res.status(204).end();
+  });
+
+  app.post("/api/contacts/bulk-update", isAuthenticated, async (req, res) => {
+    const { ids, data } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ message: "ids required" });
+    await storage.bulkUpdateClientContacts(ids.map(Number), data);
+    res.json({ updated: ids.length });
   });
 
   return httpServer;

@@ -2,6 +2,27 @@ import { useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
+  DndContext, 
+  DragOverlay, 
+  closestCorners, 
+  KeyboardSensor, 
+  PointerSensor, 
+  useSensor, 
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { useDroppable, useDraggable } from "@dnd-kit/core";
+
+import { 
   Lead, 
   Client, 
   User,
@@ -14,6 +35,7 @@ import {
   InsertLead,
   insertTaskSchema,
   InsertTask,
+  DealTag,
 } from "@shared/schema";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -337,6 +359,320 @@ function LeadNotesTab({ leadId }: { leadId: number }) {
   );
 }
 
+function KanbanColumn({ 
+  stage, 
+  sc, 
+  weightedVal, 
+  rawVal, 
+  cardCount, 
+  filteredLeads,
+  formatCurrency,
+  getBuildingName,
+  getClientName,
+  getContactName,
+  getServiceTypeColor,
+  getServiceTypeLabel,
+  getUserName,
+  openLeadDetail,
+  tasks,
+  loadingAiSummary,
+  aiSummaries,
+  fetchAiSummary
+}: { 
+  stage: PipelineStage;
+  sc: any;
+  weightedVal: number;
+  rawVal: number;
+  cardCount: number;
+  filteredLeads: Lead[] | undefined;
+  formatCurrency: (v: string | number) => string;
+  getBuildingName: (id: number | null) => string | null;
+  getClientName: (id: number | null) => string;
+  getContactName: (id: number | null | undefined) => string | null;
+  getServiceTypeColor: (v: string | null | undefined) => string;
+  getServiceTypeLabel: (v: string | null | undefined) => string | null;
+  getUserName: (id: string | null) => string;
+  openLeadDetail: (lead: Lead) => void;
+  tasks: Task[];
+  loadingAiSummary: Record<number, boolean>;
+  aiSummaries: Record<number, string>;
+  fetchAiSummary: (id: number) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: stage.slug,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-col w-80 min-w-80 rounded-lg border shadow-sm transition-colors ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
+    >
+      <div className={`p-3 border-b ${sc.header}`}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${sc.dot}`} />
+            <h3 className="font-semibold text-sm">{stage.label}</h3>
+            <Badge variant="secondary" className="h-5 px-1.5 min-w-[1.25rem] flex items-center justify-center font-bold text-[10px]">
+              {cardCount}
+            </Badge>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Total Value</span>
+            <span className="text-sm font-bold text-foreground">{formatCurrency(rawVal)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+              <TrendingUp className="h-2.5 w-2.5" />
+              Weighted
+            </span>
+            <span className={`text-xs font-semibold ${sc.value}`}>{formatCurrency(weightedVal)}</span>
+          </div>
+        </div>
+      </div>
+
+      <ScrollArea className="flex-1">
+        <div className="p-3 space-y-3">
+          {filteredLeads
+            ?.filter((l) => l.stage === stage.slug)
+            .map((lead) => (
+              <LeadCard 
+                key={lead.id} 
+                lead={lead} 
+                formatCurrency={formatCurrency}
+                getBuildingName={getBuildingName}
+                getClientName={getClientName}
+                getContactName={getContactName}
+                getServiceTypeColor={getServiceTypeColor}
+                getServiceTypeLabel={getServiceTypeLabel}
+                getUserName={getUserName}
+                openLeadDetail={openLeadDetail}
+                tasks={tasks}
+                loadingAiSummary={loadingAiSummary}
+                aiSummaries={aiSummaries}
+                fetchAiSummary={fetchAiSummary}
+              />
+            ))}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+function LeadCard({ 
+  lead, 
+  formatCurrency, 
+  getBuildingName, 
+  getClientName, 
+  getContactName, 
+  getServiceTypeColor, 
+  getServiceTypeLabel, 
+  getUserName, 
+  openLeadDetail, 
+  tasks, 
+  loadingAiSummary, 
+  aiSummaries, 
+  fetchAiSummary,
+  isOverlay = false
+}: { 
+  lead: Lead; 
+  formatCurrency: (v: string | number) => string;
+  getBuildingName: (id: number | null) => string | null;
+  getClientName: (id: number | null) => string;
+  getContactName: (id: number | null | undefined) => string | null;
+  getServiceTypeColor: (v: string | null | undefined) => string;
+  getServiceTypeLabel: (v: string | null | undefined) => string | null;
+  getUserName: (id: string | null) => string;
+  openLeadDetail: (lead: Lead) => void;
+  tasks: Task[];
+  loadingAiSummary: Record<number, boolean>;
+  aiSummaries: Record<number, string>;
+  fetchAiSummary: (id: number) => void;
+  isOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: lead.id,
+  });
+
+  const style = transform ? {
+    transform: CSS.Translate.toString(transform),
+  } : undefined;
+
+  const score = lead.confidenceScore ?? 50;
+  const leadTasks = tasks.filter(t => t.relatedLeadId === lead.id);
+  const contactName = getContactName(lead.contactId);
+  const serviceLabel = getServiceTypeLabel(lead.serviceType);
+  const serviceColor = getServiceTypeColor(lead.serviceType);
+
+  if (isDragging && !isOverlay) {
+    return (
+      <div 
+        ref={setNodeRef} 
+        style={style}
+        className="h-32 rounded-lg border border-dashed border-primary/20 bg-primary/5" 
+      />
+    );
+  }
+
+  return (
+    <HoverCard openDelay={700} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        <Card
+          ref={setNodeRef}
+          style={style}
+          {...attributes}
+          {...listeners}
+          className={`hover-elevate cursor-grab active:cursor-grabbing border-border/60 shadow-sm transition-shadow hover:shadow-md ${isOverlay ? "cursor-grabbing shadow-xl ring-2 ring-primary" : ""}`}
+          onClick={(e) => {
+            if (isOverlay) return;
+            // Prevent opening detail if dragging
+            openLeadDetail(lead);
+          }}
+          data-testid={`card-lead-${lead.id}`}
+          onMouseEnter={() => fetchAiSummary(lead.id)}
+        >
+          <CardHeader className="p-3 pb-0 space-y-1">
+            <div className="flex items-start justify-between gap-2">
+              <h4 className="font-bold text-sm leading-tight line-clamp-2">{lead.title}</h4>
+            </div>
+            <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+              <UsersIcon className="h-3 w-3" />
+              {getClientName(lead.clientId)}
+            </p>
+            {contactName && (
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <User2 className="h-3 w-3 shrink-0" />
+                <span className="truncate">{contactName}</span>
+              </p>
+            )}
+            {lead.buildingId && getBuildingName(lead.buildingId) && (
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Building2 className="h-3 w-3 shrink-0" />
+                <span className="truncate">{getBuildingName(lead.buildingId)}</span>
+              </p>
+            )}
+          </CardHeader>
+          <CardContent className="p-3 pt-2 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className={`text-xs font-bold flex items-center gap-1 ${(lead.valueType === "potential" && lead.valueTier) ? "text-muted-foreground" : "text-primary"}`}>
+                {(lead.valueType === "potential" && lead.valueTier) ? null : <DollarSign className="h-3 w-3" />}
+                {(lead.valueType === "potential" && lead.valueTier) ? (
+                  <span className="font-black tracking-tight text-primary">{lead.valueTier}</span>
+                ) : formatCurrency(lead.value)}
+              </span>
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
+                {getUserName(lead.assignedTo).split(' ')[0]}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-1">
+              {serviceLabel && (
+                <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 w-fit font-medium border ${serviceColor}`}>
+                  <Briefcase className="h-2.5 w-2.5 mr-1" />
+                  {serviceLabel}
+                </Badge>
+              )}
+              {lead.tier && <TierBadge tier={lead.tier} size="xs" />}
+            </div>
+
+            <div className="space-y-1">
+              {lead.confidenceStatus ? (
+                <div className="flex items-center gap-1.5">
+                  <Badge 
+                    variant="secondary" 
+                    className={`text-[9px] px-1.5 py-0 h-4 font-bold uppercase tracking-tighter ${
+                      lead.confidenceStatus === "undecided" 
+                        ? "bg-muted text-muted-foreground" 
+                        : "bg-amber-100 text-amber-700 border-amber-200"
+                    }`}
+                  >
+                    {lead.confidenceStatus === "undecided" ? "Undecided" : "Needs Work"}
+                  </Badge>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                      <Target className="h-3 w-3" />
+                      Confidence
+                    </span>
+                    <span className={`text-[10px] font-bold ${getConfidenceColor(score)}`}>
+                      {score}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${getConfidenceBarColor(score)}`}
+                      style={{ width: `${score}%` }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {lead.tags && lead.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {lead.tags.slice(0, 3).map((tag) => (
+                  <Badge key={tag} variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-medium">
+                    {tag}
+                  </Badge>
+                ))}
+                {lead.tags.length > 3 && (
+                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
+                    +{lead.tags.length - 3}
+                  </Badge>
+                )}
+              </div>
+            )}
+
+            {leadTasks.length > 0 && (
+              <div className="text-[10px] text-muted-foreground flex items-center gap-1 border-t pt-1.5 mt-0.5">
+                <CheckCircle2 className="h-3 w-3" />
+                {leadTasks.filter(t => t.status === "done").length}/{leadTasks.length} tasks
+              </div>
+            )}
+
+            {lead.contractType === "recurring" && (
+              <div className="flex items-center gap-1.5 mt-1">
+                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-bold bg-blue-100 text-blue-700 border-blue-200 uppercase tracking-tighter">
+                  ↻ {lead.recurringFrequency}
+                </Badge>
+                {lead.renewalDate && (
+                  <span className={`text-[9px] font-bold uppercase tracking-tighter ${
+                    (new Date(lead.renewalDate).getTime() - new Date().getTime()) < (60 * 24 * 60 * 60 * 1000)
+                      ? "text-red-600 animate-pulse"
+                      : "text-muted-foreground"
+                  }`}>
+                    Renews {new Date(lead.renewalDate).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </HoverCardTrigger>
+      <HoverCardContent side="right" align="start" className="w-72 p-3" data-testid={`ai-summary-${lead.id}`}>
+        <div className="flex items-center gap-1.5 mb-2">
+          <Sparkles className="h-3.5 w-3.5 text-primary" />
+          <span className="text-xs font-bold text-primary">AI Summary</span>
+        </div>
+        {loadingAiSummary[lead.id] ? (
+          <div className="space-y-1.5">
+            <div className="h-3 bg-muted animate-pulse rounded w-full" />
+            <div className="h-3 bg-muted animate-pulse rounded w-5/6" />
+            <div className="h-3 bg-muted animate-pulse rounded w-4/6" />
+          </div>
+        ) : aiSummaries[lead.id] !== undefined ? (
+          <p className="text-xs text-muted-foreground leading-relaxed">{aiSummaries[lead.id] || "No summary available."}</p>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">Hover to generate summary...</p>
+        )}
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
 export default function Leads() {
   const [view, setView] = useState<"kanban" | "list">("kanban");
   const [isAddDealOpen, setIsAddDealOpen] = useState(false);
@@ -361,6 +697,8 @@ export default function Leads() {
   const [selectedClientIdForBuildingEdit, setSelectedClientIdForBuildingEdit] = useState<number | null>(null);
   // Pipeline views
   const [activeViewId, setActiveViewId] = useState<number | null>(null);
+  const [tagFilter, setTagFilter] = useState<string>("all");
+  const [activeDragId, setActiveDragId] = useState<number | null>(null);
   const [isManageViewsOpen, setIsManageViewsOpen] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [newViewStages, setNewViewStages] = useState<string[]>([]);
@@ -378,6 +716,9 @@ export default function Leads() {
   const [editValueType, setEditValueType] = useState<"fixed" | "potential">("fixed");
   const [editValueTier, setEditValueTier] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const [createConfidenceStatus, setCreateConfidenceStatus] = useState<string | null>(null);
+  const [editConfidenceStatus, setEditConfidenceStatus] = useState<string | null>(null);
 
   const { data: stages = [] } = useQuery<PipelineStage[]>({
     queryKey: ["/api/pipeline-stages"],
@@ -407,6 +748,10 @@ export default function Leads() {
     queryKey: ["/api/client-contacts"],
   });
 
+  const { data: dealTags = [] } = useQuery<DealTag[]>({
+    queryKey: ["/api/deal-tags"],
+  });
+
   const { data: pipelineViews = [] } = useQuery<PipelineView[]>({
     queryKey: ["/api/pipeline-views"],
   });
@@ -420,6 +765,35 @@ export default function Leads() {
     queryKey: ["/api/clients", selectedClientIdForBuildingEdit, "all-buildings"],
     enabled: !!selectedClientIdForBuildingEdit,
   });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(Number(event.active.id));
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const leadId = Number(active.id);
+    const newStage = String(over.id);
+    const lead = leads?.find(l => l.id === leadId);
+
+    if (lead && lead.stage !== newStage) {
+      updateLeadStageMutation.mutate({ id: leadId, stage: newStage });
+    }
+  };
 
   const contactsForCreate = selectedClientIdForContact
     ? allContacts.filter(c => c.clientId === selectedClientIdForContact)
@@ -690,7 +1064,8 @@ export default function Leads() {
     const matchesViewStage = !activeFilters?.stages?.length || activeFilters.stages.includes(lead.stage);
     const matchesViewService = !activeFilters?.serviceTypes?.length || (lead.serviceType != null && activeFilters.serviceTypes.includes(lead.serviceType));
     const matchesTier = tierFilter === "all" || lead.tier === tierFilter;
-    return matchesSearch && matchesStage && matchesViewStage && matchesViewService && matchesTier;
+    const matchesTag = tagFilter === "all" || (lead.tags && lead.tags.includes(tagFilter));
+    return matchesSearch && matchesStage && matchesViewStage && matchesViewService && matchesTier && matchesTag;
   });
 
   const getClientName = (clientId: number | null) => {
@@ -717,12 +1092,16 @@ export default function Leads() {
   const isLeadPotential = (lead: { valueType?: string | null; valueTier?: string | null }) =>
     lead.valueType === "potential" && !!lead.valueTier;
 
-  const addTag = (tag: string) => {
+  const addTag = async (tag: string) => {
     const clean = tag.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
     if (clean && !formTags.includes(clean)) {
       const next = [...formTags, clean];
       setFormTags(next);
       form.setValue("tags", next);
+      if (!dealTags.find(t => t.name === clean)) {
+        await apiRequest("POST", "/api/deal-tags", { name: clean });
+        queryClient.invalidateQueries({ queryKey: ["/api/deal-tags"] });
+      }
     }
     setTagInput("");
   };
@@ -734,7 +1113,7 @@ export default function Leads() {
   };
 
   const onSubmit = (data: InsertLead) => {
-    createLeadMutation.mutate({ ...data, tags: formTags });
+    createLeadMutation.mutate({ ...data, tags: formTags, confidenceStatus: createConfidenceStatus });
   };
 
   const getLeadTasks = (leadId: number) =>
@@ -746,6 +1125,7 @@ export default function Leads() {
     setIsAddTaskOpen(false);
     setSelectedClientIdForBuildingEdit(lead.clientId ?? null);
     setSelectedClientIdForContactEdit(lead.clientId ?? null);
+    setEditConfidenceStatus(lead.confidenceStatus ?? null);
     const vType = (lead.valueType as "fixed" | "potential") ?? "fixed";
     setEditValueType(vType);
     setEditValueTier((lead.valueTier as string | null) ?? null);
@@ -770,10 +1150,14 @@ export default function Leads() {
     setEditFormTags(lead.tags ?? []);
   };
 
-  const addEditTag = (tag: string) => {
+  const addEditTag = async (tag: string) => {
     const clean = tag.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
     if (clean && !editFormTags.includes(clean)) {
       setEditFormTags((prev) => [...prev, clean]);
+      if (!dealTags.find(t => t.name === clean)) {
+        await apiRequest("POST", "/api/deal-tags", { name: clean });
+        queryClient.invalidateQueries({ queryKey: ["/api/deal-tags"] });
+      }
     }
     setEditTagInput("");
   };
@@ -784,7 +1168,7 @@ export default function Leads() {
     if (!selectedLead) return;
     updateLeadMutation.mutate({
       id: selectedLead.id,
-      data: { ...data, tags: editFormTags },
+      data: { ...data, tags: editFormTags, confidenceStatus: editConfidenceStatus },
     });
     setIsEditingLead(false);
   };
@@ -906,6 +1290,20 @@ export default function Leads() {
               <SelectItem value="tier_3">Tier 3</SelectItem>
             </SelectContent>
           </Select>
+
+          <Select value={tagFilter} onValueChange={setTagFilter}>
+            <SelectTrigger className="w-[140px]" data-testid="select-lead-tag-filter">
+              <TagIcon className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="All Tags" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Tags</SelectItem>
+              {dealTags.map((tag) => (
+                <SelectItem key={tag.id} value={tag.name}>{tag.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           {activeView && (
             <div className="flex items-center gap-1.5 text-xs text-primary font-medium border border-primary/30 bg-primary/5 rounded-full px-3 py-1">
               <Eye className="h-3 w-3" />
@@ -930,199 +1328,70 @@ export default function Leads() {
             ))}
           </div>
         ) : view === "kanban" ? (
-          <div className="flex h-full overflow-x-auto p-4 md:p-6 gap-6">
-            {stages.map((stage) => {
-              const sc = getStageColors(stage.color);
-              const weightedVal = getStageWeightedValue(stage.slug);
-              const rawVal = getStageRawValue(stage.slug);
-              const cardCount = filteredLeads?.filter(l => l.stage === stage.slug).length || 0;
-              return (
-              <div
-                key={stage.id}
-                className={`flex flex-col w-80 min-w-80 rounded-lg border shadow-sm ${sc.column}`}
-              >
-                <div className={`p-3 border-b ${sc.header}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className={`h-2 w-2 rounded-full ${sc.dot}`} />
-                      <h3 className="font-semibold text-sm">{stage.label}</h3>
-                      <Badge variant="secondary" className="h-5 px-1.5 min-w-[1.25rem] flex items-center justify-center font-bold text-[10px]">
-                        {cardCount}
-                      </Badge>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setIsManageStagesOpen(true)}
-                      data-testid={`button-manage-stage-${stage.id}`}
-                    >
-                      <Settings className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Total Value</span>
-                      <span className="text-sm font-bold text-foreground">{formatCurrency(rawVal)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                        <TrendingUp className="h-2.5 w-2.5" />
-                        Weighted
-                      </span>
-                      <span className={`text-xs font-semibold ${sc.value}`}>{formatCurrency(weightedVal)}</span>
-                    </div>
-                  </div>
+          <DndContext 
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="flex h-full overflow-x-auto p-4 md:p-6 gap-6">
+              {(activeFilters?.stages?.length
+                ? stages.filter(s => activeFilters!.stages!.includes(s.slug))
+                : stages
+              ).map((stage) => {
+                const sc = getStageColors(stage.color);
+                const weightedVal = getStageWeightedValue(stage.slug);
+                const rawVal = getStageRawValue(stage.slug);
+                const cardCount = filteredLeads?.filter(l => l.stage === stage.slug).length || 0;
+
+                return (
+                  <KanbanColumn 
+                    key={stage.id} 
+                    stage={stage} 
+                    sc={sc} 
+                    weightedVal={weightedVal} 
+                    rawVal={rawVal} 
+                    cardCount={cardCount}
+                    filteredLeads={filteredLeads}
+                    formatCurrency={formatCurrency}
+                    getBuildingName={getBuildingName}
+                    getClientName={getClientName}
+                    getContactName={getContactName}
+                    getServiceTypeColor={getServiceTypeColor}
+                    getServiceTypeLabel={getServiceTypeLabel}
+                    getUserName={getUserName}
+                    openLeadDetail={openLeadDetail}
+                    tasks={tasks}
+                    loadingAiSummary={loadingAiSummary}
+                    aiSummaries={aiSummaries}
+                    fetchAiSummary={fetchAiSummary}
+                  />
+                );
+              })}
+            </div>
+            <DragOverlay>
+              {activeDragId ? (
+                <div className="w-[280px] rotate-3 opacity-80 cursor-grabbing pointer-events-none">
+                  <LeadCard 
+                    lead={leads!.find(l => l.id === activeDragId)!}
+                    formatCurrency={formatCurrency}
+                    getBuildingName={getBuildingName}
+                    getClientName={getClientName}
+                    getContactName={getContactName}
+                    getServiceTypeColor={getServiceTypeColor}
+                    getServiceTypeLabel={getServiceTypeLabel}
+                    getUserName={getUserName}
+                    openLeadDetail={openLeadDetail}
+                    tasks={tasks}
+                    loadingAiSummary={loadingAiSummary}
+                    aiSummaries={aiSummaries}
+                    fetchAiSummary={fetchAiSummary}
+                    isOverlay
+                  />
                 </div>
-
-                <ScrollArea className="flex-1">
-                  <div className="p-3 space-y-3">
-                    {filteredLeads
-                      ?.filter((l) => l.stage === stage.slug)
-                      .map((lead) => {
-                        const score = lead.confidenceScore ?? 50;
-                        const leadTasks = getLeadTasks(lead.id);
-                        const contactName = getContactName(lead.contactId);
-                        const serviceLabel = getServiceTypeLabel(lead.serviceType);
-                        const serviceColor = getServiceTypeColor(lead.serviceType);
-                        return (
-                          <HoverCard key={lead.id} openDelay={700} closeDelay={100}>
-                            <HoverCardTrigger asChild>
-                          <Card
-                            className="hover-elevate cursor-pointer border-border/60 shadow-sm transition-shadow hover:shadow-md"
-                            onClick={() => openLeadDetail(lead)}
-                            data-testid={`card-lead-${lead.id}`}
-                            onMouseEnter={() => fetchAiSummary(lead.id)}
-                          >
-                            <CardHeader className="p-3 pb-0 space-y-1">
-                              <div className="flex items-start justify-between gap-2">
-                                <h4 className="font-bold text-sm leading-tight line-clamp-2">{lead.title}</h4>
-                              </div>
-                              <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-                                <UsersIcon className="h-3 w-3" />
-                                {getClientName(lead.clientId)}
-                              </p>
-                              {contactName && (
-                                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                  <User2 className="h-3 w-3 shrink-0" />
-                                  <span className="truncate">{contactName}</span>
-                                </p>
-                              )}
-                              {lead.buildingId && getBuildingName(lead.buildingId) && (
-                                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                  <Building2 className="h-3 w-3 shrink-0" />
-                                  <span className="truncate">{getBuildingName(lead.buildingId)}</span>
-                                </p>
-                              )}
-                            </CardHeader>
-                            <CardContent className="p-3 pt-2 flex flex-col gap-2">
-                              <div className="flex items-center justify-between">
-                                <span className={`text-xs font-bold flex items-center gap-1 ${isLeadPotential(lead) ? "text-muted-foreground" : "text-primary"}`}>
-                                  {isLeadPotential(lead) ? null : <DollarSign className="h-3 w-3" />}
-                                  {isLeadPotential(lead) ? (
-                                    <span className="font-black tracking-tight text-primary">{lead.valueTier}</span>
-                                  ) : formatCurrency(lead.value)}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
-                                  {getUserName(lead.assignedTo).split(' ')[0]}
-                                </span>
-                              </div>
-
-                              <div className="flex flex-wrap gap-1">
-                                {serviceLabel && (
-                                  <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 w-fit font-medium border ${serviceColor}`}>
-                                    <Briefcase className="h-2.5 w-2.5 mr-1" />
-                                    {serviceLabel}
-                                  </Badge>
-                                )}
-                                {lead.tier && <TierBadge tier={lead.tier} size="xs" />}
-                              </div>
-
-                              <div className="space-y-1">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                                    <Target className="h-3 w-3" />
-                                    Confidence
-                                  </span>
-                                  <span className={`text-[10px] font-bold ${getConfidenceColor(score)}`}>
-                                    {score}%
-                                  </span>
-                                </div>
-                                <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full transition-all ${getConfidenceBarColor(score)}`}
-                                    style={{ width: `${score}%` }}
-                                  />
-                                </div>
-                              </div>
-
-                              {lead.tags && lead.tags.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {lead.tags.slice(0, 3).map((tag) => (
-                                    <Badge key={tag} variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-medium">
-                                      {tag}
-                                    </Badge>
-                                  ))}
-                                  {lead.tags.length > 3 && (
-                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
-                                      +{lead.tags.length - 3}
-                                    </Badge>
-                                  )}
-                                </div>
-                              )}
-
-                              {leadTasks.length > 0 && (
-                                <div className="text-[10px] text-muted-foreground flex items-center gap-1 border-t pt-1.5 mt-0.5">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  {leadTasks.filter(t => t.status === "done").length}/{leadTasks.length} tasks
-                                </div>
-                              )}
-
-                              {lead.contractType === "recurring" && (
-                                <div className="flex items-center gap-1.5 mt-1">
-                                  <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-bold bg-blue-100 text-blue-700 border-blue-200 uppercase tracking-tighter">
-                                    ↻ {lead.recurringFrequency}
-                                  </Badge>
-                                  {lead.renewalDate && (
-                                    <span className={`text-[9px] font-bold uppercase tracking-tighter ${
-                                      (new Date(lead.renewalDate).getTime() - new Date().getTime()) < (60 * 24 * 60 * 60 * 1000)
-                                        ? "text-red-600 animate-pulse"
-                                        : "text-muted-foreground"
-                                    }`}>
-                                      Renews {new Date(lead.renewalDate).toLocaleDateString()}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                            </HoverCardTrigger>
-                            <HoverCardContent side="right" align="start" className="w-72 p-3" data-testid={`ai-summary-${lead.id}`}>
-                              <div className="flex items-center gap-1.5 mb-2">
-                                <Sparkles className="h-3.5 w-3.5 text-primary" />
-                                <span className="text-xs font-bold text-primary">AI Summary</span>
-                              </div>
-                              {loadingAiSummary[lead.id] ? (
-                                <div className="space-y-1.5">
-                                  <div className="h-3 bg-muted animate-pulse rounded w-full" />
-                                  <div className="h-3 bg-muted animate-pulse rounded w-5/6" />
-                                  <div className="h-3 bg-muted animate-pulse rounded w-4/6" />
-                                </div>
-                              ) : aiSummaries[lead.id] !== undefined ? (
-                                <p className="text-xs text-muted-foreground leading-relaxed">{aiSummaries[lead.id] || "No summary available."}</p>
-                              ) : (
-                                <p className="text-xs text-muted-foreground italic">Hover to generate summary...</p>
-                              )}
-                            </HoverCardContent>
-                          </HoverCard>
-                        );
-                      })}
-                  </div>
-                </ScrollArea>
-              </div>
-              );
-            })}
-          </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         ) : (
           <div className="p-6">
             <Card>
@@ -1194,13 +1463,28 @@ export default function Leads() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2 min-w-[80px]">
-                            <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${getConfidenceBarColor(score)}`}
-                                style={{ width: `${score}%` }}
-                              />
-                            </div>
-                            <span className={`text-xs font-bold ${getConfidenceColor(score)}`}>{score}%</span>
+                            {lead.confidenceStatus ? (
+                              <Badge 
+                                variant="secondary" 
+                                className={`text-[9px] px-1.5 py-0 h-4 font-bold uppercase tracking-tighter ${
+                                  lead.confidenceStatus === "undecided" 
+                                    ? "bg-muted text-muted-foreground" 
+                                    : "bg-amber-100 text-amber-700 border-amber-200"
+                                }`}
+                              >
+                                {lead.confidenceStatus === "undecided" ? "Undecided" : "Needs Work"}
+                              </Badge>
+                            ) : (
+                              <>
+                                <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${getConfidenceBarColor(score)}`}
+                                    style={{ width: `${score}%` }}
+                                  />
+                                </div>
+                                <span className={`text-xs font-bold ${getConfidenceColor(score)}`}>{score}%</span>
+                              </>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1566,32 +1850,64 @@ export default function Leads() {
                 )}
               </div>
 
-              <FormField
-                control={form.control}
-                name="confidenceScore"
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center justify-between">
-                      <FormLabel>Confidence Score</FormLabel>
-                      <span className={`text-sm font-bold ${getConfidenceColor(field.value ?? 50)}`}>
-                        {field.value ?? 50}%
-                      </span>
-                    </div>
-                    <FormControl>
-                      <Slider
-                        min={0}
-                        max={100}
-                        step={5}
-                        value={[field.value ?? 50]}
-                        onValueChange={([val]) => field.onChange(val)}
-                        className="mt-2"
-                        data-testid="slider-confidence"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="space-y-3">
+                <FormLabel>Confidence Status</FormLabel>
+                <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setCreateConfidenceStatus("undecided")}
+                    className={`px-3 py-1 text-sm rounded font-medium transition-colors ${createConfidenceStatus === "undecided" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                    data-testid="button-confidence-undecided"
+                  >
+                    Undecided
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreateConfidenceStatus("needs_work")}
+                    className={`px-3 py-1 text-sm rounded font-medium transition-colors ${createConfidenceStatus === "needs_work" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                    data-testid="button-confidence-needs-work"
+                  >
+                    Needs Work
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreateConfidenceStatus(null)}
+                    className={`px-3 py-1 text-sm rounded font-medium transition-colors ${createConfidenceStatus === null ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                    data-testid="button-confidence-set-score"
+                  >
+                    Set Score
+                  </button>
+                </div>
+              </div>
+
+              {!createConfidenceStatus && (
+                <FormField
+                  control={form.control}
+                  name="confidenceScore"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel>Confidence Score</FormLabel>
+                        <span className={`text-sm font-bold ${getConfidenceColor(field.value ?? 50)}`}>
+                          {field.value ?? 50}%
+                        </span>
+                      </div>
+                      <FormControl>
+                        <Slider
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={[field.value ?? 50]}
+                          onValueChange={([val]) => field.onChange(val)}
+                          className="mt-2"
+                          data-testid="slider-confidence"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}
@@ -1620,6 +1936,7 @@ export default function Leads() {
               <div className="space-y-2">
                 <FormLabel>Tags</FormLabel>
                 <div className="flex gap-2">
+                <div className="relative">
                   <Input
                     placeholder="Add a tag and press Enter"
                     value={tagInput}
@@ -1630,8 +1947,13 @@ export default function Leads() {
                         addTag(tagInput);
                       }
                     }}
+                    list="deal-tags-list"
                     data-testid="input-lead-tag"
                   />
+                  <datalist id="deal-tags-list">
+                    {dealTags.map(t => <option key={t.id} value={t.name} />)}
+                  </datalist>
+                </div>
                   <Button type="button" variant="outline" size="sm" onClick={() => addTag(tagInput)}>
                     <Plus className="h-4 w-4" />
                   </Button>
@@ -2038,28 +2360,60 @@ export default function Leads() {
                             </FormItem>
                           )}
                         />
-                        <FormField
-                          control={editLeadForm.control}
-                          name="confidenceScore"
-                          render={({ field }) => (
-                            <FormItem>
-                              <div className="flex items-center justify-between">
-                                <FormLabel>Confidence Score</FormLabel>
-                                <span className={`text-sm font-bold ${getConfidenceColor(field.value ?? 50)}`}>
-                                  {field.value ?? 50}%
-                                </span>
-                              </div>
-                              <FormControl>
-                                <Slider
-                                  min={0} max={100} step={5}
-                                  value={[field.value ?? 50]}
-                                  onValueChange={([v]) => field.onChange(v)}
-                                  data-testid="slider-edit-confidence"
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
+                        <div className="space-y-3">
+                          <Label className="text-sm font-medium">Confidence Status</Label>
+                          <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">
+                            <button
+                              type="button"
+                              onClick={() => setEditConfidenceStatus("undecided")}
+                              className={`px-3 py-1 text-sm rounded font-medium transition-colors ${editConfidenceStatus === "undecided" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                              data-testid="button-edit-confidence-undecided"
+                            >
+                              Undecided
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditConfidenceStatus("needs_work")}
+                              className={`px-3 py-1 text-sm rounded font-medium transition-colors ${editConfidenceStatus === "needs_work" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                              data-testid="button-edit-confidence-needs-work"
+                            >
+                              Needs Work
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditConfidenceStatus(null)}
+                              className={`px-3 py-1 text-sm rounded font-medium transition-colors ${editConfidenceStatus === null ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                              data-testid="button-edit-confidence-set-score"
+                            >
+                              Set Score
+                            </button>
+                          </div>
+                        </div>
+
+                        {!editConfidenceStatus && (
+                          <FormField
+                            control={editLeadForm.control}
+                            name="confidenceScore"
+                            render={({ field }) => (
+                              <FormItem>
+                                <div className="flex items-center justify-between">
+                                  <FormLabel>Confidence Score</FormLabel>
+                                  <span className={`text-sm font-bold ${getConfidenceColor(field.value ?? 50)}`}>
+                                    {field.value ?? 50}%
+                                  </span>
+                                </div>
+                                <FormControl>
+                                  <Slider
+                                    min={0} max={100} step={5}
+                                    value={[field.value ?? 50]}
+                                    onValueChange={([v]) => field.onChange(v)}
+                                    data-testid="slider-edit-confidence"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        )}
                         <FormField
                           control={editLeadForm.control}
                           name="tier"
@@ -2086,6 +2440,7 @@ export default function Leads() {
                         <div className="space-y-2">
                           <Label className="text-sm font-medium">Tags</Label>
                           <div className="flex gap-2">
+                          <div className="relative">
                             <Input
                               placeholder="Add a tag and press Enter"
                               value={editTagInput}
@@ -2096,8 +2451,13 @@ export default function Leads() {
                                   addEditTag(editTagInput);
                                 }
                               }}
+                              list="edit-deal-tags-list"
                               data-testid="input-edit-lead-tag"
                             />
+                            <datalist id="edit-deal-tags-list">
+                              {dealTags.map(t => <option key={t.id} value={t.name} />)}
+                            </datalist>
+                          </div>
                             <Button type="button" variant="outline" size="sm" onClick={() => addEditTag(editTagInput)}>
                               <Plus className="h-4 w-4" />
                             </Button>

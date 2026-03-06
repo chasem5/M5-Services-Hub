@@ -1,4 +1,4 @@
-import { useState, useRef, lazy, Suspense, useMemo } from "react";
+import { useState, useRef, lazy, Suspense, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   Plus, 
@@ -408,6 +408,70 @@ export default function Customers() {
   const vcfFileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  const [selectedCompanies, setSelectedCompanies] = useState<number[]>([]);
+  const [selectedContacts, setSelectedContacts] = useState<number[]>([]);
+  const [isBulkCompanyEditOpen, setIsBulkCompanyEditOpen] = useState(false);
+  const [isBulkContactEditOpen, setIsBulkContactEditOpen] = useState(false);
+
+  const bulkDeleteClientsMutation = useMutation({
+    mutationFn: (ids: number[]) => apiRequest("DELETE", "/api/clients/bulk", { ids }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setSelectedCompanies([]);
+      toast({ title: "Companies deleted successfully" });
+    },
+    onError: (error: Error) => toast({ title: "Bulk delete failed", description: error.message, variant: "destructive" }),
+  });
+
+  const bulkDeleteContactsMutation = useMutation({
+    mutationFn: (ids: number[]) => apiRequest("DELETE", "/api/contacts/bulk", { ids }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+      setSelectedContacts([]);
+      toast({ title: "Contacts deleted successfully" });
+    },
+    onError: (error: Error) => toast({ title: "Bulk delete failed", description: error.message, variant: "destructive" }),
+  });
+
+  const bulkUpdateClientsMutation = useMutation({
+    mutationFn: ({ ids, data }: { ids: number[], data: any }) => apiRequest("PATCH", "/api/clients/bulk", { ids, data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setSelectedCompanies([]);
+      setIsBulkCompanyEditOpen(false);
+      toast({ title: "Companies updated successfully" });
+    },
+    onError: (error: Error) => toast({ title: "Bulk update failed", description: error.message, variant: "destructive" }),
+  });
+
+  const bulkUpdateContactsMutation = useMutation({
+    mutationFn: ({ ids, data }: { ids: number[], data: any }) => apiRequest("PATCH", "/api/contacts/bulk", { ids, data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+      setSelectedContacts([]);
+      setIsBulkContactEditOpen(false);
+      toast({ title: "Contacts updated successfully" });
+    },
+    onError: (error: Error) => toast({ title: "Bulk update failed", description: error.message, variant: "destructive" }),
+  });
+
+  const uploadLogoMutation = useMutation({
+    mutationFn: async ({ clientId, file }: { clientId: number, file: File }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("entityType", "client");
+      formData.append("entityId", clientId.toString());
+      const res = await apiRequest("POST", "/api/attachments/upload", formData);
+      const attachment = await res.json();
+      await apiRequest("PATCH", `/api/clients/${clientId}`, { logoUrl: attachment.objectKey });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({ title: "Logo uploaded successfully" });
+    },
+    onError: (error: Error) => toast({ title: "Logo upload failed", description: error.message, variant: "destructive" }),
+  });
+
   const { data: clients, isLoading } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
   });
@@ -578,10 +642,11 @@ export default function Customers() {
       industry: "",
       address: "",
       phone: "",
-      email: "",
-      website: "",
       notes: "",
       tier: null as string | null,
+      website: "",
+      logoUrl: "",
+      annualRevenue: null as string | null,
     },
   });
 
@@ -601,6 +666,7 @@ export default function Customers() {
       serviceNeeds: [] as string[],
       stageId: null as number | null,
       ownerId: null as string | null,
+      profilePictureUrl: "",
     },
   });
 
@@ -656,6 +722,7 @@ export default function Customers() {
     const payload = {
       ...data,
       linkedinUrl: data.linkedinUrl || null,
+      profilePictureUrl: data.profilePictureUrl || null,
       tier: data.tier === "none" ? null : (data.tier || null),
       reportsTo: data.reportsTo || null,
       serviceNeeds: data.serviceNeeds || [],
@@ -957,6 +1024,98 @@ export default function Customers() {
                 />
                 <FormField
                   control={form.control}
+                  name="website"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Website</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. acme.com" {...field} value={field.value || ""} data-testid="input-customer-website" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="logoUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Logo URL</FormLabel>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <FormControl>
+                            <Input placeholder="https://example.com/logo.png" {...field} value={field.value || ""} data-testid="input-customer-logo" />
+                          </FormControl>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const website = form.getValues("website");
+                              if (website) {
+                                const domain = website.replace(/^https?:\/\//, "").split("/")[0];
+                                field.onChange(`https://logo.clearbit.com/${domain}`);
+                              } else {
+                                toast({ title: "Please enter a website first" });
+                              }
+                            }}
+                            data-testid="button-fetch-logo"
+                          >
+                            <Sparkles className="h-4 w-4 mr-1" />
+                            Fetch
+                          </Button>
+                          <div className="relative">
+                            <input
+                              type="file"
+                              className="hidden"
+                              id="logo-upload"
+                              accept="image/*"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const formData = new FormData();
+                                  formData.append("file", file);
+                                  formData.append("entityType", "client");
+                                  formData.append("entityId", "0"); // Temporary ID for new client
+                                  try {
+                                    const res = await apiRequest("POST", "/api/attachments/upload", formData);
+                                    const attachment = await res.json();
+                                    field.onChange(attachment.objectKey);
+                                  } catch (err) {
+                                    toast({ title: "Upload failed", variant: "destructive" });
+                                  }
+                                }
+                              }}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => document.getElementById("logo-upload")?.click()}
+                              data-testid="button-upload-logo"
+                            >
+                              <Upload className="h-4 w-4 mr-1" />
+                              Upload
+                            </Button>
+                          </div>
+                        </div>
+                        {field.value && (
+                          <div className="h-12 w-12 rounded border bg-muted flex items-center justify-center overflow-hidden">
+                            <img
+                              src={field.value.startsWith("objects/") ? `/api/attachments/stream/${field.value.split("/").pop()}` : field.value}
+                              alt="Logo preview"
+                              className="h-full w-full object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="notes"
                   render={({ field }) => (
                     <FormItem>
@@ -1061,10 +1220,21 @@ export default function Customers() {
                   ))}
                 </div>
               ) : filteredClients && filteredClients.length > 0 ? (
-                <div className="rounded-md border border-border/50 overflow-x-auto">
-                  <Table className="min-w-[700px]">
+                <div className="relative">
+                  <div className="rounded-md border border-border/50 overflow-x-auto">
+                    <Table className="min-w-[700px]">
                     <TableHeader className="bg-muted/50">
                       <TableRow>
+                        <TableHead className="w-[40px]">
+                          <Checkbox
+                            checked={filteredClients.length > 0 && selectedCompanies.length === filteredClients.length}
+                            onCheckedChange={(checked) => {
+                              if (checked) setSelectedCompanies(filteredClients.map(c => c.id));
+                              else setSelectedCompanies([]);
+                            }}
+                            data-testid="checkbox-select-all-companies"
+                          />
+                        </TableHead>
                         <TableHead className="font-bold">Company Name</TableHead>
                         <TableHead className="font-bold">Tier</TableHead>
                         <TableHead className="font-bold">Industry</TableHead>
@@ -1076,14 +1246,36 @@ export default function Customers() {
                     <TableBody>
                       {filteredClients.map((client) => (
                         <TableRow key={client.id} className="hover:bg-muted/30 transition-colors">
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedCompanies.includes(client.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) setSelectedCompanies(prev => [...prev, client.id]);
+                                else setSelectedCompanies(prev => prev.filter(id => id !== client.id));
+                              }}
+                              data-testid={`checkbox-select-company-${client.id}`}
+                            />
+                          </TableCell>
                           <TableCell className="font-medium">
                             <Link 
                               href={`/customers/${client.id}`}
                               className="flex items-center gap-3 text-primary hover:underline group"
                               data-testid={`link-customer-detail-${client.id}`}
                             >
-                              <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors shrink-0">
-                                <Building2 className="h-5 w-5" />
+                              <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors shrink-0 overflow-hidden">
+                                {client.logoUrl ? (
+                                  <img 
+                                    src={client.logoUrl.startsWith("objects/") ? `/api/attachments/stream/${client.logoUrl.split("/").pop()}` : client.logoUrl} 
+                                    alt={client.name}
+                                    className="h-full w-full object-cover"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                      (e.target as HTMLImageElement).parentElement!.innerHTML = '<Building2 class="h-5 w-5" />';
+                                    }}
+                                  />
+                                ) : (
+                                  <Building2 className="h-5 w-5" />
+                                )}
                               </div>
                               <div className="flex flex-col gap-1 min-w-0">
                                 <span className="text-base">{client.name}</span>
@@ -1185,7 +1377,90 @@ export default function Customers() {
                     </TableBody>
                   </Table>
                 </div>
-              ) : (
+
+                {selectedCompanies.length > 0 && (
+                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background border shadow-xl rounded-full px-6 py-3 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="flex items-center gap-2 border-r pr-6">
+                      <span className="text-sm font-semibold">{selectedCompanies.length} selected</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 rounded-full"
+                        onClick={() => setSelectedCompanies([])}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <Popover open={isBulkCompanyEditOpen} onOpenChange={setIsBulkCompanyEditOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-9">
+                            <Settings className="h-4 w-4 mr-2" />
+                            Bulk Edit
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-80 p-4" align="center">
+                          <div className="space-y-4">
+                            <h4 className="font-medium">Bulk Edit Companies</h4>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Industry</label>
+                              <Select onValueChange={(val) => {
+                                if (confirm(`Update industry for ${selectedCompanies.length} companies?`)) {
+                                  bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { industry: val } });
+                                }
+                              }}>
+                                <SelectTrigger className="h-9">
+                                  <SelectValue placeholder="Select industry..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {industries.map(ind => (
+                                    <SelectItem key={ind} value={ind!}>{ind}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Tier</label>
+                              <Select onValueChange={(val) => {
+                                if (confirm(`Update tier for ${selectedCompanies.length} companies?`)) {
+                                  bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { tier: val === "none" ? null : val } });
+                                }
+                              }}>
+                                <SelectTrigger className="h-9">
+                                  <SelectValue placeholder="Select tier..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No Tier</SelectItem>
+                                  <SelectItem value="tier_1">Tier 1</SelectItem>
+                                  <SelectItem value="tier_2">Tier 2</SelectItem>
+                                  <SelectItem value="tier_3">Tier 3</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="h-9"
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to delete ${selectedCompanies.length} companies?`)) {
+                            bulkDeleteClientsMutation.mutate(selectedCompanies);
+                          }
+                        }}
+                        disabled={bulkDeleteClientsMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
                 <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed border-border/50">
                   <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
                     <Building2 className="h-6 w-6 text-muted-foreground" />
@@ -1228,81 +1503,118 @@ export default function Customers() {
                     data-testid="input-search-contacts"
                   />
                 </div>
-                {/* Company filter */}
-                <Select value={contactCompanyFilter} onValueChange={setContactCompanyFilter}>
-                  <SelectTrigger className="w-[180px] h-10" data-testid="select-contact-company-filter">
-                    <SelectValue placeholder="All Companies" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Companies</SelectItem>
-                    {clients?.map(c => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {/* Status filter */}
-                <Select value={contactStatusFilter} onValueChange={setContactStatusFilter}>
-                  <SelectTrigger className="w-[160px] h-10" data-testid="select-contact-status-filter">
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="likely_left">May have left</SelectItem>
-                    <SelectItem value="unverified">Open to Work</SelectItem>
-                    <SelectItem value="none">Not verified</SelectItem>
-                  </SelectContent>
-                </Select>
-                {/* Tier filter */}
-                <Select value={contactTierFilter} onValueChange={setContactTierFilter}>
-                  <SelectTrigger className="w-[140px] h-10" data-testid="select-contact-tier-filter">
-                    <SelectValue placeholder="All Tiers" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Tiers</SelectItem>
-                    <SelectItem value="tier_1">Tier 1</SelectItem>
-                    <SelectItem value="tier_2">Tier 2</SelectItem>
-                    <SelectItem value="tier_3">Tier 3</SelectItem>
-                  </SelectContent>
-                </Select>
-                {/* Stage filter */}
-                <Select value={contactStageFilter} onValueChange={setContactStageFilter}>
-                  <SelectTrigger className="w-[150px] h-10" data-testid="select-contact-stage-filter">
-                    <SelectValue placeholder="All Stages" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Stages</SelectItem>
-                    <SelectItem value="none">No Stage</SelectItem>
-                    {contactStages.map(s => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {/* Owner filter */}
-                <Select value={contactOwnerFilter} onValueChange={setContactOwnerFilter}>
-                  <SelectTrigger className="w-[150px] h-10" data-testid="select-contact-owner-filter">
-                    <SelectValue placeholder="All Owners" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Owners</SelectItem>
-                    <SelectItem value="none">No Owner</SelectItem>
-                    {users.map(u => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {/* Manage stages button */}
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="h-10 gap-2" data-testid="button-contact-filters">
+                      <Tag className="h-4 w-4" />
+                      Filters
+                      {(() => {
+                        let count = 0;
+                        if (contactCompanyFilter !== "all") count++;
+                        if (contactStatusFilter !== "all") count++;
+                        if (contactTierFilter !== "all") count++;
+                        if (contactStageFilter !== "all") count++;
+                        if (contactOwnerFilter !== "all") count++;
+                        return count > 0 ? (
+                          <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{count}</Badge>
+                        ) : null;
+                      })()}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-4" align="start">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Company</label>
+                        <Select value={contactCompanyFilter} onValueChange={setContactCompanyFilter}>
+                          <SelectTrigger className="w-full h-9" data-testid="select-contact-company-filter">
+                            <SelectValue placeholder="All Companies" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Companies</SelectItem>
+                            {clients?.map(c => (
+                              <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Verification Status</label>
+                        <Select value={contactStatusFilter} onValueChange={setContactStatusFilter}>
+                          <SelectTrigger className="w-full h-9" data-testid="select-contact-status-filter">
+                            <SelectValue placeholder="All Statuses" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Statuses</SelectItem>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="likely_left">May have left</SelectItem>
+                            <SelectItem value="unverified">Open to Work</SelectItem>
+                            <SelectItem value="none">Not verified</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Tier</label>
+                        <Select value={contactTierFilter} onValueChange={setContactTierFilter}>
+                          <SelectTrigger className="w-full h-9" data-testid="select-contact-tier-filter">
+                            <SelectValue placeholder="All Tiers" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Tiers</SelectItem>
+                            <SelectItem value="tier_1">Tier 1</SelectItem>
+                            <SelectItem value="tier_2">Tier 2</SelectItem>
+                            <SelectItem value="tier_3">Tier 3</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Stage</label>
+                        <Select value={contactStageFilter} onValueChange={setContactStageFilter}>
+                          <SelectTrigger className="w-full h-9" data-testid="select-contact-stage-filter">
+                            <SelectValue placeholder="All Stages" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Stages</SelectItem>
+                            <SelectItem value="none">No Stage</SelectItem>
+                            {contactStages.map(s => (
+                              <SelectItem key={s.id} value={String(s.id)}>{s.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">Relationship Owner</label>
+                        <Select value={contactOwnerFilter} onValueChange={setContactOwnerFilter}>
+                          <SelectTrigger className="w-full h-9" data-testid="select-contact-owner-filter">
+                            <SelectValue placeholder="All Owners" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Owners</SelectItem>
+                            <SelectItem value="none">No Owner</SelectItem>
+                            {users.map(u => (
+                              <SelectItem key={u.id} value={u.id}>
+                                {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="h-10 gap-1.5 text-muted-foreground"
+                  size="icon"
+                  className="h-10 w-10 text-muted-foreground"
                   onClick={() => setStageManagerOpen(true)}
                   data-testid="button-manage-contact-stages"
                 >
-                  <Settings className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Stages</span>
+                  <Settings className="h-4 w-4" />
                 </Button>
                 {(contactSearch || contactCompanyFilter !== "all" || contactStatusFilter !== "all" || contactTierFilter !== "all" || contactStageFilter !== "all" || contactOwnerFilter !== "all") && (
                   <button
@@ -1324,10 +1636,21 @@ export default function Customers() {
                   {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
                 </div>
               ) : filteredContacts.length > 0 ? (
-                <div className="rounded-md border border-border/50 overflow-x-auto">
-                  <Table className="min-w-[700px]">
+                <div className="relative">
+                  <div className="rounded-md border border-border/50 overflow-x-auto">
+                    <Table className="min-w-[700px]">
                     <TableHeader className="bg-muted/50">
                       <TableRow>
+                        <TableHead className="w-[40px]">
+                          <Checkbox
+                            checked={filteredContacts.length > 0 && selectedContacts.length === filteredContacts.length}
+                            onCheckedChange={(checked) => {
+                              if (checked) setSelectedContacts(filteredContacts.map(c => c.id));
+                              else setSelectedContacts([]);
+                            }}
+                            data-testid="checkbox-select-all-contacts"
+                          />
+                        </TableHead>
                         {(["name", "company", "title"] as const).map(field => {
                           const labels = { name: "Name", company: "Company", title: "Title" };
                           const active = contactSortField === field;
@@ -1391,6 +1714,16 @@ export default function Customers() {
                           onClick={() => setSelectedContact(contact)}
                           data-testid={`row-contact-${contact.id}`}
                         >
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedContacts.includes(contact.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) setSelectedContacts(prev => [...prev, contact.id]);
+                                else setSelectedContacts(prev => prev.filter(id => id !== contact.id));
+                              }}
+                              data-testid={`checkbox-select-contact-${contact.id}`}
+                            />
+                          </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-3">
                               {contact.profilePictureUrl ? (
@@ -1576,6 +1909,107 @@ export default function Customers() {
                     </TableBody>
                   </Table>
                 </div>
+
+                {selectedContacts.length > 0 && (
+                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background border shadow-xl rounded-full px-6 py-3 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="flex items-center gap-2 border-r pr-6">
+                      <span className="text-sm font-semibold">{selectedContacts.length} selected</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 rounded-full"
+                        onClick={() => setSelectedContacts([])}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <Popover open={isBulkContactEditOpen} onOpenChange={setIsBulkContactEditOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-9">
+                            <Settings className="h-4 w-4 mr-2" />
+                            Bulk Edit
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-80 p-4" align="center">
+                          <div className="space-y-4">
+                            <h4 className="font-medium">Bulk Edit Contacts</h4>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Company</label>
+                              <Select onValueChange={(val) => {
+                                if (confirm(`Move ${selectedContacts.length} contacts to another company?`)) {
+                                  bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { clientId: parseInt(val) } });
+                                }
+                              }}>
+                                <SelectTrigger className="h-9">
+                                  <SelectValue placeholder="Select company..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {clients?.map(c => (
+                                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Stage</label>
+                              <Select onValueChange={(val) => {
+                                if (confirm(`Update stage for ${selectedContacts.length} contacts?`)) {
+                                  bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { stageId: val === "none" ? null : parseInt(val) } });
+                                }
+                              }}>
+                                <SelectTrigger className="h-9">
+                                  <SelectValue placeholder="Select stage..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No Stage</SelectItem>
+                                  {contactStages.map(s => (
+                                    <SelectItem key={s.id} value={String(s.id)}>{s.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Tier</label>
+                              <Select onValueChange={(val) => {
+                                if (confirm(`Update tier for ${selectedContacts.length} contacts?`)) {
+                                  bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { tier: val === "none" ? null : val } });
+                                }
+                              }}>
+                                <SelectTrigger className="h-9">
+                                  <SelectValue placeholder="Select tier..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No Tier</SelectItem>
+                                  <SelectItem value="tier_1">Tier 1</SelectItem>
+                                  <SelectItem value="tier_2">Tier 2</SelectItem>
+                                  <SelectItem value="tier_3">Tier 3</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="h-9"
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to delete ${selectedContacts.length} contacts?`)) {
+                            bulkDeleteContactsMutation.mutate(selectedContacts);
+                          }
+                        }}
+                        disabled={bulkDeleteContactsMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
               ) : (
                 <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed border-border/50">
                   <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
@@ -1678,6 +2112,32 @@ export default function Customers() {
                             data-testid="input-new-contact-linkedin"
                           />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField control={contactForm.control} name="profilePictureUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Profile Picture URL</FormLabel>
+                        <div className="flex items-center gap-3">
+                          <FormControl>
+                            <Input
+                              placeholder="https://example.com/photo.jpg"
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-new-contact-photo"
+                            />
+                          </FormControl>
+                          {field.value && (
+                            <img
+                              src={field.value}
+                              alt="Preview"
+                              className="h-10 w-10 rounded-full object-cover border"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          )}
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -2183,7 +2643,7 @@ export default function Customers() {
               <SearchableSelect
                 options={(clients ?? []).map(c => ({ value: String(c.id), label: c.name }))}
                 value={vcfAssignClientId}
-                onValueChange={setVcfAssignClientId}
+                onChange={setVcfAssignClientId}
                 placeholder="Select company..."
                 data-testid="select-vcf-company"
               />

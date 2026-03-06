@@ -18,6 +18,7 @@ export const clients = pgTable("clients", {
   serviceNeeds: text("service_needs").array().default([]),
   annualRevenue: decimal("annual_revenue", { precision: 12, scale: 2 }),
   tier: varchar("tier", { length: 10 }),
+  logoUrl: varchar("logo_url"),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -104,6 +105,7 @@ export const leads = pgTable("leads", {
   valueTier: varchar("value_tier", { length: 5 }),
   tier: varchar("tier", { length: 10 }),
   confidenceScore: integer("confidence_score").default(50),
+  confidenceStatus: varchar("confidence_status", { length: 30 }),
   tags: text("tags").array().default([]),
   assignedTo: varchar("assigned_to").references(() => users.id),
   notes: text("notes"),
@@ -524,3 +526,15 @@ export type BuildingPortfolio = typeof buildingPortfolios.$inferSelect;
 export type InsertBuildingPortfolio = z.infer<typeof insertBuildingPortfolioSchema>;
 export type PortfolioBuilding = typeof portfolioBuildings.$inferSelect;
 export type PortfolioContact = typeof portfolioContacts.$inferSelect;
+
+// Deal Tags (company-wide)
+export const dealTags = pgTable("deal_tags", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  color: varchar("color", { length: 30 }).default("gray"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertDealTagSchema = createInsertSchema(dealTags).omit({ id: true, createdAt: true });
+export type DealTag = typeof dealTags.$inferSelect;
+export type InsertDealTag = z.infer<typeof insertDealTagSchema>;

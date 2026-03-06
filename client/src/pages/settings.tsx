@@ -30,7 +30,28 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff } from "lucide-react";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera } from "lucide-react";
+
+const profileSchema = z.object({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  phone: z.string().optional(),
+  profileImageUrl: z.string().url("Invalid URL").optional().or(z.literal("")),
+});
+
+type ProfileFormValues = z.infer<typeof profileSchema>;
 
 interface CalendarStatus {
   connected: boolean;
@@ -45,6 +66,56 @@ interface GmailStatus {
 export default function Settings() {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
+
+  const form = useForm<ProfileFormValues>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      firstName: currentUser?.firstName || "",
+      lastName: currentUser?.lastName || "",
+      phone: currentUser?.phone || "",
+      profileImageUrl: currentUser?.profileImageUrl || "",
+    },
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (values: ProfileFormValues) => {
+      const res = await apiRequest("PATCH", "/api/users/me", values);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      toast({ title: "Profile updated", description: "Your personal information has been successfully updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update profile", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const uploadAvatarMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      const res = await fetch("/api/users/me/avatar", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to upload avatar");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      form.setValue("profileImageUrl", data.url);
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      toast({ title: "Avatar uploaded", description: "Your profile picture has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to upload avatar", description: error.message, variant: "destructive" });
+    },
+  });
 
   const { data: users, isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -231,49 +302,141 @@ export default function Settings() {
             </div>
           </CardHeader>
           <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-8">
-              <Avatar className="h-24 w-24 border-4 border-background shadow-xl ring-2 ring-primary/20">
-                <AvatarImage src={currentUser.profileImageUrl || undefined} />
-                <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
-                  {currentUser.firstName?.[0]}{currentUser.lastName?.[0]}
-                </AvatarFallback>
-              </Avatar>
-              
-              <div className="grid gap-4 flex-1 w-full max-w-xl">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <UserIcon className="h-3 w-3" /> First Name
-                    </label>
-                    <p className="text-lg font-semibold">{currentUser.firstName || "N/A"}</p>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit((values) => updateProfileMutation.mutate(values))} className="space-y-6">
+                <div className="flex flex-col md:flex-row items-start gap-8">
+                  <div className="flex flex-col items-center gap-4">
+                    <Avatar className="h-24 w-24 border-4 border-background shadow-xl ring-2 ring-primary/20">
+                      <AvatarImage src={form.watch("profileImageUrl") || undefined} />
+                      <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
+                        {currentUser.firstName?.[0]}{currentUser.lastName?.[0]}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => document.getElementById("avatar-upload")?.click()}
+                        disabled={uploadAvatarMutation.isPending}
+                        data-testid="button-upload-avatar"
+                      >
+                        {uploadAvatarMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                        Upload Photo
+                      </Button>
+                      <input
+                        id="avatar-upload"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) uploadAvatarMutation.mutate(file);
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <UserIcon className="h-3 w-3" /> Last Name
-                    </label>
-                    <p className="text-lg font-semibold">{currentUser.lastName || "N/A"}</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <Mail className="h-3 w-3" /> Email Address
-                  </label>
-                  <p className="text-lg font-semibold">{currentUser.email || "N/A"}</p>
-                </div>
 
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <Shield className="h-3 w-3" /> System Role
-                  </label>
-                  <div className="pt-1">
-                    <Badge variant="outline" className="capitalize px-3 py-1 bg-primary/5 border-primary/20 text-primary font-bold">
-                      {currentUser.role}
-                    </Badge>
+                  <div className="grid gap-4 flex-1 w-full max-w-xl">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="firstName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                              <UserIcon className="h-3 w-3" /> First Name
+                            </FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="Enter your first name" data-testid="input-first-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="lastName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                              <UserIcon className="h-3 w-3" /> Last Name
+                            </FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="Enter your last name" data-testid="input-last-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                            <Phone className="h-3 w-3" /> Phone Number
+                          </FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Enter your phone number" data-testid="input-phone" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="profileImageUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                            <Camera className="h-3 w-3" /> Profile Picture URL
+                          </FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Enter image URL" data-testid="input-profile-image-url" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                        <Mail className="h-3 w-3" /> Email Address
+                      </label>
+                      <p className="text-lg font-semibold">{currentUser.email || "N/A"}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                        <Shield className="h-3 w-3" /> System Role
+                      </label>
+                      <div className="pt-1">
+                        <Badge variant="outline" className="capitalize px-3 py-1 bg-primary/5 border-primary/20 text-primary font-bold">
+                          {currentUser.role}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="pt-4">
+                      <Button
+                        type="submit"
+                        className="w-full md:w-auto px-8"
+                        disabled={updateProfileMutation.isPending}
+                        data-testid="button-save-profile"
+                      >
+                        {updateProfileMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        Save Changes
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </form>
+            </Form>
           </CardContent>
         </Card>
 

@@ -34,6 +34,9 @@ import {
   buildingPortfolios,
   portfolioBuildings,
   portfolioContacts,
+  dealTags,
+  type DealTag,
+  type InsertDealTag,
   type BuildingPortfolio,
   type InsertBuildingPortfolio,
   type PortfolioBuilding,
@@ -306,6 +309,21 @@ export interface IStorage {
   removeBuildingFromPortfolio(portfolioId: number, buildingId: number): Promise<void>;
   addContactToPortfolio(portfolioId: number, contactId: number, role?: string | null): Promise<PortfolioContact>;
   removeContactFromPortfolio(portfolioId: number, contactId: number): Promise<void>;
+
+  // Deal Tags
+  listDealTags(): Promise<DealTag[]>;
+  createDealTag(data: InsertDealTag): Promise<DealTag>;
+  deleteDealTag(id: number): Promise<void>;
+  ensureDealTag(name: string): Promise<DealTag>;
+
+  // User Profile Self-Edit
+  updateUserProfile(id: string, data: { firstName?: string; lastName?: string; phone?: string; profileImageUrl?: string }): Promise<User>;
+
+  // Bulk Operations
+  deleteBulkClients(ids: number[]): Promise<void>;
+  deleteBulkClientContacts(ids: number[]): Promise<void>;
+  bulkUpdateClientContacts(ids: number[], data: Partial<ClientContact>): Promise<void>;
+  bulkUpdateClients(ids: number[], data: Partial<Client>): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1447,6 +1465,99 @@ export class DatabaseStorage implements IStorage {
   async removeContactFromPortfolio(portfolioId: number, contactId: number): Promise<void> {
     await db.delete(portfolioContacts)
       .where(and(eq(portfolioContacts.portfolioId, portfolioId), eq(portfolioContacts.contactId, contactId)));
+  }
+
+  // Deal Tags
+  async listDealTags(): Promise<DealTag[]> {
+    return await db.select().from(dealTags).orderBy(dealTags.name);
+  }
+
+  async createDealTag(data: InsertDealTag): Promise<DealTag> {
+    const [tag] = await db.insert(dealTags).values(data).returning();
+    return tag;
+  }
+
+  async deleteDealTag(id: number): Promise<void> {
+    await db.delete(dealTags).where(eq(dealTags.id, id));
+  }
+
+  async ensureDealTag(name: string): Promise<DealTag> {
+    const [existing] = await db.select().from(dealTags).where(eq(dealTags.name, name.toLowerCase().trim()));
+    if (existing) return existing;
+    const [created] = await db.insert(dealTags).values({ name: name.toLowerCase().trim() }).returning();
+    return created;
+  }
+
+  // User Profile Self-Edit
+  async updateUserProfile(id: string, data: { firstName?: string; lastName?: string; phone?: string; profileImageUrl?: string }): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  // Deal Tags
+  async listDealTags(): Promise<DealTag[]> {
+    return await db.select().from(dealTags).orderBy(dealTags.name);
+  }
+
+  async createDealTag(data: InsertDealTag): Promise<DealTag> {
+    const [tag] = await db.insert(dealTags).values(data).returning();
+    return tag;
+  }
+
+  async deleteDealTag(id: number): Promise<void> {
+    await db.delete(dealTags).where(eq(dealTags.id, id));
+  }
+
+  async ensureDealTag(name: string): Promise<DealTag> {
+    const [existing] = await db.select().from(dealTags).where(eq(dealTags.name, name));
+    if (existing) return existing;
+    const [tag] = await db.insert(dealTags).values({ name }).returning();
+    return tag;
+  }
+
+  // User Profile Self-Edit
+  async updateUserProfile(id: string, data: { firstName?: string; lastName?: string; phone?: string; profileImageUrl?: string }): Promise<User> {
+    const [user] = await db.update(users).set({ ...data, updatedAt: new Date() }).where(eq(users.id, id)).returning();
+    return user;
+  }
+
+  // Bulk Operations
+  async deleteBulkClients(ids: number[]): Promise<void> {
+    if (!ids.length) return;
+    for (const id of ids) {
+      await db.delete(clients).where(eq(clients.id, id));
+    }
+  }
+
+  async deleteBulkClientContacts(ids: number[]): Promise<void> {
+    if (!ids.length) return;
+    for (const id of ids) {
+      await db.delete(clientContacts).where(eq(clientContacts.id, id));
+    }
+  }
+
+  async bulkUpdateClientContacts(ids: number[], data: Partial<ClientContact>): Promise<void> {
+    if (!ids.length) return;
+    for (const id of ids) {
+      const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+      if (Object.keys(clean).length > 0) {
+        await db.update(clientContacts).set(clean as any).where(eq(clientContacts.id, id));
+      }
+    }
+  }
+
+  async bulkUpdateClients(ids: number[], data: Partial<Client>): Promise<void> {
+    if (!ids.length) return;
+    for (const id of ids) {
+      const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+      if (Object.keys(clean).length > 0) {
+        await db.update(clients).set({ ...clean as any, updatedAt: new Date() }).where(eq(clients.id, id));
+      }
+    }
   }
 }
 

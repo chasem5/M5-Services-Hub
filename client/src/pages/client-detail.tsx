@@ -319,6 +319,28 @@ function ContactCard({
     enabled: isPortfolioOpen,
   });
 
+  const { data: contactStages = [] } = useQuery<ContactStage[]>({
+    queryKey: ["/api/contact-stages"],
+  });
+
+  const { data: cardUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const getUserInitials = (userId: string) => {
+    const u = cardUsers.find((u: any) => u.id === userId);
+    if (!u) return "?";
+    const first = u.firstName?.[0] ?? "";
+    const last = u.lastName?.[0] ?? "";
+    return (first + last).toUpperCase() || (u.email?.[0]?.toUpperCase() ?? "?");
+  };
+
+  const getUserDisplayName = (userId: string) => {
+    const u = cardUsers.find((u: any) => u.id === userId);
+    if (!u) return userId;
+    return u.firstName ? `${u.firstName} ${u.lastName ?? ""}`.trim() : u.email;
+  };
+
   const addBuildingMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/contacts/${contact.id}/buildings`, {
@@ -971,6 +993,8 @@ export default function ClientDetail() {
       website: client.website || "",
       notes: client.notes || "",
       tier: (client as any).tier ?? null,
+      annualRevenue: (client as any).annualRevenue ?? null,
+      logoUrl: (client as any).logoUrl ?? "",
     } : {
       name: "",
       industry: "",
@@ -980,6 +1004,8 @@ export default function ClientDetail() {
       website: "",
       notes: "",
       tier: null,
+      annualRevenue: null,
+      logoUrl: "",
     },
   });
 
@@ -997,6 +1023,7 @@ export default function ClientDetail() {
       ownerId: null as string | null,
       reportsTo: undefined as number | undefined,
       serviceNeeds: [] as string[],
+      profilePictureUrl: "" as any,
     },
   });
 
@@ -1014,6 +1041,8 @@ export default function ClientDetail() {
       officeId: null as number | null,
       clientId: clientId,
       serviceNeeds: [] as string[],
+      linkedinUrl: "",
+      profilePictureUrl: "" as any,
     },
   });
 
@@ -1041,6 +1070,7 @@ export default function ClientDetail() {
       clientId: contact.clientId,
       serviceNeeds: (contact.serviceNeeds as string[] | null) ?? [],
       linkedinUrl: (contact as any).linkedinUrl || "",
+      profilePictureUrl: (contact as any).profilePictureUrl || "",
     });
     setIsEditContactDialogOpen(true);
   };
@@ -1084,9 +1114,25 @@ export default function ClientDetail() {
         <Button variant="ghost" size="icon" onClick={() => setLocation("/customers")}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
+        <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-xl overflow-hidden border">
+          {(client as any).logoUrl ? (
+            <img
+              src={(client as any).logoUrl}
+              alt={client.name}
+              className="h-full w-full object-contain"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+                (e.currentTarget.parentElement as HTMLElement).innerHTML = client.name[0].toUpperCase();
+              }}
+              data-testid="img-client-logo"
+            />
+          ) : (
+            client.name[0].toUpperCase()
+          )}
+        </div>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-heading font-bold">{client.name}</h1>
+            <h1 className="text-3xl font-heading font-bold" data-testid="text-client-name">{client.name}</h1>
             <Badge variant="outline" className="h-6">Customer ID: {client.id}</Badge>
             {(client as any).tier && <TierBadge tier={(client as any).tier} />}
           </div>
@@ -1682,6 +1728,39 @@ export default function ClientDetail() {
                         <FormItem>
                           <FormLabel>Full Name</FormLabel>
                           <FormControl><Input placeholder="Enter contact name" {...field} data-testid="input-contact-name" /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField control={contactForm.control} name={"profilePictureUrl" as any}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Profile Picture URL</FormLabel>
+                          <div className="flex gap-2">
+                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-xs overflow-hidden border">
+                              {field.value ? (
+                                <img
+                                  src={field.value}
+                                  alt="Preview"
+                                  className="h-full w-full object-cover"
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                                    (e.currentTarget.parentElement as HTMLElement).innerHTML = "P";
+                                  }}
+                                />
+                              ) : (
+                                "P"
+                              )}
+                            </div>
+                            <FormControl>
+                              <Input
+                                placeholder="https://example.com/photo.jpg"
+                                {...field}
+                                value={field.value || ""}
+                                data-testid="input-contact-profile-picture"
+                              />
+                            </FormControl>
+                          </div>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -2289,6 +2368,7 @@ export default function ClientDetail() {
                     lng: b.lng ?? null,
                     notes: null,
                     contactId: b.contactId,
+                    createdAt: new Date(),
                   }))}
                   allContacts={contacts ?? []}
                   clients={client ? [client] : []}
@@ -2359,6 +2439,41 @@ export default function ClientDetail() {
                       <FormControl>
                         <Input placeholder="Contact name" {...field} data-testid="input-edit-contact-name" />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editContactForm.control}
+                  name={"profilePictureUrl" as any}
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel>Profile Picture URL</FormLabel>
+                      <div className="flex gap-2">
+                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-xs overflow-hidden border">
+                          {field.value ? (
+                            <img
+                              src={field.value}
+                              alt="Preview"
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                                (e.currentTarget.parentElement as HTMLElement).innerHTML = "P";
+                              }}
+                            />
+                          ) : (
+                            "P"
+                          )}
+                        </div>
+                        <FormControl>
+                          <Input
+                            placeholder="https://example.com/photo.jpg"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-edit-contact-profile-picture"
+                          />
+                        </FormControl>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
