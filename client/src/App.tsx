@@ -21,6 +21,7 @@ import InvitePage from "@/pages/invite";
 import AdminPage from "@/pages/admin";
 import EmailSync from "@/pages/email-sync";
 import Announcements from "@/pages/announcements";
+import { VersionChecker } from "@/components/VersionChecker";
 
 function ProtectedRouter() {
   return (
@@ -51,6 +52,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <VersionChecker />
         <Switch>
           <Route path="/invite/:token" component={InvitePage} />
           <Route component={ProtectedRouter} />

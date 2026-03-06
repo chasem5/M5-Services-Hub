@@ -110,6 +110,12 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Version endpoint — no auth, used for client staleness checks
+  app.get("/api/version", (_req, res) => {
+    const version = process.env.DEPLOY_VERSION || process.env.npm_package_version || "dev";
+    res.json({ version });
+  });
+
   // Seed default contact stages on startup
   await storage.seedDefaultContactStages();
   // Seed default pipeline stages on startup
