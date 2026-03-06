@@ -30,6 +30,13 @@ import {
   announcementReads,
   attachments,
   pushSubscriptions,
+  buildingPortfolios,
+  portfolioBuildings,
+  portfolioContacts,
+  type BuildingPortfolio,
+  type InsertBuildingPortfolio,
+  type PortfolioBuilding,
+  type PortfolioContact,
   type User,
   type UpsertUser,
   type Client,
@@ -278,6 +285,17 @@ export interface IStorage {
   createPushSubscription(data: InsertPushSubscription): Promise<PushSubscription>;
   deletePushSubscription(endpoint: string): Promise<void>;
   listPushSubscriptions(userId?: string): Promise<PushSubscription[]>;
+
+  // Building Portfolios
+  listPortfolios(clientId?: number): Promise<BuildingPortfolio[]>;
+  getPortfolio(id: number): Promise<(BuildingPortfolio & { buildings: PortfolioBuilding[]; contacts: PortfolioContact[] }) | undefined>;
+  createPortfolio(data: InsertBuildingPortfolio): Promise<BuildingPortfolio>;
+  updatePortfolio(id: number, data: Partial<InsertBuildingPortfolio>): Promise<BuildingPortfolio>;
+  deletePortfolio(id: number): Promise<void>;
+  addBuildingToPortfolio(portfolioId: number, buildingId: number): Promise<PortfolioBuilding>;
+  removeBuildingFromPortfolio(portfolioId: number, buildingId: number): Promise<void>;
+  addContactToPortfolio(portfolioId: number, contactId: number, role?: string | null): Promise<PortfolioContact>;
+  removeContactFromPortfolio(portfolioId: number, contactId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1310,6 +1328,69 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
     }
     return await db.select().from(pushSubscriptions);
+  }
+
+  // Building Portfolios
+  async listPortfolios(clientId?: number): Promise<BuildingPortfolio[]> {
+    if (clientId !== undefined) {
+      return await db.select().from(buildingPortfolios).where(eq(buildingPortfolios.clientId, clientId)).orderBy(buildingPortfolios.name);
+    }
+    return await db.select().from(buildingPortfolios).orderBy(buildingPortfolios.name);
+  }
+
+  async getPortfolio(id: number): Promise<(BuildingPortfolio & { buildings: PortfolioBuilding[]; contacts: PortfolioContact[] }) | undefined> {
+    const [portfolio] = await db.select().from(buildingPortfolios).where(eq(buildingPortfolios.id, id));
+    if (!portfolio) return undefined;
+    const buildings = await db.select().from(portfolioBuildings).where(eq(portfolioBuildings.portfolioId, id));
+    const contacts = await db.select().from(portfolioContacts).where(eq(portfolioContacts.portfolioId, id));
+    return { ...portfolio, buildings, contacts };
+  }
+
+  async createPortfolio(data: InsertBuildingPortfolio): Promise<BuildingPortfolio> {
+    const [portfolio] = await db.insert(buildingPortfolios).values(data).returning();
+    return portfolio;
+  }
+
+  async updatePortfolio(id: number, data: Partial<InsertBuildingPortfolio>): Promise<BuildingPortfolio> {
+    const [portfolio] = await db.update(buildingPortfolios).set(data).where(eq(buildingPortfolios.id, id)).returning();
+    return portfolio;
+  }
+
+  async deletePortfolio(id: number): Promise<void> {
+    await db.delete(buildingPortfolios).where(eq(buildingPortfolios.id, id));
+  }
+
+  async addBuildingToPortfolio(portfolioId: number, buildingId: number): Promise<PortfolioBuilding> {
+    const existing = await db.select().from(portfolioBuildings)
+      .where(and(eq(portfolioBuildings.portfolioId, portfolioId), eq(portfolioBuildings.buildingId, buildingId)));
+    if (existing.length > 0) return existing[0];
+    const [row] = await db.insert(portfolioBuildings).values({ portfolioId, buildingId }).returning();
+    return row;
+  }
+
+  async removeBuildingFromPortfolio(portfolioId: number, buildingId: number): Promise<void> {
+    await db.delete(portfolioBuildings)
+      .where(and(eq(portfolioBuildings.portfolioId, portfolioId), eq(portfolioBuildings.buildingId, buildingId)));
+  }
+
+  async addContactToPortfolio(portfolioId: number, contactId: number, role?: string | null): Promise<PortfolioContact> {
+    const existing = await db.select().from(portfolioContacts)
+      .where(and(eq(portfolioContacts.portfolioId, portfolioId), eq(portfolioContacts.contactId, contactId)));
+    if (existing.length > 0) {
+      if (role !== undefined) {
+        const [updated] = await db.update(portfolioContacts).set({ role: role ?? null })
+          .where(eq(portfolioContacts.id, existing[0].id)).returning();
+        return updated;
+      }
+      return existing[0];
+    }
+    const [row] = await db.insert(portfolioContacts).values({ portfolioId, contactId, role: role ?? null }).returning();
+    return row;
+  }
+
+  async removeContactFromPortfolio(portfolioId: number, contactId: number): Promise<void> {
+    await db.delete(portfolioContacts)
+      .where(and(eq(portfolioContacts.portfolioId, portfolioId), eq(portfolioContacts.contactId, contactId)));
   }
 }
 

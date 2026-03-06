@@ -474,3 +474,41 @@ export const insertInviteSchema = createInsertSchema(invites).omit({ id: true, c
 });
 export type Invite = typeof invites.$inferSelect;
 export type InsertInvite = z.infer<typeof insertInviteSchema>;
+
+// Building Portfolios
+export const buildingPortfolios = pgTable("building_portfolios", {
+  id: serial("id").primaryKey(),
+  name: varchar("name").notNull(),
+  clientId: integer("client_id").references(() => clients.id),
+  description: text("description"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const portfolioBuildings = pgTable("portfolio_buildings", {
+  id: serial("id").primaryKey(),
+  portfolioId: integer("portfolio_id").references(() => buildingPortfolios.id, { onDelete: "cascade" }).notNull(),
+  buildingId: integer("building_id").references(() => contactBuildings.id, { onDelete: "cascade" }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const portfolioContacts = pgTable("portfolio_contacts", {
+  id: serial("id").primaryKey(),
+  portfolioId: integer("portfolio_id").references(() => buildingPortfolios.id, { onDelete: "cascade" }).notNull(),
+  contactId: integer("contact_id").references(() => clientContacts.id, { onDelete: "cascade" }).notNull(),
+  role: text("role"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertBuildingPortfolioSchema = createInsertSchema(buildingPortfolios).omit({ id: true, createdAt: true }).extend({
+  clientId: z.number().optional().nullable(),
+});
+export const insertPortfolioBuildingSchema = createInsertSchema(portfolioBuildings).omit({ id: true, createdAt: true });
+export const insertPortfolioContactSchema = createInsertSchema(portfolioContacts).omit({ id: true, createdAt: true }).extend({
+  role: z.string().optional().nullable(),
+});
+
+export type BuildingPortfolio = typeof buildingPortfolios.$inferSelect;
+export type InsertBuildingPortfolio = z.infer<typeof insertBuildingPortfolioSchema>;
+export type PortfolioBuilding = typeof portfolioBuildings.$inferSelect;
+export type PortfolioContact = typeof portfolioContacts.$inferSelect;

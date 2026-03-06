@@ -22,6 +22,9 @@ import {
   insertEmailMessageSchema,
   insertAttachmentSchema,
   insertPushSubscriptionSchema,
+  insertBuildingPortfolioSchema,
+  insertPortfolioBuildingSchema,
+  insertPortfolioContactSchema,
 } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
@@ -2048,6 +2051,63 @@ Respond with this JSON:
     const displayName = roleConfig?.displayName ?? user.role;
 
     res.json({ role: user.role, displayName, permissions });
+  });
+
+  // ── Building Portfolios ──────────────────────────────────────────────────
+  app.get("/api/portfolios", isAuthenticated, async (req, res) => {
+    const clientId = req.query.clientId ? Number(req.query.clientId) : undefined;
+    const portfolios = await storage.listPortfolios(clientId);
+    res.json(portfolios);
+  });
+
+  app.post("/api/portfolios", isAuthenticated, async (req, res) => {
+    const parsed = insertBuildingPortfolioSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+    const user = req.user as any;
+    const portfolio = await storage.createPortfolio({ ...parsed.data, createdBy: user?.id ?? null });
+    res.status(201).json(portfolio);
+  });
+
+  app.get("/api/portfolios/:id", isAuthenticated, async (req, res) => {
+    const portfolio = await storage.getPortfolio(Number(req.params.id));
+    if (!portfolio) return res.status(404).json({ message: "Portfolio not found" });
+    res.json(portfolio);
+  });
+
+  app.patch("/api/portfolios/:id", isAuthenticated, async (req, res) => {
+    const parsed = insertBuildingPortfolioSchema.partial().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+    const portfolio = await storage.updatePortfolio(Number(req.params.id), parsed.data);
+    res.json(portfolio);
+  });
+
+  app.delete("/api/portfolios/:id", isAuthenticated, async (req, res) => {
+    await storage.deletePortfolio(Number(req.params.id));
+    res.status(204).end();
+  });
+
+  app.post("/api/portfolios/:id/buildings", isAuthenticated, async (req, res) => {
+    const { buildingId } = req.body;
+    if (!buildingId) return res.status(400).json({ message: "buildingId required" });
+    const row = await storage.addBuildingToPortfolio(Number(req.params.id), Number(buildingId));
+    res.status(201).json(row);
+  });
+
+  app.delete("/api/portfolios/:id/buildings/:buildingId", isAuthenticated, async (req, res) => {
+    await storage.removeBuildingFromPortfolio(Number(req.params.id), Number(req.params.buildingId));
+    res.status(204).end();
+  });
+
+  app.post("/api/portfolios/:id/contacts", isAuthenticated, async (req, res) => {
+    const { contactId, role } = req.body;
+    if (!contactId) return res.status(400).json({ message: "contactId required" });
+    const row = await storage.addContactToPortfolio(Number(req.params.id), Number(contactId), role ?? null);
+    res.status(201).json(row);
+  });
+
+  app.delete("/api/portfolios/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
+    await storage.removeContactFromPortfolio(Number(req.params.id), Number(req.params.contactId));
+    res.status(204).end();
   });
 
   return httpServer;

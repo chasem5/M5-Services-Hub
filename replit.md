@@ -43,10 +43,13 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 
 ## Database Schema
 
-Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`, `role_configs`, `role_permissions`, `invites`
+Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`, `role_configs`, `role_permissions`, `invites`, `building_portfolios`, `portfolio_buildings`, `portfolio_contacts`
 
 - `leads.building_id` → FK to `contact_buildings` (optional, links a lead to a specific portfolio building)
 - `estimates.building_id` → FK to `contact_buildings` (optional, links an estimate to a specific portfolio building)
+- `building_portfolios` — named groups of buildings; optional `clientId` FK to clients
+- `portfolio_buildings` — junction: portfolioId + buildingId (cascade delete)
+- `portfolio_contacts` — junction: portfolioId + contactId + role (cascade delete)
 
 ## Branding
 

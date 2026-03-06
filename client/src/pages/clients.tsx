@@ -1,4 +1,4 @@
-import { useState, useRef, lazy, Suspense } from "react";
+import { useState, useRef, lazy, Suspense, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   Plus, 
@@ -28,6 +28,8 @@ import {
   Target,
   ChevronRight,
   Map,
+  LayoutGrid,
+  Layers,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 const MapView = lazy(() => import("@/pages/map").then(m => ({ default: m.MapView })));
@@ -146,6 +148,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PortfolioManager } from "@/components/PortfolioManager";
 
 interface ImportResult {
   created: number;
@@ -153,9 +156,136 @@ interface ImportResult {
   type: "companies" | "contacts";
 }
 
+// ── BuildingsList component ───────────────────────────────────────────────────
+interface BuildingsListProps {
+  buildings: ContactBuilding[];
+  contacts: ClientContact[];
+  clients: Client[];
+  leads: Lead[];
+  estimates: Estimate[];
+  search: string;
+}
+
+function BuildingsList({ buildings, contacts, clients: clientsList, leads, estimates, search }: BuildingsListProps) {
+  const filtered = buildings.filter(b => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    const contact = contacts.find(c => c.id === b.contactId);
+    const company = clientsList.find(cl => cl.id === contact?.clientId);
+    return (
+      b.name.toLowerCase().includes(q) ||
+      (b.address ?? "").toLowerCase().includes(q) ||
+      (contact?.name ?? "").toLowerCase().includes(q) ||
+      (company?.name ?? "").toLowerCase().includes(q) ||
+      (b.notes ?? "").toLowerCase().includes(q)
+    );
+  });
+
+  if (filtered.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <Landmark className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+        <p className="font-medium text-muted-foreground">
+          {search ? "No buildings match your search." : "No buildings in portfolio yet."}
+        </p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Add buildings from a contact's profile on the company detail page.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-6">
+      {filtered.map(building => {
+        const contact = contacts.find(c => c.id === building.contactId);
+        const company = clientsList.find(cl => cl.id === contact?.clientId);
+        const linkedLeads = leads.filter(l => l.buildingId === building.id);
+        const linkedEstimates = estimates.filter(e => e.buildingId === building.id);
+        const leadCount = linkedLeads.length;
+        const estimateCount = linkedEstimates.length;
+        const totalValue = linkedLeads.reduce((sum, l) => sum + Number(l.value), 0)
+          + linkedEstimates.reduce((sum, e) => sum + Number(e.total), 0);
+
+        return (
+          <div
+            key={building.id}
+            className="bg-card border rounded-xl p-4 flex flex-col gap-3 hover:shadow-md transition-shadow"
+            data-testid={`card-building-${building.id}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold text-sm leading-tight truncate">{building.name}</h3>
+                {building.address && (
+                  <div className="flex items-start gap-1 mt-1">
+                    <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
+                    <AddressLink address={building.address} className="text-[11px] text-muted-foreground leading-tight" />
+                  </div>
+                )}
+              </div>
+              {(leadCount > 0 || estimateCount > 0) && (
+                <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                  ${totalValue.toLocaleString()}
+                </span>
+              )}
+            </div>
+            <div className="space-y-1">
+              {company && (
+                <Link
+                  href={`/customers/${company.id}`}
+                  className="flex items-center gap-1.5 text-[11px] font-medium text-primary hover:underline truncate"
+                  data-testid={`link-building-company-${building.id}`}
+                >
+                  <Building2 className="h-3 w-3 shrink-0" />
+                  {company.name}
+                </Link>
+              )}
+              {contact && (
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Users className="h-3 w-3 shrink-0" />
+                  {contact.name}{contact.title ? ` · ${contact.title}` : ""}
+                </div>
+              )}
+            </div>
+            {building.notes && (
+              <p className="text-[11px] text-muted-foreground italic border-t pt-2 leading-snug">{building.notes}</p>
+            )}
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              {leadCount > 0 ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full" data-testid={`badge-building-leads-${building.id}`}>
+                  <Target className="h-2.5 w-2.5" />
+                  {leadCount} lead{leadCount !== 1 ? "s" : ""}
+                </span>
+              ) : (
+                <span className="text-[10px] text-muted-foreground/60">No leads</span>
+              )}
+              {estimateCount > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-muted text-muted-foreground px-2 py-0.5 rounded-full" data-testid={`badge-building-estimates-${building.id}`}>
+                  <FileText className="h-2.5 w-2.5" />
+                  {estimateCount} estimate{estimateCount !== 1 ? "s" : ""}
+                </span>
+              )}
+              {company && (
+                <Link
+                  href={`/customers/${company.id}`}
+                  className="ml-auto flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                  data-testid={`link-building-view-${building.id}`}
+                >
+                  View <ChevronRight className="h-2.5 w-2.5" />
+                </Link>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Customers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [buildingSearch, setBuildingSearch] = useState("");
+  const [buildingViewMode, setBuildingViewMode] = useState<"list" | "map">("list");
   const [contactSearch, setContactSearch] = useState("");
   const [contactCompanyFilter, setContactCompanyFilter] = useState("all");
   const [contactStatusFilter, setContactStatusFilter] = useState("all");
@@ -646,14 +776,10 @@ export default function Customers() {
           </TabsTrigger>
           <TabsTrigger value="buildings" className="flex items-center gap-2" data-testid="tab-buildings">
             <Landmark className="h-4 w-4" />
-            Buildings
+            Buildings & Map
             {allBuildings.length > 0 && (
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{allBuildings.length}</Badge>
             )}
-          </TabsTrigger>
-          <TabsTrigger value="map" className="flex items-center gap-2" data-testid="tab-map">
-            <Map className="h-4 w-4" />
-            Map
           </TabsTrigger>
         </TabsList>
 
@@ -1125,155 +1251,72 @@ export default function Customers() {
           <Card className="border-none shadow-sm bg-card">
             <CardHeader className="pb-3">
               <div className="flex flex-col md:flex-row md:items-center gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by building name, address, company..."
-                    value={buildingSearch}
-                    onChange={(e) => setBuildingSearch(e.target.value)}
-                    className="pl-9"
-                    data-testid="input-building-search"
-                  />
+                {buildingViewMode === "list" && (
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by building name, address, company..."
+                      value={buildingSearch}
+                      onChange={(e) => setBuildingSearch(e.target.value)}
+                      className="pl-9"
+                      data-testid="input-building-search"
+                    />
+                  </div>
+                )}
+                <div className="flex items-center gap-1 ml-auto shrink-0 border rounded-lg p-0.5 bg-muted/40">
+                  <button
+                    onClick={() => setBuildingViewMode("list")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${buildingViewMode === "list" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    data-testid="button-view-list"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                    List
+                  </button>
+                  <button
+                    onClick={() => setBuildingViewMode("map")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${buildingViewMode === "map" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    data-testid="button-view-map"
+                  >
+                    <Map className="h-3.5 w-3.5" />
+                    Map
+                  </button>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {isLoadingBuildings ? (
-                <div className="p-6 space-y-3">
-                  {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-lg" />)}
+              {buildingViewMode === "map" ? (
+                <div className="rounded-b-lg overflow-hidden" style={{ height: "580px" }}>
+                  <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading map...</div>}>
+                    <MapView />
+                  </Suspense>
                 </div>
-              ) : (() => {
-                const filteredBuildings = allBuildings.filter(b => {
-                  if (!buildingSearch) return true;
-                  const q = buildingSearch.toLowerCase();
-                  const contact = allContacts.find(c => c.id === b.contactId);
-                  const company = clients?.find(cl => cl.id === contact?.clientId);
-                  return (
-                    b.name.toLowerCase().includes(q) ||
-                    (b.address ?? "").toLowerCase().includes(q) ||
-                    (contact?.name ?? "").toLowerCase().includes(q) ||
-                    (company?.name ?? "").toLowerCase().includes(q) ||
-                    (b.notes ?? "").toLowerCase().includes(q)
-                  );
-                });
-
-                if (filteredBuildings.length === 0) {
-                  return (
-                    <div className="text-center py-16">
-                      <Landmark className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-                      <p className="font-medium text-muted-foreground">
-                        {buildingSearch ? "No buildings match your search." : "No buildings in portfolio yet."}
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Add buildings from a contact's profile on the company detail page.
-                      </p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-6">
-                    {filteredBuildings.map(building => {
-                      const contact = allContacts.find(c => c.id === building.contactId);
-                      const company = clients?.find(cl => cl.id === contact?.clientId);
-                      const leadCount = allLeads.filter(l => l.buildingId === building.id).length;
-                      const estimateCount = allEstimates.filter(e => e.buildingId === building.id).length;
-                      const linkedLeads = allLeads.filter(l => l.buildingId === building.id);
-                      const linkedEstimates = allEstimates.filter(e => e.buildingId === building.id);
-                      const totalValue = linkedLeads.reduce((sum, l) => sum + Number(l.value), 0)
-                        + linkedEstimates.reduce((sum, e) => sum + Number(e.total), 0);
-
-                      return (
-                        <div
-                          key={building.id}
-                          className="bg-card border rounded-xl p-4 flex flex-col gap-3 hover:shadow-md transition-shadow"
-                          data-testid={`card-building-${building.id}`}
-                        >
-                          {/* Header */}
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-semibold text-sm leading-tight truncate">{building.name}</h3>
-                              {building.address && (
-                                <div className="flex items-start gap-1 mt-1">
-                                  <MapPin className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
-                                  <AddressLink address={building.address} className="text-[11px] text-muted-foreground leading-tight" />
-                                </div>
-                              )}
-                            </div>
-                            {(leadCount > 0 || estimateCount > 0) && (
-                              <span className="text-[10px] font-mono text-muted-foreground shrink-0">
-                                ${totalValue.toLocaleString()}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Company + Contact */}
-                          <div className="space-y-1">
-                            {company && (
-                              <Link
-                                href={`/customers/${company.id}`}
-                                className="flex items-center gap-1.5 text-[11px] font-medium text-primary hover:underline truncate"
-                                data-testid={`link-building-company-${building.id}`}
-                              >
-                                <Building2 className="h-3 w-3 shrink-0" />
-                                {company.name}
-                              </Link>
-                            )}
-                            {contact && (
-                              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                                <Users className="h-3 w-3 shrink-0" />
-                                {contact.name}{contact.title ? ` · ${contact.title}` : ""}
-                              </div>
-                            )}
-                          </div>
-
-                          {building.notes && (
-                            <p className="text-[11px] text-muted-foreground italic border-t pt-2 leading-snug">{building.notes}</p>
-                          )}
-
-                          {/* Activity badges */}
-                          <div className="flex items-center gap-2 flex-wrap pt-1">
-                            {leadCount > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full" data-testid={`badge-building-leads-${building.id}`}>
-                                <Target className="h-2.5 w-2.5" />
-                                {leadCount} lead{leadCount !== 1 ? "s" : ""}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-muted-foreground/60">No leads</span>
-                            )}
-                            {estimateCount > 0 && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-muted text-muted-foreground px-2 py-0.5 rounded-full" data-testid={`badge-building-estimates-${building.id}`}>
-                                <FileText className="h-2.5 w-2.5" />
-                                {estimateCount} estimate{estimateCount !== 1 ? "s" : ""}
-                              </span>
-                            )}
-                            {company && (
-                              <Link
-                                href={`/customers/${company.id}`}
-                                className="ml-auto flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors"
-                                data-testid={`link-building-view-${building.id}`}
-                              >
-                                View <ChevronRight className="h-2.5 w-2.5" />
-                              </Link>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+              ) : (
+                <>
+                  <div className="pt-4 pb-2 border-b">
+                    <PortfolioManager
+                      allBuildings={allBuildings}
+                      allContacts={allContacts}
+                      clients={clients ?? []}
+                    />
                   </div>
-                );
-              })()}
+                  {isLoadingBuildings ? (
+                    <div className="p-6 space-y-3">
+                      {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-lg" />)}
+                    </div>
+                  ) : (
+                    <BuildingsList
+                      buildings={allBuildings}
+                      contacts={allContacts}
+                      clients={clients ?? []}
+                      leads={allLeads}
+                      estimates={allEstimates}
+                      search={buildingSearch}
+                    />
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        {/* ── Map Tab ── */}
-        <TabsContent value="map">
-          <div className="rounded-lg border overflow-hidden" style={{ height: "640px" }}>
-            <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground">Loading map...</div>}>
-              <MapView />
-            </Suspense>
-          </div>
         </TabsContent>
       </Tabs>
 
