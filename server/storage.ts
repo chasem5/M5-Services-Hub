@@ -239,6 +239,9 @@ export interface IStorage {
   // Gmail Tokens
   updateGmailTokens(userId: string, data: { gmailAccessToken: string; gmailRefreshToken: string | null; gmailTokenExpiry: Date | null; gmailEmail: string | null; gmailConnected: boolean }): Promise<User>;
 
+  // Calendar Tokens
+  updateCalendarTokens(userId: string, data: { calendarAccessToken: string; calendarRefreshToken: string | null; calendarTokenExpiry: Date | null; calendarEmail: string | null; calendarConnected: boolean }): Promise<User>;
+
   // Lead Notes
   listLeadNotes(leadId: number): Promise<LeadNote[]>;
   createLeadNote(data: InsertLeadNote): Promise<LeadNote>;
@@ -968,6 +971,31 @@ export class DatabaseStorage implements IStorage {
         gmailTokenExpiry: data.gmailTokenExpiry,
         gmailEmail: data.gmailEmail,
         gmailConnected: data.gmailConnected,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  }
+
+  async updateCalendarTokens(
+    userId: string,
+    data: {
+      calendarAccessToken: string;
+      calendarRefreshToken: string | null;
+      calendarTokenExpiry: Date | null;
+      calendarEmail: string | null;
+      calendarConnected: boolean;
+    }
+  ): Promise<User> {
+    const [updated] = await db
+      .update(users)
+      .set({
+        calendarAccessToken: data.calendarAccessToken,
+        calendarRefreshToken: data.calendarRefreshToken,
+        calendarTokenExpiry: data.calendarTokenExpiry,
+        calendarEmail: data.calendarEmail,
+        calendarConnected: data.calendarConnected,
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId))

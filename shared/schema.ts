@@ -223,6 +223,8 @@ export const meetings = pgTable("meetings", {
   rawTranscript: text("raw_transcript").default(""),
   summary: text("summary"),
   createdBy: varchar("created_by").references(() => users.id),
+  calendarEventId: varchar("calendar_event_id"),
+  calendarEventLink: varchar("calendar_event_link"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

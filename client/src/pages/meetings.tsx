@@ -26,8 +26,28 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { Mic, Plus, Trash2, ChevronRight, CheckCircle2, Clock, AlertCircle, Radio } from "lucide-react";
+import { format, isToday, isTomorrow } from "date-fns";
+import { Mic, Plus, Trash2, ChevronRight, CheckCircle2, Clock, AlertCircle, Radio, CalendarDays, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  startTime: string;
+  endTime: string;
+  htmlLink: string | null;
+  allDay: boolean;
+}
+
+function formatEventTime(startTime: string, allDay: boolean): string {
+  if (!startTime) return "";
+  const d = new Date(startTime);
+  if (allDay) return format(d, "MMM d");
+  if (isToday(d)) return `Today at ${format(d, "h:mm a")}`;
+  if (isTomorrow(d)) return `Tomorrow at ${format(d, "h:mm a")}`;
+  return format(d, "EEE MMM d, h:mm a");
+}
 
 type MeetingWithCounts = {
   id: number;
@@ -65,13 +85,21 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string; icon: React.
 
 export default function MeetingsPage() {
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const [, navigate] = useLocation();
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<MeetingWithCounts | null>(null);
+  const [eventsExpanded, setEventsExpanded] = useState(true);
 
   const { data: meetings = [], isLoading } = useQuery<MeetingWithCounts[]>({
     queryKey: ["/api/meetings"],
+  });
+
+  const { data: calendarEvents = [], isLoading: eventsLoading } = useQuery<CalendarEvent[]>({
+    queryKey: ["/api/calendar/events"],
+    enabled: !!currentUser?.calendarConnected,
+    staleTime: 5 * 60 * 1000,
   });
 
   const createMutation = useMutation({
@@ -120,6 +148,71 @@ export default function MeetingsPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {/* Upcoming Calendar Events Panel */}
+        {currentUser?.calendarConnected && (
+          <div className="max-w-3xl mx-auto mb-6">
+            <div className="bg-white dark:bg-card border border-border/60 rounded-xl overflow-hidden">
+              <button
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
+                onClick={() => setEventsExpanded((v) => !v)}
+                data-testid="button-toggle-events"
+              >
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-primary" />
+                  <span className="font-semibold text-sm">Upcoming Events</span>
+                  {calendarEvents.length > 0 && (
+                    <Badge variant="secondary" className="text-[10px] font-bold h-4 px-1.5">
+                      {calendarEvents.length}
+                    </Badge>
+                  )}
+                </div>
+                {eventsExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </button>
+              {eventsExpanded && (
+                <div className="border-t border-border/60">
+                  {eventsLoading ? (
+                    <div className="p-4 space-y-2">
+                      {[1, 2].map((i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
+                    </div>
+                  ) : calendarEvents.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      No upcoming events in the next 7 days
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border/40">
+                      {calendarEvents.map((event) => (
+                        <div key={event.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors" data-testid={`row-event-${event.id}`}>
+                          <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                            <CalendarDays className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{event.title}</p>
+                            <p className="text-xs text-muted-foreground">{formatEventTime(event.startTime, event.allDay)}</p>
+                            {event.description && (
+                              <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{event.description}</p>
+                            )}
+                          </div>
+                          {event.htmlLink && (
+                            <a
+                              href={event.htmlLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-muted-foreground hover:text-primary transition-colors shrink-0 mt-1"
+                              data-testid={`link-event-${event.id}`}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {isLoading ? (
           <div className="space-y-3 max-w-3xl mx-auto">
             {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}

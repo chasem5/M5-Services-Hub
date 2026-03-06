@@ -1447,6 +1447,143 @@ Return only valid JSON, no markdown.`;
     res.json({ connected: user.gmailConnected, gmailEmail: user.gmailEmail ?? null });
   });
 
+  // Google Calendar OAuth routes
+  app.get("/api/auth/calendar/connect", isAuthenticated, async (req, res) => {
+    try {
+      const { getCalendarAuthUrl, buildCalendarRedirectUri } = await import("./calendar");
+      const userId = (req as any).user?.claims?.sub;
+      const host = req.get("host") ?? req.hostname;
+      const redirectUri = buildCalendarRedirectUri(host);
+      const url = getCalendarAuthUrl(redirectUri, userId);
+      res.json({ url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/auth/calendar/callback", async (req, res) => {
+    const { code, state: userId, error } = req.query as Record<string, string>;
+    if (error || !code || !userId) {
+      return res.redirect("/settings?calendar=error");
+    }
+    try {
+      const { exchangeCalendarCode, buildCalendarRedirectUri } = await import("./calendar");
+      const host = req.get("host") ?? req.hostname;
+      const redirectUri = buildCalendarRedirectUri(host);
+      const tokens = await exchangeCalendarCode(code, redirectUri);
+      await storage.updateCalendarTokens(userId, {
+        calendarAccessToken: tokens.access_token,
+        calendarRefreshToken: tokens.refresh_token,
+        calendarTokenExpiry: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+        calendarEmail: tokens.email,
+        calendarConnected: true,
+      });
+      res.redirect("/settings?calendar=connected");
+    } catch (err: any) {
+      console.error("Calendar OAuth callback error:", err);
+      res.redirect("/settings?calendar=error");
+    }
+  });
+
+  app.delete("/api/auth/calendar/disconnect", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      await storage.updateCalendarTokens(userId, {
+        calendarAccessToken: "",
+        calendarRefreshToken: null,
+        calendarTokenExpiry: null,
+        calendarEmail: null,
+        calendarConnected: false,
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/auth/calendar/status", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ connected: user.calendarConnected, calendarEmail: user.calendarEmail ?? null });
+  });
+
+  // Google Calendar Events
+  app.get("/api/calendar/events", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const user = await storage.getUser(userId);
+      if (!user?.calendarConnected) return res.json([]);
+      const { listUpcomingEvents } = await import("./calendar");
+      const events = await listUpcomingEvents(user);
+      res.json(events);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/calendar/events", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const user = await storage.getUser(userId);
+      if (!user?.calendarConnected) {
+        return res.status(400).json({ message: "Calendar not connected." });
+      }
+      const { title, description, startTime, endTime } = z.object({
+        title: z.string().min(1),
+        description: z.string().optional(),
+        startTime: z.string(),
+        endTime: z.string(),
+      }).parse(req.body);
+      const { createCalendarEvent } = await import("./calendar");
+      const result = await createCalendarEvent(user, {
+        title,
+        description,
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+      });
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/meetings/:id/sync-calendar", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const meetingId = parseInt(req.params.id as string);
+      const user = await storage.getUser(userId);
+      if (!user?.calendarConnected) {
+        return res.status(400).json({ message: "Connect Google Calendar in Settings first." });
+      }
+      const meeting = await storage.getMeeting(meetingId);
+      if (!meeting) return res.status(404).json({ message: "Meeting not found" });
+
+      const { createCalendarEvent } = await import("./calendar");
+      const startTime = new Date(meeting.date);
+      const endTime = new Date(startTime.getTime() + 60 * 60 * 1000);
+      const result = await createCalendarEvent(user, {
+        title: meeting.title,
+        description: meeting.summary ?? undefined,
+        startTime,
+        endTime,
+      });
+
+      const { db } = await import("./db");
+      const { meetings: meetingsTable } = await import("@shared/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+      const [updated] = await db
+        .update(meetingsTable)
+        .set({ calendarEventId: result.eventId, calendarEventLink: result.htmlLink })
+        .where(eqOp(meetingsTable.id, meetingId))
+        .returning();
+
+      res.json({ ...updated, eventLink: result.htmlLink });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Email Sync
   app.post("/api/email/sync", isAuthenticated, async (req, res) => {
     try {

@@ -27,6 +27,11 @@ export const users = pgTable("users", {
   gmailTokenExpiry: timestamp("gmail_token_expiry"),
   gmailEmail: varchar("gmail_email"),
   gmailConnected: boolean("gmail_connected").default(false).notNull(),
+  calendarAccessToken: varchar("calendar_access_token", { length: 2048 }),
+  calendarRefreshToken: varchar("calendar_refresh_token", { length: 2048 }),
+  calendarTokenExpiry: timestamp("calendar_token_expiry"),
+  calendarEmail: varchar("calendar_email"),
+  calendarConnected: boolean("calendar_connected").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

@@ -28,7 +28,10 @@ import {
   Keyboard,
   ChevronDown,
   ChevronUp,
+  CalendarDays,
+  ExternalLink,
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 type MeetingAction = {
   id: number;
@@ -47,6 +50,8 @@ type Meeting = {
   status: string;
   rawTranscript: string | null;
   summary: string | null;
+  calendarEventId: string | null;
+  calendarEventLink: string | null;
   actions: MeetingAction[];
 };
 
@@ -183,6 +188,7 @@ export default function MeetingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const meetingId = parseInt(id);
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const [, navigate] = useLocation();
 
   const [isRecording, setIsRecording] = useState(false);
@@ -285,6 +291,23 @@ export default function MeetingDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
       toast({ title: "Meeting marked as complete" });
     },
+  });
+
+  const syncCalendarMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/meetings/${meetingId}/sync-calendar`);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to sync to calendar");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+      toast({ title: "Synced to Google Calendar", description: "The meeting was added as a calendar event." });
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
   const sendChunk = useCallback(async (blob: Blob) => {
@@ -448,6 +471,37 @@ export default function MeetingDetailPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {/* Calendar sync */}
+          {currentUser?.calendarConnected && (
+            meeting.calendarEventId ? (
+              <a
+                href={meeting.calendarEventLink ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-100 border border-green-200 rounded-md px-3 py-1.5 hover:bg-green-200 transition-colors"
+                data-testid="link-calendar-event"
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                On Calendar
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => syncCalendarMutation.mutate()}
+                disabled={syncCalendarMutation.isPending}
+                className="gap-1.5"
+                data-testid="button-sync-calendar"
+              >
+                {syncCalendarMutation.isPending ? (
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Syncing…</>
+                ) : (
+                  <><CalendarDays className="h-3.5 w-3.5" /> Add to Calendar</>
+                )}
+              </Button>
+            )
+          )}
           {!showReview && !isProcessing && (
             <Button
               onClick={analyzeMutation.mutate}

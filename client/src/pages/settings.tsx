@@ -30,7 +30,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink } from "lucide-react";
+import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays } from "lucide-react";
+
+interface CalendarStatus {
+  connected: boolean;
+  calendarEmail: string | null;
+}
 
 interface GmailStatus {
   connected: boolean;
@@ -51,6 +56,11 @@ export default function Settings() {
     enabled: !!currentUser,
   });
 
+  const { data: calendarStatus, isLoading: calendarLoading } = useQuery<CalendarStatus>({
+    queryKey: ["/api/auth/calendar/status"],
+    enabled: !!currentUser,
+  });
+
   const disconnectGmailMutation = useMutation({
     mutationFn: () => apiRequest("DELETE", "/api/auth/gmail/disconnect", undefined),
     onSuccess: () => {
@@ -58,6 +68,16 @@ export default function Settings() {
       toast({ title: "Gmail disconnected" });
     },
     onError: () => toast({ title: "Failed to disconnect Gmail", variant: "destructive" }),
+  });
+
+  const disconnectCalendarMutation = useMutation({
+    mutationFn: () => apiRequest("DELETE", "/api/auth/calendar/disconnect", undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/calendar/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+      toast({ title: "Google Calendar disconnected" });
+    },
+    onError: () => toast({ title: "Failed to disconnect Calendar", variant: "destructive" }),
   });
 
   const updateRoleMutation = useMutation({
@@ -77,12 +97,21 @@ export default function Settings() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gmailParam = params.get("gmail");
+    const calendarParam = params.get("calendar");
     if (gmailParam === "connected") {
       toast({ title: "Gmail connected successfully", description: "Your inbox is ready to sync." });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/gmail/status"] });
       window.history.replaceState({}, "", "/settings");
     } else if (gmailParam === "error") {
       toast({ title: "Gmail connection failed", description: "Please try again.", variant: "destructive" });
+      window.history.replaceState({}, "", "/settings");
+    }
+    if (calendarParam === "connected") {
+      toast({ title: "Google Calendar connected", description: "You can now sync meetings to your calendar." });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/calendar/status"] });
+      window.history.replaceState({}, "", "/settings");
+    } else if (calendarParam === "error") {
+      toast({ title: "Calendar connection failed", description: "Please try again.", variant: "destructive" });
       window.history.replaceState({}, "", "/settings");
     }
   }, []);
@@ -98,6 +127,20 @@ export default function Settings() {
       }
     } catch (err: any) {
       toast({ title: "Gmail connection error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleConnectCalendar = async () => {
+    try {
+      const res = await apiRequest("GET", "/api/auth/calendar/connect", undefined);
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        toast({ title: "Could not start Calendar connection", description: data.message, variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Calendar connection error", description: err.message, variant: "destructive" });
     }
   };
 
@@ -241,6 +284,82 @@ export default function Settings() {
                 <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                 <p className="text-xs text-amber-700">
                   <strong>One-time setup required:</strong> Your admin needs to configure Google OAuth credentials (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET) in the app settings before Gmail connections will work.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Google Calendar Connection Card */}
+        <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
+          <CardHeader className="bg-muted/30 pb-6 border-b">
+            <div className="flex items-center gap-4">
+              <div className="bg-primary/10 p-2 rounded-full">
+                <CalendarDays className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-xl font-heading">Google Calendar</CardTitle>
+                <CardDescription>Connect your Google Calendar to sync meetings and view upcoming events</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {calendarLoading ? (
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Checking connection...</span>
+              </div>
+            ) : calendarStatus?.connected ? (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Connected</p>
+                    <p className="text-sm text-muted-foreground">{calendarStatus.calendarEmail}</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-gray-600 border-gray-300 hover:bg-red-50 hover:text-red-600 hover:border-red-300"
+                  onClick={() => disconnectCalendarMutation.mutate()}
+                  disabled={disconnectCalendarMutation.isPending}
+                  data-testid="button-disconnect-calendar"
+                >
+                  <Unlink className="h-4 w-4" />
+                  {disconnectCalendarMutation.isPending ? "Disconnecting..." : "Disconnect"}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                    <CalendarDays className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-700">Not connected</p>
+                    <p className="text-sm text-muted-foreground">
+                      Connect your Google Calendar to sync meeting notes directly as calendar events and view upcoming events in the Meetings page.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  className="gap-2 bg-primary hover:bg-primary/90 text-white shrink-0"
+                  onClick={handleConnectCalendar}
+                  data-testid="button-connect-calendar"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  Connect Calendar
+                </Button>
+              </div>
+            )}
+            {!calendarStatus?.connected && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-blue-700">
+                  <strong>Setup note:</strong> Before connecting, add <code className="bg-blue-100 px-1 rounded">https://M5App.replit.app/api/auth/calendar/callback</code> as an authorized redirect URI in your Google Cloud Console OAuth app.
                 </p>
               </div>
             )}
