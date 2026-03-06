@@ -17,6 +17,7 @@ import Proposals from "@/pages/proposals";
 import Settings from "@/pages/settings";
 import Meetings from "@/pages/meetings";
 import MeetingDetail from "@/pages/meeting-detail";
+import MapPage from "@/pages/map";
 import InvitePage from "@/pages/invite";
 import AdminPage from "@/pages/admin";
 import EmailSync from "@/pages/email-sync";
@@ -33,6 +34,7 @@ function ProtectedRouter() {
         <Route path="/tasks" component={Tasks} />
         <Route path="/meetings" component={Meetings} />
         <Route path="/meetings/:id" component={MeetingDetail} />
+        <Route path="/map" component={MapPage} />
         <Route path="/estimates" component={Estimates} />
         <Route path="/estimates/:id" component={EstimateDetail} />
         <Route path="/service-catalog" component={ServiceCatalog} />

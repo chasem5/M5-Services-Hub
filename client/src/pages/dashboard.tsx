@@ -31,6 +31,8 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import { useAuth } from "@/hooks/use-auth";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface DashboardStats {
   activeLeads: number;
@@ -45,6 +47,18 @@ interface DashboardStats {
   estimateStatusCounts: { status: string; count: number }[];
   bdSpendThisMonth: string;
   topClients: { clientId: number; name: string; pipelineValue: string }[];
+  mrr: string;
+}
+
+interface TeamPerformanceStat {
+  userId: string;
+  name: string;
+  email: string;
+  leadsAssigned: number;
+  leadsWon: number;
+  pipelineValue: string;
+  wonValueMonth: string;
+  tasksCompletedMonth: number;
 }
 
 const ESTIMATE_COLORS: Record<string, string> = {
@@ -88,6 +102,9 @@ const stageLabels: Record<string, string> = {
 };
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const isAdminOrManager = user?.role === "admin" || user?.role === "manager";
+
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard"],
   });
@@ -98,6 +115,11 @@ export default function Dashboard() {
 
   const { data: tasks, isLoading: tasksLoading } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
+  });
+
+  const { data: teamStats, isLoading: teamLoading } = useQuery<TeamPerformanceStat[]>({
+    queryKey: ["/api/dashboard/team-performance"],
+    enabled: isAdminOrManager,
   });
 
   const getRelativeTime = (date: string | Date) =>
@@ -157,6 +179,14 @@ export default function Dashboard() {
           icon={Briefcase}
           loading={statsLoading}
           dataTestId="text-open-tasks"
+        />
+        <MetricCard
+          title="Estimated MRR"
+          value={stats ? formatCurrency(stats.mrr) : undefined}
+          icon={TrendingUp}
+          loading={statsLoading}
+          dataTestId="text-estimated-mrr"
+          accentColor="text-blue-600"
         />
         <MetricCard
           title="Due Today"
@@ -559,6 +589,72 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Team Performance Section */}
+      {isAdminOrManager && (
+        <Card className="shadow-sm border-border/40 bg-card">
+          <CardHeader>
+            <CardTitle className="text-lg font-heading font-bold">Team Performance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {teamLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : teamStats && teamStats.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/50 text-muted-foreground">
+                      <th className="text-left pb-3 font-medium">Team Member</th>
+                      <th className="text-right pb-3 font-medium">Pipeline</th>
+                      <th className="text-right pb-3 font-medium">Won (Month)</th>
+                      <th className="text-right pb-3 font-medium">Leads Assigned</th>
+                      <th className="text-right pb-3 font-medium">Tasks Done</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {teamStats.map((stat) => (
+                      <tr key={stat.userId} className="group hover:bg-muted/30 transition-colors">
+                        <td className="py-3 pr-4">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback>{stat.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{stat.name}</p>
+                              <p className="text-xs text-muted-foreground truncate">{stat.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 text-right font-bold tabular-nums text-primary">
+                          {formatCurrency(stat.pipelineValue)}
+                        </td>
+                        <td className="py-3 text-right tabular-nums">
+                          <div className="flex flex-col items-end">
+                            <span className="font-medium">{formatCurrency(stat.wonValueMonth)}</span>
+                            <span className="text-[10px] text-muted-foreground">{stat.leadsWon} deals won</span>
+                          </div>
+                        </td>
+                        <td className="py-3 text-right tabular-nums text-muted-foreground">
+                          {stat.leadsAssigned}
+                        </td>
+                        <td className="py-3 text-right tabular-nums text-muted-foreground">
+                          {stat.tasksCompletedMonth}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-10 text-muted-foreground italic border-2 border-dashed rounded-lg">
+                No team activity recorded
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

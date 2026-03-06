@@ -94,6 +94,11 @@ export async function registerRoutes(
     res.json(stats);
   });
 
+  app.get("/api/dashboard/team-performance", isAuthenticated, requireRole(["admin", "manager"]), async (_req, res) => {
+    const stats = await storage.getTeamPerformanceStats();
+    res.json(stats);
+  });
+
   // Users (Admin only)
   app.get("/api/users", isAuthenticated, requireRole(["admin"]), async (_req, res) => {
     const users = await storage.listUsers();

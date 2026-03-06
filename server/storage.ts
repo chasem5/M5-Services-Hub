@@ -175,6 +175,7 @@ export interface IStorage {
 
   // Dashboard
   getDashboardStats(): Promise<any>;
+  getTeamPerformanceStats(): Promise<any[]>;
 
   // Pipeline Stages
   listPipelineStages(): Promise<PipelineStage[]>;
@@ -705,6 +706,21 @@ export class DatabaseStorage implements IStorage {
       .orderBy(sql`sum(${leads.value}) DESC`)
       .limit(5);
 
+    // MRR Calculation
+    const recurringLeads = await db.select().from(leads).where(and(
+      eq(leads.contractType, "recurring"),
+      sql`${leads.stage} NOT IN ('won', 'lost')`
+    ));
+
+    const mrr = recurringLeads.reduce((acc, lead) => {
+      const value = parseFloat(lead.value || "0");
+      let monthlyValue = 0;
+      if (lead.recurringFrequency === "monthly") monthlyValue = value;
+      else if (lead.recurringFrequency === "quarterly") monthlyValue = value / 3;
+      else if (lead.recurringFrequency === "annual") monthlyValue = value / 12;
+      return acc + monthlyValue;
+    }, 0);
+
     return {
       activeLeads: activeLeads[0].count,
       pipelineValue: pipelineValue[0].total || "0",
@@ -718,7 +734,46 @@ export class DatabaseStorage implements IStorage {
       estimateStatusCounts,
       bdSpendThisMonth: bdSpendThisMonth[0].total || "0",
       topClients: topClientsRows,
+      mrr: mrr.toString(),
     };
+  }
+
+  async getTeamPerformanceStats(): Promise<any[]> {
+    const today = new Date();
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const userList = await db.select().from(users);
+
+    const stats = await Promise.all(
+      userList.map(async (user) => {
+        const [
+          leadsAssigned,
+          leadsWon,
+          pipelineValue,
+          wonValueMonth,
+          tasksCompletedMonth,
+        ] = await Promise.all([
+          db.select({ count: sql<number>`count(*)` }).from(leads).where(eq(leads.assignedTo, user.id)),
+          db.select({ count: sql<number>`count(*)` }).from(leads).where(and(eq(leads.assignedTo, user.id), eq(leads.stage, "won"))),
+          db.select({ total: sql<string>`sum(${leads.value})` }).from(leads).where(and(eq(leads.assignedTo, user.id), sql`${leads.stage} NOT IN ('won', 'lost')`)),
+          db.select({ total: sql<string>`sum(${leads.value})` }).from(leads).where(and(eq(leads.assignedTo, user.id), eq(leads.stage, "won"), sql`${leads.updatedAt} >= ${firstOfMonth}`)),
+          db.select({ count: sql<number>`count(*)` }).from(tasks).where(and(eq(tasks.assignedTo, user.id), eq(tasks.status, "done"), sql`${tasks.createdAt} >= ${firstOfMonth}`)),
+        ]);
+
+        return {
+          userId: user.id,
+          name: user.username,
+          email: user.email,
+          leadsAssigned: leadsAssigned[0].count,
+          leadsWon: leadsWon[0].count,
+          pipelineValue: pipelineValue[0].total || "0",
+          wonValueMonth: wonValueMonth[0].total || "0",
+          tasksCompletedMonth: tasksCompletedMonth[0].count,
+        };
+      })
+    );
+
+    return stats.sort((a, b) => Number(b.pipelineValue) - Number(a.pipelineValue));
   }
 
   // Pipeline Stages

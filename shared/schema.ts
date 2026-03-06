@@ -98,6 +98,10 @@ export const leads = pgTable("leads", {
   tags: text("tags").array().default([]),
   assignedTo: varchar("assigned_to").references(() => users.id),
   notes: text("notes"),
+  contractType: text("contract_type").default("one_time").notNull(),
+  recurringFrequency: text("recurring_frequency"), // monthly | quarterly | annual
+  contractStartDate: timestamp("contract_start_date"),
+  renewalDate: timestamp("renewal_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -367,6 +371,10 @@ export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, creat
   valueType: z.enum(["fixed", "potential"]).optional().default("fixed"),
   valueTier: z.enum(["$", "$$", "$$$", "$$$$"]).optional().nullable(),
   tier: z.enum(["tier_1", "tier_2", "tier_3"]).optional().nullable(),
+  contractType: z.enum(["one_time", "recurring"]).optional().default("one_time"),
+  recurringFrequency: z.enum(["monthly", "quarterly", "annual"]).optional().nullable(),
+  contractStartDate: z.coerce.date().optional().nullable(),
+  renewalDate: z.coerce.date().optional().nullable(),
 });
 export const insertPipelineViewSchema = createInsertSchema(pipelineViews).omit({ id: true, createdAt: true });
 export const insertTaskLabelDefinitionSchema = createInsertSchema(taskLabelDefinitions).omit({ id: true });

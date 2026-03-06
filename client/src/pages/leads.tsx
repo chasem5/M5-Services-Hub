@@ -642,6 +642,10 @@ export default function Leads() {
       tags: [],
       notes: "",
       assignedTo: undefined,
+      contractType: "one_time",
+      recurringFrequency: null,
+      contractStartDate: null,
+      renewalDate: null,
     },
   });
 
@@ -655,6 +659,10 @@ export default function Leads() {
       confidenceScore: 50,
       notes: "",
       assignedTo: undefined,
+      contractType: "one_time",
+      recurringFrequency: null,
+      contractStartDate: null,
+      renewalDate: null,
     },
   });
 
@@ -752,6 +760,10 @@ export default function Leads() {
       confidenceScore: lead.confidenceScore ?? 50,
       notes: lead.notes ?? "",
       assignedTo: lead.assignedTo ?? undefined,
+      contractType: (lead.contractType as any) ?? "one_time",
+      recurringFrequency: lead.recurringFrequency as any,
+      contractStartDate: lead.contractStartDate ? new Date(lead.contractStartDate) : null,
+      renewalDate: lead.renewalDate ? new Date(lead.renewalDate) : null,
     });
     setEditFormTags(lead.tags ?? []);
   };
@@ -1063,6 +1075,23 @@ export default function Leads() {
                                   {leadTasks.filter(t => t.status === "done").length}/{leadTasks.length} tasks
                                 </div>
                               )}
+
+                              {lead.contractType === "recurring" && (
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-bold bg-blue-100 text-blue-700 border-blue-200 uppercase tracking-tighter">
+                                    ↻ {lead.recurringFrequency}
+                                  </Badge>
+                                  {lead.renewalDate && (
+                                    <span className={`text-[9px] font-bold uppercase tracking-tighter ${
+                                      (new Date(lead.renewalDate).getTime() - new Date().getTime()) < (60 * 24 * 60 * 60 * 1000)
+                                        ? "text-red-600 animate-pulse"
+                                        : "text-muted-foreground"
+                                    }`}>
+                                      Renews {new Date(lead.renewalDate).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </CardContent>
                           </Card>
                             </HoverCardTrigger>
@@ -1361,6 +1390,109 @@ export default function Leads() {
                   </FormItem>
                 )}
               />
+
+              <div className="space-y-4 rounded-lg border p-3 bg-muted/30">
+                <FormField
+                  control={form.control}
+                  name="contractType"
+                  render={({ field }) => (
+                    <FormItem className="space-y-3">
+                      <FormLabel>Contract Type</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              field.onChange("one_time");
+                              form.setValue("recurringFrequency", null);
+                              form.setValue("contractStartDate", null);
+                              form.setValue("renewalDate", null);
+                            }}
+                            className={`px-3 py-1 text-sm rounded font-medium transition-colors ${field.value === "one_time" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                            data-testid="button-contract-one-time"
+                          >
+                            One-Time
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => field.onChange("recurring")}
+                            className={`px-3 py-1 text-sm rounded font-medium transition-colors ${field.value === "recurring" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                            data-testid="button-contract-recurring"
+                          >
+                            Recurring
+                          </button>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {form.watch("contractType") === "recurring" && (
+                  <div className="grid gap-4 pt-2">
+                    <FormField
+                      control={form.control}
+                      name="recurringFrequency"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Frequency</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-lead-frequency">
+                                <SelectValue placeholder="Select frequency" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="monthly">Monthly</SelectItem>
+                              <SelectItem value="quarterly">Quarterly</SelectItem>
+                              <SelectItem value="annual">Annual</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="contractStartDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Start Date</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="date"
+                                value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                                onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : null)}
+                                data-testid="input-lead-start-date"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="renewalDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Renewal Date</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="date"
+                                value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                                onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : null)}
+                                data-testid="input-lead-renewal-date"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Value Type toggle + input */}
               <div className="space-y-2">
@@ -2000,6 +2132,109 @@ export default function Leads() {
                             </FormItem>
                           )}
                         />
+
+                        <div className="space-y-4 rounded-lg border p-3 bg-muted/30">
+                          <FormField
+                            control={editLeadForm.control}
+                            name="contractType"
+                            render={({ field }) => (
+                              <FormItem className="space-y-3">
+                                <FormLabel>Contract Type</FormLabel>
+                                <FormControl>
+                                  <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        field.onChange("one_time");
+                                        editLeadForm.setValue("recurringFrequency", null);
+                                        editLeadForm.setValue("contractStartDate", null);
+                                        editLeadForm.setValue("renewalDate", null);
+                                      }}
+                                      className={`px-3 py-1 text-sm rounded font-medium transition-colors ${field.value === "one_time" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                                      data-testid="button-edit-contract-one-time"
+                                    >
+                                      One-Time
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => field.onChange("recurring")}
+                                      className={`px-3 py-1 text-sm rounded font-medium transition-colors ${field.value === "recurring" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                                      data-testid="button-edit-contract-recurring"
+                                    >
+                                      Recurring
+                                    </button>
+                                  </div>
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          {editLeadForm.watch("contractType") === "recurring" && (
+                            <div className="grid gap-4 pt-2">
+                              <FormField
+                                control={editLeadForm.control}
+                                name="recurringFrequency"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Frequency</FormLabel>
+                                    <Select onValueChange={field.onChange} value={field.value || ""}>
+                                      <FormControl>
+                                        <SelectTrigger data-testid="select-edit-lead-frequency">
+                                          <SelectValue placeholder="Select frequency" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value="monthly">Monthly</SelectItem>
+                                        <SelectItem value="quarterly">Quarterly</SelectItem>
+                                        <SelectItem value="annual">Annual</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <div className="grid grid-cols-2 gap-4">
+                                <FormField
+                                  control={editLeadForm.control}
+                                  name="contractStartDate"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>Start Date</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="date"
+                                          value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                                          onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : null)}
+                                          data-testid="input-edit-lead-start-date"
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={editLeadForm.control}
+                                  name="renewalDate"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>Renewal Date</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          type="date"
+                                          value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                                          onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : null)}
+                                          data-testid="input-edit-lead-renewal-date"
+                                        />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </form>
                     </Form>
                   ) : (
