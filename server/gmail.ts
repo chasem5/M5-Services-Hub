@@ -19,6 +19,9 @@ export function getOAuth2Client() {
 }
 
 export function buildRedirectUri(host: string): string {
+  if (process.env.GMAIL_REDIRECT_URI) {
+    return process.env.GMAIL_REDIRECT_URI;
+  }
   const protocol = host.includes("localhost") ? "http" : "https";
   return `${protocol}://${host}/api/auth/gmail/callback`;
 }
