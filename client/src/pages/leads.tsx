@@ -2065,7 +2065,6 @@ export default function Leads() {
                           </p>
                           <span className={`text-sm font-bold ${getConfidenceColor(localScore)}`}>{localScore}%</span>
                         </div>
-                        <Progress value={localScore} className="h-2" />
                         <Slider
                           min={0} max={100} step={5}
                           value={[localScore]}
