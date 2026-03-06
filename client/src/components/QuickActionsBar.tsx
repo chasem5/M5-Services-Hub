@@ -32,14 +32,22 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatPhoneNumber } from "@/lib/phone";
 import type { Client, ClientContact, Lead, PipelineStage, User } from "@shared/schema";
 
-type ActiveDialog = "deal" | "contact" | "company" | "task" | null;
+export type ActiveDialog = "deal" | "contact" | "company" | "task" | null;
 
-export function QuickActionsBar() {
+interface QuickActionsBarProps {
+  externalDialog?: ActiveDialog;
+  onExternalOpen?: (d: ActiveDialog) => void;
+  showButton?: boolean;
+}
+
+export function QuickActionsBar({ externalDialog, onExternalOpen, showButton = true }: QuickActionsBarProps) {
   const { toast } = useToast();
-  const [activeDialog, setActiveDialog] = useState<ActiveDialog>(null);
+  const [internalDialog, setInternalDialog] = useState<ActiveDialog>(null);
 
-  const open = (d: ActiveDialog) => setActiveDialog(d);
-  const close = () => setActiveDialog(null);
+  const isExternal = externalDialog !== undefined && onExternalOpen !== undefined;
+  const activeDialog = isExternal ? externalDialog : internalDialog;
+  const open = (d: ActiveDialog) => isExternal ? onExternalOpen!(d) : setInternalDialog(d);
+  const close = () => isExternal ? onExternalOpen!(null) : setInternalDialog(null);
 
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
   const { data: allContacts = [] } = useQuery<ClientContact[]>({ queryKey: ["/api/client-contacts"] });
@@ -48,35 +56,37 @@ export function QuickActionsBar() {
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            size="sm"
-            className="h-8 w-8 p-0 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
-            data-testid="button-quick-actions"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuItem onClick={() => open("deal")} data-testid="quick-action-deal">
-            <Target className="mr-2 h-4 w-4 text-primary" />
-            Add Deal
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => open("contact")} data-testid="quick-action-contact">
-            <Users className="mr-2 h-4 w-4 text-primary" />
-            Add Contact
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => open("company")} data-testid="quick-action-company">
-            <Building2 className="mr-2 h-4 w-4 text-primary" />
-            Add Company
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => open("task")} data-testid="quick-action-task">
-            <CheckSquare className="mr-2 h-4 w-4 text-primary" />
-            Add Task
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {showButton && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="sm"
+              className="h-8 w-8 p-0 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+              data-testid="button-quick-actions"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => open("deal")} data-testid="quick-action-deal">
+              <Target className="mr-2 h-4 w-4 text-primary" />
+              Add Deal
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => open("contact")} data-testid="quick-action-contact">
+              <Users className="mr-2 h-4 w-4 text-primary" />
+              Add Contact
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => open("company")} data-testid="quick-action-company">
+              <Building2 className="mr-2 h-4 w-4 text-primary" />
+              Add Company
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => open("task")} data-testid="quick-action-task">
+              <CheckSquare className="mr-2 h-4 w-4 text-primary" />
+              Add Task
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       <AddDealDialog
         open={activeDialog === "deal"}
