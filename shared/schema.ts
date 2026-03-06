@@ -34,10 +34,18 @@ export const clientOffices = pgTable("client_offices", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const contactStages = pgTable("contact_stages", {
+  id: serial("id").primaryKey(),
+  label: varchar("label").notNull(),
+  color: varchar("color"), // 'gray'|'blue'|'green'|'amber'|'red'|'purple'
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
 export const clientContacts = pgTable("client_contacts", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id).notNull(),
   officeId: integer("office_id").references(() => clientOffices.id),
+  stageId: integer("stage_id").references(() => contactStages.id),
   name: varchar("name").notNull(),
   title: varchar("title"),
   email: varchar("email"),
@@ -373,6 +381,7 @@ export type InsertRoleConfig = z.infer<typeof insertRoleConfigSchema>;
 export type RolePermission = typeof rolePermissions.$inferSelect;
 export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
 
+export const insertContactStageSchema = createInsertSchema(contactStages).omit({ id: true });
 export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   annualRevenue: z.coerce.string().optional().nullable(),
@@ -449,6 +458,8 @@ export type Proposal = typeof proposals.$inferSelect;
 export type InsertProposal = z.infer<typeof insertProposalSchema>;
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type ContactStage = typeof contactStages.$inferSelect;
+export type InsertContactStage = z.infer<typeof insertContactStageSchema>;
 export type PipelineStage = typeof pipelineStages.$inferSelect;
 export type InsertPipelineStage = z.infer<typeof insertPipelineStageSchema>;
 export type PipelineView = typeof pipelineViews.$inferSelect;

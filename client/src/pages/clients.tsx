@@ -38,6 +38,8 @@ import {
   Smartphone,
   CreditCard,
   ScanLine,
+  Settings,
+  Tag,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 const MapView = lazy(() => import("@/pages/map").then(m => ({ default: m.MapView })));
@@ -154,13 +156,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertClientSchema, insertClientContactSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate } from "@shared/schema";
+import { insertClientSchema, insertClientContactSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate, type ContactStage } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PortfolioManager } from "@/components/PortfolioManager";
 import { CardScannerDialog } from "@/components/CardScannerDialog";
+import { ContactStagesManager, getStageBadgeClass } from "@/components/ContactStagesManager";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface ImportResult {
   created: number;
@@ -381,6 +385,9 @@ export default function Customers() {
   const [industryFilter, setIndustryFilter] = useState("all");
   const [tierFilter, setTierFilter] = useState("all");
   const [contactTierFilter, setContactTierFilter] = useState("all");
+  const [contactStageFilter, setContactStageFilter] = useState("all");
+  const [stageManagerOpen, setStageManagerOpen] = useState(false);
+  const [openStagePickerId, setOpenStagePickerId] = useState<number | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -413,6 +420,10 @@ export default function Customers() {
 
   const { data: contactSpendTotals = [] } = useQuery<{ contactId: number; total: string }[]>({
     queryKey: ["/api/spend/contact-totals"],
+  });
+
+  const { data: contactStages = [] } = useQuery<ContactStage[]>({
+    queryKey: ["/api/contact-stages"],
   });
 
   const { data: allBuildings = [], isLoading: isLoadingBuildings } = useQuery<ContactBuilding[]>({
@@ -582,6 +593,7 @@ export default function Customers() {
       clientId: undefined as number | undefined,
       isPrimary: false,
       serviceNeeds: [] as string[],
+      stageId: null as number | null,
     },
   });
 
@@ -596,6 +608,16 @@ export default function Customers() {
     onError: () => {
       toast({ title: "Failed to add contact", variant: "destructive" });
     },
+  });
+
+  const updateContactStageMutation = useMutation({
+    mutationFn: ({ id, stageId }: { id: number; stageId: number | null }) =>
+      apiRequest("PATCH", `/api/contacts/${id}`, { stageId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+      setOpenStagePickerId(null);
+    },
+    onError: () => toast({ title: "Failed to update stage", variant: "destructive" }),
   });
 
   const onAddContact = (data: any) => {
@@ -655,7 +677,9 @@ export default function Customers() {
         contactStatusFilter === "all" ||
         (contactStatusFilter === "none" ? !contact.employmentStatus : contact.employmentStatus === contactStatusFilter);
       const matchesTier = contactTierFilter === "all" || contact.tier === contactTierFilter;
-      return matchesSearch && matchesCompany && matchesStatus && matchesTier;
+      const matchesStage = contactStageFilter === "all" ||
+        (contactStageFilter === "none" ? !contact.stageId : contact.stageId === Number(contactStageFilter));
+      return matchesSearch && matchesCompany && matchesStatus && matchesTier && matchesStage;
     })
     .sort((a, b) => {
       let cmp = 0;
@@ -1207,10 +1231,33 @@ export default function Customers() {
                     <SelectItem value="tier_3">Tier 3</SelectItem>
                   </SelectContent>
                 </Select>
-                {/* Clear filters button — only shown when any filter is active */}
-                {(contactSearch || contactCompanyFilter !== "all" || contactStatusFilter !== "all" || contactTierFilter !== "all") && (
+                {/* Stage filter */}
+                <Select value={contactStageFilter} onValueChange={setContactStageFilter}>
+                  <SelectTrigger className="w-[150px] h-10" data-testid="select-contact-stage-filter">
+                    <SelectValue placeholder="All Stages" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Stages</SelectItem>
+                    <SelectItem value="none">No Stage</SelectItem>
+                    {contactStages.map(s => (
+                      <SelectItem key={s.id} value={String(s.id)}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {/* Manage stages button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10 gap-1.5 text-muted-foreground"
+                  onClick={() => setStageManagerOpen(true)}
+                  data-testid="button-manage-contact-stages"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Stages</span>
+                </Button>
+                {(contactSearch || contactCompanyFilter !== "all" || contactStatusFilter !== "all" || contactTierFilter !== "all" || contactStageFilter !== "all") && (
                   <button
-                    onClick={() => { setContactSearch(""); setContactCompanyFilter("all"); setContactStatusFilter("all"); setContactTierFilter("all"); }}
+                    onClick={() => { setContactSearch(""); setContactCompanyFilter("all"); setContactStatusFilter("all"); setContactTierFilter("all"); setContactStageFilter("all"); }}
                     className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground h-10 px-3 rounded-md border border-border/50 hover:bg-muted/50 transition-colors"
                     data-testid="button-clear-contact-filters"
                   >
@@ -1257,6 +1304,7 @@ export default function Customers() {
                           );
                         })}
                         <TableHead className="font-bold">Contact Info</TableHead>
+                        <TableHead className="font-bold">Stage</TableHead>
                         <TableHead className="font-bold">Tier</TableHead>
                         {(["status", "spend"] as const).map(field => {
                           const labels = { status: "Status", spend: "BD Spend" };
@@ -1346,6 +1394,48 @@ export default function Customers() {
                                 </div>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Popover
+                              open={openStagePickerId === contact.id}
+                              onOpenChange={(v) => setOpenStagePickerId(v ? contact.id : null)}
+                            >
+                              <PopoverTrigger asChild>
+                                <button
+                                  className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border transition-opacity hover:opacity-80 ${
+                                    contact.stageId
+                                      ? getStageBadgeClass(contactStages.find(s => s.id === contact.stageId)?.color)
+                                      : "bg-muted/60 text-muted-foreground border-border/50"
+                                  }`}
+                                  data-testid={`button-stage-${contact.id}`}
+                                >
+                                  {contact.stageId
+                                    ? (contactStages.find(s => s.id === contact.stageId)?.label ?? "Unknown")
+                                    : <span className="flex items-center gap-1"><Tag className="h-3 w-3" />Stage</span>}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-48 p-1" align="start">
+                                <button
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-muted/60 text-muted-foreground"
+                                  onClick={() => updateContactStageMutation.mutate({ id: contact.id, stageId: null })}
+                                >
+                                  <Tag className="h-3.5 w-3.5" />No Stage
+                                </button>
+                                {contactStages.map(stage => (
+                                  <button
+                                    key={stage.id}
+                                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-muted/60"
+                                    onClick={() => updateContactStageMutation.mutate({ id: contact.id, stageId: stage.id })}
+                                    data-testid={`option-stage-${stage.id}-contact-${contact.id}`}
+                                  >
+                                    <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(stage.color)}`}>
+                                      {stage.label}
+                                    </span>
+                                    {contact.stageId === stage.id && <span className="ml-auto text-primary text-xs">✓</span>}
+                                  </button>
+                                ))}
+                              </PopoverContent>
+                            </Popover>
                           </TableCell>
                           <TableCell>
                             <TierBadge tier={contact.tier} data-testid={`badge-contact-tier-${contact.id}`} />
@@ -1550,6 +1640,32 @@ export default function Customers() {
                       </FormItem>
                     )}
                   />
+                  <FormField control={contactForm.control} name={"stageId" as any}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Stage</FormLabel>
+                        <Select
+                          value={field.value != null ? String(field.value) : "none"}
+                          onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v))}
+                        >
+                          <SelectTrigger data-testid="select-new-contact-stage">
+                            <SelectValue placeholder="No stage" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No stage</SelectItem>
+                            {contactStages.map(s => (
+                              <SelectItem key={s.id} value={String(s.id)}>
+                                <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(s.color)}`}>
+                                  {s.label}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField control={contactForm.control} name="isPrimary"
                     render={({ field }) => (
                       <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
@@ -1572,6 +1688,8 @@ export default function Customers() {
               </Form>
             </DialogContent>
           </Dialog>
+
+          <ContactStagesManager open={stageManagerOpen} onOpenChange={setStageManagerOpen} />
         </TabsContent>
 
         {/* ── Buildings Tab ── */}

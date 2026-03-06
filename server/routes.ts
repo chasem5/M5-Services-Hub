@@ -15,6 +15,7 @@ import {
   insertEstimateSchema, 
   insertEstimateLineItemSchema, 
   insertProposalSchema,
+  insertContactStageSchema,
   insertPipelineStageSchema,
   insertBdSpendEntrySchema,
   insertTaskLabelDefinitionSchema,
@@ -104,6 +105,8 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Seed default contact stages on startup
+  await storage.seedDefaultContactStages();
   // Seed default pipeline stages on startup
   await storage.seedDefaultPipelineStages();
   // Seed default task columns on startup
@@ -418,6 +421,13 @@ export async function registerRoutes(
   app.put("/api/clients/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
     const contactId = parseInt(req.params.contactId as string);
     const contact = await storage.updateClientContact(contactId, req.body);
+    res.json(contact);
+  });
+
+  app.patch("/api/contacts/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const data = insertClientContactSchema.partial().parse(req.body);
+    const contact = await storage.updateClientContact(id, data);
     res.json(contact);
   });
 
@@ -1327,7 +1337,38 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     res.json(logs);
   });
 
-  // Pipeline Stages
+  // Contact Stages
+  app.get("/api/contact-stages", isAuthenticated, async (_req, res) => {
+    const stages = await storage.listContactStages();
+    res.json(stages);
+  });
+
+  app.post("/api/contact-stages", isAuthenticated, async (req, res) => {
+    const stages = await storage.listContactStages();
+    const data = insertContactStageSchema.parse({ ...req.body, sortOrder: stages.length });
+    const stage = await storage.createContactStage(data);
+    res.json(stage);
+  });
+
+  app.put("/api/contact-stages/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const data = insertContactStageSchema.partial().parse(req.body);
+    const stage = await storage.updateContactStage(id, data);
+    res.json(stage);
+  });
+
+  app.delete("/api/contact-stages/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    await storage.deleteContactStage(id);
+    res.sendStatus(204);
+  });
+
+  app.post("/api/contact-stages/reorder", isAuthenticated, async (req, res) => {
+    const { orderedIds } = z.object({ orderedIds: z.array(z.number()) }).parse(req.body);
+    const stages = await storage.reorderContactStages(orderedIds);
+    res.json(stages);
+  });
+
   app.get("/api/pipeline-stages", isAuthenticated, async (_req, res) => {
     const stages = await storage.listPipelineStages();
     res.json(stages);

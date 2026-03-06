@@ -4,6 +4,7 @@ import {
   users,
   clients,
   clientOffices,
+  contactStages,
   clientContacts,
   contactBuildings,
   bdSpendEntries,
@@ -63,6 +64,8 @@ import {
   type InsertProposal,
   type ActivityLog,
   type InsertActivityLog,
+  type ContactStage,
+  type InsertContactStage,
   type PipelineStage,
   type InsertPipelineStage,
   type ContactBuilding,
@@ -192,6 +195,12 @@ export interface IStorage {
   getTeamPerformanceStats(): Promise<any[]>;
 
   // Pipeline Stages
+  listContactStages(): Promise<ContactStage[]>;
+  createContactStage(stage: InsertContactStage): Promise<ContactStage>;
+  updateContactStage(id: number, stage: Partial<InsertContactStage>): Promise<ContactStage>;
+  deleteContactStage(id: number): Promise<void>;
+  reorderContactStages(orderedIds: number[]): Promise<ContactStage[]>;
+  seedDefaultContactStages(): Promise<void>;
   listPipelineStages(): Promise<PipelineStage[]>;
   createPipelineStage(stage: InsertPipelineStage): Promise<PipelineStage>;
   updatePipelineStage(id: number, stage: Partial<InsertPipelineStage>): Promise<PipelineStage>;
@@ -815,6 +824,48 @@ export class DatabaseStorage implements IStorage {
     );
 
     return stats.sort((a, b) => Number(b.pipelineValue) - Number(a.pipelineValue));
+  }
+
+  // Contact Stages
+  async listContactStages(): Promise<ContactStage[]> {
+    return await db.select().from(contactStages).orderBy(contactStages.sortOrder);
+  }
+
+  async createContactStage(stage: InsertContactStage): Promise<ContactStage> {
+    const [created] = await db.insert(contactStages).values(stage).returning();
+    return created;
+  }
+
+  async updateContactStage(id: number, stage: Partial<InsertContactStage>): Promise<ContactStage> {
+    const [updated] = await db.update(contactStages).set(stage).where(eq(contactStages.id, id)).returning();
+    return updated;
+  }
+
+  async deleteContactStage(id: number): Promise<void> {
+    await db.update(clientContacts).set({ stageId: null }).where(eq(clientContacts.stageId, id));
+    await db.delete(contactStages).where(eq(contactStages.id, id));
+  }
+
+  async reorderContactStages(orderedIds: number[]): Promise<ContactStage[]> {
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        db.update(contactStages).set({ sortOrder: index }).where(eq(contactStages.id, id))
+      )
+    );
+    return this.listContactStages();
+  }
+
+  async seedDefaultContactStages(): Promise<void> {
+    const existing = await db.select().from(contactStages);
+    if (existing.length > 0) return;
+    const defaults = [
+      { label: "New Contact", color: "gray", sortOrder: 0 },
+      { label: "Reached Out", color: "blue", sortOrder: 1 },
+      { label: "Connected", color: "purple", sortOrder: 2 },
+      { label: "Active Relationship", color: "green", sortOrder: 3 },
+      { label: "Inactive", color: "amber", sortOrder: 4 },
+    ];
+    await db.insert(contactStages).values(defaults);
   }
 
   // Pipeline Stages

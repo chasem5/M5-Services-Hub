@@ -35,6 +35,7 @@ import {
   AlertCircle,
   RefreshCw,
   Smartphone,
+  Tag,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import {
@@ -108,13 +109,15 @@ import {
   type Lead, 
   type Estimate,
   type ActivityLog,
-  type BuildingPortfolio
+  type BuildingPortfolio,
+  type ContactStage
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { OrgChart } from "@/components/OrgChart";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { BuildingsMap } from "@/components/BuildingsMap";
 import { PortfolioManager } from "@/components/PortfolioManager";
+import { getStageBadgeClass } from "@/components/ContactStagesManager";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { formatPhoneNumber } from "@/lib/phone";
@@ -404,6 +407,14 @@ function ContactCard({
                   <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 uppercase">Primary</Badge>
                 )}
                 {(contact as any).tier && <TierBadge tier={(contact as any).tier} size="xs" />}
+                {(contact as any).stageId && (() => {
+                  const stage = contactStages.find(s => s.id === (contact as any).stageId);
+                  return stage ? (
+                    <span className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${getStageBadgeClass(stage.color)}`}>
+                      {stage.label}
+                    </span>
+                  ) : null;
+                })()}
                 {(contact as any).linkedinUrl && (
                   <a
                     href={(contact as any).linkedinUrl}
@@ -744,6 +755,10 @@ export default function ClientDetail() {
     queryKey: ["/api/clients", clientId, "all-buildings"],
   });
 
+  const { data: contactStages = [] } = useQuery<ContactStage[]>({
+    queryKey: ["/api/contact-stages"],
+  });
+
   const { data: allContacts = [] } = useQuery<ClientContact[]>({
     queryKey: ["/api/client-contacts"],
   });
@@ -952,6 +967,7 @@ export default function ClientDetail() {
       phone: "",
       isPrimary: false,
       tier: null as string | null,
+      stageId: null as number | null,
       reportsTo: undefined as number | undefined,
       serviceNeeds: [] as string[],
     },
@@ -965,6 +981,7 @@ export default function ClientDetail() {
       phone: "",
       isPrimary: false,
       tier: null as string | null,
+      stageId: null as number | null,
       reportsTo: null as number | null,
       officeId: null as number | null,
       clientId: clientId,
@@ -989,6 +1006,7 @@ export default function ClientDetail() {
       phone: contact.phone || "",
       isPrimary: contact.isPrimary,
       tier: (contact as any).tier ?? null,
+      stageId: (contact as any).stageId ?? null,
       reportsTo: contact.reportsTo ?? null,
       officeId: contact.officeId ?? null,
       clientId: contact.clientId,
@@ -1790,6 +1808,34 @@ export default function ClientDetail() {
                         </FormItem>
                       )}
                     />
+                    <FormField control={contactForm.control} name={"stageId" as any}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Contact Stage</FormLabel>
+                          <Select
+                            value={field.value != null ? String(field.value) : "none"}
+                            onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v))}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-add-contact-stage">
+                                <SelectValue placeholder="No stage" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">No stage</SelectItem>
+                              {contactStages.map(s => (
+                                <SelectItem key={s.id} value={String(s.id)}>
+                                  <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(s.color)}`}>
+                                    {s.label}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField control={contactForm.control} name="isPrimary"
                       render={({ field }) => (
                         <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
@@ -2483,6 +2529,37 @@ export default function ClientDetail() {
                         <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
                         <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
                         <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editContactForm.control}
+                name={"stageId" as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Contact Stage</FormLabel>
+                    <Select
+                      value={field.value != null ? String(field.value) : "none"}
+                      onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v))}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-contact-stage">
+                          <SelectValue placeholder="No stage" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">No stage</SelectItem>
+                        {contactStages.map(s => (
+                          <SelectItem key={s.id} value={String(s.id)}>
+                            <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(s.color)}`}>
+                              {s.label}
+                            </span>
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />
