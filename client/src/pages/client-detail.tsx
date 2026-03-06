@@ -36,6 +36,7 @@ import {
   RefreshCw,
   Upload,
   Pencil,
+  Camera,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import {
@@ -139,77 +140,212 @@ function LinkedInSyncButton({
   onSuccess: (updated: any) => void;
 }) {
   const { toast } = useToast();
-  const [confirmed, setConfirmed] = useState(false);
+  const [step, setStep] = useState<"idle" | "confirm_credits" | "previewing" | "applying">("idle");
+  const [previewData, setPreviewData] = useState<{ updates: Record<string, string>; currentValues: Record<string, string> } | null>(null);
+  const [selectedFields, setSelectedFields] = useState<string[]>([]);
 
-  const enrichMutation = useMutation({
+  const previewMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/contacts/${contactId}/linkedin-enrich`, { linkedinUrl });
+      const res = await apiRequest("POST", `/api/contacts/${contactId}/linkedin-enrich`, { linkedinUrl, preview: true });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "Sync failed");
+        throw new Error(err.message || "Preview failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setPreviewData(data);
+      const initialFields = Object.keys(data.updates).filter(key => {
+        const newVal = data.updates[key];
+        const oldVal = data.currentValues[key];
+        return newVal && newVal !== oldVal;
+      });
+      setSelectedFields(initialFields);
+      setStep("previewing");
+    },
+    onError: (err: Error) => {
+      setStep("idle");
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const applyMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/contacts/${contactId}/linkedin-enrich`, { 
+        linkedinUrl, 
+        preview: false, 
+        fieldsToUpdate: selectedFields 
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Apply failed");
       }
       return res.json();
     },
     onSuccess: (data) => {
       onSuccess(data);
-      setConfirmed(false);
-      toast({ title: "Profile synced from LinkedIn", description: "Contact info has been updated." });
+      setStep("idle");
+      setPreviewData(null);
+      toast({ title: "Profile synced", description: "Contact info has been updated." });
     },
     onError: (err: Error) => {
-      setConfirmed(false);
-      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+      setStep("previewing");
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
     },
   });
 
-  const disabled = !linkedinUrl.trim() || enrichMutation.isPending;
+  const fieldLabels: Record<string, string> = {
+    name: "Full Name",
+    title: "Job Title",
+    profilePictureUrl: "Profile Photo",
+    email: "Email"
+  };
 
-  return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-3 space-y-2">
-      <div className="flex items-start gap-2">
-        <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-        <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">
-          Uses your Apollo.io credits. Pulls full name, job title, and profile photo. Email is returned when available in Apollo's database.
-        </p>
-      </div>
-      {!confirmed ? (
+  const isDisabled = !linkedinUrl.trim() || previewMutation.isPending || applyMutation.isPending;
+
+  if (step === "idle") {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-3 space-y-2">
+        <div className="flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">
+            Uses your Apollo.io credits. Pulls full name, job title, and profile photo. Email is returned when available in Apollo's database.
+          </p>
+        </div>
         <Button
           type="button"
           size="sm"
           variant="outline"
           className="w-full h-8 text-xs border-amber-300 text-amber-800 hover:bg-amber-100 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-900/30"
-          disabled={disabled}
-          onClick={() => setConfirmed(true)}
+          disabled={isDisabled}
+          onClick={() => setStep("confirm_credits")}
           data-testid={`button-linkedin-sync-${contactId}`}
         >
           <SiLinkedin className="h-3.5 w-3.5 mr-1.5 text-[#0A66C2]" />
           Sync from LinkedIn
         </Button>
-      ) : (
+      </div>
+    );
+  }
+
+  if (step === "confirm_credits") {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-3 space-y-2">
+        <div className="flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">
+            Confirm using Apollo credits to preview available profile updates.
+          </p>
+        </div>
         <div className="flex gap-2">
           <Button
             type="button"
             size="sm"
             className="flex-1 h-8 text-xs bg-[#0A66C2] hover:bg-[#004182] text-white"
-            disabled={enrichMutation.isPending}
-            onClick={() => enrichMutation.mutate()}
+            disabled={previewMutation.isPending}
+            onClick={() => previewMutation.mutate()}
             data-testid={`button-linkedin-sync-confirm-${contactId}`}
           >
-            {enrichMutation.isPending ? "Syncing..." : "Yes, sync from LinkedIn"}
+            {previewMutation.isPending ? "Contacting Apollo..." : "Yes, use credits + preview changes"}
           </Button>
           <Button
             type="button"
             size="sm"
             variant="ghost"
             className="h-8 text-xs"
-            onClick={() => setConfirmed(false)}
+            onClick={() => setStep("idle")}
+            disabled={previewMutation.isPending}
             data-testid={`button-linkedin-sync-cancel-${contactId}`}
           >
             Cancel
           </Button>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  }
+
+  if (step === "previewing" && previewData) {
+    const fieldsToShow = Object.keys(previewData.updates).filter(key => {
+      if (key === "linkedinUrl") return false;
+      const newVal = previewData.updates[key];
+      const oldVal = previewData.currentValues[key];
+      return newVal && (newVal !== oldVal || !oldVal);
+    });
+
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-3 space-y-3">
+        <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">Preview Changes</p>
+        <div className="space-y-2 max-h-48 overflow-y-auto">
+          {fieldsToShow.map(key => (
+            <div key={key} className="flex items-start gap-2 p-1.5 rounded bg-amber-100/50 dark:bg-amber-900/40">
+              <Checkbox
+                id={`field-${key}`}
+                checked={selectedFields.includes(key)}
+                onCheckedChange={(checked) => {
+                  setSelectedFields(prev => 
+                    checked ? [...prev, key] : prev.filter(f => f !== key)
+                  );
+                }}
+                className="mt-0.5"
+              />
+              <div className="flex-1 min-w-0">
+                <label htmlFor={`field-${key}`} className="text-[10px] font-medium text-amber-800 dark:text-amber-300 block">
+                  {fieldLabels[key] || key}
+                </label>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <div className="flex-1 min-w-0 truncate text-[10px] text-muted-foreground italic">
+                    {key === 'profilePictureUrl' ? (
+                      previewData.currentValues[key] ? (
+                        <img src={previewData.currentValues[key]} className="h-4 w-4 rounded-full inline object-cover" />
+                      ) : "—"
+                    ) : (previewData.currentValues[key] || "—")}
+                  </div>
+                  <ChevronRight className="h-2.5 w-2.5 text-amber-400 shrink-0" />
+                  <div className="flex-1 min-w-0 truncate text-[10px] font-medium text-amber-900 dark:text-amber-100">
+                    {key === 'profilePictureUrl' ? (
+                      <img src={previewData.updates[key]} className="h-4 w-4 rounded-full inline object-cover" />
+                    ) : previewData.updates[key]}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+          {fieldsToShow.length === 0 && (
+            <p className="text-[10px] text-amber-800/70 dark:text-amber-300/70 italic text-center py-2">
+              No new information found in Apollo.
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <Button
+            type="button"
+            size="sm"
+            className="w-full h-8 text-xs bg-[#0A66C2] hover:bg-[#004182] text-white"
+            disabled={selectedFields.length === 0 || applyMutation.isPending}
+            onClick={() => applyMutation.mutate()}
+            data-testid={`button-linkedin-sync-apply-${contactId}`}
+          >
+            {applyMutation.isPending ? "Applying..." : `Apply ${selectedFields.length} Change${selectedFields.length === 1 ? "" : "s"}`}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="w-full h-8 text-xs"
+            onClick={() => {
+              setStep("idle");
+              setPreviewData(null);
+            }}
+            disabled={applyMutation.isPending}
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function BuildingActivityRow({
@@ -784,7 +920,10 @@ export default function ClientDetail() {
   });
 
   const { data: activityLogs } = useQuery<ActivityLog[]>({
-    queryKey: ["/api/activity-logs", { entityType: "client", entityId: clientId }],
+    queryKey: ["/api/activity-logs", "client", clientId],
+    queryFn: () =>
+      fetch(`/api/activity-logs?entityType=client&entityId=${clientId}`, { credentials: "include" })
+        .then(r => r.json()),
   });
 
   const { data: allClients = [] } = useQuery<Client[]>({
@@ -1269,17 +1408,20 @@ export default function ClientDetail() {
                                   const file = e.target.files?.[0];
                                   if (!file) return;
                                   const formData = new FormData();
-                                  formData.append("file", file);
-                                  formData.append("entityType", "client");
-                                  formData.append("entityId", String(clientId));
+                                  formData.append("logo", file);
                                   try {
-                                    const res = await apiRequest("POST", "/api/attachments/upload", formData);
+                                    const res = await fetch(`/api/clients/${clientId}/logo`, {
+                                      method: "POST",
+                                      body: formData,
+                                      credentials: "include",
+                                    });
                                     if (!res.ok) throw new Error("Upload failed");
                                     const data = await res.json();
-                                    clientForm.setValue("logoUrl", data.objectKey);
+                                    clientForm.setValue("logoUrl", data.url);
+                                    queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
                                     toast({ title: "Logo uploaded", description: "Company logo has been updated." });
                                   } catch (err) {
-                                    toast({ title: "Upload failed", variant: "destructive" });
+                                    toast({ title: "Upload failed", description: "Could not upload logo. Please try again.", variant: "destructive" });
                                   }
                                 }}
                               />
@@ -1320,6 +1462,19 @@ export default function ClientDetail() {
                               <FormLabel>Industry</FormLabel>
                               <FormControl>
                                 <Input {...field} data-testid="input-edit-client-industry" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={clientForm.control}
+                          name="website"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Website</FormLabel>
+                              <FormControl>
+                                <Input placeholder="www.example.com" {...field} data-testid="input-company-website" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -2522,31 +2677,81 @@ export default function ClientDetail() {
                   name={"profilePictureUrl" as any}
                   render={({ field }) => (
                     <FormItem className="col-span-2">
-                      <FormLabel>Profile Picture URL</FormLabel>
-                      <div className="flex gap-2">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-xs overflow-hidden border">
+                      <FormLabel>Profile Photo</FormLabel>
+                      <div className="flex gap-3 items-center">
+                        <div className="h-12 w-12 rounded-full overflow-hidden border bg-primary/10 flex items-center justify-center">
                           {field.value ? (
                             <img
                               src={field.value}
-                              alt="Preview"
                               className="h-full w-full object-cover"
                               onError={(e) => {
                                 (e.currentTarget as HTMLImageElement).style.display = "none";
-                                (e.currentTarget.parentElement as HTMLElement).innerHTML = "P";
+                                const fallback = editContactForm.watch("name")
+                                  ?.split(" ")
+                                  .map((n: string) => n[0])
+                                  .join("")
+                                  .toUpperCase()
+                                  .slice(0, 2) || "?";
+                                (e.currentTarget.parentElement as HTMLElement).innerHTML = fallback;
                               }}
                             />
                           ) : (
-                            "P"
+                            editContactForm.watch("name")
+                              ?.split(" ")
+                              .map((n: string) => n[0])
+                              .join("")
+                              .toUpperCase()
+                              .slice(0, 2) || "?"
                           )}
                         </div>
-                        <FormControl>
-                          <Input
-                            placeholder="https://example.com/photo.jpg"
-                            {...field}
-                            value={field.value || ""}
-                            data-testid="input-edit-contact-profile-picture"
+                        <div className="flex flex-col gap-1">
+                          <input
+                            type="file"
+                            id="contact-photo-upload"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const formData = new FormData();
+                              formData.append("photo", file);
+                              const res = await fetch("/api/contacts/" + editingContact?.id + "/photo", {
+                                method: "POST",
+                                body: formData,
+                                credentials: "include",
+                              });
+                              if (!res.ok) {
+                                toast({ title: "Upload failed", variant: "destructive" });
+                                return;
+                              }
+                              const data = await res.json();
+                              field.onChange(data.url);
+                              queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+                              toast({ title: "Photo updated" });
+                            }}
                           />
-                        </FormControl>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => document.getElementById("contact-photo-upload")?.click()}
+                            data-testid="button-change-photo"
+                          >
+                            <Camera className="h-3.5 w-3.5 mr-1" />
+                            Change Photo
+                          </Button>
+                          {field.value && (
+                            <button
+                              type="button"
+                              className="text-xs text-muted-foreground hover:text-destructive text-left"
+                              onClick={() => field.onChange("")}
+                              data-testid="button-remove-photo"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <FormMessage />
                     </FormItem>

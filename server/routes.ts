@@ -517,7 +517,30 @@ export async function registerRoutes(
     else if (!contact.name && person.name) updates.name = person.name.trim();
     if (!contact.email && person.email) updates.email = person.email;
 
-    const updated = await storage.updateClientContact(contactId, updates);
+    if (req.body.preview === true) {
+      return res.json({
+        preview: true,
+        updates,
+        currentValues: {
+          name: contact.name,
+          title: contact.title,
+          profilePictureUrl: contact.profilePictureUrl,
+          email: contact.email,
+        },
+      });
+    }
+
+    let finalUpdates = updates;
+    if (Array.isArray(req.body.fieldsToUpdate)) {
+      finalUpdates = {};
+      for (const field of req.body.fieldsToUpdate) {
+        if (field in updates) {
+          finalUpdates[field] = updates[field];
+        }
+      }
+    }
+
+    const updated = await storage.updateClientContact(contactId, finalUpdates);
     res.json(updated);
   });
 
@@ -696,85 +719,186 @@ export async function registerRoutes(
   });
 
   // Bulk Import
-  app.post("/api/clients/import", isAuthenticated, async (req, res) => {
-    const { rows } = req.body as { rows: Record<string, string>[] };
-    if (!Array.isArray(rows)) return res.status(400).json({ message: "rows must be an array" });
-    let created = 0;
-    const errors: string[] = [];
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      try {
-        const data = insertClientSchema.parse({
-          name: row.name || row.company_name || "",
-          industry: row.industry || null,
-          address: row.address || null,
-          phone: row.phone || null,
-          email: row.email || null,
-          website: row.website || null,
-          notes: row.notes || null,
-          tier: row.tier || null,
-          annualRevenue: row.annual_revenue || null,
-          serviceNeeds: row.service_needs ? row.service_needs.split(";").map(s => s.trim()) : [],
-          createdBy: (req as any).user?.id ?? null,
-        });
-        const client = await storage.createClient(data);
-        await logActivity(req, "client", client.id, "created");
-        created++;
-      } catch (e: any) {
-        errors.push(`Row ${i + 2}: ${e.message ?? String(e)}`);
-      }
-    }
-    res.json({ created, errors });
-  });
-
-  app.post("/api/client-contacts/import", isAuthenticated, async (req, res) => {
+  app.post("/api/clients/import-preview", isAuthenticated, async (req, res) => {
     const { rows } = req.body as { rows: Record<string, string>[] };
     if (!Array.isArray(rows)) return res.status(400).json({ message: "rows must be an array" });
     const allClients = await storage.listClients();
-    const allOffices = await storage.listAllClientOffices();
-    let created = 0;
-    const errors: string[] = [];
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      try {
-        const companyName = (row.company_name || row.company || "").trim();
-        const company = allClients.find(c => c.name.toLowerCase() === companyName.toLowerCase());
-        if (!company) {
-          errors.push(`Row ${i + 2}: Company "${companyName}" not found`);
-          continue;
-        }
+    const newItems: Record<string, string>[] = [];
+    const matches: Array<{ existing: any; incoming: Record<string, string>; diff: Record<string, string> }> = [];
 
-        let officeId: number | null = null;
-        if (row.office_name) {
-          const office = allOffices.find(o => 
-            o.clientId === company.id && 
-            o.name.toLowerCase() === row.office_name.toLowerCase()
-          );
-          if (office) {
-            officeId = office.id;
+    const fields = ["name", "industry", "address", "phone", "email", "website", "notes", "tier"] as const;
+
+    for (const row of rows) {
+      const name = (row.name || row.company_name || "").trim();
+      const existing = allClients.find(c => c.name.toLowerCase() === name.toLowerCase());
+
+      if (existing) {
+        const diff: Record<string, string> = {};
+        fields.forEach(f => {
+          const val = row[f === "name" ? (row.name ? "name" : "company_name") : f];
+          if (val && val !== String((existing as any)[f] || "")) {
+            diff[f] = val;
           }
-        }
-
-        await storage.createClientContact({
-          clientId: company.id,
-          name: row.name || row.contact_name || "",
-          title: row.title || null,
-          email: row.email || null,
-          phone: row.phone || null,
-          isPrimary: row.is_primary === "true" || row.is_primary === "1" || row.is_primary === "yes",
-          reportsTo: null,
-          officeId: officeId,
-          linkedinUrl: row.linkedin_url || null,
-          tier: row.tier || null,
-          serviceNeeds: row.service_needs ? row.service_needs.split(";").map(s => s.trim()) : [],
-          employmentStatus: row.employment_status || null,
         });
-        created++;
-      } catch (e: any) {
-        errors.push(`Row ${i + 2}: ${e.message ?? String(e)}`);
+        matches.push({ existing, incoming: row, diff });
+      } else {
+        newItems.push(row);
       }
     }
-    res.json({ created, errors });
+    res.json({ newItems, matches });
+  });
+
+  app.post("/api/client-contacts/import-preview", isAuthenticated, async (req, res) => {
+    const { rows } = req.body as { rows: Record<string, string>[] };
+    if (!Array.isArray(rows)) return res.status(400).json({ message: "rows must be an array" });
+    const allContacts = await storage.listAllClientContacts();
+    const allClients = await storage.listClients();
+    const newItems: Record<string, string>[] = [];
+    const matches: Array<{ existing: any; incoming: Record<string, string>; diff: Record<string, string>; companyName: string }> = [];
+
+    const fields = ["name", "title", "email", "phone", "linkedinUrl", "tier"] as const;
+
+    for (const row of rows) {
+      const email = (row.email || "").trim();
+      const name = (row.name || row.contact_name || "").trim();
+      const companyName = (row.company_name || row.company || "").trim();
+
+      let existing = null;
+      if (email) {
+        existing = allContacts.find(c => c.email?.toLowerCase() === email.toLowerCase());
+      }
+      if (!existing && name && companyName) {
+        const company = allClients.find(cl => cl.name.toLowerCase() === companyName.toLowerCase());
+        if (company) {
+          existing = allContacts.find(c => c.clientId === company.id && c.name.toLowerCase() === name.toLowerCase());
+        }
+      }
+
+      if (existing) {
+        const diff: Record<string, string> = {};
+        fields.forEach(f => {
+          const incomingKey = f === "linkedinUrl" ? "linkedin_url" : f;
+          const val = row[incomingKey];
+          if (val && val !== String((existing as any)[f] || "")) {
+            diff[f] = val;
+          }
+        });
+        matches.push({ existing, incoming: row, diff, companyName });
+      } else {
+        newItems.push(row);
+      }
+    }
+    res.json({ newItems, matches });
+  });
+
+  app.post("/api/clients/import", isAuthenticated, async (req, res) => {
+    const { rows, updates } = req.body as { rows: Record<string, string>[]; updates?: Array<{ id: number; data: any }> };
+    let created = 0;
+    let updatedCount = 0;
+    const errors: string[] = [];
+
+    if (updates && Array.isArray(updates)) {
+      for (const update of updates) {
+        try {
+          await storage.updateClient(update.id, update.data);
+          await logActivity(req, "client", update.id, "updated", update.data);
+          updatedCount++;
+        } catch (e: any) {
+          errors.push(`Update client ${update.id}: ${e.message ?? String(e)}`);
+        }
+      }
+    }
+
+    if (Array.isArray(rows)) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        try {
+          const data = insertClientSchema.parse({
+            name: row.name || row.company_name || "",
+            industry: row.industry || null,
+            address: row.address || null,
+            phone: row.phone || null,
+            email: row.email || null,
+            website: row.website || null,
+            notes: row.notes || null,
+            tier: row.tier || null,
+            annualRevenue: row.annual_revenue || null,
+            serviceNeeds: row.service_needs ? row.service_needs.split(";").map(s => s.trim()) : [],
+            createdBy: (req as any).user?.id ?? null,
+          });
+          const client = await storage.createClient(data);
+          await logActivity(req, "client", client.id, "created");
+          created++;
+        } catch (e: any) {
+          errors.push(`Row ${i + 2}: ${e.message ?? String(e)}`);
+        }
+      }
+    }
+    res.json({ created, updated: updatedCount, errors });
+  });
+
+  app.post("/api/client-contacts/import", isAuthenticated, async (req, res) => {
+    const { rows, updates } = req.body as { rows: Record<string, string>[]; updates?: Array<{ id: number; data: any }> };
+    const allClients = await storage.listClients();
+    const allOffices = await storage.listAllClientOffices();
+    let created = 0;
+    let updatedCount = 0;
+    const errors: string[] = [];
+
+    if (updates && Array.isArray(updates)) {
+      for (const update of updates) {
+        try {
+          await storage.updateClientContact(update.id, update.data);
+          updatedCount++;
+        } catch (e: any) {
+          errors.push(`Update contact ${update.id}: ${e.message ?? String(e)}`);
+        }
+      }
+    }
+
+    if (Array.isArray(rows)) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        try {
+          const companyName = (row.company_name || row.company || "").trim();
+          const company = allClients.find(c => c.name.toLowerCase() === companyName.toLowerCase());
+          if (!company) {
+            errors.push(`Row ${i + 2}: Company "${companyName}" not found`);
+            continue;
+          }
+
+          let officeId: number | null = null;
+          if (row.office_name) {
+            const office = allOffices.find(o => 
+              o.clientId === company.id && 
+              o.name.toLowerCase() === row.office_name.toLowerCase()
+            );
+            if (office) {
+              officeId = office.id;
+            }
+          }
+
+          await storage.createClientContact({
+            clientId: company.id,
+            name: row.name || row.contact_name || "",
+            title: row.title || null,
+            email: row.email || null,
+            phone: row.phone || null,
+            isPrimary: row.is_primary === "true" || row.is_primary === "1" || row.is_primary === "yes",
+            reportsTo: null,
+            officeId: officeId,
+            linkedinUrl: row.linkedin_url || null,
+            tier: row.tier || null,
+            serviceNeeds: row.service_needs ? row.service_needs.split(";").map(s => s.trim()) : [],
+            employmentStatus: row.employment_status || null,
+          });
+          created++;
+        } catch (e: any) {
+          errors.push(`Row ${i + 2}: ${e.message ?? String(e)}`);
+        }
+      }
+    }
+    res.json({ created, updated: updatedCount, errors });
   });
 
   // Contact card/signature scanner (AI vision)
@@ -2375,6 +2499,26 @@ Respond with this JSON:
       const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
       const client = await storage.updateClient(clientId, { logoUrl: publicUrl } as any);
       res.json({ url: publicUrl, client });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/contacts/:id/photo", isAuthenticated, upload.single("photo"), async (req, res) => {
+    const r = req as any;
+    const contactId = parseInt(req.params.id);
+    if (!r.file) return res.status(400).json({ message: "No file uploaded" });
+    try {
+      const ext = r.file.mimetype.split("/")[1] || "jpg";
+      let entityDir = objectStorageService.getPrivateObjectDir();
+      if (!entityDir.endsWith("/")) entityDir = entityDir + "/";
+      const fullPath = entityDir + "contact_photos/contact_" + contactId + "." + ext;
+      const { bucketName, objectName } = parseStoragePath(fullPath);
+      const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
+      await bucket.file(objectName).save(r.file.buffer, { metadata: { contentType: r.file.mimetype } });
+      const publicUrl = "https://storage.googleapis.com/" + bucketName + "/" + objectName;
+      const updated = await storage.updateClientContact(contactId, { profilePictureUrl: publicUrl });
+      res.json({ url: publicUrl, contact: updated });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

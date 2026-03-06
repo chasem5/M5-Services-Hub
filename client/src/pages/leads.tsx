@@ -1212,11 +1212,13 @@ export default function Leads() {
             </DropdownMenu>
             <Button
               variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              title="Manage stages"
               onClick={() => setIsManageStagesOpen(true)}
               data-testid="button-manage-stages"
             >
-              <Settings className="h-4 w-4 mr-2" />
-              Manage Stages
+              <Settings className="h-4 w-4" />
             </Button>
             <Button onClick={() => {
               form.reset();

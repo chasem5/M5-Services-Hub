@@ -398,6 +398,10 @@ export default function Customers() {
   const [vcfImportContacts, setVcfImportContacts] = useState<Array<{ name: string | null; title: string | null; email: string | null; phone: string | null; company: string | null; linkedinUrl: string | null }>>([]);
   const [vcfAssignClientId, setVcfAssignClientId] = useState<string>("");
   const [vcfSaving, setVcfSaving] = useState(false);
+  const [importPreview, setImportPreview] = useState<{ type: "companies" | "contacts", newItems: any[], matches: any[] } | null>(null);
+  const [selectedNewItems, setSelectedNewItems] = useState<any[]>([]);
+  const [selectedUpdates, setSelectedUpdates] = useState<Array<{ id: number, data: any }>>([]);
+  const [isImportReviewOpen, setIsImportReviewOpen] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ClientContact | null>(null);
@@ -623,20 +627,43 @@ export default function Customers() {
   };
 
   const handleImportFile = async (file: File, type: "companies" | "contacts") => {
-    const text = await file.text();
-    const rows = parseCSV(text);
-    if (!rows.length) {
-      toast({ title: "Empty or invalid CSV", description: "Make sure the file has a header row and at least one data row.", variant: "destructive" });
-      return;
-    }
-    setIsImporting(true);
     try {
-      const endpoint = type === "companies" ? "/api/clients/import" : "/api/client-contacts/import";
+      setIsImporting(true);
+      const text = await file.text();
+      const rows = parseCSV(text);
+      if (!rows.length) {
+        toast({ title: "Import failed", description: "The CSV file is empty or invalid.", variant: "destructive" });
+        return;
+      }
+
+      const endpoint = type === "companies" ? "/api/clients/import-preview" : "/api/client-contacts/import-preview";
       const res = await apiRequest("POST", endpoint, { rows });
       const result = await res.json();
-      setImportResult({ ...result, type });
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+
+      setImportPreview({ type, ...result });
+      setSelectedNewItems(result.newItems);
+      setSelectedUpdates([]);
+      setIsImportReviewOpen(true);
+    } catch (e: any) {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importPreview) return;
+    try {
+      setIsImporting(true);
+      const endpoint = importPreview.type === "companies" ? "/api/clients/import" : "/api/client-contacts/import";
+      const res = await apiRequest("POST", endpoint, { 
+        rows: selectedNewItems, 
+        updates: selectedUpdates 
+      });
+      const result = await res.json();
+      setImportResult({ ...result, type: importPreview.type });
+      setIsImportReviewOpen(false);
+      queryClient.invalidateQueries({ queryKey: [importPreview.type === "companies" ? "/api/clients" : "/api/client-contacts"] });
     } catch (e: any) {
       toast({ title: "Import failed", description: e.message, variant: "destructive" });
     } finally {
@@ -2612,6 +2639,148 @@ export default function Customers() {
               </>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Review Dialog */}
+      <Dialog open={isImportReviewOpen} onOpenChange={setIsImportReviewOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6">
+            <DialogTitle>Review Import — {importPreview ? (importPreview.newItems.length + importPreview.matches.length) : 0} rows</DialogTitle>
+            <DialogDescription>
+              Review new records and potential updates for existing ones.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-8">
+            {importPreview && importPreview.newItems.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Plus className="h-4 w-4 text-green-600" />
+                    New {importPreview.type} ({importPreview.newItems.length})
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      id="select-all-new"
+                      checked={selectedNewItems.length === importPreview.newItems.length}
+                      onCheckedChange={(checked) => {
+                        if (checked) setSelectedNewItems(importPreview.newItems);
+                        else setSelectedNewItems([]);
+                      }}
+                      data-testid="checkbox-select-all-new"
+                    />
+                    <label htmlFor="select-all-new" className="text-xs font-medium cursor-pointer">Select all</label>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {importPreview.newItems.map((item, i) => {
+                    const name = item.name || item.company_name || item.contact_name || "Unnamed";
+                    const isSelected = selectedNewItems.includes(item);
+                    return (
+                      <div key={i} className="flex items-center gap-2 p-2 rounded border bg-muted/20">
+                        <Checkbox 
+                          checked={isSelected}
+                          onCheckedChange={(checked) => {
+                            if (checked) setSelectedNewItems([...selectedNewItems, item]);
+                            else setSelectedNewItems(selectedNewItems.filter(x => x !== item));
+                          }}
+                          data-testid={`checkbox-new-item-${i}`}
+                        />
+                        <span className="text-xs truncate font-medium">{name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {importPreview && importPreview.matches.length > 0 && (
+              <section className="space-y-4">
+                <div className="border-b pb-2">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    Existing Matches ({importPreview.matches.length})
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    These records already exist. Select ones to update with new data.
+                  </p>
+                </div>
+                <div className="space-y-4">
+                  {importPreview.matches.map((match, i) => {
+                    const isSelected = selectedUpdates.some(u => u.id === match.existing.id);
+                    return (
+                      <div key={i} className="border rounded-lg overflow-hidden">
+                        <div className="bg-muted/30 p-3 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Checkbox 
+                              id={`match-${i}`}
+                              checked={isSelected}
+                              onCheckedChange={(checked) => {
+                                if (checked) setSelectedUpdates([...selectedUpdates, { id: match.existing.id, data: match.diff }]);
+                                else setSelectedUpdates(selectedUpdates.filter(u => u.id !== match.existing.id));
+                              }}
+                              data-testid={`checkbox-update-match-${i}`}
+                            />
+                            <div>
+                              <label htmlFor={`match-${i}`} className="text-sm font-bold cursor-pointer block leading-none">
+                                {match.existing.name}
+                              </label>
+                              {match.companyName && (
+                                <span className="text-[11px] text-muted-foreground">{match.companyName}</span>
+                              )}
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-[10px]">Match Found</Badge>
+                        </div>
+                        {Object.keys(match.diff).length > 0 ? (
+                          <Table>
+                            <TableHeader className="bg-muted/10">
+                              <TableRow className="hover:bg-transparent">
+                                <TableHead className="h-8 text-[10px] uppercase font-bold">Field</TableHead>
+                                <TableHead className="h-8 text-[10px] uppercase font-bold">Current Value</TableHead>
+                                <TableHead className="h-8 text-[10px] uppercase font-bold">Incoming Value</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {Object.entries(match.diff).map(([field, newVal]) => (
+                                <TableRow key={field} className="hover:bg-transparent">
+                                  <TableCell className="py-1.5 text-xs font-medium capitalize">{field.replace(/([A-Z])/g, ' $1')}</TableCell>
+                                  <TableCell className="py-1.5 text-xs text-muted-foreground italic">
+                                    {String((match.existing as any)[field] || "—")}
+                                  </TableCell>
+                                  <TableCell className="py-1.5 text-xs font-semibold text-primary">
+                                    {String(newVal)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : (
+                          <div className="p-3 text-xs text-muted-foreground italic text-center">
+                            All incoming fields match existing data or are empty.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+          </div>
+
+          <DialogFooter className="p-6 border-t bg-muted/5">
+            <Button variant="outline" onClick={() => setIsImportReviewOpen(false)} data-testid="button-cancel-import">
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleConfirmImport} 
+              disabled={isImporting || (selectedNewItems.length === 0 && selectedUpdates.length === 0)}
+              data-testid="button-confirm-import"
+            >
+              {isImporting ? "Importing..." : `Create ${selectedNewItems.length} new + Update ${selectedUpdates.length} existing`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
