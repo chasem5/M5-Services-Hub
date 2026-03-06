@@ -32,6 +32,17 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { AttachmentsPanel } from "@/components/AttachmentsPanel";
+import { 
+  Card, 
+  CardContent, 
+  CardHeader, 
+  CardTitle, 
+  CardDescription 
+} from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
+import { Paperclip } from "lucide-react";
 
 type MeetingAction = {
   id: number;
@@ -643,65 +654,90 @@ export default function MeetingDetailPage() {
           </div>
         </div>
 
-        {/* Right: AI Review panel */}
+        {/* Right: AI Intelligence panel */}
         {showReview && (
-          <div className="w-[420px] shrink-0 flex flex-col overflow-hidden">
-            <div className="px-5 py-4 border-b border-border/60 shrink-0">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  <p className="font-semibold text-sm">AI Suggestions</p>
+          <div className="w-[420px] shrink-0 flex flex-col overflow-hidden border-l">
+            <Tabs defaultValue="actions" className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-5 pt-4 border-b shrink-0">
+                <TabsList className="w-full grid grid-cols-2 h-9 bg-muted/50 p-1 mb-4">
+                  <TabsTrigger value="actions" className="text-[11px] font-bold uppercase tracking-wider">
+                    Actions
+                    {pending.length > 0 && (
+                      <Badge variant="secondary" className="ml-1.5 h-4 px-1.5 text-[10px] bg-primary text-primary-foreground">
+                        {pending.length}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="files" className="text-[11px] font-bold uppercase tracking-wider">
+                    Files
+                  </TabsTrigger>
+                </TabsList>
+
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <p className="font-semibold text-sm">AI Suggestions</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {reviewed.length}/{actions.length} reviewed
+                  </span>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {reviewed.length}/{actions.length} reviewed
-                </span>
+
+                <TabsContent value="actions" className="m-0">
+                  {!isComplete && pending.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mb-4 h-7 text-xs w-full border-green-300 text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                      onClick={handleApproveAll}
+                      data-testid="button-approve-all"
+                    >
+                      <Check className="h-3.5 w-3.5 mr-1" /> Approve All ({pending.length})
+                    </Button>
+                  )}
+                </TabsContent>
               </div>
-              {!isComplete && pending.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 h-7 text-xs w-full border-green-300 text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
-                  onClick={handleApproveAll}
-                  data-testid="button-approve-all"
-                >
-                  <Check className="h-3.5 w-3.5 mr-1" /> Approve All ({pending.length})
-                </Button>
-              )}
-            </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {/* Summary */}
-              {meeting.summary && (
-                <div className="bg-muted/60 border border-border/50 rounded-lg p-3 text-xs leading-relaxed text-muted-foreground mb-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 mb-1.5">Meeting Summary</p>
-                  {meeting.summary}
-                </div>
-              )}
+              <div className="flex-1 overflow-y-auto">
+                <TabsContent value="actions" className="m-0 p-4 space-y-3">
+                  {/* Summary */}
+                  {meeting.summary && (
+                    <div className="bg-muted/60 border border-border/50 rounded-lg p-3 text-xs leading-relaxed text-muted-foreground mb-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 mb-1.5">Meeting Summary</p>
+                      {meeting.summary}
+                    </div>
+                  )}
 
-              {actions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                  <ClipboardList className="h-8 w-8 mb-2 opacity-20" />
-                  <p className="text-sm">No action items were identified.</p>
-                </div>
-              ) : (
-                actions.map((action) => (
-                  <ActionCard
-                    key={action.id}
-                    action={action}
-                    isApproving={actioningIds[action.id] === "approve"}
-                    isDeclining={actioningIds[action.id] === "decline"}
-                    onApprove={() => {
-                      setActioningIds((prev) => ({ ...prev, [action.id]: "approve" }));
-                      approveMutation.mutate(action.id);
-                    }}
-                    onDecline={() => {
-                      setActioningIds((prev) => ({ ...prev, [action.id]: "decline" }));
-                      declineMutation.mutate(action.id);
-                    }}
-                  />
-                ))
-              )}
-            </div>
+                  {actions.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                      <ClipboardList className="h-8 w-8 mb-2 opacity-20" />
+                      <p className="text-sm">No action items were identified.</p>
+                    </div>
+                  ) : (
+                    actions.map((action) => (
+                      <ActionCard
+                        key={action.id}
+                        action={action}
+                        isApproving={actioningIds[action.id] === "approve"}
+                        isDeclining={actioningIds[action.id] === "decline"}
+                        onApprove={() => {
+                          setActioningIds((prev) => ({ ...prev, [action.id]: "approve" }));
+                          approveMutation.mutate(action.id);
+                        }}
+                        onDecline={() => {
+                          setActioningIds((prev) => ({ ...prev, [action.id]: "decline" }));
+                          declineMutation.mutate(action.id);
+                        }}
+                      />
+                    ))
+                  )}
+                </TabsContent>
+
+                <TabsContent value="files" className="m-0 p-4">
+                  <AttachmentsPanel entityType="meeting" entityId={meetingId} />
+                </TabsContent>
+              </div>
+            </Tabs>
           </div>
         )}
 

@@ -96,6 +96,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { TierBadge } from "@/components/TierBadge";
+import { AttachmentsPanel } from "@/components/AttachmentsPanel";
 import {
   Table,
   TableBody,
@@ -1786,9 +1787,10 @@ export default function Leads() {
               </SheetHeader>
 
               <Tabs defaultValue="details" className="mt-6">
-                <TabsList className="w-full grid grid-cols-4">
+                <TabsList className="w-full grid grid-cols-5">
                   <TabsTrigger value="details">Details</TabsTrigger>
                   <TabsTrigger value="notes" data-testid="tab-notes">Notes</TabsTrigger>
+                  <TabsTrigger value="attachments">Files</TabsTrigger>
                   <TabsTrigger value="tasks">
                     Tasks
                     {detailLeadTasks.length > 0 && (
@@ -2364,6 +2366,10 @@ export default function Leads() {
 
                 <TabsContent value="notes" className="py-4">
                   {selectedLead && <LeadNotesTab leadId={selectedLead.id} />}
+                </TabsContent>
+
+                <TabsContent value="attachments" className="py-4">
+                  {selectedLead && <AttachmentsPanel entityType="lead" entityId={selectedLead.id} />}
                 </TabsContent>
 
                 <TabsContent value="tasks" className="py-4 space-y-3">

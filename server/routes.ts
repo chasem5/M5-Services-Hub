@@ -20,8 +20,16 @@ import {
   insertTaskLabelDefinitionSchema,
   insertTaskColumnSchema,
   insertEmailMessageSchema,
+  insertAttachmentSchema,
+  insertPushSubscriptionSchema,
 } from "@shared/schema";
 import { z } from "zod";
+import multer from "multer";
+import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
+import webpush from "web-push";
+
+const upload = multer({ storage: multer.memoryStorage() });
+const objectStorageService = new ObjectStorageService();
 
 // Helper to get role-scoped userId for list queries based on dynamic permissions
 async function getScopedUserId(req: any, module: string): Promise<string | undefined> {
@@ -61,6 +69,34 @@ function requireModuleFullAccess(module: string) {
   };
 }
 
+// Push notification helper
+async function sendPushNotification(userId: string, payload: { title: string; body: string; url?: string }) {
+  const subscriptions = await storage.listPushSubscriptions(userId);
+  const results = await Promise.all(
+    subscriptions.map(async (sub) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: {
+              p256dh: sub.p256dh,
+              auth: sub.auth,
+            },
+          },
+          JSON.stringify(payload)
+        );
+        return { success: true };
+      } catch (error: any) {
+        if (error.statusCode === 410 || error.statusCode === 404) {
+          await storage.deletePushSubscription(sub.endpoint);
+        }
+        return { success: false, error };
+      }
+    })
+  );
+  return results;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -75,6 +111,151 @@ export async function registerRoutes(
   if (process.env.INITIAL_ADMIN_EMAIL) {
     await storage.seedInitialAdmin(process.env.INITIAL_ADMIN_EMAIL);
   }
+
+  // Push notification setup
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    webpush.setVapidDetails(
+      "mailto:admin@m5crm.replit.app",
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
+    );
+  }
+
+  // Push subscription routes
+  app.get("/api/push/vapid-public-key", isAuthenticated, (req, res) => {
+    res.json({ publicKey: process.env.VAPID_PUBLIC_KEY });
+  });
+
+  app.post("/api/push/subscribe", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const { endpoint, keys } = req.body;
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      return res.status(400).json({ message: "Invalid subscription" });
+    }
+    const sub = await storage.createPushSubscription({
+      userId,
+      endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+    });
+    res.json(sub);
+  });
+
+  app.delete("/api/push/unsubscribe", isAuthenticated, async (req, res) => {
+    const { endpoint } = req.body;
+    if (!endpoint) return res.status(400).json({ message: "Endpoint required" });
+    await storage.deletePushSubscription(endpoint);
+    res.sendStatus(204);
+  });
+
+  // Task due today: daily cron-like check
+  const checkTasksDueToday = async () => {
+    const now = new Date();
+    const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(now.setHours(23, 59, 59, 999));
+    
+    const allTasks = await storage.listTasks();
+    const tasksDueToday = allTasks.filter(t => {
+      if (!t.dueDate) return false;
+      const d = new Date(t.dueDate);
+      return d >= startOfDay && d <= endOfDay && t.status !== 'done';
+    });
+
+    for (const task of tasksDueToday) {
+      if (task.assignedTo) {
+        await sendPushNotification(task.assignedTo, {
+          title: "Task Due Today",
+          body: `Reminder: "${task.title}" is due today.`,
+          url: `/tasks`
+        });
+      }
+    }
+  };
+
+  // Run on startup and every 24 hours
+  checkTasksDueToday();
+  setInterval(checkTasksDueToday, 24 * 60 * 60 * 1000);
+
+  // Attachments
+  app.post("/api/attachments/upload", isAuthenticated, upload.single("file"), async (req, res) => {
+    try {
+      const { entityType, entityId } = req.body;
+      const file = req.file;
+
+      if (!file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      if (!entityType || !entityId) {
+        return res.status(400).json({ message: "entityType and entityId are required" });
+      }
+
+      // 1. Get upload URL (this also generates a random object ID)
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+
+      // 2. Upload the file to storage
+      // Note: We need to get the actual File object from the bucket to use createWriteStream
+      // But objectStorageService doesn't have a direct "uploadBuffer" method.
+      // Looking at ObjectStorageService.getObjectEntityFile, it parses /objects/ path.
+      
+      const parts = objectPath.slice(1).split("/"); // e.g. ["objects", "uploads", "uuid"]
+      const entityIdInPath = parts.slice(1).join("/");
+      let entityDir = objectStorageService.getPrivateObjectDir();
+      if (!entityDir.endsWith("/")) entityDir = `${entityDir}/`;
+      const fullPath = `${entityDir}${entityIdInPath}`;
+
+      const { bucketName, objectName } = (objectStorageService as any).parseObjectPath(fullPath);
+      const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
+      const storageFile = bucket.file(objectName);
+
+      await storageFile.save(file.buffer, {
+        contentType: file.mimetype,
+        resumable: false,
+      });
+
+      // 3. Save to DB
+      const userId = (req as any).user.claims.sub;
+      const attachment = await storage.createAttachment({
+        entityType,
+        entityId: parseInt(entityId),
+        fileName: file.originalname,
+        objectKey: objectPath,
+        fileType: file.mimetype,
+        fileSize: file.size,
+        uploadedBy: userId,
+      });
+
+      res.json(attachment);
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      res.status(500).json({ message: error.message || "Failed to upload attachment" });
+    }
+  });
+
+  app.get("/api/attachments/:entityType/:entityId", isAuthenticated, async (req, res) => {
+    const { entityType, entityId } = req.params;
+    const attachments = await storage.getAttachments(entityType, parseInt(entityId));
+    res.json(attachments);
+  });
+
+  app.delete("/api/attachments/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const attachment = await storage.getAttachment(id);
+    if (!attachment) return res.status(404).json({ message: "Attachment not found" });
+
+    // Delete from storage
+    try {
+      const objectFile = await objectStorageService.getObjectEntityFile(attachment.objectKey);
+      await objectFile.delete();
+    } catch (err) {
+      console.error("Failed to delete from storage:", err);
+      // Continue to delete from DB even if storage delete fails
+    }
+
+    await storage.deleteAttachment(id);
+    res.sendStatus(204);
+  });
 
   // Helper to log activity
   const logActivity = async (req: any, entityType: any, entityId: number, action: string, metadata?: any) => {
@@ -533,6 +714,15 @@ export async function registerRoutes(
     const leadData = insertLeadSchema.parse(req.body);
     const lead = await storage.createLead(leadData);
     await logActivity(req, "lead", lead.id, "created");
+    
+    if (lead.assignedTo) {
+      await sendPushNotification(lead.assignedTo, {
+        title: "New Lead Assigned",
+        body: `You have been assigned a new lead: ${lead.title}`,
+        url: `/leads`
+      });
+    }
+
     res.json(lead);
   });
 
@@ -545,9 +735,19 @@ export async function registerRoutes(
 
   app.put("/api/leads/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
+    const oldLead = await storage.getLead(id);
     const leadData = insertLeadSchema.partial().parse(req.body);
     const lead = await storage.updateLead(id, leadData);
     await logActivity(req, "lead", lead.id, "updated", leadData);
+
+    if (lead.assignedTo && lead.assignedTo !== oldLead?.assignedTo) {
+      await sendPushNotification(lead.assignedTo, {
+        title: "Lead Assigned to You",
+        body: `You have been assigned a lead: ${lead.title}`,
+        url: `/leads`
+      });
+    }
+
     res.json(lead);
   });
 
@@ -860,6 +1060,15 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
       }
 
       res.json(announcement);
+
+      // Send push notifications to target users
+      for (const targetUserId of targetIds) {
+        await sendPushNotification(targetUserId, {
+          title: data.type === "announcement" ? "New Announcement" : `New ${data.type}`,
+          body: data.title || "You have a new update",
+          url: data.type === "announcement" ? "/announcements" : (data.type === "task" ? "/tasks" : "/dashboard")
+        });
+      }
     } catch (err: any) {
       res.status(400).json({ message: err.message });
     }

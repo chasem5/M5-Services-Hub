@@ -40,4 +40,10 @@ args = "npm run dev"
 waitForPort = 5000
 
 [agent]
-integrations = ["javascript_openai_ai_integrations:2.0.0"]
+integrations = ["javascript_openai_ai_integrations:2.0.0", "javascript_object_storage:2.0.0"]
+
+[userenv]
+
+[userenv.shared]
+VAPID_PUBLIC_KEY = "BPqMqCu_FChY_XgFNCP5gqUTcwenJzGszvVq_SvBp08CbPK8VcXff4BSw1_-YaayOGLW9mF6WqmLyUYWpUnMchI"
+VAPID_PRIVATE_KEY = "nN3UBI7hTeftq-emPYec-fOKtLOkG8-OtL7_3PmnpPM"

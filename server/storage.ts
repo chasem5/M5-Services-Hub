@@ -28,6 +28,8 @@ import {
   leadNotes,
   announcements,
   announcementReads,
+  attachments,
+  pushSubscriptions,
   type User,
   type UpsertUser,
   type Client,
@@ -78,6 +80,10 @@ import {
   type InsertLeadNote,
   type Announcement,
   type InsertAnnouncement,
+  type Attachment,
+  type InsertAttachment,
+  type PushSubscription,
+  type InsertPushSubscription,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -261,6 +267,17 @@ export interface IStorage {
   createAnnouncement(data: InsertAnnouncement): Promise<Announcement>;
   markAnnouncementRead(announcementId: number, userId: string): Promise<void>;
   markAllAnnouncementsRead(userId: string): Promise<void>;
+
+  // Attachments
+  createAttachment(data: InsertAttachment): Promise<Attachment>;
+  getAttachments(entityType: string, entityId: number): Promise<Attachment[]>;
+  getAttachment(id: number): Promise<Attachment | undefined>;
+  deleteAttachment(id: number): Promise<void>;
+
+  // Push Subscriptions
+  createPushSubscription(data: InsertPushSubscription): Promise<PushSubscription>;
+  deletePushSubscription(endpoint: string): Promise<void>;
+  listPushSubscriptions(userId?: string): Promise<PushSubscription[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1252,6 +1269,46 @@ export class DatabaseStorage implements IStorage {
         await db.insert(announcementReads).values({ announcementId: a.id, userId });
       }
     }
+  }
+
+  // Attachments
+  async createAttachment(data: InsertAttachment): Promise<Attachment> {
+    const [attachment] = await db.insert(attachments).values(data).returning();
+    return attachment;
+  }
+
+  async getAttachments(entityType: string, entityId: number): Promise<Attachment[]> {
+    return await db
+      .select()
+      .from(attachments)
+      .where(and(eq(attachments.entityType, entityType), eq(attachments.entityId, entityId)))
+      .orderBy(desc(attachments.createdAt));
+  }
+
+  async getAttachment(id: number): Promise<Attachment | undefined> {
+    const [attachment] = await db.select().from(attachments).where(eq(attachments.id, id));
+    return attachment;
+  }
+
+  async deleteAttachment(id: number): Promise<void> {
+    await db.delete(attachments).where(eq(attachments.id, id));
+  }
+
+  // Push Subscriptions
+  async createPushSubscription(data: InsertPushSubscription): Promise<PushSubscription> {
+    const [sub] = await db.insert(pushSubscriptions).values(data).returning();
+    return sub;
+  }
+
+  async deletePushSubscription(endpoint: string): Promise<void> {
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+  }
+
+  async listPushSubscriptions(userId?: string): Promise<PushSubscription[]> {
+    if (userId) {
+      return await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+    }
+    return await db.select().from(pushSubscriptions);
   }
 }
 

@@ -27,6 +27,7 @@ import {
   Sparkles,
   Zap,
   ClipboardList,
+  Paperclip,
   X,
   Home,
   Map,
@@ -49,6 +50,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { AttachmentsPanel } from "@/components/AttachmentsPanel";
 import { AddressLink } from "@/components/AddressLink";
 import { TierBadge } from "@/components/TierBadge";
 import { 
@@ -1040,6 +1042,10 @@ export default function ClientDetail() {
           <TabsTrigger value="emails" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium" data-testid="tab-emails">
             <Mail className="mr-2 h-4 w-4" />
             Emails
+          </TabsTrigger>
+          <TabsTrigger value="attachments" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
+            <Paperclip className="mr-2 h-4 w-4" />
+            Files
           </TabsTrigger>
         </TabsList>
 
@@ -2138,6 +2144,18 @@ export default function ClientDetail() {
               </CardHeader>
               <CardContent className="pt-6">
                 <ClientEmailsTab clientId={clientId} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="attachments" className="m-0">
+            <Card className="border-none shadow-sm bg-card">
+              <CardHeader>
+                <CardTitle>Files & Photos</CardTitle>
+                <CardDescription>Manage documents and site photos for this client</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AttachmentsPanel entityType="client" entityId={clientId} />
               </CardContent>
             </Card>
           </TabsContent>

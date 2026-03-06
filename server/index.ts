@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { registerAuthRoutes } from "./replit_integrations/auth/routes";
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage/routes";
 import { setupAuth } from "./replit_integrations/auth/replitAuth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -64,6 +65,7 @@ app.use((req, res, next) => {
 (async () => {
   await setupAuth(app);
   registerAuthRoutes(app);
+  registerObjectStorageRoutes(app);
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

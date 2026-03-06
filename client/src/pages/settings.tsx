@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { User } from "@shared/schema";
@@ -30,7 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays } from "lucide-react";
+import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff } from "lucide-react";
 
 interface CalendarStatus {
   connected: boolean;
@@ -59,6 +59,70 @@ export default function Settings() {
   const { data: calendarStatus, isLoading: calendarLoading } = useQuery<CalendarStatus>({
     queryKey: ["/api/auth/calendar/status"],
     enabled: !!currentUser,
+  });
+
+  const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+
+  useEffect(() => {
+    if ("Notification" in window) {
+      setNotificationPermission(Notification.permission);
+      navigator.serviceWorker.ready.then((registration) => {
+        registration.pushManager.getSubscription().then((subscription) => {
+          setIsSubscribed(!!subscription);
+        });
+      });
+    }
+  }, []);
+
+  const subscribeMutation = useMutation({
+    mutationFn: async () => {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        throw new Error("Push notifications not supported");
+      }
+
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission !== "granted") {
+        throw new Error("Permission not granted");
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      const res = await apiRequest("GET", "/api/push/vapid-public-key", undefined);
+      const { publicKey } = await res.json();
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: publicKey,
+      });
+
+      await apiRequest("POST", "/api/push/subscribe", subscription);
+    },
+    onSuccess: () => {
+      setIsSubscribed(true);
+      toast({ title: "Notifications enabled", description: "You will now receive push notifications." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to enable notifications", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const unsubscribeMutation = useMutation({
+    mutationFn: async () => {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await apiRequest("DELETE", "/api/push/unsubscribe", { endpoint: subscription.endpoint });
+        await subscription.unsubscribe();
+      }
+    },
+    onSuccess: () => {
+      setIsSubscribed(false);
+      toast({ title: "Notifications disabled" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to disable notifications", description: error.message, variant: "destructive" });
+    },
   });
 
   const disconnectGmailMutation = useMutation({
@@ -363,6 +427,59 @@ export default function Settings() {
                 </p>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Push Notifications Card */}
+        <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
+          <CardHeader className="bg-muted/30 pb-6 border-b">
+            <div className="flex items-center gap-4">
+              <div className="bg-primary/10 p-2 rounded-full">
+                <Bell className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-xl font-heading">Push Notifications</CardTitle>
+                <CardDescription>Receive real-time alerts for new leads, tasks, and announcements</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${isSubscribed ? 'bg-green-100' : 'bg-gray-100'}`}>
+                  {isSubscribed ? <Bell className="h-5 w-5 text-green-600" /> : <BellOff className="h-5 w-5 text-gray-400" />}
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">{isSubscribed ? "Enabled" : "Disabled"}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {notificationPermission === 'denied' 
+                      ? "Notifications are blocked by your browser. Please enable them in your browser settings."
+                      : isSubscribed 
+                        ? "You are currently receiving push notifications on this device." 
+                        : "Enable notifications to stay updated on leads assigned to you and team announcements."}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant={isSubscribed ? "outline" : "default"}
+                className="gap-2 shrink-0"
+                onClick={() => isSubscribed ? unsubscribeMutation.mutate() : subscribeMutation.mutate()}
+                disabled={subscribeMutation.isPending || unsubscribeMutation.isPending || notificationPermission === 'denied'}
+                data-testid="button-toggle-notifications"
+              >
+                {isSubscribed ? (
+                  <>
+                    <BellOff className="h-4 w-4" />
+                    Disable Notifications
+                  </>
+                ) : (
+                  <>
+                    <Bell className="h-4 w-4" />
+                    Enable Notifications
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
