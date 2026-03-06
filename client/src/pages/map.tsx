@@ -58,7 +58,7 @@ const STAGE_COLORS: Record<string, string> = {
   lost: "#ef4444", // red
 };
 
-export default function MapPage() {
+export function MapView() {
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -305,3 +305,5 @@ export default function MapPage() {
     </div>
   );
 }
+
+export default MapView;

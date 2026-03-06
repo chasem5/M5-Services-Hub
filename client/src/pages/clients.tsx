@@ -27,8 +27,10 @@ import {
   Landmark,
   Target,
   ChevronRight,
+  Map,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
+import { MapView } from "@/pages/map";
 
 // ── CSV utilities ────────────────────────────────────────────────────────────
 
@@ -649,6 +651,10 @@ export default function Customers() {
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{allBuildings.length}</Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="map" className="flex items-center gap-2" data-testid="tab-map">
+            <Map className="h-4 w-4" />
+            Map
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Companies Tab ── */}
@@ -1259,6 +1265,13 @@ export default function Customers() {
               })()}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Map Tab ── */}
+        <TabsContent value="map">
+          <div className="rounded-lg border overflow-hidden" style={{ height: "640px" }}>
+            <MapView />
+          </div>
         </TabsContent>
       </Tabs>
 
