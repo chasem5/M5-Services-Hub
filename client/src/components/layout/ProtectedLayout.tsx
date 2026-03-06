@@ -1,16 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SiReplit } from "react-icons/si";
-import { Megaphone } from "lucide-react";
+import { Megaphone, RefreshCw } from "lucide-react";
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger } from "@/components/GlobalSearch";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+
+const PULL_THRESHOLD = 80;
+const MAX_PULL = 120;
 
 function AnnouncementsBadge() {
   const { data } = useQuery<{ count: number }>({
@@ -40,6 +43,54 @@ function AnnouncementsBadge() {
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const touchStartY = useRef(0);
+  const isPulling = useRef(false);
+  const mainRef = useRef<HTMLElement>(null);
+
+  const triggerRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    setPullDistance(0);
+    await queryClient.invalidateQueries({});
+    setTimeout(() => setIsRefreshing(false), 800);
+  }, []);
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    const el = mainRef.current;
+    if (!el || el.scrollTop > 0) return;
+    touchStartY.current = e.touches[0].clientY;
+    isPulling.current = true;
+  }, []);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isPulling.current || isRefreshing) return;
+    const delta = e.touches[0].clientY - touchStartY.current;
+    if (delta <= 0) {
+      isPulling.current = false;
+      setPullDistance(0);
+      return;
+    }
+    const el = mainRef.current;
+    if (el && el.scrollTop > 0) {
+      isPulling.current = false;
+      setPullDistance(0);
+      return;
+    }
+    const dist = Math.min(delta * 0.5, MAX_PULL);
+    setPullDistance(dist);
+    if (dist > 10) e.preventDefault();
+  }, [isRefreshing]);
+
+  const onTouchEnd = useCallback(() => {
+    if (!isPulling.current) return;
+    isPulling.current = false;
+    if (pullDistance >= PULL_THRESHOLD) {
+      triggerRefresh();
+    } else {
+      setPullDistance(0);
+    }
+  }, [pullDistance, triggerRefresh]);
 
   useEffect(() => {
     if (!user || isLoading) return;
@@ -121,8 +172,44 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
               <RemindersDropdown />
             </div>
           </header>
-          <main className="flex-1 overflow-y-auto relative">
-            {children}
+          <main
+            ref={mainRef}
+            className="flex-1 overflow-y-auto relative"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          >
+            {/* Pull-to-refresh indicator */}
+            {(pullDistance > 0 || isRefreshing) && (
+              <div
+                className="absolute left-0 right-0 flex justify-center z-50 pointer-events-none"
+                style={{
+                  top: isRefreshing ? 12 : Math.max(pullDistance - 36, -36),
+                  transition: isRefreshing ? "top 0.2s ease" : undefined,
+                }}
+              >
+                <div className="flex items-center gap-2 bg-background border border-border shadow-md rounded-full px-3 py-1.5">
+                  <RefreshCw
+                    className="h-4 w-4 text-primary"
+                    style={{
+                      animation: isRefreshing ? "spin 0.7s linear infinite" : undefined,
+                      transform: isRefreshing ? undefined : `rotate(${(pullDistance / PULL_THRESHOLD) * 180}deg)`,
+                    }}
+                  />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {isRefreshing ? "Refreshing…" : pullDistance >= PULL_THRESHOLD ? "Release to refresh" : "Pull to refresh"}
+                  </span>
+                </div>
+              </div>
+            )}
+            <div
+              style={{
+                transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : undefined,
+                transition: pullDistance === 0 ? "transform 0.25s ease" : undefined,
+              }}
+            >
+              {children}
+            </div>
           </main>
         </div>
       </div>
