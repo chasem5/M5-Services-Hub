@@ -588,7 +588,10 @@ function MetricCard({
         {loading ? (
           <Skeleton className="h-7 w-20" />
         ) : (
-          <div className={cn("text-2xl font-heading font-bold", accentColor)} data-testid={dataTestId}>
+          <div
+            className={cn("text-xl font-heading font-bold leading-tight break-words min-w-0", accentColor)}
+            data-testid={dataTestId}
+          >
             {value ?? 0}
           </div>
         )}
