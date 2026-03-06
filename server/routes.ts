@@ -404,12 +404,6 @@ export async function registerRoutes(
     res.json(client);
   });
 
-  app.delete("/api/clients/:id", isAuthenticated, async (req, res) => {
-    const id = parseInt(req.params.id as string);
-    await storage.deleteClient(id);
-    res.sendStatus(204);
-  });
-
   app.delete("/api/clients/bulk", isAuthenticated, async (req, res) => {
     const { ids } = z.object({ ids: z.array(z.number()) }).parse(req.body);
     await storage.deleteBulkClients(ids);
@@ -422,6 +416,12 @@ export async function registerRoutes(
       data: z.record(z.unknown())
     }).parse(req.body);
     await storage.bulkUpdateClients(ids, data as any);
+    res.sendStatus(204);
+  });
+
+  app.delete("/api/clients/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    await storage.deleteClient(id);
     res.sendStatus(204);
   });
 
@@ -450,19 +450,6 @@ export async function registerRoutes(
     res.json(contact);
   });
 
-  app.patch("/api/contacts/:id", isAuthenticated, async (req, res) => {
-    const id = parseInt(req.params.id as string);
-    const data = insertClientContactSchema.partial().parse(req.body);
-    const contact = await storage.updateClientContact(id, data);
-    res.json(contact);
-  });
-
-  app.delete("/api/clients/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
-    const contactId = parseInt(req.params.contactId as string);
-    await storage.deleteClientContact(contactId);
-    res.sendStatus(204);
-  });
-
   app.delete("/api/contacts/bulk", isAuthenticated, async (req, res) => {
     const { ids } = z.object({ ids: z.array(z.number()) }).parse(req.body);
     await storage.deleteBulkClientContacts(ids);
@@ -475,6 +462,19 @@ export async function registerRoutes(
       data: z.record(z.unknown())
     }).parse(req.body);
     await storage.bulkUpdateClientContacts(ids, data as any);
+    res.sendStatus(204);
+  });
+
+  app.patch("/api/contacts/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const data = insertClientContactSchema.partial().parse(req.body);
+    const contact = await storage.updateClientContact(id, data);
+    res.json(contact);
+  });
+
+  app.delete("/api/clients/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
+    const contactId = parseInt(req.params.contactId as string);
+    await storage.deleteClientContact(contactId);
     res.sendStatus(204);
   });
 
