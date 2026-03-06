@@ -8,6 +8,7 @@ import { SiReplit } from "react-icons/si";
 import { Megaphone, RefreshCw } from "lucide-react";
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger } from "@/components/GlobalSearch";
+import { QuickActionsBar } from "@/components/QuickActionsBar";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -196,6 +197,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
               Updated {getRelativeTime(lastRefreshed)}
             </span>
             <div className="flex items-center gap-2">
+              <QuickActionsBar />
               <AnnouncementsBadge />
               <RemindersDropdown />
             </div>

@@ -50,7 +50,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Search companies, contacts, leads, tasks..." data-testid="input-global-search" />
+      <CommandInput placeholder="Search companies, contacts, deals, tasks..." data-testid="input-global-search" />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
 
@@ -113,13 +113,13 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 
         {leads.length > 0 && (contacts.length > 0 || clients.length > 0) && <CommandSeparator />}
 
-        {/* Leads */}
+        {/* Deals */}
         {leads.length > 0 && (
-          <CommandGroup heading="Leads">
+          <CommandGroup heading="Deals">
             {leads.slice(0, 6).map(lead => (
               <CommandItem
                 key={`lead-${lead.id}`}
-                value={`lead ${lead.title} ${lead.stage || ""} ${clientMap[lead.clientId ?? 0] || ""}`}
+                value={`deal ${lead.title} ${lead.stage || ""} ${clientMap[lead.clientId ?? 0] || ""}`}
                 onSelect={() => navigate(`/leads?id=${lead.id}`)}
                 data-testid={`search-result-lead-${lead.id}`}
                 className="flex items-center gap-3 cursor-pointer"

@@ -433,8 +433,11 @@ export default function Customers() {
   const exportCompanies = () => {
     if (!clients?.length) { toast({ title: "No companies to export" }); return; }
     const csv = buildCSV(
-      ["name", "industry", "address", "phone", "email", "website", "notes"],
-      clients.map(c => [c.name, c.industry, c.address, c.phone, c.email, c.website, c.notes])
+      ["name", "industry", "address", "phone", "email", "website", "notes", "tier", "annual_revenue", "service_needs"],
+      clients.map(c => [
+        c.name, c.industry, c.address, c.phone, c.email, c.website, c.notes,
+        c.tier ?? "", c.annualRevenue ?? "", (c.serviceNeeds ?? []).join("; ")
+      ])
     );
     downloadCSV("m5-companies.csv", csv);
   };
@@ -442,11 +445,15 @@ export default function Customers() {
   const exportContacts = () => {
     if (!allContacts.length) { toast({ title: "No contacts to export" }); return; }
     const csv = buildCSV(
-      ["company_name", "name", "title", "email", "phone", "is_primary"],
+      ["company_name", "name", "title", "email", "phone", "is_primary", "linkedin_url", "tier", "service_needs", "employment_status"],
       allContacts.map(c => [
         clients?.find(cl => cl.id === c.clientId)?.name ?? "",
         c.name, c.title, c.email, c.phone,
         c.isPrimary ? "true" : "false",
+        c.linkedinUrl ?? "",
+        c.tier ?? "",
+        (c.serviceNeeds ?? []).join("; "),
+        c.employmentStatus ?? ""
       ])
     );
     downloadCSV("m5-contacts.csv", csv);
@@ -454,16 +461,16 @@ export default function Customers() {
 
   const downloadCompaniesTemplate = () => {
     const csv = buildCSV(
-      ["name", "industry", "address", "phone", "email", "website", "notes"],
-      [["Acme Corp", "Facility Management", "123 Main St", "555-1234", "info@acme.com", "acme.com", "Sample note"]]
+      ["name", "industry", "address", "phone", "email", "website", "notes", "tier", "annual_revenue", "service_needs"],
+      [["Acme Corp", "Facility Management", "123 Main St", "555-1234", "info@acme.com", "acme.com", "Sample note", "tier_1", "1000000", "janitorial; facility_solutions"]]
     );
     downloadCSV("m5-companies-template.csv", csv);
   };
 
   const downloadContactsTemplate = () => {
     const csv = buildCSV(
-      ["company_name", "name", "title", "email", "phone", "is_primary"],
-      [["Acme Corp", "Jane Smith", "Property Manager", "jane@acme.com", "555-5678", "true"]]
+      ["company_name", "name", "title", "email", "phone", "is_primary", "linkedin_url", "tier", "service_needs", "employment_status", "office_name"],
+      [["Acme Corp", "Jane Smith", "Property Manager", "jane@acme.com", "555-5678", "true", "https://linkedin.com/in/janesmith", "tier_1", "janitorial", "active", "Main Office"]]
     );
     downloadCSV("m5-contacts-template.csv", csv);
   };

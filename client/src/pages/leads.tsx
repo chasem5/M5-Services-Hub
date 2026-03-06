@@ -97,6 +97,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { TierBadge } from "@/components/TierBadge";
 import { AttachmentsPanel } from "@/components/AttachmentsPanel";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import {
   Table,
   TableBody,
@@ -338,7 +339,7 @@ function LeadNotesTab({ leadId }: { leadId: number }) {
 
 export default function Leads() {
   const [view, setView] = useState<"kanban" | "list">("kanban");
-  const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
+  const [isAddDealOpen, setIsAddDealOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [localScore, setLocalScore] = useState(50);
   useEffect(() => { setLocalScore(selectedLead?.confidenceScore ?? 50); }, [selectedLead?.id, selectedLead?.confidenceScore]);
@@ -445,12 +446,12 @@ export default function Leads() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-      setIsAddLeadOpen(false);
+      setIsAddDealOpen(false);
       setFormTags([]);
       setTagInput("");
       setCreateValueType("fixed");
       setCreateValueTier(null);
-      toast({ title: "Success", description: "Lead created successfully" });
+      toast({ title: "Success", description: "Deal created successfully" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -465,7 +466,7 @@ export default function Leads() {
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
       setSelectedLead(updated);
-      toast({ title: "Success", description: "Lead updated successfully" });
+      toast({ title: "Success", description: "Deal updated successfully" });
     },
   });
 
@@ -544,7 +545,7 @@ export default function Leads() {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       setIsAddTaskOpen(false);
       addTaskForm.reset();
-      toast({ title: "Task created", description: "Task linked to this lead." });
+      toast({ title: "Task created", description: "Task linked to this deal." });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -796,7 +797,7 @@ export default function Leads() {
       <header className="flex flex-col gap-3 p-4 md:p-6 bg-background border-b shadow-sm">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl font-heading font-bold">Lead Management</h1>
+            <h1 className="text-2xl font-heading font-bold">Deal Management</h1>
             <p className="text-muted-foreground">Manage your sales pipeline and track opportunities</p>
           </div>
           <div className="flex items-center gap-2">
@@ -832,10 +833,10 @@ export default function Leads() {
               form.reset();
               setFormTags([]);
               setTagInput("");
-              setIsAddLeadOpen(true);
+              setIsAddDealOpen(true);
             }} data-testid="button-add-lead">
               <Plus className="h-4 w-4 mr-2" />
-              Add Lead
+              Add Deal
             </Button>
           </div>
         </div>
@@ -847,7 +848,7 @@ export default function Leads() {
             className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${!activeViewId ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
             data-testid="button-view-all"
           >
-            All Leads
+            All Deals
           </button>
           {pipelineViews.map(v => (
             <button
@@ -875,7 +876,7 @@ export default function Leads() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search leads..."
+              placeholder="Search deals..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
@@ -1128,7 +1129,7 @@ export default function Leads() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Lead Title</TableHead>
+                    <TableHead>Deal Title</TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>Service Type</TableHead>
@@ -1226,11 +1227,11 @@ export default function Leads() {
         )}
       </main>
 
-      {/* Add Lead Sheet */}
-      <Sheet open={isAddLeadOpen} onOpenChange={setIsAddLeadOpen}>
+      {/* Add Deal Sheet */}
+      <Sheet open={isAddDealOpen} onOpenChange={setIsAddDealOpen}>
         <SheetContent className="sm:max-w-md overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>Add New Lead</SheetTitle>
+            <SheetTitle>Add New Deal</SheetTitle>
             <SheetDescription>Enter the details for the new business opportunity.</SheetDescription>
           </SheetHeader>
           <Form {...form}>
@@ -1242,7 +1243,7 @@ export default function Leads() {
                   <FormItem>
                     <FormLabel>Title</FormLabel>
                     <FormControl>
-                      <Input placeholder="E.g. Building Maintenance Q3" {...field} data-testid="input-lead-title" />
+                      <Input placeholder="E.g. Building Maintenance Q3" {...field} data-testid="input-deal-title" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1254,25 +1255,23 @@ export default function Leads() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Client</FormLabel>
-                    <Select onValueChange={(val) => {
-                      const id = parseInt(val);
-                      field.onChange(id);
-                      setSelectedClientIdForBuilding(id);
-                      setSelectedClientIdForContact(id);
-                      form.setValue("buildingId", null);
-                      form.setValue("contactId", null);
-                    }} defaultValue={field.value?.toString()}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-lead-client">
-                          <SelectValue placeholder="Select a client" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {clients?.map((client) => (
-                          <SelectItem key={client.id} value={client.id.toString()}>{client.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <SearchableSelect
+                        options={(clients ?? []).map(c => ({ value: c.id.toString(), label: c.name }))}
+                        value={field.value?.toString() ?? ""}
+                        onChange={(val) => {
+                          const id = parseInt(val);
+                          field.onChange(id);
+                          setSelectedClientIdForBuilding(id);
+                          setSelectedClientIdForContact(id);
+                          form.setValue("buildingId", null);
+                          form.setValue("contactId", null);
+                        }}
+                        placeholder="Select a client"
+                        searchPlaceholder="Search clients..."
+                        data-testid="select-deal-client"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1289,7 +1288,7 @@ export default function Leads() {
                         value={field.value != null ? String(field.value) : "none"}
                       >
                         <FormControl>
-                          <SelectTrigger data-testid="select-lead-contact">
+                          <SelectTrigger data-testid="select-deal-contact">
                             <SelectValue placeholder="No specific contact" />
                           </SelectTrigger>
                         </FormControl>
@@ -1348,7 +1347,7 @@ export default function Leads() {
                         value={field.value != null ? String(field.value) : "none"}
                       >
                         <FormControl>
-                          <SelectTrigger data-testid="select-lead-building">
+                          <SelectTrigger data-testid="select-deal-building">
                             <SelectValue placeholder="No specific building" />
                           </SelectTrigger>
                         </FormControl>
@@ -1377,7 +1376,7 @@ export default function Leads() {
                     <FormLabel>Stage</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <SelectTrigger data-testid="select-lead-stage">
+                        <SelectTrigger data-testid="select-deal-stage">
                           <SelectValue placeholder="Select stage" />
                         </SelectTrigger>
                       </FormControl>
@@ -1535,7 +1534,7 @@ export default function Leads() {
                         <FormControl>
                           <div className="relative">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                            <Input type="number" step="0.01" className="pl-6" {...field} data-testid="input-lead-value" />
+                            <Input type="number" step="0.01" className="pl-6" {...field} data-testid="input-deal-value" />
                           </div>
                         </FormControl>
                         <FormMessage />
@@ -1687,7 +1686,7 @@ export default function Leads() {
                         className="resize-none"
                         {...field}
                         value={field.value || ""}
-                        data-testid="textarea-lead-notes"
+                        data-testid="textarea-deal-notes"
                       />
                     </FormControl>
                     <FormMessage />
@@ -1701,7 +1700,7 @@ export default function Leads() {
                   disabled={createLeadMutation.isPending}
                   data-testid="button-save-lead"
                 >
-                  {createLeadMutation.isPending ? "Creating..." : "Create Lead"}
+                  {createLeadMutation.isPending ? "Creating..." : "Create Deal"}
                 </Button>
               </SheetFooter>
             </form>
@@ -1736,7 +1735,7 @@ export default function Leads() {
                       data-testid="button-edit-lead"
                     >
                       <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                      Edit Lead
+                      Edit Deal
                     </Button>
                   ) : (
                     <div className="flex gap-2">
@@ -1813,7 +1812,7 @@ export default function Leads() {
                             <FormItem>
                               <FormLabel>Title</FormLabel>
                               <FormControl>
-                                <Input {...field} value={field.value || ""} data-testid="input-edit-lead-title" />
+                                <Input {...field} value={field.value || ""} data-testid="input-edit-deal-title" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -1837,7 +1836,7 @@ export default function Leads() {
                                 value={field.value?.toString()}
                               >
                                 <FormControl>
-                                  <SelectTrigger data-testid="select-edit-lead-client">
+                                  <SelectTrigger data-testid="select-edit-deal-client">
                                     <SelectValue placeholder="Select client" />
                                   </SelectTrigger>
                                 </FormControl>
@@ -1892,7 +1891,7 @@ export default function Leads() {
                                   <FormControl>
                                     <div className="relative">
                                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                                      <Input type="number" step="0.01" className="pl-6" {...field} value={field.value || ""} data-testid="input-edit-lead-value" />
+                                      <Input type="number" step="0.01" className="pl-6" {...field} value={field.value || ""} data-testid="input-edit-deal-value" />
                                     </div>
                                   </FormControl>
                                   <FormMessage />
@@ -1935,7 +1934,7 @@ export default function Leads() {
                                   value={field.value != null ? String(field.value) : "none"}
                                 >
                                   <FormControl>
-                                    <SelectTrigger data-testid="select-edit-lead-contact">
+                                    <SelectTrigger data-testid="select-edit-deal-contact">
                                       <SelectValue placeholder="No specific contact" />
                                     </SelectTrigger>
                                   </FormControl>
@@ -1994,7 +1993,7 @@ export default function Leads() {
                                   value={field.value != null ? String(field.value) : "none"}
                                 >
                                   <FormControl>
-                                    <SelectTrigger data-testid="select-edit-lead-building">
+                                    <SelectTrigger data-testid="select-edit-deal-building">
                                       <SelectValue placeholder="No specific building" />
                                     </SelectTrigger>
                                   </FormControl>
@@ -2127,7 +2126,7 @@ export default function Leads() {
                                   className="resize-none min-h-[100px]"
                                   {...field}
                                   value={field.value || ""}
-                                  data-testid="textarea-edit-lead-notes"
+                                  data-testid="textarea-edit-deal-notes"
                                 />
                               </FormControl>
                               <FormMessage />
@@ -2532,7 +2531,7 @@ export default function Leads() {
                   {detailLeadTasks.length === 0 && !isAddTaskOpen ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                      <p className="text-sm">No tasks linked to this lead yet.</p>
+                      <p className="text-sm">No tasks linked to this deal yet.</p>
                       <p className="text-xs mt-1">Use the "Add Task" button above to create one.</p>
                     </div>
                   ) : (

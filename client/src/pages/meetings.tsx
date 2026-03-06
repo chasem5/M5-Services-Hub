@@ -224,7 +224,7 @@ export default function MeetingsPage() {
             </div>
             <h3 className="font-heading font-semibold text-xl mb-2">No meetings yet</h3>
             <p className="text-muted-foreground text-sm max-w-sm mb-6">
-              Start a meeting to record audio or paste a transcript. The AI will extract tasks, leads, and action items for you to review.
+              Start a meeting to record audio or paste a transcript. The AI will extract tasks, deals, and action items for you to review.
             </p>
             <Button onClick={() => setIsNewOpen(true)}>
               <Plus className="h-4 w-4 mr-1" /> Start First Meeting

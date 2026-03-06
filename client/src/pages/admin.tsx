@@ -62,7 +62,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 const MODULE_DEFS = [
   { key: "dashboard", label: "Dashboard", description: "Summary stats, metrics and activity feed" },
-  { key: "leads", label: "Lead Pipeline", description: "Kanban board for tracking potential deals" },
+  { key: "leads", label: "Deal Pipeline", description: "Kanban board for tracking potential deals" },
   { key: "customers", label: "Customers", description: "Customer database, contacts and buildings" },
   { key: "tasks", label: "Tasks", description: "Task board and assignments" },
   { key: "meetings", label: "Meetings", description: "Meeting notes and AI action items" },

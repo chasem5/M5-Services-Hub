@@ -92,6 +92,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 type ChecklistItem = { id: string; text: string; done: boolean };
 
@@ -121,7 +122,7 @@ function getLabelDef(labelDefs: TaskLabelDefinition[], id: string) {
 function TaskCardCompact({
   task,
   users,
-  leads,
+  deals,
   clients,
   labelDefs,
   onClick,
@@ -129,14 +130,14 @@ function TaskCardCompact({
 }: {
   task: Task;
   users: User[];
-  leads: Lead[];
+  deals: Lead[];
   clients: Client[];
   labelDefs: TaskLabelDefinition[];
   onClick: () => void;
   isDragging?: boolean;
 }) {
   const assignedUser = users.find((u) => u.id === task.assignedTo);
-  const relatedLead = leads.find((l) => l.id === task.relatedLeadId);
+  const relatedDeal = deals.find((l) => l.id === task.relatedLeadId);
   const relatedClient = clients.find((c) => c.id === task.relatedClientId);
   const isOverdue =
     task.dueDate &&
@@ -180,13 +181,13 @@ function TaskCardCompact({
           >
             {task.priority}
           </Badge>
-          {relatedLead && (
+          {relatedDeal && (
             <span className="inline-flex items-center gap-1 text-[10px] text-primary font-medium bg-primary/8 border border-primary/20 rounded px-1.5 py-0 leading-5">
               <AlertCircle className="h-2.5 w-2.5" />
-              {relatedLead.title}
+              {relatedDeal.title}
             </span>
           )}
-          {relatedClient && !relatedLead && (
+          {relatedClient && !relatedDeal && (
             <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted rounded px-1.5 py-0 leading-5">
               {relatedClient.name}
             </span>
@@ -242,14 +243,14 @@ function TaskCardCompact({
 function SortableTaskCard({
   task,
   users,
-  leads,
+  deals,
   clients,
   labelDefs,
   onClick,
 }: {
   task: Task;
   users: User[];
-  leads: Lead[];
+  deals: Lead[];
   clients: Client[];
   labelDefs: TaskLabelDefinition[];
   onClick: () => void;
@@ -277,7 +278,7 @@ function SortableTaskCard({
         <TaskCardCompact
           task={task}
           users={users}
-          leads={leads}
+          deals={deals}
           clients={clients}
           labelDefs={labelDefs}
           onClick={onClick}
@@ -482,7 +483,7 @@ export default function TasksPage() {
   const { data: labelDefs = [] } = useQuery<TaskLabelDefinition[]>({
     queryKey: ["/api/task-labels"],
   });
-  const { data: leads = [] } = useQuery<Lead[]>({ queryKey: ["/api/leads"] });
+  const { data: deals = [] } = useQuery<Lead[]>({ queryKey: ["/api/leads"] });
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
   const { data: allContacts = [] } = useQuery<ClientContact[]>({ queryKey: ["/api/client-contacts"] });
   const { data: users = [] } = useQuery<User[]>({ queryKey: ["/api/users"] });
@@ -965,7 +966,7 @@ export default function TasksPage() {
                             key={task.id}
                             task={task}
                             users={users}
-                            leads={leads}
+                            deals={deals}
                             clients={clients}
                             labelDefs={labelDefs}
                             onClick={() => setSelectedTask(task)}
@@ -1039,7 +1040,7 @@ export default function TasksPage() {
                   <TaskCardCompact
                     task={activeTask}
                     users={users}
-                    leads={leads}
+                    deals={deals}
                     clients={clients}
                     labelDefs={labelDefs}
                     onClick={() => {}}
@@ -1296,16 +1297,15 @@ export default function TasksPage() {
                 name="relatedLeadId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Related Lead</FormLabel>
-                    <Select onValueChange={(v) => field.onChange(v === "none" ? undefined : parseInt(v))} value={field.value?.toString() || "none"}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-task-lead"><SelectValue /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {leads.map((l) => <SelectItem key={l.id} value={l.id.toString()}>{l.title}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>Related Deal</FormLabel>
+                    <SearchableSelect
+                      options={[{ value: "none", label: "None" }, ...deals.map(l => ({ value: l.id.toString(), label: l.title }))]}
+                      value={field.value?.toString() || "none"}
+                      onChange={(v) => field.onChange(v === "none" ? undefined : parseInt(v))}
+                      placeholder="None"
+                      searchPlaceholder="Search deals..."
+                      data-testid="select-task-deal"
+                    />
                   </FormItem>
                 )}
               />
@@ -1316,15 +1316,14 @@ export default function TasksPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Related Company</FormLabel>
-                      <Select onValueChange={(v) => { field.onChange(v === "none" ? undefined : parseInt(v)); addForm.setValue("relatedContactId", undefined); }} value={field.value?.toString() || "none"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-task-company"><SelectValue /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {clients.map((c) => <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        options={[{ value: "none", label: "None" }, ...clients.map(c => ({ value: c.id.toString(), label: c.name }))]}
+                        value={field.value?.toString() || "none"}
+                        onChange={(v) => { field.onChange(v === "none" ? undefined : parseInt(v)); addForm.setValue("relatedContactId", undefined); }}
+                        placeholder="None"
+                        searchPlaceholder="Search companies..."
+                        data-testid="select-task-company"
+                      />
                     </FormItem>
                   )}
                 />
@@ -1336,15 +1335,15 @@ export default function TasksPage() {
                     return (
                       <FormItem>
                         <FormLabel>Related Contact</FormLabel>
-                        <Select onValueChange={(v) => field.onChange(v === "none" ? undefined : parseInt(v))} value={field.value?.toString() || "none"} disabled={avail.length === 0}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-task-contact"><SelectValue placeholder={watchedCompanyId ? "Select contact" : "Select company first"} /></SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            {avail.map((c) => <SelectItem key={c.id} value={c.id.toString()}>{c.name}{c.title ? ` – ${c.title}` : ""}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <SearchableSelect
+                          options={[{ value: "none", label: "None" }, ...avail.map(c => ({ value: c.id.toString(), label: c.name, sublabel: c.title ?? undefined }))]}
+                          value={field.value?.toString() || "none"}
+                          onChange={(v) => field.onChange(v === "none" ? undefined : parseInt(v))}
+                          placeholder={watchedCompanyId ? "Select contact" : "Select company first"}
+                          searchPlaceholder="Search contacts..."
+                          disabled={avail.length === 0}
+                          data-testid="select-task-contact"
+                        />
                       </FormItem>
                     );
                   }}
@@ -1365,7 +1364,7 @@ export default function TasksPage() {
             const taskLabelIds = (selectedTask.labels as string[]) || [];
             const activeLabelDefs = taskLabelIds.map((id) => getLabelDef(labelDefs, id)).filter(Boolean) as TaskLabelDefinition[];
             const assignedUser = users.find((u) => u.id === selectedTask.assignedTo);
-            const relatedLead = leads.find((l) => l.id === selectedTask.relatedLeadId);
+            const relatedDeal = deals.find((l) => l.id === selectedTask.relatedLeadId);
             const relatedClient = clients.find((c) => c.id === selectedTask.relatedClientId);
             const relatedContact = allContacts.find((c) => c.id === selectedTask.relatedContactId);
             return (
@@ -1594,12 +1593,12 @@ export default function TasksPage() {
                     <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Related</p>
                     <div className="space-y-2">
                       <Select value={selectedTask.relatedLeadId?.toString() || "none"} onValueChange={(v) => updateTaskField("relatedLeadId", v === "none" ? null : parseInt(v))}>
-                        <SelectTrigger className="h-9 text-sm" data-testid="select-detail-lead">
-                          <SelectValue placeholder="Lead" />
+                        <SelectTrigger className="h-9 text-sm" data-testid="select-detail-deal">
+                          <SelectValue placeholder="Deal" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">No Lead</SelectItem>
-                          {leads.map((l) => <SelectItem key={l.id} value={l.id.toString()}>{l.title}</SelectItem>)}
+                          <SelectItem value="none">No Deal</SelectItem>
+                          {deals.map((l) => <SelectItem key={l.id} value={l.id.toString()}>{l.title}</SelectItem>)}
                         </SelectContent>
                       </Select>
                       <Select value={selectedTask.relatedClientId?.toString() || "none"} onValueChange={(v) => updateTaskField("relatedClientId", v === "none" ? null : parseInt(v))}>
@@ -1624,13 +1623,13 @@ export default function TasksPage() {
                   </div>
 
                   {/* Links */}
-                  {(relatedLead || relatedClient || relatedContact) && (
+                  {(relatedDeal || relatedClient || relatedContact) && (
                     <div className="space-y-1.5 rounded-lg bg-muted/50 border border-border/50 p-3">
                       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Quick Links</p>
-                      {relatedLead && (
+                      {relatedDeal && (
                         <Link href="/leads" className="flex items-center gap-2 text-sm text-primary hover:underline">
                           <AlertCircle className="h-3.5 w-3.5" />
-                          Lead: {relatedLead.title}
+                          Deal: {relatedDeal.title}
                         </Link>
                       )}
                       {relatedClient && (

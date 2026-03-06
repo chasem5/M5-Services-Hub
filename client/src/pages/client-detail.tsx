@@ -51,6 +51,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AttachmentsPanel } from "@/components/AttachmentsPanel";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { AddressLink } from "@/components/AddressLink";
 import { TierBadge } from "@/components/TierBadge";
 import { 
@@ -115,6 +116,7 @@ import { BuildingsMap } from "@/components/BuildingsMap";
 import { PortfolioManager } from "@/components/PortfolioManager";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { formatPhoneNumber } from "@/lib/phone";
 
 function LinkedInSyncButton({
   contactId,
@@ -254,11 +256,11 @@ function BuildingActivityRow({
           {!activity ? (
             <p className="text-[10px] text-muted-foreground">Loading...</p>
           ) : activity.leads.length === 0 && activity.estimates.length === 0 ? (
-            <p className="text-[10px] text-muted-foreground italic">No leads or estimates linked to this building yet.</p>
+            <p className="text-[10px] text-muted-foreground italic">No deals or estimates linked to this building yet.</p>
           ) : (
             <>
               {activity.leads.map(lead => (
-                <div key={lead.id} className="flex items-center gap-2 text-[10px] bg-muted/40 rounded px-2 py-1" data-testid={`building-lead-${building.id}-${lead.id}`}>
+                <div key={lead.id} className="flex items-center gap-2 text-[10px] bg-muted/40 rounded px-2 py-1" data-testid={`building-deal-${building.id}-${lead.id}`}>
                   <Target className="h-2.5 w-2.5 text-primary shrink-0" />
                   <span className="font-medium truncate flex-1">{lead.title}</span>
                   <span className="text-muted-foreground capitalize shrink-0">{lead.stage.replace("_", " ")}</span>
@@ -1048,7 +1050,7 @@ export default function ClientDetail() {
             <Users className="mr-2 h-4 w-4" />
             Contacts
           </TabsTrigger>
-          <TabsTrigger value="leads" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
+          <TabsTrigger value="deals" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
             <Target className="mr-2 h-4 w-4" />
             Leads
           </TabsTrigger>
@@ -1118,32 +1120,6 @@ export default function ClientDetail() {
                         />
                         <FormField
                           control={clientForm.control}
-                          name="website"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Website</FormLabel>
-                              <FormControl>
-                                <Input {...field} data-testid="input-edit-client-website" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={clientForm.control}
-                          name="phone"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Phone</FormLabel>
-                              <FormControl>
-                                <Input {...field} data-testid="input-edit-client-phone" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={clientForm.control}
                           name="email"
                           render={({ field }) => (
                             <FormItem>
@@ -1156,24 +1132,6 @@ export default function ClientDetail() {
                           )}
                         />
                       </div>
-                      <FormField
-                        control={clientForm.control}
-                        name="address"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Address</FormLabel>
-                            <FormControl>
-                              <AddressAutocomplete
-                                value={field.value || ""}
-                                onChange={(addr) => field.onChange(addr)}
-                                placeholder="Search address..."
-                                data-testid="input-edit-client-address"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
                       <FormField
                         control={clientForm.control}
                         name="annualRevenue"
@@ -1292,35 +1250,11 @@ export default function ClientDetail() {
                   <CardContent className="space-y-4">
                     <div className="flex items-center gap-3">
                       <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0">
-                        <MapPin className="h-4 w-4 text-muted-foreground" />
+                        <Mail className="h-4 w-4 text-muted-foreground" />
                       </div>
                       <div className="text-sm">
-                        <p className="font-medium">Location</p>
-                        {client.address
-                          ? <AddressLink address={client.address} className="text-muted-foreground text-sm" />
-                          : <p className="text-muted-foreground">No address</p>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0">
-                        <Globe className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div className="text-sm">
-                        <p className="font-medium">Website</p>
-                        {client.website ? (
-                          <a href={client.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center">
-                            {client.website} <ExternalLink className="ml-1 h-3 w-3" />
-                          </a>
-                        ) : "No website"}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0">
-                        <Phone className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div className="text-sm">
-                        <p className="font-medium">Phone</p>
-                        <p className="text-muted-foreground">{client.phone || "No phone"}</p>
+                        <p className="font-medium">Company Email</p>
+                        <p className="text-muted-foreground">{client.email || "No email"}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -1332,7 +1266,7 @@ export default function ClientDetail() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex justify-between items-center text-sm font-medium text-foreground">
-                      <span>Total Leads</span>
+                      <span>Total Deals</span>
                       <Badge variant="secondary">{leads?.length || 0}</Badge>
                     </div>
                     <div className="flex justify-between items-center text-sm font-medium text-foreground">
@@ -1751,12 +1685,39 @@ export default function ClientDetail() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Phone</FormLabel>
-                            <FormControl><Input placeholder="555-0123" {...field} value={field.value || ""} data-testid="input-contact-phone" /></FormControl>
+                            <FormControl>
+                              <Input 
+                                placeholder="555-0123" 
+                                {...field} 
+                                value={field.value || ""} 
+                                onChange={(e) => field.onChange(formatPhoneNumber(e.target.value))}
+                                data-testid="input-contact-phone" 
+                              />
+                            </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                     </div>
+                    <FormField control={contactForm.control} name={"linkedinUrl" as any}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-1.5">
+                            <SiLinkedin className="h-3.5 w-3.5 text-[#0A66C2]" />
+                            LinkedIn Profile URL
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="https://linkedin.com/in/username"
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-contact-linkedin"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     {(offices || []).length > 0 && (
                       <div>
                         <label className="text-sm font-medium mb-1.5 block">Office / Division</label>
@@ -1780,22 +1741,17 @@ export default function ClientDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Reports To</FormLabel>
-                          <Select
-                            onValueChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))}
+                          <SearchableSelect
+                            options={[
+                              { value: "none", label: "No manager (top level)" },
+                              ...(contacts || []).map(c => ({ value: c.id.toString(), label: c.name, sublabel: c.title ?? undefined }))
+                            ]}
                             value={field.value?.toString() || "none"}
-                          >
-                            <FormControl>
-                              <SelectTrigger data-testid="select-contact-reports-to">
-                                <SelectValue placeholder="Select manager (optional)" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="none">No manager (top level)</SelectItem>
-                              {(contacts || []).map(c => (
-                                <SelectItem key={c.id} value={c.id.toString()}>{c.name}{c.title ? ` — ${c.title}` : ""}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            onChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))}
+                            placeholder="Select manager (optional)"
+                            searchPlaceholder="Search contacts..."
+                            data-testid="select-contact-reports-to"
+                          />
                           <FormMessage />
                         </FormItem>
                       )}
@@ -1982,7 +1938,12 @@ export default function ClientDetail() {
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Phone</label>
-                    <Input {...officeForm.register("phone")} placeholder="555-0100" data-testid="input-office-phone" />
+                    <Input 
+                      {...officeForm.register("phone")} 
+                      onChange={(e) => officeForm.setValue("phone", formatPhoneNumber(e.target.value))}
+                      placeholder="555-0100" 
+                      data-testid="input-office-phone" 
+                    />
                   </div>
                   <DialogFooter>
                     <Button type="submit" className="w-full h-11" disabled={createOfficeMutation.isPending} data-testid="button-submit-office">
@@ -2021,7 +1982,12 @@ export default function ClientDetail() {
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Phone</label>
-                    <Input {...editOfficeForm.register("phone")} data-testid="input-edit-office-phone" />
+                    <Input 
+                      {...editOfficeForm.register("phone")} 
+                      onChange={(e) => editOfficeForm.setValue("phone", formatPhoneNumber(e.target.value))}
+                      placeholder="555-0123"
+                      data-testid="input-edit-office-phone" 
+                    />
                   </div>
                   <DialogFooter>
                     <Button type="submit" className="w-full h-11" disabled={updateOfficeMutation.isPending} data-testid="button-submit-edit-office">
@@ -2033,11 +1999,11 @@ export default function ClientDetail() {
             </Dialog>
           </TabsContent>
 
-          <TabsContent value="leads" className="m-0">
+          <TabsContent value="deals" className="m-0">
             <Card className="border-none shadow-sm bg-card">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle>Sales Leads</CardTitle>
+                  <CardTitle>Sales Deals</CardTitle>
                   <CardDescription>Pipeline opportunities associated with this client</CardDescription>
                 </div>
               </CardHeader>
@@ -2047,7 +2013,7 @@ export default function ClientDetail() {
                     <Table className="min-w-[500px]">
                       <TableHeader className="bg-muted/50">
                         <TableRow>
-                          <TableHead className="font-bold">Lead Title</TableHead>
+                          <TableHead className="font-bold">Deal Title</TableHead>
                           <TableHead className="font-bold">Stage</TableHead>
                           <TableHead className="font-bold text-right">Value</TableHead>
                           <TableHead className="font-bold">Created At</TableHead>
@@ -2074,7 +2040,7 @@ export default function ClientDetail() {
                 ) : (
                   <div className="text-center py-12 bg-muted/20 rounded-lg">
                     <Target className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
-                    <h3 className="text-lg font-semibold">No leads found</h3>
+                    <h3 className="text-lg font-semibold">No deals found</h3>
                     <p className="text-muted-foreground">There are no sales opportunities currently linked to this client.</p>
                   </div>
                 )}
@@ -2352,7 +2318,13 @@ export default function ClientDetail() {
                     <FormItem>
                       <FormLabel>Phone</FormLabel>
                       <FormControl>
-                        <Input placeholder="555-0123" {...field} value={field.value || ""} data-testid="input-edit-contact-phone" />
+                        <Input 
+                          placeholder="555-0123" 
+                          {...field} 
+                          value={field.value || ""} 
+                          onChange={(e) => field.onChange(formatPhoneNumber(e.target.value))}
+                          data-testid="input-edit-contact-phone" 
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2464,24 +2436,17 @@ export default function ClientDetail() {
                   return (
                     <FormItem>
                       <FormLabel>Reports To</FormLabel>
-                      <Select
-                        onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                      <SearchableSelect
+                        options={[
+                          { value: "none", label: "No manager (top level)" },
+                          ...companyContacts.map(c => ({ value: c.id.toString(), label: c.name, sublabel: c.title ?? undefined }))
+                        ]}
                         value={field.value != null ? field.value.toString() : "none"}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-edit-contact-reports-to">
-                            <SelectValue placeholder="No manager (top level)" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">No manager (top level)</SelectItem>
-                          {companyContacts.map(c => (
-                            <SelectItem key={c.id} value={c.id.toString()}>
-                              {c.name}{c.title ? ` — ${c.title}` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                        placeholder="No manager (top level)"
+                        searchPlaceholder="Search contacts..."
+                        data-testid="select-edit-contact-reports-to"
+                      />
                       <FormMessage />
                     </FormItem>
                   );

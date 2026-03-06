@@ -167,7 +167,7 @@ export async function registerRoutes(
     for (const task of tasksDueToday) {
       if (task.assignedTo) {
         await sendPushNotification(task.assignedTo, {
-          title: "Task Due Today",
+          title: "Deal Task Due Today",
           body: `Reminder: "${task.title}" is due today.`,
           url: `/tasks`
         });
@@ -667,6 +667,9 @@ export async function registerRoutes(
           email: row.email || null,
           website: row.website || null,
           notes: row.notes || null,
+          tier: row.tier || null,
+          annualRevenue: row.annual_revenue || null,
+          serviceNeeds: row.service_needs ? row.service_needs.split(";").map(s => s.trim()) : [],
           createdBy: (req as any).user?.id ?? null,
         });
         const client = await storage.createClient(data);
@@ -683,6 +686,7 @@ export async function registerRoutes(
     const { rows } = req.body as { rows: Record<string, string>[] };
     if (!Array.isArray(rows)) return res.status(400).json({ message: "rows must be an array" });
     const allClients = await storage.listClients();
+    const allOffices = await storage.listAllClientOffices();
     let created = 0;
     const errors: string[] = [];
     for (let i = 0; i < rows.length; i++) {
@@ -694,6 +698,18 @@ export async function registerRoutes(
           errors.push(`Row ${i + 2}: Company "${companyName}" not found`);
           continue;
         }
+
+        let officeId: number | null = null;
+        if (row.office_name) {
+          const office = allOffices.find(o => 
+            o.clientId === company.id && 
+            o.name.toLowerCase() === row.office_name.toLowerCase()
+          );
+          if (office) {
+            officeId = office.id;
+          }
+        }
+
         await storage.createClientContact({
           clientId: company.id,
           name: row.name || row.contact_name || "",
@@ -702,7 +718,11 @@ export async function registerRoutes(
           phone: row.phone || null,
           isPrimary: row.is_primary === "true" || row.is_primary === "1" || row.is_primary === "yes",
           reportsTo: null,
-          officeId: null,
+          officeId: officeId,
+          linkedinUrl: row.linkedin_url || null,
+          tier: row.tier || null,
+          serviceNeeds: row.service_needs ? row.service_needs.split(";").map(s => s.trim()) : [],
+          employmentStatus: row.employment_status || null,
         });
         created++;
       } catch (e: any) {

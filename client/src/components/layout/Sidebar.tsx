@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge";
 
 const ALL_NAV_ITEMS = [
   { title: "Dashboard", icon: LayoutDashboard, url: "/", module: "dashboard" },
-  { title: "Leads", icon: Target, url: "/leads", module: "leads" },
+  { title: "Deals", icon: Target, url: "/leads", module: "leads" },
   { title: "Customers", icon: Users, url: "/customers", module: "customers" },
   { title: "Tasks", icon: CheckSquare, url: "/tasks", module: "tasks" },
   { title: "Meetings", icon: Mic, url: "/meetings", module: "meetings" },
