@@ -93,6 +93,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -447,6 +457,7 @@ function ContactCard({
   const [editingBuilding, setEditingBuilding] = useState<ContactBuilding | null>(null);
   const [expandedBuildingId, setExpandedBuildingId] = useState<number | null>(null);
   const [avatarError, setAvatarError] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
   const [addName, setAddName] = useState("");
   const [addAddress, setAddAddress] = useState("");
   const [addLat, setAddLat] = useState<number | null>(null);
@@ -1883,9 +1894,11 @@ export default function ClientDetail() {
                               size="icon"
                               className="h-8 w-8 text-muted-foreground hover:text-destructive"
                               onClick={() => {
-                                if (confirm(`Delete "${office.name}"? Contacts will be moved to unassigned.`)) {
-                                  deleteOfficeMutation.mutate(office.id);
-                                }
+                                setDeleteConfirm({
+                                  label: `Delete "${office.name}"`,
+                                  description: "Contacts assigned to this office will become unassigned. This cannot be undone.",
+                                  onConfirm: () => deleteOfficeMutation.mutate(office.id),
+                                });
                               }}
                               data-testid={`button-delete-office-${office.id}`}
                             >
@@ -1909,7 +1922,7 @@ export default function ClientDetail() {
                                 key={contact.id}
                                 contact={contact}
                                 onEdit={openEditContact}
-                                onDelete={(id) => { if (confirm("Delete this contact?")) deleteContactMutation.mutate(id); }}
+                                onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
                                 onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
                               />
                             ))}
@@ -1962,7 +1975,7 @@ export default function ClientDetail() {
                               key={contact.id}
                               contact={contact}
                               onEdit={openEditContact}
-                              onDelete={(id) => { if (confirm("Delete this contact?")) deleteContactMutation.mutate(id); }}
+                              onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
                               onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
                             />
                           ))}
@@ -3076,6 +3089,24 @@ export default function ClientDetail() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{deleteConfirm?.label}</AlertDialogTitle>
+            <AlertDialogDescription>{deleteConfirm?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { deleteConfirm?.onConfirm(); setDeleteConfirm(null); }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

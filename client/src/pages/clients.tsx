@@ -166,6 +166,16 @@ import { PortfolioManager } from "@/components/PortfolioManager";
 import { CardScannerDialog } from "@/components/CardScannerDialog";
 import { ContactStagesManager, getStageBadgeClass } from "@/components/ContactStagesManager";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ImportResult {
   created: number;
@@ -417,6 +427,7 @@ export default function Customers() {
   const [selectedContacts, setSelectedContacts] = useState<number[]>([]);
   const [isBulkCompanyEditOpen, setIsBulkCompanyEditOpen] = useState(false);
   const [isBulkContactEditOpen, setIsBulkContactEditOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
 
   const bulkDeleteClientsMutation = useMutation({
     mutationFn: (ids: number[]) => apiRequest("DELETE", "/api/clients/bulk", { ids }),
@@ -1393,9 +1404,11 @@ export default function Customers() {
                                 <DropdownMenuItem 
                                   className="text-destructive focus:text-destructive cursor-pointer"
                                   onClick={() => {
-                                    if (confirm("Are you sure you want to delete this customer?")) {
-                                      deleteClientMutation.mutate(client.id);
-                                    }
+                                    setDeleteConfirm({
+                                      label: "Delete company",
+                                      description: `Delete "${client.name}"? This will permanently remove the company and cannot be undone.`,
+                                      onConfirm: () => deleteClientMutation.mutate(client.id),
+                                    });
                                   }}
                                   data-testid={`button-delete-customer-${client.id}`}
                                 >
@@ -1439,9 +1452,7 @@ export default function Customers() {
                             <div className="space-y-2">
                               <label className="text-xs font-medium text-muted-foreground">Industry</label>
                               <Select onValueChange={(val) => {
-                                if (confirm(`Update industry for ${selectedCompanies.length} companies?`)) {
-                                  bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { industry: val } });
-                                }
+                                bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { industry: val } });
                               }}>
                                 <SelectTrigger className="h-9">
                                   <SelectValue placeholder="Select industry..." />
@@ -1456,9 +1467,7 @@ export default function Customers() {
                             <div className="space-y-2">
                               <label className="text-xs font-medium text-muted-foreground">Tier</label>
                               <Select onValueChange={(val) => {
-                                if (confirm(`Update tier for ${selectedCompanies.length} companies?`)) {
-                                  bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { tier: val === "none" ? null : val } });
-                                }
+                                bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { tier: val === "none" ? null : val } });
                               }}>
                                 <SelectTrigger className="h-9">
                                   <SelectValue placeholder="Select tier..." />
@@ -1480,9 +1489,11 @@ export default function Customers() {
                         size="sm"
                         className="h-9"
                         onClick={() => {
-                          if (confirm(`Are you sure you want to delete ${selectedCompanies.length} companies?`)) {
-                            bulkDeleteClientsMutation.mutate(selectedCompanies);
-                          }
+                          setDeleteConfirm({
+                            label: `Delete ${selectedCompanies.length} ${selectedCompanies.length === 1 ? "company" : "companies"}`,
+                            description: `This will permanently delete ${selectedCompanies.length} ${selectedCompanies.length === 1 ? "company" : "companies"} and cannot be undone.`,
+                            onConfirm: () => bulkDeleteClientsMutation.mutate(selectedCompanies),
+                          });
                         }}
                         disabled={bulkDeleteClientsMutation.isPending}
                       >
@@ -1990,9 +2001,7 @@ export default function Customers() {
                             <div className="space-y-2">
                               <label className="text-xs font-medium text-muted-foreground">Company</label>
                               <Select onValueChange={(val) => {
-                                if (confirm(`Move ${selectedContacts.length} contacts to another company?`)) {
-                                  bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { clientId: parseInt(val) } });
-                                }
+                                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { clientId: parseInt(val) } });
                               }}>
                                 <SelectTrigger className="h-9">
                                   <SelectValue placeholder="Select company..." />
@@ -2007,9 +2016,7 @@ export default function Customers() {
                             <div className="space-y-2">
                               <label className="text-xs font-medium text-muted-foreground">Stage</label>
                               <Select onValueChange={(val) => {
-                                if (confirm(`Update stage for ${selectedContacts.length} contacts?`)) {
-                                  bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { stageId: val === "none" ? null : parseInt(val) } });
-                                }
+                                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { stageId: val === "none" ? null : parseInt(val) } });
                               }}>
                                 <SelectTrigger className="h-9">
                                   <SelectValue placeholder="Select stage..." />
@@ -2025,9 +2032,7 @@ export default function Customers() {
                             <div className="space-y-2">
                               <label className="text-xs font-medium text-muted-foreground">Tier</label>
                               <Select onValueChange={(val) => {
-                                if (confirm(`Update tier for ${selectedContacts.length} contacts?`)) {
-                                  bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { tier: val === "none" ? null : val } });
-                                }
+                                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { tier: val === "none" ? null : val } });
                               }}>
                                 <SelectTrigger className="h-9">
                                   <SelectValue placeholder="Select tier..." />
@@ -2049,9 +2054,11 @@ export default function Customers() {
                         size="sm"
                         className="h-9"
                         onClick={() => {
-                          if (confirm(`Are you sure you want to delete ${selectedContacts.length} contacts?`)) {
-                            bulkDeleteContactsMutation.mutate(selectedContacts);
-                          }
+                          setDeleteConfirm({
+                            label: `Delete ${selectedContacts.length} ${selectedContacts.length === 1 ? "contact" : "contacts"}`,
+                            description: `This will permanently delete ${selectedContacts.length} ${selectedContacts.length === 1 ? "contact" : "contacts"} and cannot be undone.`,
+                            onConfirm: () => bulkDeleteContactsMutation.mutate(selectedContacts),
+                          });
                         }}
                         disabled={bulkDeleteContactsMutation.isPending}
                       >
@@ -2890,6 +2897,24 @@ export default function Customers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{deleteConfirm?.label}</AlertDialogTitle>
+            <AlertDialogDescription>{deleteConfirm?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { deleteConfirm?.onConfirm(); setDeleteConfirm(null); }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
