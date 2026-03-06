@@ -5,21 +5,13 @@ import { AppSidebar } from "@/components/layout/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SiReplit } from "react-icons/si";
-import { Megaphone, RefreshCw, MoreHorizontal, Search, Target, Users, Building2, CheckSquare, Plus } from "lucide-react";
+import { Megaphone, RefreshCw } from "lucide-react";
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger } from "@/components/GlobalSearch";
-import { QuickActionsBar, type ActiveDialog } from "@/components/QuickActionsBar";
+import { QuickActionsBar } from "@/components/QuickActionsBar";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 const PULL_THRESHOLD = 80;
 const MAX_PULL = 120;
@@ -61,7 +53,6 @@ function getRelativeTime(date: Date): string {
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [quickDialog, setQuickDialog] = useState<ActiveDialog>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(() => new Date());
@@ -197,67 +188,20 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <header className="flex items-center justify-between px-4 h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-            {/* Left side */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
               <div className="h-6 w-px bg-border hidden md:block" />
-              {/* Desktop search bar */}
               <GlobalSearchTrigger onClick={() => setSearchOpen(true)} />
-              {/* Mobile search icon */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="md:hidden h-9 w-9"
-                onClick={() => setSearchOpen(true)}
-                data-testid="button-mobile-search"
-              >
-                <Search className="h-4 w-4" />
-              </Button>
             </div>
-
-            {/* Desktop right section */}
-            <div className="hidden md:flex items-center gap-2">
-              <span className="text-xs text-muted-foreground/50 mr-1 tabular-nums select-none">
-                Updated {getRelativeTime(lastRefreshed)}
+            <span className="hidden sm:block text-xs text-muted-foreground/50 ml-auto mr-2 tabular-nums select-none">
+              Updated {getRelativeTime(lastRefreshed)}
+            </span>
+            <div className="flex items-center gap-2">
+              <QuickActionsBar />
+              <span className="hidden md:inline-flex">
+                <AnnouncementsBadge />
               </span>
-              <QuickActionsBar externalDialog={quickDialog} onExternalOpen={setQuickDialog} />
-              <AnnouncementsBadge />
               <RemindersDropdown />
-            </div>
-
-            {/* Mobile right section — bell + overflow menu */}
-            <div className="md:hidden flex items-center gap-1">
-              <RemindersDropdown />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-9 w-9" data-testid="button-mobile-menu">
-                    <MoreHorizontal className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Quick Add</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => setQuickDialog("deal")} data-testid="mobile-quick-deal">
-                    <Target className="mr-2 h-4 w-4 text-primary" />Add Deal
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setQuickDialog("contact")} data-testid="mobile-quick-contact">
-                    <Users className="mr-2 h-4 w-4 text-primary" />Add Contact
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setQuickDialog("company")} data-testid="mobile-quick-company">
-                    <Building2 className="mr-2 h-4 w-4 text-primary" />Add Company
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setQuickDialog("task")} data-testid="mobile-quick-task">
-                    <CheckSquare className="mr-2 h-4 w-4 text-primary" />Add Task
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild data-testid="mobile-announcements">
-                    <Link href="/announcements" className="flex items-center w-full cursor-pointer">
-                      <Megaphone className="mr-2 h-4 w-4" />Announcements
-                    </Link>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {/* Dialogs only — no visible button */}
-              <QuickActionsBar showButton={false} externalDialog={quickDialog} onExternalOpen={setQuickDialog} />
             </div>
           </header>
           <main
