@@ -906,6 +906,7 @@ export default function ClientDetail() {
   const [portfolioPickerRole, setPortfolioPickerRole] = useState<string>("");
   const [logoImgError, setLogoImgError] = useState(false);
   const [contactPhotoPreviewError, setContactPhotoPreviewError] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
 
   // Queries
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
