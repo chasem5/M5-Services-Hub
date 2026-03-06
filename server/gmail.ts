@@ -1,24 +1,58 @@
-const GMAIL_CONNECTOR_ID = "ccfg_google-mail_B959E7249792448ABBA58D46AF";
+// Gmail integration via Replit connector: google-mail
+import { google } from "googleapis";
 
-async function getGmailAccessToken(): Promise<string> {
+let connectionSettings: any;
+
+async function getAccessToken(): Promise<string> {
+  if (
+    connectionSettings &&
+    connectionSettings.settings?.expires_at &&
+    new Date(connectionSettings.settings.expires_at).getTime() > Date.now()
+  ) {
+    return connectionSettings.settings.access_token;
+  }
+
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  if (!hostname) {
-    throw new Error("Gmail not connected. Please authorize your Gmail account in Settings.");
+  const xReplitToken = process.env.REPL_IDENTITY
+    ? "repl " + process.env.REPL_IDENTITY
+    : process.env.WEB_REPL_RENEWAL
+    ? "depl " + process.env.WEB_REPL_RENEWAL
+    : null;
+
+  if (!xReplitToken) {
+    throw new Error("Gmail not connected — X-Replit-Token not found.");
   }
-  const identity = process.env.REPL_IDENTITY ?? "";
-  const renewal = process.env.WEB_REPL_RENEWAL ?? "";
-  const res = await fetch(`https://${hostname}/v1/token/${GMAIL_CONNECTOR_ID}`, {
-    headers: {
-      "X-Replit-Identity": identity,
-      "X-Replit-Renewal": renewal,
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Gmail token error (${res.status}): ${text}. Please reconnect Gmail in Settings.`);
+
+  connectionSettings = await fetch(
+    "https://" + hostname + "/api/v2/connection?include_secrets=true&connector_names=google-mail",
+    {
+      headers: {
+        Accept: "application/json",
+        "X-Replit-Token": xReplitToken,
+      },
+    }
+  )
+    .then((res) => res.json())
+    .then((data) => data.items?.[0]);
+
+  const accessToken =
+    connectionSettings?.settings?.access_token ||
+    connectionSettings?.settings?.oauth?.credentials?.access_token;
+
+  if (!connectionSettings || !accessToken) {
+    throw new Error(
+      "Gmail not connected. Please authorize Gmail in your Replit integrations."
+    );
   }
-  const data = (await res.json()) as { access_token: string };
-  return data.access_token;
+
+  return accessToken;
+}
+
+async function getUncachableGmailClient() {
+  const accessToken = await getAccessToken();
+  const oauth2Client = new google.auth.OAuth2();
+  oauth2Client.setCredentials({ access_token: accessToken });
+  return google.gmail({ version: "v1", auth: oauth2Client });
 }
 
 function decodeBase64Url(str: string): string {
@@ -103,38 +137,34 @@ export interface ParsedEmail {
 }
 
 export async function getUserGmailAddress(): Promise<string> {
-  const token = await getGmailAccessToken();
-  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Gmail profile error: ${res.status}`);
-  const data = (await res.json()) as { emailAddress: string };
-  return data.emailAddress;
+  const gmail = await getUncachableGmailClient();
+  const profile = await gmail.users.getProfile({ userId: "me" });
+  return profile.data.emailAddress ?? "";
 }
 
 export async function getGmailMessages(maxResults = 50): Promise<ParsedEmail[]> {
-  const token = await getGmailAccessToken();
+  const gmail = await getUncachableGmailClient();
 
-  const listRes = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}&q=newer_than:30d`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!listRes.ok) throw new Error(`Gmail list error: ${listRes.status}`);
-  const listData = (await listRes.json()) as { messages?: { id: string }[] };
-  const messageIds = listData.messages ?? [];
+  const listRes = await gmail.users.messages.list({
+    userId: "me",
+    maxResults,
+    q: "newer_than:30d",
+  });
 
+  const messageIds = listRes.data.messages ?? [];
   const results: ParsedEmail[] = [];
 
   for (const { id } of messageIds) {
+    if (!id) continue;
     try {
-      const msgRes = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!msgRes.ok) continue;
-      const msg = (await msgRes.json()) as any;
+      const msgRes = await gmail.users.messages.get({
+        userId: "me",
+        id,
+        format: "full",
+      });
+      const msg = msgRes.data;
+      const headers = (msg.payload?.headers ?? []) as { name: string; value: string }[];
 
-      const headers: { name: string; value: string }[] = msg.payload?.headers ?? [];
       const fromRaw = parseHeader(headers, "from");
       const { email: fromEmail, name: fromName } = parseFromHeader(fromRaw);
       const toRaw = parseHeader(headers, "to");
@@ -145,16 +175,21 @@ export async function getGmailMessages(maxResults = 50): Promise<ParsedEmail[]> 
           return email;
         })
         .filter(Boolean);
+
       const subject = parseHeader(headers, "subject") || "(no subject)";
       const dateHeader = parseHeader(headers, "date");
-      const receivedAt = dateHeader ? new Date(dateHeader) : new Date(Number(msg.internalDate));
+      const receivedAt = dateHeader
+        ? new Date(dateHeader)
+        : new Date(Number(msg.internalDate));
 
       const fullBody = parseEmailBody(msg.payload);
-      const bodySnippet = (msg.snippet ?? fullBody.slice(0, 200)).replace(/\s+/g, " ").trim();
+      const bodySnippet = (msg.snippet ?? fullBody.slice(0, 200))
+        .replace(/\s+/g, " ")
+        .trim();
 
       results.push({
-        gmailMessageId: msg.id,
-        gmailThreadId: msg.threadId,
+        gmailMessageId: msg.id!,
+        gmailThreadId: msg.threadId!,
         fromEmail,
         fromName,
         toEmails,
