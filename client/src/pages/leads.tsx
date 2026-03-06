@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
@@ -339,6 +339,8 @@ export default function Leads() {
   const [view, setView] = useState<"kanban" | "list">("kanban");
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [localScore, setLocalScore] = useState(50);
+  useEffect(() => { setLocalScore(selectedLead?.confidenceScore ?? 50); }, [selectedLead?.id, selectedLead?.confidenceScore]);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [tierFilter, setTierFilter] = useState<string>("all");
@@ -463,6 +465,17 @@ export default function Leads() {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
       setSelectedLead(updated);
       toast({ title: "Success", description: "Lead updated successfully" });
+    },
+  });
+
+  const patchConfidenceMutation = useMutation({
+    mutationFn: async ({ id, score }: { id: number; score: number }) => {
+      const res = await apiRequest("PUT", `/api/leads/${id}`, { confidenceScore: score });
+      return res.json();
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      setSelectedLead(updated);
     },
   });
 
@@ -2050,14 +2063,15 @@ export default function Leads() {
                           <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                             <Target className="h-3 w-3" /> Confidence Score
                           </p>
-                          <span className={`text-sm font-bold ${getConfidenceColor(detailScore)}`}>{detailScore}%</span>
+                          <span className={`text-sm font-bold ${getConfidenceColor(localScore)}`}>{localScore}%</span>
                         </div>
-                        <Progress value={detailScore} className="h-2" />
+                        <Progress value={localScore} className="h-2" />
                         <Slider
                           min={0} max={100} step={5}
-                          value={[detailScore]}
+                          value={[localScore]}
+                          onValueChange={([val]) => setLocalScore(val)}
                           onValueCommit={([val]) => {
-                            updateLeadMutation.mutate({ id: selectedLead.id, data: { confidenceScore: val } });
+                            patchConfidenceMutation.mutate({ id: selectedLead.id, score: val });
                           }}
                           data-testid="slider-confidence-detail"
                         />
