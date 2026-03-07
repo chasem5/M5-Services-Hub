@@ -6,7 +6,6 @@ import {
   FileText, 
   BookOpen, 
   ClipboardList, 
-  Settings,
   Mic,
   ShieldCheck,
   Mail,
@@ -44,10 +43,6 @@ const ALL_NAV_ITEMS = [
   { title: "Proposals", icon: ClipboardList, url: "/proposals", module: "proposals" },
   { title: "Email Sync", icon: Mail, url: "/email", module: "email_sync" },
   { title: "Announcements", icon: Megaphone, url: "/announcements", module: "announcements" },
-];
-
-const ALWAYS_VISIBLE_ITEMS = [
-  { title: "Settings", icon: Settings, url: "/settings" },
 ];
 
 const ROLE_BADGE: Record<string, string> = {
@@ -122,24 +117,6 @@ export function AppSidebar() {
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton 
                       asChild 
-                      isActive={isActive}
-                      tooltip={item.title}
-                      className={isActive ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
-                    >
-                      <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
-                        <item.icon className={isActive ? "text-primary" : ""} />
-                        <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-              {ALWAYS_VISIBLE_ITEMS.map((item) => {
-                const isActive = location === item.url;
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
                       isActive={isActive}
                       tooltip={item.title}
                       className={isActive ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
