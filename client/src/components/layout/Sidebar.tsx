@@ -13,6 +13,7 @@ import {
   Mail,
   Megaphone,
 } from "lucide-react";
+import { useRef, useCallback } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
@@ -67,8 +68,20 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const isAdmin = user?.role === "admin";
-  const { setOpen, state, isMobile } = useSidebar();
-  const isCollapsed = state === "collapsed";
+  const { setOpen, isMobile } = useSidebar();
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMouseEnter = useCallback(() => {
+    if (isMobile) return;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setOpen(true), 250);
+  }, [isMobile, setOpen]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (isMobile) return;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setOpen(false), 400);
+  }, [isMobile, setOpen]);
 
   const { data: myPerms } = useQuery<MyPermissions>({
     queryKey: ["/api/my-permissions"],
@@ -88,8 +101,8 @@ export function AppSidebar() {
     <Sidebar
       variant="sidebar"
       collapsible="icon"
-      onMouseEnter={() => { if (!isMobile) setOpen(true); }}
-      onMouseLeave={() => { if (!isMobile) setOpen(false); }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <SidebarHeader className="p-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 px-2 overflow-hidden">
@@ -167,7 +180,9 @@ export function AppSidebar() {
           <Avatar className="h-9 w-9 border-2 border-primary/20">
             <AvatarImage src={user?.profileImageUrl ? `/api/users/${user.id}/avatar-img` : undefined} />
             <AvatarFallback className="bg-primary text-primary-foreground font-bold">
-              {isCollapsed ? null : `${user?.firstName?.[0] ?? ""}${user?.lastName?.[0] ?? ""}`}
+              <span className="group-data-[collapsible=icon]:hidden">
+                {user?.firstName?.[0] ?? ""}{user?.lastName?.[0] ?? ""}
+              </span>
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
