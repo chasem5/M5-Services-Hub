@@ -37,6 +37,11 @@ import {
   Upload,
   Pencil,
   Smartphone,
+  DollarSign,
+  Trophy,
+  TrendingUp,
+  ArrowRight,
+  Activity,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import {
@@ -137,7 +142,7 @@ import { BuildingsMap } from "@/components/BuildingsMap";
 import { PortfolioManager } from "@/components/PortfolioManager";
 import { getStageBadgeClass } from "@/components/ContactStagesManager";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, formatDistanceToNow, differenceInDays } from "date-fns";
 import { formatPhoneNumber } from "@/lib/phone";
 
 function LinkedInSyncButton({
@@ -885,6 +890,8 @@ export default function ClientDetail() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isAddSpendOpen, setIsAddSpendOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [isEditCompanyOpen, setIsEditCompanyOpen] = useState(false);
   const [spendFormData, setSpendFormData] = useState({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "", contactId: "" });
   const [isSubmittingSpend, setIsSubmittingSpend] = useState(false);
   const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
@@ -994,6 +1001,7 @@ export default function ClientDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
       toast({ title: "Success", description: "Client updated successfully" });
+      setIsEditCompanyOpen(false);
     },
   });
 
@@ -1321,7 +1329,7 @@ export default function ClientDetail() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full justify-start border-b rounded-none h-12 bg-transparent p-0 gap-6">
           <TabsTrigger value="overview" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
             <Building2 className="mr-2 h-4 w-4" />
@@ -1362,225 +1370,357 @@ export default function ClientDetail() {
         </TabsList>
 
         <div className="py-6">
-          <TabsContent value="overview" className="m-0">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <Card className="lg:col-span-2 border-none shadow-sm bg-card">
-                <CardHeader>
-                  <CardTitle>Company Profile</CardTitle>
-                  <CardDescription>View and edit detailed company information</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Form {...clientForm}>
-                    <form onSubmit={clientForm.handleSubmit(onUpdateClient)} className="space-y-4">
-                      {/* Logo Section */}
-                      <div className="space-y-3 pb-4 border-b">
-                        <FormLabel>Company Logo</FormLabel>
-                        <div className="flex items-center gap-4">
-                          <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center overflow-hidden border">
-                            {clientForm.watch("logoUrl") ? (
-                              <img 
-                                src={clientForm.watch("logoUrl")?.startsWith("https://storage.googleapis.com/") ? `/api/clients/${clientId}/logo-img` : clientForm.watch("logoUrl")} 
-                                alt="Logo Preview" 
-                                className="h-full w-full object-contain"
-                              />
-                            ) : (
-                              <Building2 className="h-8 w-8 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <div className="flex gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 text-xs"
-                                onClick={() => {
-                                  const website = clientForm.getValues("website");
-                                  if (!website) {
-                                    toast({ title: "No website", description: "Please enter a website URL first", variant: "destructive" });
-                                    return;
-                                  }
-                                  try {
-                                    const domain = new URL(website.startsWith("http") ? website : `https://${website}`).hostname.replace("www.", "");
-                                    clientForm.setValue("logoUrl", `https://logo.clearbit.com/${domain}`);
-                                  } catch (e) {
-                                    toast({ title: "Invalid website", description: "Could not extract domain from website URL", variant: "destructive" });
-                                  }
-                                }}
-                                data-testid="button-logo-autofetch"
-                              >
-                                <Globe className="h-3.5 w-3.5 mr-1.5" />
-                                Auto-fetch
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 text-xs"
-                                onClick={() => document.getElementById("logo-upload")?.click()}
-                                data-testid="button-logo-upload"
-                              >
-                                <Upload className="h-3.5 w-3.5 mr-1.5" />
-                                Upload
-                              </Button>
-                              <input
-                                id="logo-upload"
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={async (e) => {
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-                                  const formData = new FormData();
-                                  formData.append("logo", file);
-                                  try {
-                                    const res = await fetch(`/api/clients/${clientId}/logo`, {
-                                      method: "POST",
-                                      body: formData,
-                                      credentials: "include",
-                                    });
-                                    if (!res.ok) throw new Error("Upload failed");
-                                    const data = await res.json();
-                                    clientForm.setValue("logoUrl", data.url);
-                                    queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-                                    toast({ title: "Logo uploaded", description: "Company logo has been updated." });
-                                  } catch (err) {
-                                    toast({ title: "Upload failed", description: "Could not upload logo. Please try again.", variant: "destructive" });
-                                  }
-                                }}
-                              />
-                            </div>
-                            {clientForm.watch("logoUrl") && (
-                              <button
-                                type="button"
-                                className="text-[11px] text-muted-foreground hover:text-destructive w-fit transition-colors"
-                                onClick={() => clientForm.setValue("logoUrl", "")}
-                                data-testid="button-logo-remove"
-                              >
-                                Remove
-                              </button>
-                            )}
-                          </div>
+          {/* ── Edit Company Dialog ── */}
+          <Dialog open={isEditCompanyOpen} onOpenChange={setIsEditCompanyOpen}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Edit Company Info</DialogTitle>
+                <DialogDescription>Update company details. Changes are saved immediately.</DialogDescription>
+              </DialogHeader>
+              <Form {...clientForm}>
+                <form onSubmit={clientForm.handleSubmit(onUpdateClient)} className="space-y-4 pt-2">
+                  {/* Logo Section */}
+                  <div className="space-y-3 pb-4 border-b">
+                    <FormLabel>Company Logo</FormLabel>
+                    <div className="flex items-center gap-4">
+                      <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center overflow-hidden border">
+                        {clientForm.watch("logoUrl") ? (
+                          <img
+                            src={clientForm.watch("logoUrl")?.startsWith("https://storage.googleapis.com/") ? `/api/clients/${clientId}/logo-img` : clientForm.watch("logoUrl")}
+                            alt="Logo Preview"
+                            className="h-full w-full object-contain"
+                          />
+                        ) : (
+                          <Building2 className="h-8 w-8 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => {
+                              const website = clientForm.getValues("website");
+                              if (!website) {
+                                toast({ title: "No website", description: "Please enter a website URL first", variant: "destructive" });
+                                return;
+                              }
+                              try {
+                                const domain = new URL(website.startsWith("http") ? website : `https://${website}`).hostname.replace("www.", "");
+                                clientForm.setValue("logoUrl", `https://logo.clearbit.com/${domain}`);
+                              } catch (e) {
+                                toast({ title: "Invalid website", description: "Could not extract domain from website URL", variant: "destructive" });
+                              }
+                            }}
+                            data-testid="button-logo-autofetch"
+                          >
+                            <Globe className="h-3.5 w-3.5 mr-1.5" />
+                            Auto-fetch
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => document.getElementById("logo-upload-dialog")?.click()}
+                            data-testid="button-logo-upload"
+                          >
+                            <Upload className="h-3.5 w-3.5 mr-1.5" />
+                            Upload
+                          </Button>
+                          <input
+                            id="logo-upload-dialog"
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const formData = new FormData();
+                              formData.append("logo", file);
+                              try {
+                                const res = await fetch(`/api/clients/${clientId}/logo`, {
+                                  method: "POST",
+                                  body: formData,
+                                  credentials: "include",
+                                });
+                                if (!res.ok) throw new Error("Upload failed");
+                                const data = await res.json();
+                                clientForm.setValue("logoUrl", data.url);
+                                queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+                                toast({ title: "Logo uploaded", description: "Company logo has been updated." });
+                              } catch (err) {
+                                toast({ title: "Upload failed", description: "Could not upload logo. Please try again.", variant: "destructive" });
+                              }
+                            }}
+                          />
                         </div>
+                        {clientForm.watch("logoUrl") && (
+                          <button
+                            type="button"
+                            className="text-[11px] text-muted-foreground hover:text-destructive w-fit transition-colors"
+                            onClick={() => clientForm.setValue("logoUrl", "")}
+                            data-testid="button-logo-remove"
+                          >
+                            Remove
+                          </button>
+                        )}
                       </div>
+                    </div>
+                  </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FormField
-                          control={clientForm.control}
-                          name="name"
-                          render={({ field }) => (
-                            <FormItem className="col-span-1 md:col-span-2">
-                              <FormLabel>Company Name</FormLabel>
-                              <FormControl>
-                                <Input {...field} data-testid="input-edit-client-name" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={clientForm.control}
-                          name="industry"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Industry</FormLabel>
-                              <FormControl>
-                                <Input {...field} data-testid="input-edit-client-industry" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={clientForm.control}
-                          name="website"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Website</FormLabel>
-                              <FormControl>
-                                <Input placeholder="www.example.com" {...field} data-testid="input-company-website" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={clientForm.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem className="col-span-1 md:col-span-2">
+                          <FormLabel>Company Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} data-testid="input-edit-client-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={clientForm.control}
+                      name="industry"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Industry</FormLabel>
+                          <FormControl>
+                            <Input {...field} data-testid="input-edit-client-industry" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={clientForm.control}
+                      name="website"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Website</FormLabel>
+                          <FormControl>
+                            <Input placeholder="www.example.com" {...field} data-testid="input-company-website" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={clientForm.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input placeholder="(555) 000-0000" {...field} data-testid="input-edit-client-phone" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={clientForm.control}
+                      name="annualRevenue"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Annual Revenue ($)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="1000"
+                              placeholder="e.g. 120000"
+                              {...field}
+                              value={field.value ?? ""}
+                              data-testid="input-edit-client-annual-revenue"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={clientForm.control}
+                    name={"tier" as any}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Company Tier</FormLabel>
+                        <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-client-tier">
+                              <SelectValue placeholder="No Tier" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No Tier</SelectItem>
+                            <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                            <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                            <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={clientForm.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Internal Notes</FormLabel>
+                        <FormControl>
+                          <Textarea {...field} className="min-h-[100px]" data-testid="textarea-edit-client-notes" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter>
+                    <Button variant="outline" type="button" onClick={() => setIsEditCompanyOpen(false)}>Cancel</Button>
+                    <Button
+                      type="submit"
+                      disabled={updateClientMutation.isPending}
+                      data-testid="button-save-client-changes"
+                    >
+                      {updateClientMutation.isPending ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+
+          <TabsContent value="overview" className="m-0 space-y-6">
+            {/* ── Stats Row ── */}
+            {(() => {
+              const activeLeadsArr = leads?.filter(l => !["won", "lost"].includes(l.stage)) ?? [];
+              const pipelineValue = activeLeadsArr.reduce((sum, l) => sum + (parseFloat(l.value ?? "0") || 0), 0);
+              const totalBdSpend = spendEntries.reduce((s, e) => s + parseFloat(e.amount), 0);
+              const wonCount = leads?.filter(l => l.stage === "won").length ?? 0;
+              const fmt = (n: number) => n >= 1000000
+                ? `$${(n / 1000000).toFixed(1)}M`
+                : n >= 1000
+                ? `$${(n / 1000).toFixed(0)}K`
+                : `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <Card className="shadow-sm border-border/40 bg-card">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Active Deals</p>
+                      <Target className="h-4 w-4 text-primary shrink-0" />
+                    </CardHeader>
+                    <CardContent className="px-4 pb-4">
+                      <p className="text-2xl font-heading font-bold" data-testid="stat-active-deals">{activeLeadsArr.length}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">In pipeline</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="shadow-sm border-border/40 bg-card">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Pipeline Value</p>
+                      <TrendingUp className="h-4 w-4 text-primary shrink-0" />
+                    </CardHeader>
+                    <CardContent className="px-4 pb-4">
+                      <p className="text-2xl font-heading font-bold" data-testid="stat-pipeline-value">{pipelineValue > 0 ? fmt(pipelineValue) : "—"}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Estimated total</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="shadow-sm border-border/40 bg-card">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Total BD Spend</p>
+                      <DollarSign className="h-4 w-4 text-primary shrink-0" />
+                    </CardHeader>
+                    <CardContent className="px-4 pb-4">
+                      <p className="text-2xl font-heading font-bold" data-testid="stat-total-spend">{totalBdSpend > 0 ? fmt(totalBdSpend) : "—"}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Business development</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="shadow-sm border-border/40 bg-card">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Won Deals</p>
+                      <Trophy className="h-4 w-4 text-primary shrink-0" />
+                    </CardHeader>
+                    <CardContent className="px-4 pb-4">
+                      <p className="text-2xl font-heading font-bold" data-testid="stat-won-deals">{wonCount}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Closed won</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              );
+            })()}
+
+            {/* ── Two-column section ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+              {/* Left: Company Info + Service Needs */}
+              <div className="lg:col-span-3 space-y-6">
+                {/* Read-only Company Info */}
+                <Card className="shadow-sm border-border/40 bg-card">
+                  <CardHeader className="flex flex-row items-center justify-between pb-3">
+                    <CardTitle className="text-base font-semibold">Company Info</CardTitle>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsEditCompanyOpen(true)}
+                      data-testid="button-edit-company-info"
+                    >
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                      Edit
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {[
+                      { label: "Industry", value: client.industry || null },
+                      { label: "Phone", value: client.phone ? formatPhoneNumber(client.phone) : null },
+                      { label: "Annual Revenue", value: client.annualRevenue && parseFloat(client.annualRevenue) > 0 ? `$${parseFloat(client.annualRevenue).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : null },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex items-start gap-3">
+                        <span className="text-xs font-medium text-muted-foreground w-28 shrink-0 pt-0.5">{label}</span>
+                        <span className="text-sm text-foreground">{value ?? <span className="text-muted-foreground italic">Not set</span>}</span>
                       </div>
-                      <FormField
-                        control={clientForm.control}
-                        name="annualRevenue"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Annual Revenue from This Client ($)</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min="0"
-                                step="1000"
-                                placeholder="e.g. 120000"
-                                {...field}
-                                value={field.value ?? ""}
-                                data-testid="input-edit-client-annual-revenue"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={clientForm.control}
-                        name={"tier" as any}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Company Tier</FormLabel>
-                            <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-edit-client-tier">
-                                  <SelectValue placeholder="No Tier" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="none">No Tier</SelectItem>
-                                <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
-                                <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
-                                <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={clientForm.control}
-                        name="notes"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Internal Notes</FormLabel>
-                            <FormControl>
-                              <Textarea {...field} className="min-h-[100px]" data-testid="textarea-edit-client-notes" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <div className="flex justify-end pt-4">
-                        <Button 
-                          type="submit" 
-                          className="h-11 px-8"
-                          disabled={updateClientMutation.isPending}
-                          data-testid="button-save-client-changes"
+                    ))}
+                    {/* Website — clickable */}
+                    <div className="flex items-start gap-3">
+                      <span className="text-xs font-medium text-muted-foreground w-28 shrink-0 pt-0.5">Website</span>
+                      {client.website ? (
+                        <a
+                          href={client.website.startsWith("http") ? client.website : `https://${client.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary hover:underline flex items-center gap-1"
+                          data-testid="link-company-website"
                         >
-                          {updateClientMutation.isPending ? "Saving..." : "Save Changes"}
-                        </Button>
+                          {client.website}
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="text-sm text-muted-foreground italic">Not set</span>
+                      )}
+                    </div>
+                    {/* Tier */}
+                    <div className="flex items-start gap-3">
+                      <span className="text-xs font-medium text-muted-foreground w-28 shrink-0 pt-0.5">Tier</span>
+                      {client.tier ? <TierBadge tier={client.tier} /> : <span className="text-sm text-muted-foreground italic">Not set</span>}
+                    </div>
+                    {/* Notes */}
+                    {client.notes && (
+                      <div className="flex items-start gap-3">
+                        <span className="text-xs font-medium text-muted-foreground w-28 shrink-0 pt-0.5">Notes</span>
+                        <span className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{client.notes}</span>
                       </div>
-                    </form>
-                  </Form>
-                </CardContent>
-              </Card>
+                    )}
+                  </CardContent>
+                </Card>
 
-              <div className="space-y-6">
-                <Card className="border-none shadow-sm bg-card">
+                {/* Service Needs */}
+                <Card className="shadow-sm border-border/40 bg-card">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-lg">Service Needs</CardTitle>
+                    <CardTitle className="text-base font-semibold">Service Needs</CardTitle>
                     <CardDescription>Which M5 services does this company require?</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-1">
@@ -1607,226 +1747,171 @@ export default function ClientDetail() {
                           <div className={`h-7 w-7 rounded flex items-center justify-center shrink-0 ${isChecked ? "bg-primary/10" : "bg-muted"}`}>
                             <Icon className={`h-3.5 w-3.5 ${isChecked ? color : "text-muted-foreground"}`} />
                           </div>
-                          <span className={`text-sm font-medium ${isChecked ? "text-foreground" : "text-muted-foreground"}`}>
-                            {label}
-                          </span>
+                          <span className={`text-sm font-medium ${isChecked ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
                         </div>
                       );
                     })}
                   </CardContent>
                 </Card>
+              </div>
 
-                <Card className="border-none shadow-sm bg-primary/5 text-primary-foreground border-primary/10">
-                   <CardHeader className="pb-2 text-primary">
-                    <CardTitle className="text-lg font-bold">Client Summary</CardTitle>
+              {/* Right: Offices Preview + Recent Activity */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Offices Preview */}
+                <Card className="shadow-sm border-border/40 bg-card">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">Offices</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex justify-between items-center text-sm font-medium text-foreground">
-                      <span>Total Deals</span>
-                      <Badge variant="secondary">{leads?.length || 0}</Badge>
-                    </div>
-                    <div className="flex justify-between items-center text-sm font-medium text-foreground">
-                      <span>Total Estimates</span>
-                      <Badge variant="secondary">{estimates?.length || 0}</Badge>
-                    </div>
-                    <div className="flex justify-between items-center text-sm font-medium text-foreground">
-                      <span>Primary Contact</span>
-                      <span className="text-muted-foreground">
-                        {contacts?.find(c => c.isPrimary)?.name || "Not set"}
-                      </span>
-                    </div>
+                  <CardContent className="p-0">
+                    {offices && offices.length > 0 ? (
+                      <>
+                        <div className="divide-y divide-border/60">
+                          {offices.slice(0, 4).map((office) => (
+                            <div key={office.id} className="flex items-start gap-3 px-6 py-3" data-testid={`office-preview-${office.id}`}>
+                              <MapPin className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{office.name}</p>
+                                {office.address && (
+                                  <p className="text-xs text-muted-foreground truncate">{office.address}</p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="px-6 py-3 border-t border-border/60">
+                          <button
+                            onClick={() => setActiveTab("contacts")}
+                            className="text-xs text-primary hover:underline flex items-center gap-1 font-medium"
+                            data-testid="link-view-all-offices"
+                          >
+                            View all offices
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="px-6 pb-6 text-sm text-muted-foreground italic">No offices yet.</div>
+                    )}
                   </CardContent>
                 </Card>
 
-                {/* Spending Card */}
-                <Card className="border-none shadow-sm bg-card col-span-full lg:col-span-1">
+                {/* Recent Activity */}
+                <Card className="shadow-sm border-border/40 bg-card">
                   <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-lg">BD Spending</CardTitle>
-                        <CardDescription>Business development spend vs. revenue</CardDescription>
-                      </div>
-                      <Button variant="outline" size="sm" onClick={() => setIsAddSpendOpen(!isAddSpendOpen)} data-testid="button-toggle-add-spend">
-                        {isAddSpendOpen ? "Cancel" : "Log Spend"}
-                      </Button>
-                    </div>
+                    <CardTitle className="text-base font-semibold">Recent Activity</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Stats */}
-                    {(() => {
-                      const totalSpend = spendEntries.reduce((s, e) => s + parseFloat(e.amount), 0);
-                      const revenue = client.annualRevenue ? parseFloat(client.annualRevenue) : null;
-                      const net = revenue != null ? revenue - totalSpend : null;
-                      const roi = revenue != null && totalSpend > 0 ? revenue / totalSpend : null;
-                      const roiColor = roi == null ? "" : roi >= 3 ? "text-green-600" : roi >= 1 ? "text-amber-600" : "text-red-600";
-                      return (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="rounded-lg bg-muted/40 p-3">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">BD Spend</p>
-                            <p className="text-lg font-bold mt-0.5" data-testid="stat-total-spend">{totalSpend > 0 ? `$${totalSpend.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}</p>
-                          </div>
-                          <div className="rounded-lg bg-muted/40 p-3">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Annual Revenue</p>
-                            <p className="text-lg font-bold mt-0.5" data-testid="stat-annual-revenue">{revenue != null && revenue > 0 ? `$${revenue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}</p>
-                          </div>
-                          <div className="rounded-lg bg-muted/40 p-3">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Net</p>
-                            <p className={`text-lg font-bold mt-0.5 ${net != null ? net >= 0 ? "text-green-600" : "text-red-600" : ""}`} data-testid="stat-net">
-                              {net != null ? `${net >= 0 ? "+" : ""}$${Math.abs(net).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}
-                            </p>
-                          </div>
-                          <div className="rounded-lg bg-muted/40 p-3">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ROI Ratio</p>
-                            <p className={`text-lg font-bold mt-0.5 ${roiColor}`} data-testid="stat-roi">{roi != null ? `${roi.toFixed(1)}×` : "—"}</p>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Add spend form */}
-                    {isAddSpendOpen && (
-                      <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-xs font-medium text-muted-foreground block mb-1">Amount ($)</label>
-                            <input type="number" min="0" step="0.01" placeholder="0.00"
-                              value={spendFormData.amount}
-                              onChange={e => setSpendFormData(f => ({ ...f, amount: e.target.value }))}
-                              className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                              data-testid="input-detail-spend-amount"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-muted-foreground block mb-1">Date</label>
-                            <input type="date"
-                              value={spendFormData.date}
-                              onChange={e => setSpendFormData(f => ({ ...f, date: e.target.value }))}
-                              className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                              data-testid="input-detail-spend-date"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
-                          <select value={spendFormData.category}
-                            onChange={e => setSpendFormData(f => ({ ...f, category: e.target.value }))}
-                            className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            data-testid="select-detail-spend-category"
-                          >
-                            <option value="meals_entertainment">Meals & Entertainment</option>
-                            <option value="gifts">Gifts</option>
-                            <option value="travel">Travel</option>
-                            <option value="events">Events</option>
-                            <option value="other">Other</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground block mb-1">Contact (optional)</label>
-                          <select value={spendFormData.contactId}
-                            onChange={e => setSpendFormData(f => ({ ...f, contactId: e.target.value }))}
-                            className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            data-testid="select-detail-spend-contact"
-                          >
-                            <option value="">No specific contact</option>
-                            {contacts?.map(c => (
-                              <option key={c.id} value={String(c.id)}>{c.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
-                          <input type="text" placeholder="e.g. Lunch at Nobu"
-                            value={spendFormData.description}
-                            onChange={e => setSpendFormData(f => ({ ...f, description: e.target.value }))}
-                            className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            data-testid="input-detail-spend-description"
-                          />
-                        </div>
-                        <button
-                          disabled={!spendFormData.amount || isSubmittingSpend}
-                          onClick={async () => {
-                            if (!spendFormData.amount) return;
-                            setIsSubmittingSpend(true);
-                            try {
-                              await apiRequest("POST", `/api/clients/${clientId}/spend`, {
-                                amount: spendFormData.amount,
-                                category: spendFormData.category,
-                                date: new Date(spendFormData.date).toISOString(),
-                                description: spendFormData.description || null,
-                                contactId: spendFormData.contactId ? parseInt(spendFormData.contactId) : null,
-                              });
-                              queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "spend"] });
-                              queryClient.invalidateQueries({ queryKey: ["/api/spend/client-totals"] });
-                              queryClient.invalidateQueries({ queryKey: ["/api/spend/contact-totals"] });
-                              setSpendFormData({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "", contactId: "" });
-                              setIsAddSpendOpen(false);
-                              toast({ title: "Spend logged", description: `$${parseFloat(spendFormData.amount).toFixed(0)} recorded` });
-                            } catch (err: any) {
-                              toast({ title: "Error", description: err.message, variant: "destructive" });
-                            } finally {
-                              setIsSubmittingSpend(false);
-                            }
-                          }}
-                          className="w-full h-8 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                          data-testid="button-detail-submit-spend"
-                        >
-                          {isSubmittingSpend ? "Saving..." : "Save"}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Spend log */}
-                    {spendEntries.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Spend Log</p>
-                        <div className="space-y-1.5">
-                          {spendEntries.map(entry => {
-                            const contactName = entry.contactId ? contacts?.find(c => c.id === entry.contactId)?.name : null;
-                            const catLabels: Record<string, string> = {
-                              meals_entertainment: "Meals", gifts: "Gifts", travel: "Travel", events: "Events", other: "Other"
-                            };
-                            return (
-                              <div key={entry.id} className="flex items-center gap-2 text-sm p-2 rounded-md hover:bg-muted/30 group" data-testid={`spend-entry-${entry.id}`}>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-medium">${parseFloat(entry.amount).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
-                                      {catLabels[entry.category] ?? entry.category}
-                                    </span>
-                                    {contactName && <span className="text-muted-foreground text-xs">{contactName}</span>}
-                                  </div>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                                    <span>{new Date(entry.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
-                                    {entry.description && <span className="truncate">· {entry.description}</span>}
-                                  </div>
-                                </div>
-                                <button
-                                  onClick={async () => {
-                                    if (!confirm("Delete this spend entry?")) return;
-                                    await apiRequest("DELETE", `/api/spend/${entry.id}`);
-                                    queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "spend"] });
-                                    queryClient.invalidateQueries({ queryKey: ["/api/spend/client-totals"] });
-                                    queryClient.invalidateQueries({ queryKey: ["/api/spend/contact-totals"] });
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all shrink-0"
-                                  data-testid={`button-delete-spend-${entry.id}`}
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
+                  <CardContent className="p-0">
+                    {activityLogs && activityLogs.length > 0 ? (
+                      <>
+                        <div className="divide-y divide-border/60">
+                          {activityLogs.slice(0, 5).map((log) => (
+                            <div key={log.id} className="flex items-start gap-3 px-6 py-3" data-testid={`activity-preview-${log.id}`}>
+                              <div className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm text-foreground leading-snug">{log.action}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
+                                </p>
                               </div>
-                            );
-                          })}
+                            </div>
+                          ))}
                         </div>
-                      </div>
-                    )}
-
-                    {spendEntries.length === 0 && !isAddSpendOpen && (
-                      <p className="text-sm text-muted-foreground italic text-center py-4">No spend logged yet. Click "Log Spend" to add an entry.</p>
+                        <div className="px-6 py-3 border-t border-border/60">
+                          <button
+                            onClick={() => setActiveTab("activity")}
+                            className="text-xs text-primary hover:underline flex items-center gap-1 font-medium"
+                            data-testid="link-view-full-timeline"
+                          >
+                            View full timeline
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="px-6 pb-6 text-sm text-muted-foreground italic">No activity yet.</div>
                     )}
                   </CardContent>
                 </Card>
               </div>
             </div>
+
+            {/* ── Active Deals full-width card ── */}
+            {(() => {
+              const activeDeals = leads?.filter(l => !["won", "lost"].includes(l.stage)) ?? [];
+              const stageColors: Record<string, string> = {
+                lead: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+                qualified: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+                proposal: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
+                negotiation: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+                won: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+                lost: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+              };
+              const stageLabels: Record<string, string> = {
+                lead: "Lead", qualified: "Qualified", proposal: "Proposal",
+                negotiation: "Negotiation", won: "Won", lost: "Lost",
+              };
+              const fmtVal = (v: string | null | undefined) => {
+                const n = parseFloat(v ?? "0");
+                if (!n) return null;
+                return n >= 1000000 ? `$${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `$${(n / 1000).toFixed(0)}K` : `$${n.toLocaleString("en-US")}`;
+              };
+              return (
+                <Card className="shadow-sm border-border/40 bg-card">
+                  <CardHeader className="flex flex-row items-center justify-between pb-3">
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-base font-semibold">Active Deals</CardTitle>
+                      <Badge variant="secondary" className="text-xs">{activeDeals.length}</Badge>
+                    </div>
+                    {activeDeals.length > 0 && (
+                      <button
+                        onClick={() => setActiveTab("deals")}
+                        className="text-xs text-primary hover:underline flex items-center gap-1 font-medium"
+                        data-testid="link-view-all-deals"
+                      >
+                        View all
+                        <ArrowRight className="h-3 w-3" />
+                      </button>
+                    )}
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {activeDeals.length > 0 ? (
+                      <div className="divide-y divide-border/60">
+                        {activeDeals.slice(0, 3).map((deal) => {
+                          const daysOpen = deal.createdAt ? differenceInDays(new Date(), new Date(deal.createdAt)) : null;
+                          const val = fmtVal(deal.value);
+                          return (
+                            <div key={deal.id} className="flex items-center gap-3 px-6 py-3" data-testid={`deal-preview-${deal.id}`}>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{deal.title}</p>
+                                {daysOpen !== null && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">{daysOpen} {daysOpen === 1 ? "day" : "days"} open</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                {val && <span className="text-sm font-semibold tabular-nums">{val}</span>}
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${stageColors[deal.stage] ?? "bg-muted text-muted-foreground"}`}>
+                                  {stageLabels[deal.stage] ?? deal.stage}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="px-6 pb-6 flex items-center gap-3">
+                        <p className="text-sm text-muted-foreground italic">No active deals.</p>
+                        <Link href="/leads">
+                          <Button variant="outline" size="sm" data-testid="button-create-deal">
+                            <Plus className="h-3.5 w-3.5 mr-1.5" />
+                            Create one
+                          </Button>
+                        </Link>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </TabsContent>
 
           <TabsContent value="contacts" className="m-0 space-y-4">
