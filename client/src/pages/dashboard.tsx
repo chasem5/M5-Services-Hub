@@ -318,14 +318,9 @@ export default function Dashboard() {
         externalDialog={quickAction === "activity" ? null : quickAction as any}
         onExternalOpen={(d) => setQuickAction(d as any)}
       />
-      {/* We need to handle the "activity" action specially since QuickActionsBar might not support it yet if T003 isn't done, 
-          but T006 says "opens the QuickActionsBar Log Activity dialog". 
-          Assuming T003 might be done or will be done. If not, we might need a placeholder or just use 'task' for now.
-          Wait, T003 adds 'LogActivityDialog'.
-      */}
 
-      {/* Metric Cards — grid-cols-9: currency cards span 2, count cards span 1 */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-9">
+      {/* Metric Cards — uniform single row of 8 equal cards */}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-8">
         <MetricCard
           title="Active Leads"
           value={stats?.activeLeads}
@@ -339,8 +334,6 @@ export default function Dashboard() {
           icon={DollarSign}
           loading={statsLoading}
           dataTestId="text-pipeline-value"
-          className="lg:col-span-2"
-          large
         />
         <MetricCard
           title="Open Tasks"
@@ -370,8 +363,6 @@ export default function Dashboard() {
           icon={TrendingUp}
           loading={statsLoading}
           dataTestId="text-monthly-revenue"
-          className="lg:col-span-2"
-          large
         />
         <MetricCard
           title="Win Rate"
