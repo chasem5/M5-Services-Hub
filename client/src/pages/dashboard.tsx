@@ -21,6 +21,7 @@ import {
   X,
   UserPlus,
   Phone,
+  Building2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { formatDistanceToNow, format, parseISO, differenceInDays } from "date-fns";
