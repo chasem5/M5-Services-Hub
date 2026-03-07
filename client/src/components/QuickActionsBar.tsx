@@ -544,6 +544,9 @@ function AddCompanyDialog({
   const [industry, setIndustry] = useState("");
   const [notes, setNotes] = useState("");
   const [tier, setTier] = useState("");
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [createdClientId, setCreatedClientId] = useState<number | null>(null);
+  const [createdClientName, setCreatedClientName] = useState("");
 
   const checkDuplicate = async (nameVal: string) => {
     if (!nameVal.trim()) {
