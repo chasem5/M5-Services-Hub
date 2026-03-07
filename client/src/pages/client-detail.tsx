@@ -1804,17 +1804,32 @@ export default function ClientDetail() {
                     {activityLogs && activityLogs.length > 0 ? (
                       <>
                         <div className="divide-y divide-border/60">
-                          {activityLogs.slice(0, 5).map((log) => (
-                            <div key={log.id} className="flex items-start gap-3 px-6 py-3" data-testid={`activity-preview-${log.id}`}>
-                              <div className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm text-foreground leading-snug">{log.action}</p>
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
-                                </p>
+                          {activityLogs.slice(0, 5).map((log) => {
+                            const actionLabel: Record<string, string> = {
+                              created: "Record created",
+                              updated: "Info updated",
+                              stage_updated: "Stage changed",
+                              deleted: "Record deleted",
+                              note_added: "Note added",
+                              contact_added: "Contact added",
+                            };
+                            const entityLabel: Record<string, string> = {
+                              client: "Company", lead: "Deal", contact: "Contact",
+                              task: "Task", estimate: "Estimate",
+                            };
+                            const label = `${entityLabel[log.entityType] ?? log.entityType} — ${actionLabel[log.action] ?? log.action}`;
+                            return (
+                              <div key={log.id} className="flex items-start gap-3 px-6 py-3" data-testid={`activity-preview-${log.id}`}>
+                                <div className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm text-foreground leading-snug">{label}</p>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                         <div className="px-6 py-3 border-t border-border/60">
                           <button
@@ -1839,16 +1854,16 @@ export default function ClientDetail() {
             {(() => {
               const activeDeals = leads?.filter(l => !["won", "lost"].includes(l.stage)) ?? [];
               const stageColors: Record<string, string> = {
-                lead: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+                new_lead: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+                contacted: "bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300",
                 qualified: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-                proposal: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
-                negotiation: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+                proposal_sent: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
                 won: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
                 lost: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
               };
               const stageLabels: Record<string, string> = {
-                lead: "Lead", qualified: "Qualified", proposal: "Proposal",
-                negotiation: "Negotiation", won: "Won", lost: "Lost",
+                new_lead: "New Lead", contacted: "Contacted", qualified: "Qualified",
+                proposal_sent: "Proposal Sent", won: "Won", lost: "Lost",
               };
               const fmtVal = (v: string | null | undefined) => {
                 const n = parseFloat(v ?? "0");
