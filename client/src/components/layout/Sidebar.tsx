@@ -27,6 +27,7 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,8 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const isAdmin = user?.role === "admin";
+  const { setOpen, state, isMobile } = useSidebar();
+  const isCollapsed = state === "collapsed";
 
   const { data: myPerms } = useQuery<MyPermissions>({
     queryKey: ["/api/my-permissions"],
@@ -82,7 +85,12 @@ export function AppSidebar() {
   const displayName = myPerms?.displayName ?? user?.role ?? "";
 
   return (
-    <Sidebar variant="sidebar" collapsible="icon">
+    <Sidebar
+      variant="sidebar"
+      collapsible="icon"
+      onMouseEnter={() => { if (!isMobile) setOpen(true); }}
+      onMouseLeave={() => { if (!isMobile) setOpen(false); }}
+    >
       <SidebarHeader className="p-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 px-2 overflow-hidden">
           <img src="/logo.webp" alt="M5 Logo" className="h-8 w-8 min-w-8 object-contain" />
@@ -159,7 +167,7 @@ export function AppSidebar() {
           <Avatar className="h-9 w-9 border-2 border-primary/20">
             <AvatarImage src={user?.profileImageUrl ? `/api/users/${user.id}/avatar-img` : undefined} />
             <AvatarFallback className="bg-primary text-primary-foreground font-bold">
-              {user?.firstName?.[0]}{user?.lastName?.[0]}
+              {isCollapsed ? null : `${user?.firstName?.[0] ?? ""}${user?.lastName?.[0] ?? ""}`}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">

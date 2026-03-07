@@ -175,8 +175,8 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <header className="flex items-center justify-between px-4 h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
             <div className="flex items-center gap-3">
-              <SidebarTrigger data-testid="button-sidebar-toggle" />
-              <div className="h-6 w-px bg-border hidden md:block" />
+              <SidebarTrigger data-testid="button-sidebar-toggle" className="md:hidden" />
+              <div className="h-6 w-px bg-border hidden" />
               <GlobalSearchTrigger onClick={() => setSearchOpen(true)} />
             </div>
             <span className="hidden sm:block text-xs text-muted-foreground/50 ml-auto mr-2 tabular-nums select-none">
