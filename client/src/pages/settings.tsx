@@ -42,7 +42,7 @@ import { Input } from "@/components/ui/input";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera } from "lucide-react";
+import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera, LogOut } from "lucide-react";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -64,7 +64,7 @@ interface GmailStatus {
 }
 
 export default function Settings() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, logout } = useAuth();
   const { toast } = useToast();
 
   const form = useForm<ProfileFormValues>({
@@ -422,7 +422,7 @@ export default function Settings() {
                       </div>
                     </div>
 
-                    <div className="pt-4">
+                    <div className="pt-4 flex items-center gap-3">
                       <Button
                         type="submit"
                         className="w-full md:w-auto px-8"
@@ -431,6 +431,16 @@ export default function Settings() {
                       >
                         {updateProfileMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                         Save Changes
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2 text-destructive border-destructive/30 hover:bg-destructive hover:text-white"
+                        onClick={() => logout()}
+                        data-testid="button-sign-out"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Sign Out
                       </Button>
                     </div>
                   </div>

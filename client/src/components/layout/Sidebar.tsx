@@ -7,7 +7,6 @@ import {
   BookOpen, 
   ClipboardList, 
   Settings,
-  LogOut,
   Mic,
   ShieldCheck,
   Mail,
@@ -31,7 +30,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 
@@ -66,7 +64,7 @@ interface MyPermissions {
 
 export function AppSidebar() {
   const [location] = useLocation();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const { setOpen, isMobile } = useSidebar();
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -177,14 +175,16 @@ export function AppSidebar() {
       <SidebarFooter className="p-4">
         <Separator className="mb-4" />
         <div className="flex items-center gap-3 px-2 group-data-[collapsible=icon]:px-0">
-          <Avatar className="h-9 w-9 border-2 border-primary/20">
-            <AvatarImage src={user?.profileImageUrl ? `/api/users/${user.id}/avatar-img` : undefined} />
-            <AvatarFallback className="bg-primary text-primary-foreground font-bold">
-              <span className="group-data-[collapsible=icon]:hidden">
-                {user?.firstName?.[0] ?? ""}{user?.lastName?.[0] ?? ""}
-              </span>
-            </AvatarFallback>
-          </Avatar>
+          <Link href="/settings" data-testid="link-profile-settings">
+            <Avatar className="h-9 w-9 border-2 border-primary/20 cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all">
+              <AvatarImage src={user?.profileImageUrl ? `/api/users/${user.id}/avatar-img` : undefined} />
+              <AvatarFallback className="bg-primary text-primary-foreground font-bold">
+                <span className="group-data-[collapsible=icon]:hidden">
+                  {user?.firstName?.[0] ?? ""}{user?.lastName?.[0] ?? ""}
+                </span>
+              </AvatarFallback>
+            </Avatar>
+          </Link>
           <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
             <p className="text-sm font-semibold truncate">
               {user?.firstName} {user?.lastName}
@@ -196,16 +196,6 @@ export function AppSidebar() {
               {displayName.toUpperCase()}
             </Badge>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={() => logout()}
-            className="text-muted-foreground hover:text-destructive group-data-[collapsible=icon]:hidden"
-            data-testid="button-logout"
-            title="Logout"
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
         </div>
       </SidebarFooter>
     </Sidebar>
