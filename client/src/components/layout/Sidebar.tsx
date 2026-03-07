@@ -61,7 +61,7 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const { setOpen, isMobile } = useSidebar();
+  const { setOpen, setOpenMobile, isMobile } = useSidebar();
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = useCallback(() => {
@@ -121,7 +121,11 @@ export function AppSidebar() {
                       tooltip={item.title}
                       className={isActive ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                     >
-                      <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
+                      <Link
+                        href={item.url}
+                        data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                        onClick={() => isMobile && setOpenMobile(false)}
+                      >
                         <item.icon className={isActive ? "text-primary" : ""} />
                         <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
                       </Link>
@@ -137,7 +141,7 @@ export function AppSidebar() {
                     tooltip="Admin"
                     className={location === "/admin" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                   >
-                    <Link href="/admin" data-testid="link-admin">
+                    <Link href="/admin" data-testid="link-admin" onClick={() => isMobile && setOpenMobile(false)}>
                       <ShieldCheck className={location === "/admin" ? "text-primary" : ""} />
                       <span className="group-data-[collapsible=icon]:hidden">Team Admin</span>
                     </Link>
@@ -152,7 +156,7 @@ export function AppSidebar() {
       <SidebarFooter className="p-4">
         <Separator className="mb-4" />
         <div className="flex items-center gap-3 px-2 group-data-[collapsible=icon]:px-0">
-          <Link href="/settings" data-testid="link-profile-settings">
+          <Link href="/settings" data-testid="link-profile-settings" onClick={() => isMobile && setOpenMobile(false)}>
             <Avatar className="h-9 w-9 border-2 border-primary/20 cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all">
               <AvatarImage src={user?.profileImageUrl ? `/api/users/${user.id}/avatar-img` : undefined} />
               <AvatarFallback className="bg-primary text-primary-foreground font-bold">
