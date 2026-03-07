@@ -906,6 +906,8 @@ export default function ClientDetail() {
   const [logoImgError, setLogoImgError] = useState(false);
   const [contactPhotoPreviewError, setContactPhotoPreviewError] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
+  const [dragContactId, setDragContactId] = useState<number | null>(null);
+  const [dragOverOfficeId, setDragOverOfficeId] = useState<number | "unassigned" | null>(null);
 
   // Queries
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
@@ -1132,6 +1134,19 @@ export default function ClientDetail() {
     },
     onError: (err: Error) => {
       toast({ title: "Verification failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const moveContactToOfficeMutation = useMutation({
+    mutationFn: async ({ contactId, officeId }: { contactId: number; officeId: number | null }) => {
+      const res = await apiRequest("PATCH", `/api/contacts/${contactId}`, { officeId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+    },
+    onError: () => {
+      toast({ title: "Move failed", description: "Could not move contact.", variant: "destructive" });
     },
   });
 
@@ -1853,7 +1868,13 @@ export default function ClientDetail() {
                 {(offices || []).map(office => {
                   const officeContacts = (contacts || []).filter(c => c.officeId === office.id);
                   return (
-                    <Card key={office.id} className="border-none shadow-sm bg-card">
+                    <Card
+                      key={office.id}
+                      className={`border-none shadow-sm bg-card transition-colors ${dragOverOfficeId === office.id ? "ring-2 ring-primary/50 bg-primary/5" : ""}`}
+                      onDragOver={(e) => { e.preventDefault(); setDragOverOfficeId(office.id); }}
+                      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverOfficeId(null); }}
+                      onDrop={(e) => { e.preventDefault(); if (dragContactId !== null) moveContactToOfficeMutation.mutate({ contactId: dragContactId, officeId: office.id }); setDragContactId(null); setDragOverOfficeId(null); }}
+                    >
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-3">
@@ -1918,13 +1939,21 @@ export default function ClientDetail() {
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {officeContacts.map(contact => (
-                              <ContactCard
+                              <div
                                 key={contact.id}
-                                contact={contact}
-                                onEdit={openEditContact}
-                                onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
-                                onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
-                              />
+                                draggable
+                                onDragStart={() => setDragContactId(contact.id)}
+                                onDragEnd={() => { setDragContactId(null); setDragOverOfficeId(null); }}
+                                className={`transition-opacity ${dragContactId === contact.id ? "opacity-40" : ""}`}
+                                data-testid={`drag-contact-${contact.id}`}
+                              >
+                                <ContactCard
+                                  contact={contact}
+                                  onEdit={openEditContact}
+                                  onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
+                                  onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
+                                />
+                              </div>
                             ))}
                           </div>
                         )}
@@ -1956,7 +1985,12 @@ export default function ClientDetail() {
                   }
                   if (unassigned.length === 0) return null;
                   return (
-                    <Card className="border-none shadow-sm bg-card">
+                    <Card
+                      className={`border-none shadow-sm bg-card transition-colors ${dragOverOfficeId === "unassigned" ? "ring-2 ring-muted-foreground/30 bg-muted/10" : ""}`}
+                      onDragOver={(e) => { e.preventDefault(); setDragOverOfficeId("unassigned"); }}
+                      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverOfficeId(null); }}
+                      onDrop={(e) => { e.preventDefault(); if (dragContactId !== null) moveContactToOfficeMutation.mutate({ contactId: dragContactId, officeId: null }); setDragContactId(null); setDragOverOfficeId(null); }}
+                    >
                       <CardHeader className="pb-3">
                         <div className="flex items-center gap-3">
                           <div className="h-9 w-9 rounded bg-muted flex items-center justify-center shrink-0">
@@ -1971,13 +2005,21 @@ export default function ClientDetail() {
                       <CardContent className="pt-0">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {unassigned.map(contact => (
-                            <ContactCard
+                            <div
                               key={contact.id}
-                              contact={contact}
-                              onEdit={openEditContact}
-                              onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
-                              onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
-                            />
+                              draggable
+                              onDragStart={() => setDragContactId(contact.id)}
+                              onDragEnd={() => { setDragContactId(null); setDragOverOfficeId(null); }}
+                              className={`transition-opacity ${dragContactId === contact.id ? "opacity-40" : ""}`}
+                              data-testid={`drag-contact-${contact.id}`}
+                            >
+                              <ContactCard
+                                contact={contact}
+                                onEdit={openEditContact}
+                                onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
+                                onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
+                              />
+                            </div>
                           ))}
                         </div>
                       </CardContent>

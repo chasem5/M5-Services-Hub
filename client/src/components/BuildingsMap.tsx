@@ -140,5 +140,5 @@ export function BuildingsMap({ buildings, className = "" }: BuildingsMapProps) {
     );
   }
 
-  return <div ref={containerRef} className={`rounded-lg overflow-hidden border border-border ${className}`} />;
+  return <div ref={containerRef} className={`rounded-lg overflow-hidden border border-border ${className}`} style={{ isolation: "isolate" }} />;
 }

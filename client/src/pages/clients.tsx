@@ -393,6 +393,8 @@ export default function Customers() {
   const [contactStatusFilter, setContactStatusFilter] = useState("all");
   const [contactSortField, setContactSortField] = useState<"name" | "company" | "title" | "status" | "spend">("name");
   const [contactSortDir, setContactSortDir] = useState<"asc" | "desc">("asc");
+  const [companySortField, setCompanySortField] = useState<"name" | "tier" | "industry" | "revenue" | "spend">("name");
+  const [companySortDir, setCompanySortDir] = useState<"asc" | "desc">("asc");
   const [industryFilter, setIndustryFilter] = useState("all");
   const [tierFilter, setTierFilter] = useState("all");
   const [contactTierFilter, setContactTierFilter] = useState("all");
@@ -793,6 +795,23 @@ export default function Customers() {
 
   const spendByClientId = Object.fromEntries(clientSpendTotals.map(t => [t.clientId, parseFloat(t.total)]));
   const spendByContactId = Object.fromEntries(contactSpendTotals.map(t => [t.contactId, parseFloat(t.total)]));
+
+  const tierOrder: Record<string, number> = { tier_1: 0, tier_2: 1, tier_3: 2 };
+  const sortedClients = filteredClients ? [...filteredClients].sort((a, b) => {
+    let cmp = 0;
+    if (companySortField === "name") {
+      cmp = a.name.localeCompare(b.name);
+    } else if (companySortField === "tier") {
+      cmp = (tierOrder[a.tier ?? ""] ?? 3) - (tierOrder[b.tier ?? ""] ?? 3);
+    } else if (companySortField === "industry") {
+      cmp = (a.industry ?? "").localeCompare(b.industry ?? "");
+    } else if (companySortField === "revenue") {
+      cmp = parseFloat(a.annualRevenue ?? "0") - parseFloat(b.annualRevenue ?? "0");
+    } else if (companySortField === "spend") {
+      cmp = (spendByClientId[a.id] ?? 0) - (spendByClientId[b.id] ?? 0);
+    }
+    return companySortDir === "asc" ? cmp : -cmp;
+  }) : [];
 
   const formatMoney = (v: number | null | undefined) =>
     v != null && v > 0 ? `$${v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—";
@@ -1282,16 +1301,35 @@ export default function Customers() {
                             data-testid="checkbox-select-all-companies"
                           />
                         </TableHead>
-                        <TableHead className="font-bold">Company Name</TableHead>
-                        <TableHead className="font-bold">Tier</TableHead>
-                        <TableHead className="font-bold">Industry</TableHead>
-                        <TableHead className="font-bold">Revenue</TableHead>
-                        <TableHead className="font-bold">BD Spend</TableHead>
+                        {(["name", "tier", "industry", "revenue", "spend"] as const).map((field, i) => {
+                          const labels = ["Company Name", "Tier", "Industry", "Revenue", "BD Spend"];
+                          const active = companySortField === field;
+                          return (
+                            <TableHead
+                              key={field}
+                              className="font-bold cursor-pointer select-none hover:bg-muted/70 transition-colors"
+                              onClick={() => {
+                                if (active) setCompanySortDir(d => d === "asc" ? "desc" : "asc");
+                                else { setCompanySortField(field); setCompanySortDir("asc"); }
+                              }}
+                              data-testid={`th-company-sort-${field}`}
+                            >
+                              <div className="flex items-center gap-1">
+                                {labels[i]}
+                                {active
+                                  ? companySortDir === "asc"
+                                    ? <ChevronUp className="h-3.5 w-3.5 text-primary" />
+                                    : <ChevronDown className="h-3.5 w-3.5 text-primary" />
+                                  : <ArrowUpDown className="h-3 w-3 text-muted-foreground/50" />}
+                              </div>
+                            </TableHead>
+                          );
+                        })}
                         <TableHead className="w-[80px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredClients.map((client) => (
+                      {sortedClients.map((client) => (
                         <TableRow key={client.id} className="hover:bg-muted/30 transition-colors">
                           <TableCell>
                             <Checkbox
