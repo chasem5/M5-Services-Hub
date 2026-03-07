@@ -684,7 +684,7 @@ export default function Settings() {
                       <TableCell className="pl-6">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10 border shadow-sm">
-                            <AvatarImage src={user.profileImageUrl || undefined} />
+                            <AvatarImage src={user.profileImageUrl ? `/api/users/${user.id}/avatar-img` : undefined} />
                             <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
                               {user.firstName?.[0]}{user.lastName?.[0]}
                             </AvatarFallback>

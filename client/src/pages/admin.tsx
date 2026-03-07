@@ -288,7 +288,7 @@ export default function AdminPage() {
               <Card key={u.id} className="border-none shadow-sm bg-card">
                 <CardContent className="p-4 flex items-center gap-4">
                   <Avatar className="h-10 w-10 border border-border">
-                    <AvatarImage src={u.profileImageUrl || undefined} />
+                    <AvatarImage src={u.profileImageUrl ? `/api/users/${u.id}/avatar-img` : undefined} />
                     <AvatarFallback className="bg-primary/10 text-primary font-bold text-sm">
                       {u.firstName?.[0]}{u.lastName?.[0]}
                     </AvatarFallback>

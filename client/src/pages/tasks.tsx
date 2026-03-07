@@ -224,7 +224,7 @@ function TaskCardCompact({
           </div>
           {assignedUser ? (
             <Avatar className="h-6 w-6 border border-background shadow-sm">
-              <AvatarImage src={assignedUser.profileImageUrl || undefined} />
+              <AvatarImage src={assignedUser.profileImageUrl ? `/api/users/${assignedUser.id}/avatar-img` : undefined} />
               <AvatarFallback className="text-[9px] bg-primary text-primary-foreground font-bold">
                 {assignedUser.firstName?.[0]}{assignedUser.lastName?.[0]}
               </AvatarFallback>
@@ -1121,7 +1121,7 @@ export default function TasksPage() {
                           )}
                           {assignedUser ? (
                             <Avatar className="h-6 w-6 shrink-0">
-                              <AvatarImage src={assignedUser.profileImageUrl || undefined} />
+                              <AvatarImage src={assignedUser.profileImageUrl ? `/api/users/${assignedUser.id}/avatar-img` : undefined} />
                               <AvatarFallback className="text-[9px] bg-primary text-primary-foreground font-bold">
                                 {assignedUser.firstName?.[0]}{assignedUser.lastName?.[0]}
                               </AvatarFallback>

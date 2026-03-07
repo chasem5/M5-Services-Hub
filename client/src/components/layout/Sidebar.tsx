@@ -157,7 +157,7 @@ export function AppSidebar() {
         <Separator className="mb-4" />
         <div className="flex items-center gap-3 px-2 group-data-[collapsible=icon]:px-0">
           <Avatar className="h-9 w-9 border-2 border-primary/20">
-            <AvatarImage src={user?.profileImageUrl || undefined} />
+            <AvatarImage src={user?.profileImageUrl ? `/api/users/${user.id}/avatar-img` : undefined} />
             <AvatarFallback className="bg-primary text-primary-foreground font-bold">
               {user?.firstName?.[0]}{user?.lastName?.[0]}
             </AvatarFallback>

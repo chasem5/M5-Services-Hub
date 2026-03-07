@@ -2519,6 +2519,9 @@ Respond with this JSON:
       const client = await storage.getClient(clientId);
       if (!client || !(client as any).logoUrl) return res.status(404).end();
       const logoUrl: string = (client as any).logoUrl;
+      if (!logoUrl.startsWith("https://storage.googleapis.com/")) {
+        return res.redirect(logoUrl);
+      }
       const { bucketName, objectName } = parseStoragePath(logoUrl.replace("https://storage.googleapis.com/", ""));
       const { objectStorageClient: gcsClient } = await import("./replit_integrations/object_storage/objectStorage");
       const [buf] = await gcsClient.bucket(bucketName).file(objectName).download();
@@ -2539,6 +2542,27 @@ Respond with this JSON:
       if (!contact || !contact.profilePictureUrl) return res.status(404).end();
       const photoUrl: string = contact.profilePictureUrl;
       // Only proxy GCS URLs, not external (LinkedIn) URLs
+      if (!photoUrl.startsWith("https://storage.googleapis.com/")) {
+        return res.redirect(photoUrl);
+      }
+      const { bucketName, objectName } = parseStoragePath(photoUrl.replace("https://storage.googleapis.com/", ""));
+      const { objectStorageClient: gcsClient } = await import("./replit_integrations/object_storage/objectStorage");
+      const [buf] = await gcsClient.bucket(bucketName).file(objectName).download();
+      const ext = objectName.split(".").pop()?.toLowerCase() || "jpeg";
+      const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
+      res.setHeader("Content-Type", mimeMap[ext] || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.send(buf);
+    } catch (e: any) {
+      res.status(500).end();
+    }
+  });
+
+  app.get("/api/users/:id/avatar-img", isAuthenticated, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user || !user.profileImageUrl) return res.status(404).end();
+      const photoUrl: string = user.profileImageUrl;
       if (!photoUrl.startsWith("https://storage.googleapis.com/")) {
         return res.redirect(photoUrl);
       }

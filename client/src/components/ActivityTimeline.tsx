@@ -121,7 +121,7 @@ export function ActivityTimeline({ entityType, entityId, limit }: ActivityTimeli
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Avatar className="h-5 w-5 border">
-                      <AvatarImage src={user?.profileImageUrl || undefined} />
+                      <AvatarImage src={user?.profileImageUrl ? `/api/users/${user.id}/avatar-img` : undefined} />
                       <AvatarFallback className="text-[10px]">
                         {user?.firstName?.[0]}{user?.lastName?.[0]}
                       </AvatarFallback>
