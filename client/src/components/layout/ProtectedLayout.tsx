@@ -190,16 +190,17 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen w-full overflow-hidden bg-background">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-          <header className="flex items-center justify-between px-4 h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-            <div className="flex items-center gap-3">
+          <header className="relative flex items-center px-4 h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+            <div className="flex items-center gap-2">
               <MobileMenuButton />
-              <div className="h-6 w-px bg-border hidden" />
+            </div>
+            <div className="absolute left-1/2 -translate-x-1/2">
               <GlobalSearchTrigger onClick={() => setSearchOpen(true)} />
             </div>
-            <span className="hidden sm:block text-xs text-muted-foreground/50 ml-auto mr-2 tabular-nums select-none">
-              Updated {getRelativeTime(lastRefreshed)}
-            </span>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-2">
+              <span className="hidden sm:block text-xs text-muted-foreground/50 mr-1 tabular-nums select-none">
+                Updated {getRelativeTime(lastRefreshed)}
+              </span>
               <QuickActionsBar />
               <span className="hidden md:inline-flex">
                 <AnnouncementsBadge />
