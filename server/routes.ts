@@ -292,6 +292,12 @@ export async function registerRoutes(
     res.json(stats);
   });
 
+  app.get("/api/leads/activity-summary", isAuthenticated, async (req, res) => {
+    const userId = await getScopedUserId(req, "leads");
+    const summary = await storage.getLeadsActivitySummary(userId);
+    res.json(summary);
+  });
+
   app.get("/api/dashboard/team-performance", isAuthenticated, requireRole(["admin", "manager"]), async (_req, res) => {
     const stats = await storage.getTeamPerformanceStats();
     res.json(stats);
@@ -374,7 +380,47 @@ export async function registerRoutes(
     res.json(updatedUser);
   });
 
+  // Duplicate detection
+  app.get("/api/clients/check-duplicate", isAuthenticated, async (req, res) => {
+    const name = req.query.name as string;
+    if (!name) return res.status(400).json({ message: "Name parameter required" });
+    const scopedUserId = await getScopedUserId(req, "customers");
+    const clients = await storage.listClients(scopedUserId);
+    const existing = clients.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      return res.json({ exists: true, client: { id: existing.id, name: existing.name } });
+    }
+    res.json({ exists: false });
+  });
+
+  app.get("/api/contacts/check-duplicate", isAuthenticated, async (req, res) => {
+    const email = req.query.email as string;
+    if (!email) return res.status(400).json({ message: "Email parameter required" });
+    const contacts = await storage.listAllClientContacts();
+    const existing = contacts.find(c => c.email?.toLowerCase() === email.toLowerCase());
+    if (existing) {
+      const client = await storage.getClient(existing.clientId);
+      return res.json({
+        exists: true,
+        contact: {
+          id: existing.id,
+          name: existing.name,
+          clientId: existing.clientId,
+          clientName: client?.name
+        }
+      });
+    }
+    res.json({ exists: false });
+  });
+
   // Clients
+  app.post("/api/activity-logs", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const logData = insertActivityLogSchema.parse({ ...req.body, userId });
+    const log = await storage.createActivityLog(logData);
+    res.json(log);
+  });
+
   app.get("/api/clients", isAuthenticated, async (req, res) => {
     const scopedUserId = await getScopedUserId(req, "customers");
     const clients = await storage.listClients(scopedUserId);

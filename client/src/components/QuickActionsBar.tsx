@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Target, Users, Building2, CheckSquare, CreditCard } from "lucide-react";
+import { Plus, Target, Users, Building2, CheckSquare, CreditCard, Phone, Calendar as CalendarIcon, AlertTriangle } from "lucide-react";
+import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,7 +39,7 @@ import { formatPhoneNumber } from "@/lib/phone";
 import type { Client, ClientContact, Lead, PipelineStage, User } from "@shared/schema";
 import { CardScannerDialog } from "@/components/CardScannerDialog";
 
-export type ActiveDialog = "deal" | "contact" | "company" | "task" | null;
+export type ActiveDialog = "deal" | "contact" | "company" | "task" | "activity" | null;
 
 interface QuickActionsBarProps {
   externalDialog?: ActiveDialog;
@@ -71,6 +77,10 @@ export function QuickActionsBar({ externalDialog, onExternalOpen, showButton = t
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => open("activity")} data-testid="quick-action-activity">
+              <Phone className="mr-2 h-4 w-4 text-primary" />
+              Log Activity
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => open("deal")} data-testid="quick-action-deal">
               <Target className="mr-2 h-4 w-4 text-primary" />
               Add Deal
@@ -128,6 +138,10 @@ export function QuickActionsBar({ externalDialog, onExternalOpen, showButton = t
         clients={clients}
         allContacts={allContacts}
         leads={[]}
+      />
+      <LogActivityDialog
+        open={activeDialog === "activity"}
+        onClose={close}
       />
     </>
   );
@@ -305,6 +319,7 @@ function AddContactDialog({
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [email, setEmail] = useState("");
+  const [duplicateContact, setDuplicateContact] = useState<{ id: number; name: string; clientId: number; clientName?: string } | null>(null);
   const [phone, setPhone] = useState("");
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [clientId, setClientId] = useState("");
@@ -312,8 +327,26 @@ function AddContactDialog({
   const [isCreatingCompany, setIsCreatingCompany] = useState(false);
   const [createdClientId, setCreatedClientId] = useState<number | null>(null);
 
+  const checkContactDuplicate = async (emailVal: string) => {
+    if (!emailVal.trim()) {
+      setDuplicateContact(null);
+      return;
+    }
+    try {
+      const res = await apiRequest("GET", `/api/contacts/check-duplicate?email=${encodeURIComponent(emailVal.trim())}`);
+      const data = await res.json();
+      if (data.exists) {
+        setDuplicateContact(data.contact);
+      } else {
+        setDuplicateContact(null);
+      }
+    } catch (err) {
+      console.error("Duplicate contact check failed", err);
+    }
+  };
+
   const reset = () => {
-    setName(""); setTitle(""); setEmail(""); setPhone(""); setLinkedinUrl("");
+    setName(""); setTitle(""); setEmail(""); setDuplicateContact(null); setPhone(""); setLinkedinUrl("");
     setClientId(""); setNewCompanyName(""); setIsCreatingCompany(false); setCreatedClientId(null);
   };
 
@@ -409,8 +442,18 @@ function AddContactDialog({
                 placeholder="jane@company.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
+                onBlur={e => checkContactDuplicate(e.target.value)}
                 data-testid="input-quick-contact-email"
               />
+              {duplicateContact && (
+                <p className="mt-1 text-[10px] text-yellow-600 font-medium flex items-center gap-1 leading-tight">
+                  <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                  A contact with this email already exists: {duplicateContact.name} {duplicateContact.clientName ? `at ${duplicateContact.clientName}` : ""} — 
+                  <Link href={`/customers/${duplicateContact.clientId}?contactId=${duplicateContact.id}`} className="underline ml-0.5" onClick={onClose}>
+                    View them
+                  </Link>
+                </p>
+              )}
             </div>
             <div>
               <Label className="text-sm font-medium">Phone</Label>
@@ -497,15 +540,31 @@ function AddCompanyDialog({
 }) {
   const { toast } = useToast();
   const [name, setName] = useState("");
+  const [duplicateWarning, setDuplicateWarning] = useState<{ id: number; name: string } | null>(null);
   const [industry, setIndustry] = useState("");
   const [notes, setNotes] = useState("");
   const [tier, setTier] = useState("");
-  const [showFollowUp, setShowFollowUp] = useState(false);
-  const [createdClientId, setCreatedClientId] = useState<number | null>(null);
-  const [createdClientName, setCreatedClientName] = useState("");
+
+  const checkDuplicate = async (nameVal: string) => {
+    if (!nameVal.trim()) {
+      setDuplicateWarning(null);
+      return;
+    }
+    try {
+      const res = await apiRequest("GET", `/api/clients/check-duplicate?name=${encodeURIComponent(nameVal.trim())}`);
+      const data = await res.json();
+      if (data.exists) {
+        setDuplicateWarning(data.client);
+      } else {
+        setDuplicateWarning(null);
+      }
+    } catch (err) {
+      console.error("Duplicate check failed", err);
+    }
+  };
 
   const reset = () => {
-    setName(""); setIndustry(""); setNotes(""); setTier("");
+    setName(""); setDuplicateWarning(null); setIndustry(""); setNotes(""); setTier("");
     setShowFollowUp(false); setCreatedClientId(null); setCreatedClientName("");
   };
 
@@ -578,8 +637,18 @@ function AddCompanyDialog({
               placeholder="Acme Corp"
               value={name}
               onChange={e => setName(e.target.value)}
+              onBlur={e => checkDuplicate(e.target.value)}
               data-testid="input-quick-company-name"
             />
+            {duplicateWarning && (
+              <p className="mt-1 text-xs text-yellow-600 font-medium flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                A company named '{duplicateWarning.name}' already exists — 
+                <Link href={`/customers/${duplicateWarning.id}`} className="underline ml-1" onClick={onClose}>
+                  View it
+                </Link>
+              </p>
+            )}
           </div>
           <div>
             <Label className="text-sm font-medium">Industry</Label>
@@ -741,6 +810,163 @@ function AddTaskDialog({
             data-testid="button-quick-task-submit"
           >
             {mutation.isPending ? "Adding..." : "Add Task"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function LogActivityDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [activityType, setActivityType] = useState("call");
+  const [leadId, setLeadId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [date, setDate] = useState<Date>(new Date());
+
+  const { data: leads = [] } = useQuery<Lead[]>({ queryKey: ["/api/leads"] });
+  const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
+
+  const leadOptions = leads.map(l => {
+    const client = clients.find(c => c.id === l.clientId);
+    return {
+      value: String(l.id),
+      label: l.title,
+      sublabel: client?.name
+    };
+  });
+
+  const reset = () => {
+    setActivityType("call");
+    setLeadId("");
+    setNotes("");
+    setDate(new Date());
+  };
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const endpoint = leadId ? `/api/leads/${leadId}/notes` : "/api/activity-logs";
+      const payload = leadId 
+        ? { content: notes, type: activityType, date }
+        : { entityType: "general", entityId: 0, action: activityType, metadata: { notes, date } };
+      
+      const res = await apiRequest("POST", endpoint, payload);
+      return res.json();
+    },
+    onSuccess: () => {
+      if (leadId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/leads", parseInt(leadId), "notes"] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({ title: "Activity logged" });
+      reset();
+      onClose();
+    },
+    onError: () => toast({ title: "Failed to log activity", variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) { reset(); onClose(); } }}>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>Log Activity</DialogTitle>
+          <DialogDescription>Record a new activity for a deal or general follow-up.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <Label className="text-sm font-medium">Activity Type</Label>
+            <RadioGroup 
+              value={activityType} 
+              onValueChange={setActivityType}
+              className="grid grid-cols-2 gap-2 mt-1.5"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="call" id="type-call" />
+                <Label htmlFor="type-call" className="font-normal cursor-pointer">Call</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="email" id="type-email" />
+                <Label htmlFor="type-email" className="font-normal cursor-pointer">Email Sent</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="visit" id="type-visit" />
+                <Label htmlFor="type-visit" className="font-normal cursor-pointer">Site Visit</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="note" id="type-note" />
+                <Label htmlFor="type-note" className="font-normal cursor-pointer">Note</Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Related Deal</Label>
+            <div className="mt-1.5">
+              <SearchableSelect
+                options={[{ value: "", label: "No deal (General)" }, ...leadOptions]}
+                value={leadId}
+                onChange={setLeadId}
+                placeholder="Select deal..."
+                searchPlaceholder="Search deals..."
+                data-testid="select-activity-lead"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Notes <span className="text-destructive">*</span></Label>
+            <Textarea
+              className="mt-1.5 min-h-[100px]"
+              placeholder="What happened? (min 10 characters)"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              data-testid="textarea-activity-notes"
+            />
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Date</Label>
+            <div className="mt-1.5">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !date && "text-muted-foreground"
+                    )}
+                    data-testid="button-activity-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {date ? format(date, "PPP") : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={(d) => d && setDate(d)}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { reset(); onClose(); }}>Cancel</Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={notes.trim().length < 10 || mutation.isPending}
+            data-testid="button-activity-submit"
+          >
+            {mutation.isPending ? "Logging..." : "Log Activity"}
           </Button>
         </DialogFooter>
       </DialogContent>

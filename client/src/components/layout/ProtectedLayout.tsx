@@ -169,7 +169,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SidebarProvider style={style as React.CSSProperties}>
+    <SidebarProvider defaultOpen={false} style={style as React.CSSProperties}>
       <div className="flex h-screen w-full overflow-hidden bg-background">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">

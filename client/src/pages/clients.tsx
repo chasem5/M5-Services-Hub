@@ -530,6 +530,45 @@ export default function Customers() {
     queryKey: ["/api/estimates"],
   });
 
+  const [duplicateClientWarning, setDuplicateClientWarning] = useState<{ id: number; name: string } | null>(null);
+  const [duplicateContactWarning, setDuplicateContactWarning] = useState<{ id: number; name: string; clientId: number; clientName?: string } | null>(null);
+
+  const checkClientDuplicate = async (name: string) => {
+    if (!name.trim()) {
+      setDuplicateClientWarning(null);
+      return;
+    }
+    try {
+      const res = await apiRequest("GET", `/api/clients/check-duplicate?name=${encodeURIComponent(name.trim())}`);
+      const data = await res.json();
+      if (data.exists) {
+        setDuplicateClientWarning(data.client);
+      } else {
+        setDuplicateClientWarning(null);
+      }
+    } catch (err) {
+      console.error("Duplicate client check failed", err);
+    }
+  };
+
+  const checkContactDuplicate = async (email: string) => {
+    if (!email.trim()) {
+      setDuplicateContactWarning(null);
+      return;
+    }
+    try {
+      const res = await apiRequest("GET", `/api/contacts/check-duplicate?email=${encodeURIComponent(email.trim())}`);
+      const data = await res.json();
+      if (data.exists) {
+        setDuplicateContactWarning(data.contact);
+      } else {
+        setDuplicateContactWarning(null);
+      }
+    } catch (err) {
+      console.error("Duplicate contact check failed", err);
+    }
+  };
+
   const createClientMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiRequest("POST", "/api/clients", data);
@@ -1025,8 +1064,25 @@ export default function Customers() {
                     <FormItem>
                       <FormLabel>Company Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter company name" {...field} data-testid="input-customer-name" />
+                        <Input 
+                          placeholder="Enter company name" 
+                          {...field} 
+                          onBlur={(e) => {
+                            field.onBlur();
+                            checkClientDuplicate(e.target.value);
+                          }}
+                          data-testid="input-customer-name" 
+                        />
                       </FormControl>
+                      {duplicateClientWarning && (
+                        <p className="mt-1 text-xs text-yellow-600 font-medium flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          A company named '{duplicateClientWarning.name}' already exists — 
+                          <Link href={`/customers/${duplicateClientWarning.id}`} className="underline ml-1" onClick={() => setIsCreateDialogOpen(false)}>
+                            View it
+                          </Link>
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1287,7 +1343,7 @@ export default function Customers() {
                 </div>
               ) : filteredClients && filteredClients.length > 0 ? (
                 <div className="relative">
-                  <div className="rounded-md border border-border/50 overflow-x-auto">
+                  <div className="hidden md:block rounded-md border border-border/50 overflow-x-auto">
                     <Table className="min-w-[700px]">
                     <TableHeader className="bg-muted/50">
                       <TableRow>
@@ -1462,87 +1518,132 @@ export default function Customers() {
                   </Table>
                 </div>
 
-                {selectedCompanies.length > 0 && (
-                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background border shadow-xl rounded-full px-6 py-3 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="flex items-center gap-2 border-r pr-6">
-                      <span className="text-sm font-semibold">{selectedCompanies.length} selected</span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 rounded-full"
-                        onClick={() => setSelectedCompanies([])}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <Popover open={isBulkCompanyEditOpen} onOpenChange={setIsBulkCompanyEditOpen}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" size="sm" className="h-9">
-                            <Settings className="h-4 w-4 mr-2" />
-                            Bulk Edit
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-80 p-4" align="center">
-                          <div className="space-y-4">
-                            <h4 className="font-medium">Bulk Edit Companies</h4>
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium text-muted-foreground">Industry</label>
-                              <Select onValueChange={(val) => {
-                                bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { industry: val } });
-                              }}>
-                                <SelectTrigger className="h-9">
-                                  <SelectValue placeholder="Select industry..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {industries.map(ind => (
-                                    <SelectItem key={ind} value={ind!}>{ind}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                {/* Mobile Company Card Stack */}
+                <div className="grid grid-cols-1 gap-3 md:hidden">
+                  {sortedClients.map((client) => (
+                    <Link 
+                      key={client.id}
+                      href={`/customers/${client.id}`}
+                      className="block group"
+                      data-testid={`card-company-mobile-${client.id}`}
+                    >
+                      <Card className="hover-elevate transition-shadow overflow-hidden border-border/50">
+                        <CardContent className="p-4 flex items-center gap-4">
+                          <div className="h-12 w-12 rounded bg-primary/10 flex items-center justify-center text-primary shrink-0 overflow-hidden border">
+                            {client.logoUrl ? (
+                              <img 
+                                src={client.logoUrl.startsWith("https://storage.googleapis.com/") ? `/api/clients/${client.id}/logo-img` : client.logoUrl} 
+                                alt={client.name}
+                                className="h-full w-full object-cover"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                              />
+                            ) : (
+                              <Building2 className="h-6 w-6" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <h3 className="font-bold text-sm truncate">{client.name}</h3>
+                              <TierBadge tier={client.tier} size="xs" />
                             </div>
-                            <div className="space-y-2">
-                              <label className="text-xs font-medium text-muted-foreground">Tier</label>
-                              <Select onValueChange={(val) => {
-                                bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { tier: val === "none" ? null : val } });
-                              }}>
-                                <SelectTrigger className="h-9">
-                                  <SelectValue placeholder="Select tier..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">No Tier</SelectItem>
-                                  <SelectItem value="tier_1">Tier 1</SelectItem>
-                                  <SelectItem value="tier_2">Tier 2</SelectItem>
-                                  <SelectItem value="tier_3">Tier 3</SelectItem>
-                                </SelectContent>
-                              </Select>
+                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                              {client.industry && <span className="truncate">{client.industry}</span>}
+                              {client.industry && <span>•</span>}
+                              <span className="font-medium text-primary">
+                                {client.annualRevenue && parseFloat(client.annualRevenue) > 0
+                                  ? `$${(parseFloat(client.annualRevenue) / 1000).toFixed(0)}k/yr`
+                                  : "No revenue"}
+                              </span>
                             </div>
                           </div>
-                        </PopoverContent>
-                      </Popover>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
 
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        className="h-9"
-                        onClick={() => {
-                          setDeleteConfirm({
-                            label: `Delete ${selectedCompanies.length} ${selectedCompanies.length === 1 ? "company" : "companies"}`,
-                            description: `This will permanently delete ${selectedCompanies.length} ${selectedCompanies.length === 1 ? "company" : "companies"} and cannot be undone.`,
-                            onConfirm: () => bulkDeleteClientsMutation.mutate(selectedCompanies),
-                          });
-                        }}
-                        disabled={bulkDeleteClientsMutation.isPending}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </Button>
-                    </div>
+              {selectedCompanies.length > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background border shadow-xl rounded-full px-6 py-3 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4">
+                  <div className="flex items-center gap-2 border-r pr-6">
+                    <span className="text-sm font-semibold">{selectedCompanies.length} selected</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-full"
+                      onClick={() => setSelectedCompanies([])}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
-                )}
-              </div>
-            ) : (
+                  
+                  <div className="flex items-center gap-2">
+                    <Popover open={isBulkCompanyEditOpen} onOpenChange={setIsBulkCompanyEditOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-9">
+                          <Settings className="h-4 w-4 mr-2" />
+                          Bulk Edit
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 p-4" align="center">
+                        <div className="space-y-4">
+                          <h4 className="font-medium">Bulk Edit Companies</h4>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Industry</label>
+                            <Select onValueChange={(val) => {
+                              bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { industry: val } });
+                            }}>
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Select industry..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {industries.map(ind => (
+                                  <SelectItem key={ind} value={ind!}>{ind}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">Tier</label>
+                            <Select onValueChange={(val) => {
+                              bulkUpdateClientsMutation.mutate({ ids: selectedCompanies, data: { tier: val === "none" ? null : val } });
+                            }}>
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Select tier..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No Tier</SelectItem>
+                                <SelectItem value="tier_1">Tier 1</SelectItem>
+                                <SelectItem value="tier_2">Tier 2</SelectItem>
+                                <SelectItem value="tier_3">Tier 3</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="h-9"
+                      onClick={() => {
+                        setDeleteConfirm({
+                          label: `Delete ${selectedCompanies.length} ${selectedCompanies.length === 1 ? "company" : "companies"}`,
+                          description: `This will permanently delete ${selectedCompanies.length} ${selectedCompanies.length === 1 ? "company" : "companies"} and cannot be undone.`,
+                          onConfirm: () => bulkDeleteClientsMutation.mutate(selectedCompanies),
+                        });
+                      }}
+                      disabled={bulkDeleteClientsMutation.isPending}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
                 <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed border-border/50">
                   <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
                     <Building2 className="h-6 w-6 text-muted-foreground" />
@@ -1719,7 +1820,7 @@ export default function Customers() {
                 </div>
               ) : filteredContacts.length > 0 ? (
                 <div className="relative">
-                  <div className="rounded-md border border-border/50 overflow-x-auto">
+                  <div className="hidden md:block rounded-md border border-border/50 overflow-x-auto">
                     <Table className="min-w-[700px]">
                     <TableHeader className="bg-muted/50">
                       <TableRow>
@@ -2027,47 +2128,88 @@ export default function Customers() {
                   </Table>
                 </div>
 
-                {selectedContacts.length > 0 && (
-                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background border shadow-xl rounded-full px-6 py-3 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="flex items-center gap-2 border-r pr-6">
-                      <span className="text-sm font-semibold">{selectedContacts.length} selected</span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 rounded-full"
-                        onClick={() => setSelectedContacts([])}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" className="h-9" onClick={() => setIsBulkContactEditOpen(true)}>
-                        <Settings className="h-4 w-4 mr-2" />
-                        Bulk Edit
-                      </Button>
+                {/* Mobile Contact Card Stack */}
+                <div className="grid grid-cols-1 gap-3 md:hidden">
+                  {filteredContacts.map((contact) => (
+                    <Card 
+                      key={contact.id}
+                      className="hover-elevate transition-shadow overflow-hidden border-border/50 cursor-pointer"
+                      onClick={() => setSelectedContact(contact)}
+                      data-testid={`card-contact-mobile-${contact.id}`}
+                    >
+                      <CardContent className="p-4 flex items-center gap-4">
+                        {contact.profilePictureUrl ? (
+                          <img
+                            src={contact.profilePictureUrl}
+                            alt={contact.name}
+                            className="h-10 w-10 rounded-full object-cover shrink-0 border"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0 border">
+                            {contact.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-0.5">
+                            <h3 className="font-bold text-sm truncate">{contact.name}</h3>
+                            <TierBadge tier={contact.tier} size="xs" />
+                          </div>
+                          <p className="text-[11px] text-muted-foreground truncate mb-1">
+                            {contact.title || "No title"}
+                          </p>
+                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-primary truncate">
+                            <Building2 className="h-3 w-3 shrink-0" />
+                            {getCompanyName(contact.clientId)}
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
 
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        className="h-9"
-                        onClick={() => {
-                          setDeleteConfirm({
-                            label: `Delete ${selectedContacts.length} ${selectedContacts.length === 1 ? "contact" : "contacts"}`,
-                            description: `This will permanently delete ${selectedContacts.length} ${selectedContacts.length === 1 ? "contact" : "contacts"} and cannot be undone.`,
-                            onConfirm: () => bulkDeleteContactsMutation.mutate(selectedContacts),
-                          });
-                        }}
-                        disabled={bulkDeleteContactsMutation.isPending}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </Button>
-                    </div>
+              {selectedContacts.length > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background border shadow-xl rounded-full px-6 py-3 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4">
+                  <div className="flex items-center gap-2 border-r pr-6">
+                    <span className="text-sm font-semibold">{selectedContacts.length} selected</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-full"
+                      onClick={() => setSelectedContacts([])}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
-                )}
-              </div>
-              ) : (
+                  
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" className="h-9" onClick={() => setIsBulkContactEditOpen(true)}>
+                      <Settings className="h-4 w-4 mr-2" />
+                      Bulk Edit
+                    </Button>
+
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="h-9"
+                      onClick={() => {
+                        setDeleteConfirm({
+                          label: `Delete ${selectedContacts.length} ${selectedContacts.length === 1 ? "contact" : "contacts"}`,
+                          description: `This will permanently delete ${selectedContacts.length} ${selectedContacts.length === 1 ? "contact" : "contacts"} and cannot be undone.`,
+                          onConfirm: () => bulkDeleteContactsMutation.mutate(selectedContacts),
+                        });
+                      }}
+                      disabled={bulkDeleteContactsMutation.isPending}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
                 <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed border-border/50">
                   <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
                     <Users className="h-6 w-6 text-muted-foreground" />
@@ -2131,7 +2273,27 @@ export default function Customers() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Email</FormLabel>
-                          <FormControl><Input placeholder="email@example.com" {...field} value={field.value || ""} data-testid="input-new-contact-email" /></FormControl>
+                          <FormControl>
+                            <Input 
+                              placeholder="email@example.com" 
+                              {...field} 
+                              value={field.value || ""} 
+                              onBlur={(e) => {
+                                field.onBlur();
+                                checkContactDuplicate(e.target.value);
+                              }}
+                              data-testid="input-new-contact-email" 
+                            />
+                          </FormControl>
+                          {duplicateContactWarning && (
+                            <p className="mt-1 text-[10px] text-yellow-600 font-medium flex items-center gap-1 leading-tight">
+                              <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                              A contact with this email already exists: {duplicateContactWarning.name} {duplicateContactWarning.clientName ? `at ${duplicateContactWarning.clientName}` : ""} — 
+                              <Link href={`/customers/${duplicateContactWarning.clientId}?contactId=${duplicateContactWarning.id}`} className="underline ml-0.5" onClick={() => setIsAddContactOpen(false)}>
+                                View them
+                              </Link>
+                            </p>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}

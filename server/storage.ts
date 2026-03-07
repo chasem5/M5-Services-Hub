@@ -324,6 +324,9 @@ export interface IStorage {
   deleteBulkClientContacts(ids: number[]): Promise<void>;
   bulkUpdateClientContacts(ids: number[], data: Partial<ClientContact>): Promise<void>;
   bulkUpdateClients(ids: number[], data: Partial<Client>): Promise<void>;
+
+  // Activity Summary
+  getLeadsActivitySummary(userId?: string): Promise<{ leadId: number; lastActivityAt: Date | null; stageChangedAt: Date | null }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1558,6 +1561,75 @@ export class DatabaseStorage implements IStorage {
         await db.update(clients).set({ ...clean as any, updatedAt: new Date() }).where(eq(clients.id, id));
       }
     }
+  }
+
+  async getLeadsActivitySummary(userId?: string): Promise<{ leadId: number; lastActivityAt: Date | null; stageChangedAt: Date | null }[]> {
+    const activityLogsSub = db
+      .select({
+        leadId: activityLogs.entityId,
+        maxDate: sql<Date>`max(${activityLogs.createdAt})`.as("max_date"),
+      })
+      .from(activityLogs)
+      .where(eq(activityLogs.entityType, "lead"))
+      .groupBy(activityLogs.entityId)
+      .as("als");
+
+    const leadNotesSub = db
+      .select({
+        leadId: leadNotes.leadId,
+        maxDate: sql<Date>`max(${leadNotes.createdAt})`.as("max_date"),
+      })
+      .from(leadNotes)
+      .groupBy(leadNotes.leadId)
+      .as("lns");
+
+    const stageUpdatedSub = db
+      .select({
+        leadId: activityLogs.entityId,
+        maxDate: sql<Date>`max(${activityLogs.createdAt})`.as("max_date"),
+      })
+      .from(activityLogs)
+      .where(and(eq(activityLogs.entityType, "lead"), eq(activityLogs.action, "stage_updated")))
+      .groupBy(activityLogs.entityId)
+      .as("sus");
+
+    let leadQuery = db.select({ id: leads.id }).from(leads);
+    if (userId) {
+      leadQuery = leadQuery.where(eq(leads.assignedTo, userId)) as any;
+    }
+    const leadList = await leadQuery;
+    const leadIds = leadList.map(l => l.id);
+    if (leadIds.length === 0) return [];
+
+    const results = await db
+      .select({
+        leadId: leads.id,
+        logActivity: activityLogsSub.maxDate,
+        noteActivity: leadNotesSub.maxDate,
+        stageChangedAt: stageUpdatedSub.maxDate,
+      })
+      .from(leads)
+      .leftJoin(activityLogsSub, eq(leads.id, activityLogsSub.leadId))
+      .leftJoin(leadNotesSub, eq(leads.id, leadNotesSub.leadId))
+      .leftJoin(stageUpdatedSub, eq(leads.id, stageUpdatedSub.leadId))
+      .where(sql`${leads.id} IN ${leadIds}`);
+
+    return results.map(r => {
+      const logDate = r.logActivity ? new Date(r.logActivity) : null;
+      const noteDate = r.noteActivity ? new Date(r.noteActivity) : null;
+      let lastActivityAt = null;
+      if (logDate && noteDate) {
+        lastActivityAt = logDate > noteDate ? logDate : noteDate;
+      } else {
+        lastActivityAt = logDate || noteDate;
+      }
+
+      return {
+        leadId: r.leadId,
+        lastActivityAt,
+        stageChangedAt: r.stageChangedAt ? new Date(r.stageChangedAt) : null,
+      };
+    });
   }
 }
 

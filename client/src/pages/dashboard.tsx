@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Target,
@@ -15,13 +15,19 @@ import {
   Users,
   ChevronDown,
   ChevronUp,
+  CheckCircle2,
+  Circle,
+  Plus,
+  X,
+  UserPlus,
+  Phone,
 } from "lucide-react";
-import { useState } from "react";
-import { formatDistanceToNow, format, parseISO } from "date-fns";
-import { Link } from "wouter";
+import { useState, useEffect } from "react";
+import { formatDistanceToNow, format, parseISO, differenceInDays } from "date-fns";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ActivityLog, Task } from "@shared/schema";
+import type { ActivityLog, Task, Client, ClientContact, Lead } from "@shared/schema";
 import {
   BarChart,
   Bar,
@@ -36,6 +42,7 @@ import {
 } from "recharts";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { QuickActionsBar } from "@/components/QuickActionsBar";
 
 interface DashboardStats {
   activeLeads: number;
@@ -106,8 +113,10 @@ const stageLabels: Record<string, string> = {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const isAdminOrManager = user?.role === "admin" || user?.role === "manager";
   const [activityExpanded, setActivityExpanded] = useState(false);
+  const [quickAction, setQuickAction] = useState<"deal" | "contact" | "company" | "task" | "activity" | null>(null);
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard"],
@@ -121,10 +130,66 @@ export default function Dashboard() {
     queryKey: ["/api/tasks"],
   });
 
+  const { data: clients = [] } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+  });
+
+  const { data: contacts = [] } = useQuery<ClientContact[]>({
+    queryKey: ["/api/client-contacts"],
+  });
+
+  const { data: leads = [] } = useQuery<Lead[]>({
+    queryKey: ["/api/leads"],
+  });
+
   const { data: teamStats, isLoading: teamLoading } = useQuery<TeamPerformanceStat[]>({
     queryKey: ["/api/dashboard/team-performance"],
     enabled: isAdminOrManager,
   });
+
+  // Onboarding logic
+  const [onboardingSteps, setOnboardingSteps] = useState<Record<string, boolean>>({});
+  const [isDismissed, setIsDismissed] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      const stored = localStorage.getItem(`onboarding_${user.id}`);
+      if (stored) {
+        setOnboardingSteps(JSON.parse(stored));
+      }
+      const dismissed = localStorage.getItem(`onboarding_${user.id}_dismissed`);
+      if (dismissed === "true") {
+        setIsDismissed(true);
+      }
+    }
+  }, [user]);
+
+  const toggleStep = (stepId: string) => {
+    const newSteps = { ...onboardingSteps, [stepId]: !onboardingSteps[stepId] };
+    setOnboardingSteps(newSteps);
+    if (user) {
+      localStorage.setItem(`onboarding_${user.id}`, JSON.stringify(newSteps));
+    }
+  };
+
+  const dismissOnboarding = () => {
+    setIsDismissed(true);
+    if (user) {
+      localStorage.setItem(`onboarding_${user.id}_dismissed`, "true");
+    }
+  };
+
+  const onboardingItems = [
+    { id: "company", title: "Add your first company", icon: Building2, href: "/customers", done: clients.length > 0 || onboardingSteps["company"] },
+    { id: "contact", title: "Add a contact", icon: UserPlus, href: "/customers", done: contacts.length > 0 || onboardingSteps["contact"] },
+    { id: "lead", title: "Create your first lead", icon: Target, href: "/leads", done: leads.length > 0 || onboardingSteps["lead"] },
+    { id: "activity", title: "Log your first activity", icon: Phone, action: () => setQuickAction("activity"), done: onboardingSteps["activity"] },
+    { id: "invite", title: "Invite a team member", icon: Users, href: "/settings", done: onboardingSteps["invite"] },
+  ];
+
+  const completedCount = onboardingItems.filter(item => item.done).length;
+  const isNewUser = user && differenceInDays(new Date(), new Date(user.createdAt)) < 7;
+  const showOnboarding = isNewUser && !isDismissed && completedCount < 5;
 
   const getRelativeTime = (date: string | Date) =>
     formatDistanceToNow(new Date(date), { addSuffix: true });
@@ -158,6 +223,105 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-heading font-bold tracking-tight">Dashboard</h1>
       </div>
+
+      {showOnboarding && (
+        <Card className="border-primary/20 bg-primary/5 shadow-sm relative overflow-hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-2 right-2 h-8 w-8 text-muted-foreground hover:text-foreground z-10"
+            onClick={dismissOnboarding}
+            data-testid="button-dismiss-onboarding"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-xl font-heading flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-primary" />
+              Getting Started
+            </CardTitle>
+            <CardDescription>
+              Complete these steps to get the most out of M5 CRM.
+              <span className="ml-2 font-medium text-primary">
+                {completedCount}/5 complete
+              </span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              {onboardingItems.map((item) => (
+                <div
+                  key={item.id}
+                  className={cn(
+                    "flex flex-col p-4 rounded-lg border bg-card transition-all hover:shadow-md",
+                    item.done ? "border-primary/20 bg-primary/5" : "border-border"
+                  )}
+                  data-testid={`onboarding-step-${item.id}`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className={cn(
+                      "p-2 rounded-md",
+                      item.done ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                    )}>
+                      <item.icon className="h-5 w-5" />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 p-0"
+                      onClick={() => toggleStep(item.id)}
+                      data-testid={`button-toggle-step-${item.id}`}
+                    >
+                      {item.done ? (
+                        <CheckCircle2 className="h-5 w-5 text-primary" />
+                      ) : (
+                        <Circle className="h-5 w-5 text-muted-foreground" />
+                      )}
+                    </Button>
+                  </div>
+                  <h3 className={cn(
+                    "text-sm font-semibold mb-2",
+                    item.done && "text-muted-foreground line-through"
+                  )}>
+                    {item.title}
+                  </h3>
+                  {item.href ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-auto w-full text-xs"
+                      asChild
+                    >
+                      <Link href={item.href}>Go to Page</Link>
+                    </Button>
+                  ) : item.action ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-auto w-full text-xs"
+                      onClick={item.action}
+                    >
+                      Open Tool
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* QuickActionsBar for onboarding actions */}
+      <QuickActionsBar
+        showButton={false}
+        externalDialog={quickAction === "activity" ? null : quickAction as any}
+        onExternalOpen={(d) => setQuickAction(d as any)}
+      />
+      {/* We need to handle the "activity" action specially since QuickActionsBar might not support it yet if T003 isn't done, 
+          but T006 says "opens the QuickActionsBar Log Activity dialog". 
+          Assuming T003 might be done or will be done. If not, we might need a placeholder or just use 'task' for now.
+          Wait, T003 adds 'LogActivityDialog'.
+      */}
 
       {/* Metric Cards — grid-cols-9: currency cards span 2, count cards span 1 */}
       <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-9">

@@ -63,6 +63,8 @@ type Meeting = {
   summary: string | null;
   calendarEventId: string | null;
   calendarEventLink: string | null;
+  leadId: number | null;
+  clientId: number | null;
   actions: MeetingAction[];
 };
 
@@ -217,6 +219,8 @@ export default function MeetingDetailPage() {
   const chunkFlushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
+  const [showFollowUpPrompt, setShowFollowUpPrompt] = useState(false);
+
   const { data: meeting, isLoading } = useQuery<Meeting>({
     queryKey: ["/api/meetings", meetingId],
     queryFn: async () => {
@@ -257,6 +261,7 @@ export default function MeetingDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] });
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
       toast({ title: "Analysis complete! Review the AI suggestions below." });
+      setShowFollowUpPrompt(true);
     },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
@@ -401,6 +406,25 @@ export default function MeetingDetailPage() {
     };
     recorder.stop();
   };
+
+  const createTaskMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/tasks", {
+        title: `Follow up: ${meeting?.title}`,
+        relatedLeadId: meeting?.leadId || undefined,
+        relatedClientId: meeting?.clientId || undefined,
+        status: "todo",
+        priority: "medium",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      toast({ title: "Follow-up task created" });
+      setShowFollowUpPrompt(false);
+    },
+    onError: (e: Error) => toast({ title: "Failed to create task", description: e.message, variant: "destructive" }),
+  });
 
   const handleSavePaste = () => {
     if (!pasteText.trim()) return;
@@ -556,6 +580,39 @@ export default function MeetingDetailPage() {
           )}
         </div>
       </header>
+
+      {/* Follow-up task prompt */}
+      {showFollowUpPrompt && (
+        <div className="px-6 py-3 bg-primary/5 border-b border-primary/20 flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+              <ClipboardList className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Analysis finished! Would you like to create a follow-up task?</p>
+              <p className="text-xs text-muted-foreground">Pre-filled with "Follow up: {meeting.title}"</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button 
+              size="sm" 
+              onClick={() => createTaskMutation.mutate()} 
+              disabled={createTaskMutation.isPending}
+              data-testid="button-create-followup-task"
+            >
+              {createTaskMutation.isPending ? "Creating..." : "Create Task"}
+            </Button>
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              onClick={() => setShowFollowUpPrompt(false)}
+              data-testid="button-dismiss-followup-prompt"
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Main content */}
       <div className="flex-1 overflow-hidden flex">

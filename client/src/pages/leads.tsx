@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { formatDistanceToNow } from "date-fns";
+import { useState, useEffect, useMemo } from "react";
+import { formatDistanceToNow, differenceInDays } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   DndContext, 
@@ -377,7 +377,8 @@ function KanbanColumn({
   tasks,
   loadingAiSummary,
   aiSummaries,
-  fetchAiSummary
+  fetchAiSummary,
+  activitySummary,
 }: { 
   stage: PipelineStage;
   sc: any;
@@ -397,6 +398,7 @@ function KanbanColumn({
   loadingAiSummary: Record<number, boolean>;
   aiSummaries: Record<number, string>;
   fetchAiSummary: (id: number) => void;
+  activitySummary: any[] | undefined;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.slug,
@@ -405,7 +407,8 @@ function KanbanColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col w-80 min-w-80 rounded-lg border shadow-sm transition-colors ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
+      id={`column-${stage.slug}`}
+      className={`flex flex-col w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
     >
       <div className={`p-3 border-b ${sc.header}`}>
         <div className="flex items-center justify-between mb-2">
@@ -452,6 +455,7 @@ function KanbanColumn({
                 loadingAiSummary={loadingAiSummary}
                 aiSummaries={aiSummaries}
                 fetchAiSummary={fetchAiSummary}
+                activitySummary={activitySummary}
               />
             ))}
         </div>
@@ -474,6 +478,7 @@ function LeadCard({
   loadingAiSummary, 
   aiSummaries, 
   fetchAiSummary,
+  activitySummary,
   isOverlay = false
 }: { 
   lead: Lead; 
@@ -489,6 +494,7 @@ function LeadCard({
   loadingAiSummary: Record<number, boolean>;
   aiSummaries: Record<number, string>;
   fetchAiSummary: (id: number) => void;
+  activitySummary: any[] | undefined;
   isOverlay?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -504,6 +510,26 @@ function LeadCard({
   const contactName = getContactName(lead.contactId);
   const serviceLabel = getServiceTypeLabel(lead.serviceType);
   const serviceColor = getServiceTypeColor(lead.serviceType);
+
+  const leadSummary = activitySummary?.find(s => s.leadId === lead.id);
+  const daysInStage = useMemo(() => {
+    const stageDate = leadSummary?.stageChangedAt ? new Date(leadSummary.stageChangedAt) : new Date(lead.createdAt);
+    return differenceInDays(new Date(), stageDate);
+  }, [leadSummary, lead.createdAt]);
+
+  const daysSinceActivity = useMemo(() => {
+    const activityDate = leadSummary?.lastActivityAt ? new Date(leadSummary.lastActivityAt) : null;
+    if (!activityDate) return null;
+    return differenceInDays(new Date(), activityDate);
+  }, [leadSummary]);
+
+  const stalenessColor = useMemo(() => {
+    if (daysSinceActivity === null) return "border-l-muted";
+    if (daysSinceActivity < 14) return "border-l-green-500";
+    if (daysSinceActivity < 30) return "border-l-yellow-500";
+    if (daysSinceActivity < 60) return "border-l-orange-500";
+    return "border-l-red-500";
+  }, [daysSinceActivity]);
 
   if (isDragging && !isOverlay) {
     return (
@@ -523,7 +549,7 @@ function LeadCard({
           style={style}
           {...attributes}
           {...listeners}
-          className={`hover-elevate cursor-grab active:cursor-grabbing border-border/60 shadow-sm transition-shadow hover:shadow-md ${isOverlay ? "cursor-grabbing shadow-xl ring-2 ring-primary" : ""}`}
+          className={`hover-elevate cursor-grab active:cursor-grabbing border-border/60 shadow-sm transition-shadow hover:shadow-md border-l-4 ${stalenessColor} ${isOverlay ? "cursor-grabbing shadow-xl ring-2 ring-primary" : ""}`}
           onClick={(e) => {
             if (isOverlay) return;
             // Prevent opening detail if dragging
@@ -633,6 +659,19 @@ function LeadCard({
               </div>
             )}
 
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground border-t pt-1.5 mt-0.5">
+              <div className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                <span>{daysInStage} days in stage</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Sparkles className="h-3 w-3" />
+                <span>
+                  Last: {daysSinceActivity === null ? "None" : (daysSinceActivity === 0 ? "Today" : (daysSinceActivity === 1 ? "Yesterday" : `${daysSinceActivity}d ago`))}
+                </span>
+              </div>
+            </div>
+
             {lead.contractType === "recurring" && (
               <div className="flex items-center gap-1.5 mt-1">
                 <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-bold bg-blue-100 text-blue-700 border-blue-200 uppercase tracking-tighter">
@@ -728,6 +767,10 @@ export default function Leads() {
 
   const { data: leads, isLoading: isLoadingLeads } = useQuery<Lead[]>({
     queryKey: ["/api/leads"],
+  });
+
+  const { data: activitySummary } = useQuery<{ leadId: number; lastActivityAt: string | null; stageChangedAt: string | null }[]>({
+    queryKey: ["/api/leads/activity-summary"],
   });
 
   const { data: clients } = useQuery<Client[]>({
@@ -1180,13 +1223,25 @@ export default function Leads() {
   const detailScore = selectedLead?.confidenceScore ?? 50;
   const detailLeadTasks = selectedLead ? getLeadTasks(selectedLead.id) : [];
 
+  const scrollToColumn = (stageSlug: string) => {
+    const el = document.getElementById(`column-${stageSlug}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full bg-muted">
+    <div className="flex flex-col h-full bg-muted" data-testid="page-leads">
       <header className="flex flex-col gap-3 p-4 md:p-6 bg-background border-b shadow-sm">
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-heading font-bold">Deal Management</h1>
-            <p className="text-muted-foreground">Manage your sales pipeline and track opportunities</p>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Target className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-heading font-bold">Deal Management</h1>
+              <p className="text-muted-foreground">Manage your sales pipeline and track opportunities</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <DropdownMenu>
@@ -1229,6 +1284,29 @@ export default function Leads() {
               <Plus className="h-4 w-4 mr-2" />
               Add Deal
             </Button>
+          </div>
+        </div>
+
+        {/* Mobile Stage Selector */}
+        <div className="md:hidden px-0 pb-1 overflow-x-auto no-scrollbar">
+          <div className="flex gap-2 min-w-max pb-1">
+            {stages.map((stage) => {
+              const count = leads?.filter(l => l.stage === stage.slug).length ?? 0;
+              return (
+                <Button
+                  key={stage.slug}
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full h-8 px-3 text-[10px] font-bold uppercase tracking-wider border-muted-foreground/20 whitespace-nowrap bg-background"
+                  onClick={() => scrollToColumn(stage.slug)}
+                >
+                  {stage.label}
+                  <Badge variant="secondary" className="ml-1.5 h-4 px-1 min-w-[1rem] text-[9px]">
+                    {count}
+                  </Badge>
+                </Button>
+              );
+            })}
           </div>
         </div>
 
@@ -1343,7 +1421,7 @@ export default function Leads() {
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
-            <div className="flex h-full overflow-x-auto p-4 md:p-6 gap-6">
+            <div className="flex h-full overflow-x-auto p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth">
               {(activeFilters?.stages?.length
                 ? stages.filter(s => activeFilters!.stages!.includes(s.slug))
                 : stages
@@ -1374,6 +1452,7 @@ export default function Leads() {
                     loadingAiSummary={loadingAiSummary}
                     aiSummaries={aiSummaries}
                     fetchAiSummary={fetchAiSummary}
+                    activitySummary={activitySummary}
                   />
                 );
               })}
@@ -1395,6 +1474,7 @@ export default function Leads() {
                     loadingAiSummary={loadingAiSummary}
                     aiSummaries={aiSummaries}
                     fetchAiSummary={fetchAiSummary}
+                    activitySummary={activitySummary}
                     isOverlay
                   />
                 </div>

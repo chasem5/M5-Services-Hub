@@ -27,8 +27,11 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { format, isToday, isTomorrow } from "date-fns";
-import { Mic, Plus, Trash2, ChevronRight, CheckCircle2, Clock, AlertCircle, Radio, CalendarDays, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { Mic, Plus, Trash2, ChevronRight, CheckCircle2, Clock, AlertCircle, Radio, CalendarDays, ExternalLink, ChevronDown, ChevronUp, Target, Building2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { Label } from "@/components/ui/label";
+import type { Lead, Client } from "@shared/schema";
 
 interface CalendarEvent {
   id: string;
@@ -89,6 +92,8 @@ export default function MeetingsPage() {
   const [, navigate] = useLocation();
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [selectedLeadId, setSelectedLeadId] = useState<string>("");
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [deleteTarget, setDeleteTarget] = useState<MeetingWithCounts | null>(null);
   const [eventsExpanded, setEventsExpanded] = useState(true);
 
@@ -102,15 +107,25 @@ export default function MeetingsPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: leads = [] } = useQuery<Lead[]>({
+    queryKey: ["/api/leads"],
+  });
+
+  const { data: clients = [] } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+  });
+
   const createMutation = useMutation({
-    mutationFn: async (title: string) => {
-      const res = await apiRequest("POST", "/api/meetings", { title });
+    mutationFn: async (data: { title: string; leadId?: number; clientId?: number }) => {
+      const res = await apiRequest("POST", "/api/meetings", data);
       return res.json();
     },
     onSuccess: (meeting) => {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
       setIsNewOpen(false);
       setNewTitle("");
+      setSelectedLeadId("");
+      setSelectedClientId("");
       navigate(`/meetings/${meeting.id}`);
     },
     onError: () => toast({ title: "Failed to create meeting", variant: "destructive" }),
@@ -129,7 +144,13 @@ export default function MeetingsPage() {
   });
 
   const handleCreate = () => {
-    if (newTitle.trim()) createMutation.mutate(newTitle.trim());
+    if (newTitle.trim()) {
+      createMutation.mutate({
+        title: newTitle.trim(),
+        leadId: selectedLeadId ? parseInt(selectedLeadId) : undefined,
+        clientId: selectedClientId ? parseInt(selectedClientId) : undefined,
+      });
+    }
   };
 
   return (
@@ -313,14 +334,55 @@ export default function MeetingsPage() {
             <DialogTitle>Start New Meeting</DialogTitle>
             <DialogDescription>Give your meeting a title so you can find it later.</DialogDescription>
           </DialogHeader>
-          <Input
-            autoFocus
-            placeholder="e.g. Q2 Review with Acme Corp"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
-            data-testid="input-meeting-title"
-          />
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="title">Meeting Title</Label>
+              <Input
+                id="title"
+                autoFocus
+                placeholder="e.g. Q2 Review with Acme Corp"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+                data-testid="input-meeting-title"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Related Deal (Optional)</Label>
+              <SearchableSelect
+                options={leads.map(l => ({
+                  value: l.id.toString(),
+                  label: l.title,
+                  sublabel: clients.find(c => c.id === l.clientId)?.name
+                }))}
+                value={selectedLeadId}
+                onChange={(val) => {
+                  setSelectedLeadId(val);
+                  const lead = leads.find(l => l.id.toString() === val);
+                  if (lead?.clientId) {
+                    setSelectedClientId(lead.clientId.toString());
+                  }
+                }}
+                placeholder="Select a deal..."
+                data-testid="select-related-deal"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Related Company (Optional)</Label>
+              <SearchableSelect
+                options={clients.map(c => ({
+                  value: c.id.toString(),
+                  label: c.name
+                }))}
+                value={selectedClientId}
+                onChange={setSelectedClientId}
+                placeholder="Select a company..."
+                data-testid="select-related-client"
+              />
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsNewOpen(false)}>Cancel</Button>
             <Button
