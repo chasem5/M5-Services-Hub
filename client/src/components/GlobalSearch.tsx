@@ -209,19 +209,16 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 
 export function GlobalSearchTrigger({ onClick }: { onClick: () => void }) {
   return (
-    <Button
-      variant="outline"
+    <button
       onClick={onClick}
-      className="hidden md:flex items-center gap-2 h-9 px-3 text-sm text-muted-foreground font-normal w-56 justify-between border-border/60 hover:border-border hover:bg-muted/50"
       data-testid="button-global-search"
+      className="hidden md:flex items-center gap-2.5 h-9 pl-3.5 pr-2.5 rounded-full bg-muted/70 hover:bg-muted border border-border/40 hover:border-border/70 transition-all duration-150 text-sm text-muted-foreground w-64 cursor-text shadow-sm"
     >
-      <div className="flex items-center gap-2">
-        <Search className="h-3.5 w-3.5" />
-        <span>Search...</span>
-      </div>
-      <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+      <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+      <span className="flex-1 text-left">Search...</span>
+      <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded-md border border-border/60 bg-background/80 px-1.5 font-mono text-[10px] font-medium text-muted-foreground/70">
         <span className="text-xs">⌘</span>K
       </kbd>
-    </Button>
+    </button>
   );
 }
