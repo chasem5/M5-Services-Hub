@@ -130,7 +130,7 @@ export function AppSidebar() {
                     >
                       <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
                         <item.icon className={isActive ? "text-primary" : ""} />
-                        <span>{item.title}</span>
+                        <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -148,7 +148,7 @@ export function AppSidebar() {
                     >
                       <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
                         <item.icon className={isActive ? "text-primary" : ""} />
-                        <span>{item.title}</span>
+                        <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -164,7 +164,7 @@ export function AppSidebar() {
                   >
                     <Link href="/admin" data-testid="link-admin">
                       <ShieldCheck className={location === "/admin" ? "text-primary" : ""} />
-                      <span>Team Admin</span>
+                      <span className="group-data-[collapsible=icon]:hidden">Team Admin</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

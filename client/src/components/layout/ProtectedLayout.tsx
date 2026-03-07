@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Megaphone, RefreshCw } from "lucide-react";
@@ -175,7 +175,6 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <header className="flex items-center justify-between px-4 h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
             <div className="flex items-center gap-3">
-              <SidebarTrigger data-testid="button-sidebar-toggle" className="md:hidden" />
               <div className="h-6 w-px bg-border hidden" />
               <GlobalSearchTrigger onClick={() => setSearchOpen(true)} />
             </div>
