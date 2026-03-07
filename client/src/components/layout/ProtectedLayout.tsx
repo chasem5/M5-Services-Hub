@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Megaphone, RefreshCw, Menu } from "lucide-react";
 
 import { RemindersDropdown } from "@/components/RemindersDropdown";
-import { GlobalSearch, GlobalSearchTrigger } from "@/components/GlobalSearch";
+import { GlobalSearch, GlobalSearchTrigger, MobileSearchButton } from "@/components/GlobalSearch";
 import { QuickActionsBar } from "@/components/QuickActionsBar";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
@@ -198,6 +198,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
               <GlobalSearchTrigger onClick={() => setSearchOpen(true)} />
             </div>
             <div className="ml-auto flex items-center gap-2">
+              <MobileSearchButton onClick={() => setSearchOpen(true)} />
               <span className="hidden sm:block text-xs text-muted-foreground/50 mr-1 tabular-nums select-none">
                 Updated {getRelativeTime(lastRefreshed)}
               </span>

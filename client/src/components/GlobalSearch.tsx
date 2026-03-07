@@ -222,3 +222,16 @@ export function GlobalSearchTrigger({ onClick }: { onClick: () => void }) {
     </button>
   );
 }
+
+export function MobileSearchButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid="button-mobile-search"
+      className="flex md:hidden items-center justify-center h-9 w-9 rounded-full hover:bg-muted transition-colors text-muted-foreground"
+      aria-label="Search"
+    >
+      <Search className="h-5 w-5" />
+    </button>
+  );
+}
