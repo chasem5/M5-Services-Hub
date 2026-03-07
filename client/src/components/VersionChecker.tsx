@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const POLL_INTERVAL_MS = 3 * 60 * 1000;
+const POLL_INTERVAL_MS = 60 * 1000;
 
 export function VersionChecker() {
   const initialVersion = useRef<string | null>(null);
@@ -12,7 +12,7 @@ export function VersionChecker() {
   useEffect(() => {
     async function fetchVersion(): Promise<string | null> {
       try {
-        const res = await fetch("/api/version", { credentials: "include" });
+        const res = await fetch("/api/version", { credentials: "include", cache: "no-store" });
         if (!res.ok) return null;
         const data = await res.json();
         return data.version ?? null;

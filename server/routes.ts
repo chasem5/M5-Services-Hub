@@ -1,6 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { randomUUID } from "crypto";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { storage } from "./storage";
 import { isAuthenticated, requireRole } from "./replit_integrations/auth/replitAuth";
 import { 
@@ -111,8 +114,29 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Version endpoint — no auth, used for client staleness checks
+  // Returns the hashed JS bundle filename so the version changes on every build
   app.get("/api/version", (_req, res) => {
+    try {
+      const currentDir = path.dirname(fileURLToPath(import.meta.url));
+      const candidates = [
+        path.join(currentDir, "public", "assets"),
+        path.join(currentDir, "..", "dist", "public", "assets"),
+        path.join(process.cwd(), "dist", "public", "assets"),
+      ];
+      const assetsDir = candidates.find((p) => fs.existsSync(p)) ?? "";
+      if (assetsDir) {
+        const files = fs.readdirSync(assetsDir);
+        const jsBundle = files.find((f) => f.startsWith("index-") && f.endsWith(".js"));
+        if (jsBundle) {
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+          return res.json({ version: jsBundle });
+        }
+      }
+    } catch {
+      // fall through
+    }
     const version = process.env.DEPLOY_VERSION || process.env.npm_package_version || "dev";
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.json({ version });
   });
 
