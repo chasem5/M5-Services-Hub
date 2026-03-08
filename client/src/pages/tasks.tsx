@@ -453,7 +453,7 @@ function ColumnHeader({
 
 export default function TasksPage() {
   const { toast } = useToast();
-  const [view, setView] = useState<"board" | "list">("board");
+  const [view, setView] = useState<"board" | "list">(() => window.innerWidth < 768 ? "list" : "board");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -770,12 +770,12 @@ export default function TasksPage() {
           <h1 className="text-2xl font-heading font-bold">Tasks</h1>
           <p className="text-sm text-muted-foreground">{tasks.length} task{tasks.length !== 1 ? "s" : ""} total</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search tasks…"
-              className="pl-9 w-56 h-9"
+              className="pl-9 w-44 sm:w-56 h-9"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               data-testid="input-task-search"

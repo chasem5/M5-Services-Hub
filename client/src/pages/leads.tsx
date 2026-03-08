@@ -713,7 +713,7 @@ function LeadCard({
 }
 
 export default function Leads() {
-  const [view, setView] = useState<"kanban" | "list">("kanban");
+  const [view, setView] = useState<"kanban" | "list">(() => window.innerWidth < 768 ? "list" : "kanban");
   const [isAddDealOpen, setIsAddDealOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [localScore, setLocalScore] = useState(50);
