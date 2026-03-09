@@ -22,6 +22,7 @@ import {
   UserPlus,
   Phone,
   Building2,
+  Filter,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { formatDistanceToNow, format, parseISO, differenceInDays } from "date-fns";
@@ -44,6 +45,9 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { QuickActionsBar } from "@/components/QuickActionsBar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { User } from "@shared/models/auth";
 
 interface DashboardStats {
   activeLeads: number;
@@ -118,9 +122,30 @@ export default function Dashboard() {
   const isAdminOrManager = user?.role === "admin" || user?.role === "manager";
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [quickAction, setQuickAction] = useState<"deal" | "contact" | "company" | "task" | "activity" | null>(null);
+  const [activeFilter, setActiveFilter] = useState<string>(user?.dashboardFilter ?? "all");
+
+  const { data: allUsers = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+    enabled: isAdminOrManager,
+  });
+
+  const saveFilterMutation = useMutation({
+    mutationFn: (filter: string) =>
+      apiRequest("PATCH", "/api/users/me", { dashboardFilter: filter }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard", activeFilter] });
+    },
+  });
+
+  const handleFilterChange = (val: string) => {
+    setActiveFilter(val);
+    saveFilterMutation.mutate(val);
+    queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+  };
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
-    queryKey: ["/api/dashboard"],
+    queryKey: ["/api/dashboard", activeFilter],
+    queryFn: () => fetch(`/api/dashboard?filter=${encodeURIComponent(activeFilter)}`, { credentials: "include" }).then(r => r.json()),
   });
 
   const { data: activities, isLoading: activitiesLoading } = useQuery<ActivityLog[]>({
@@ -220,8 +245,25 @@ export default function Dashboard() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-3xl font-heading font-bold tracking-tight">Dashboard</h1>
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <Select value={activeFilter} onValueChange={handleFilterChange}>
+            <SelectTrigger className="w-44 h-9 text-sm" data-testid="select-dashboard-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Team</SelectItem>
+              <SelectItem value="mine">My Data</SelectItem>
+              {isAdminOrManager && allUsers.filter(u => u.id !== user?.id).map(u => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {showOnboarding && (

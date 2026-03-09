@@ -11,8 +11,8 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 
 ## Features
 
-- **Dashboard** — Key metrics (active leads, pipeline value, open tasks, monthly revenue), activity feed, upcoming tasks
-- **Lead/Pipeline Management** — Kanban board by stage (New Lead → Won/Lost), list view, drag-free stage transitions, lead detail sheet with activity timeline
+- **Dashboard** — Key metrics (active leads, pipeline value, open tasks, monthly revenue), activity feed, upcoming tasks; filter by All Team / My Data / specific team member (persisted per user); pipeline value includes tier-based leads using DB-configured estimates
+- **Lead/Pipeline Management** — Kanban board by stage (New Lead → Won/Lost), list view, drag-free stage transitions, lead detail sheet with activity timeline; Kanban cards auto-sorted by estimated value (high → low) within each column
 - **Client Database** — Company profiles, contacts, tabbed detail view (Overview, Contacts, Leads, Estimates, Org Chart, Activity); contacts support `reportsTo` for hierarchy; contacts have custom stages (with color coding, inline picker, and manage stages dialog)
 - **Task Management** — Priority + status filtering, due date tracking, assignments, detail sheet editing
 - **Reminders** — Bell notification dropdown in header, create/dismiss reminders linked to leads/clients/tasks
@@ -43,7 +43,10 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 
 ## Database Schema
 
-Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`, `role_configs`, `role_permissions`, `invites`, `building_portfolios`, `portfolio_buildings`, `portfolio_contacts`
+Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`, `role_configs`, `role_permissions`, `invites`, `building_portfolios`, `portfolio_buildings`, `portfolio_contacts`, `value_tier_settings`
+
+- `value_tier_settings` — stores estimated dollar values for deal tiers (`$`, `$$`, `$$$`, `$$$$`); seeded with defaults ($25k, $75k, $200k, $500k); admin-configurable via Admin → Configuration tab; used in pipeline value calculations and Kanban card sorting
+- `users.dashboard_filter` — persists the user's selected dashboard scope (`all`, `mine`, or a specific userId)
 
 - `leads.building_id` → FK to `contact_buildings` (optional, links a lead to a specific portfolio building)
 - `estimates.building_id` → FK to `contact_buildings` (optional, links an estimate to a specific portfolio building)

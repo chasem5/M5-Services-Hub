@@ -228,11 +228,14 @@ function getServiceTypeColor(value: string | null | undefined) {
 }
 
 const TIER_OPTIONS = ["$", "$$", "$$$", "$$$$"] as const;
-const TIER_VALUES: Record<string, number> = { "$": 25000, "$$": 75000, "$$$": 200000, "$$$$": 500000 };
+const DEFAULT_TIER_VALUES: Record<string, number> = { "$": 25000, "$$": 75000, "$$$": 200000, "$$$$": 500000 };
 
-function getLeadNumericValue(lead: { value: string | number; valueType?: string | null; valueTier?: string | null }): number {
+function getLeadNumericValue(
+  lead: { value: string | number; valueType?: string | null; valueTier?: string | null },
+  tierMap?: Record<string, number>
+): number {
   if (lead.valueType === "potential" && lead.valueTier) {
-    return TIER_VALUES[lead.valueTier] ?? 0;
+    return (tierMap ?? DEFAULT_TIER_VALUES)[lead.valueTier] ?? 0;
   }
   return Number(lead.value);
 }
@@ -378,6 +381,7 @@ function KanbanColumn({
   rawVal, 
   cardCount, 
   filteredLeads,
+  tierMap,
   formatCurrency,
   getBuildingName,
   getClientName,
@@ -398,6 +402,7 @@ function KanbanColumn({
   rawVal: number;
   cardCount: number;
   filteredLeads: Lead[] | undefined;
+  tierMap: Record<string, number>;
   formatCurrency: (v: string | number) => string;
   getBuildingName: (id: number | null) => string | null;
   getClientName: (id: number | null) => string;
@@ -451,6 +456,7 @@ function KanbanColumn({
         <div className="p-3 space-y-3">
           {filteredLeads
             ?.filter((l) => l.stage === stage.slug)
+            .sort((a, b) => getLeadNumericValue(b, tierMap) - getLeadNumericValue(a, tierMap))
             .map((lead) => (
               <LeadCard 
                 key={lead.id} 
@@ -831,6 +837,14 @@ export default function Leads() {
     queryKey: ["/api/deal-tags"],
   });
 
+  const { data: tierSettings = [] } = useQuery<{ tier: string; estimatedValue: string }[]>({
+    queryKey: ["/api/value-tier-settings"],
+  });
+
+  const tierMap: Record<string, number> = tierSettings.length > 0
+    ? Object.fromEntries(tierSettings.map(t => [t.tier, Number(t.estimatedValue)]))
+    : DEFAULT_TIER_VALUES;
+
   const { data: pipelineViews = [] } = useQuery<PipelineView[]>({
     queryKey: ["/api/pipeline-views"],
   });
@@ -1074,13 +1088,13 @@ export default function Leads() {
     const stageLeads = filteredLeads?.filter((l) => l.stage === slug) ?? [];
     return stageLeads.reduce((sum, lead) => {
       const weight = (lead.confidenceScore ?? 50) / 100;
-      return sum + getLeadNumericValue(lead) * weight;
+      return sum + getLeadNumericValue(lead, tierMap) * weight;
     }, 0);
   };
 
   const getStageRawValue = (slug: string) => {
     const stageLeads = filteredLeads?.filter((l) => l.stage === slug) ?? [];
-    return stageLeads.reduce((sum, lead) => sum + getLeadNumericValue(lead), 0);
+    return stageLeads.reduce((sum, lead) => sum + getLeadNumericValue(lead, tierMap), 0);
   };
 
   const form = useForm<InsertLead>({
@@ -1484,6 +1498,7 @@ export default function Leads() {
                     rawVal={rawVal} 
                     cardCount={cardCount}
                     filteredLeads={filteredLeads}
+                    tierMap={tierMap}
                     formatCurrency={formatCurrency}
                     getBuildingName={getBuildingName}
                     getClientName={getClientName}
@@ -1979,7 +1994,7 @@ export default function Leads() {
                       ))}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {createValueTier ? `≈ ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(TIER_VALUES[createValueTier])} estimated` : "Select a potential tier"}
+                      {createValueTier ? `≈ ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(tierMap[createValueTier] ?? 0)} estimated` : "Select a potential tier"}
                     </p>
                   </div>
                 )}
@@ -2377,7 +2392,7 @@ export default function Leads() {
                                 ))}
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                {editValueTier ? `≈ ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(TIER_VALUES[editValueTier])} estimated` : "Select a potential tier"}
+                                {editValueTier ? `≈ ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(tierMap[editValueTier] ?? 0)} estimated` : "Select a potential tier"}
                               </p>
                             </div>
                           )}
@@ -2744,7 +2759,7 @@ export default function Leads() {
                           {isLeadPotential(selectedLead) ? (
                             <div className="flex items-center gap-2">
                               <span className="font-black text-xl text-primary tracking-tight">{selectedLead.valueTier}</span>
-                              <span className="text-xs text-muted-foreground">≈ {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(TIER_VALUES[selectedLead.valueTier!])}</span>
+                              <span className="text-xs text-muted-foreground">≈ {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(tierMap[selectedLead.valueTier!] ?? 0)}</span>
                             </div>
                           ) : (
                             <p className="font-mono text-sm font-bold text-primary">{formatCurrency(selectedLead.value)}</p>

@@ -43,6 +43,7 @@ import {
   Tag,
   Users2,
   Building2,
+  DollarSign,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -270,6 +271,31 @@ export default function AdminPage() {
     mutationFn: (id: number) => apiRequest("DELETE", `/api/industry-options/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/industry-options"] }),
     onError: () => toast({ title: "Failed to delete industry", variant: "destructive" }),
+  });
+
+  const { data: tierSettings = [], isLoading: tierLoading } = useQuery<{ id: number; tier: string; label: string | null; estimatedValue: string }[]>({
+    queryKey: ["/api/value-tier-settings"],
+  });
+
+  const [tierInputs, setTierInputs] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const edits: Record<string, string> = {};
+    for (const ts of tierSettings) {
+      if (!(ts.tier in tierInputs)) edits[ts.tier] = String(Number(ts.estimatedValue));
+    }
+    if (Object.keys(edits).length > 0) setTierInputs(prev => ({ ...edits, ...prev }));
+  }, [tierSettings]);
+
+  const updateTierMutation = useMutation({
+    mutationFn: ({ tier, estimatedValue }: { tier: string; estimatedValue: number }) =>
+      apiRequest("PATCH", `/api/value-tier-settings/${encodeURIComponent(tier)}`, { estimatedValue }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/value-tier-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      toast({ title: "Tier value saved" });
+    },
+    onError: () => toast({ title: "Failed to save tier value", variant: "destructive" }),
   });
 
   const pendingInvites = invites.filter(inv => !inv.usedAt && isAfter(new Date(inv.expiresAt), new Date()));
@@ -754,6 +780,66 @@ export default function AdminPage() {
             </CardHeader>
             <CardContent className="p-6">
               <DealTagsManager />
+            </CardContent>
+          </Card>
+
+          {/* Value Tier Settings */}
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <DollarSign className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-heading">Value Tier Settings</CardTitle>
+                  <CardDescription className="text-xs">Set the estimated dollar value for each deal tier. Used in pipeline calculations and sorting company-wide.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              {tierLoading ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(tierSettings.length > 0 ? tierSettings : [
+                    { id: 0, tier: "$", label: null, estimatedValue: "25000" },
+                    { id: 0, tier: "$$", label: null, estimatedValue: "75000" },
+                    { id: 0, tier: "$$$", label: null, estimatedValue: "200000" },
+                    { id: 0, tier: "$$$$", label: null, estimatedValue: "500000" },
+                  ]).map((ts) => (
+                    <div key={ts.tier} className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
+                      <div className="w-12 text-center">
+                        <span className="font-black text-lg text-primary">{ts.tier}</span>
+                      </div>
+                      <div className="flex-1">
+                        <Input
+                          data-testid={`input-tier-value-${ts.tier.replace(/\$/g, "s")}`}
+                          type="number"
+                          min={0}
+                          step={1000}
+                          value={tierInputs[ts.tier] ?? String(Number(ts.estimatedValue))}
+                          onChange={(e) => setTierInputs(prev => ({ ...prev, [ts.tier]: e.target.value }))}
+                          onBlur={() => {
+                            const val = Number(tierInputs[ts.tier]);
+                            if (!isNaN(val) && val >= 0) {
+                              updateTierMutation.mutate({ tier: ts.tier, estimatedValue: val });
+                            }
+                          }}
+                          className="h-9 font-mono"
+                        />
+                      </div>
+                      <div className="w-28 text-right">
+                        <span className="text-sm text-muted-foreground">
+                          {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(tierInputs[ts.tier] ?? ts.estimatedValue))}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground pt-1">Changes take effect immediately across the pipeline and dashboard.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -144,6 +144,9 @@ export async function registerRoutes(
   await storage.migrateLeadServiceTypes();
   await storage.migrateContactStages();
   await storage.migrateIndustryOptions();
+  await storage.migrateDashboardFilter();
+  // Seed default value tier settings
+  await storage.getValueTierSettings();
   // Seed default contact stages on startup
   await storage.seedDefaultContactStages();
   // Seed default pipeline stages on startup
@@ -315,8 +318,17 @@ export async function registerRoutes(
   };
 
   // Dashboard
-  app.get("/api/dashboard", isAuthenticated, async (_req, res) => {
-    const stats = await storage.getDashboardStats();
+  app.get("/api/dashboard", isAuthenticated, async (req, res) => {
+    const r = req as any;
+    const currentUserId = r.user?.claims?.sub;
+    const filter = String(req.query.filter || "all");
+    let filterUserId: string | undefined;
+    if (filter === "mine") {
+      filterUserId = currentUserId;
+    } else if (filter !== "all") {
+      filterUserId = filter;
+    }
+    const stats = await storage.getDashboardStats(filterUserId);
     res.json(stats);
   });
 
@@ -2533,9 +2545,22 @@ Respond with this JSON:
   app.patch("/api/users/me", isAuthenticated, async (req, res) => {
     const userId = (req as any).user?.claims?.sub;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
-    const { firstName, lastName, phone, profileImageUrl } = req.body;
-    const user = await storage.updateUserProfile(userId, { firstName, lastName, phone, profileImageUrl });
+    const { firstName, lastName, phone, profileImageUrl, dashboardFilter } = req.body;
+    const user = await storage.updateUserProfile(userId, { firstName, lastName, phone, profileImageUrl, dashboardFilter });
     res.json(user);
+  });
+
+  // Value Tier Settings
+  app.get("/api/value-tier-settings", isAuthenticated, async (_req, res) => {
+    const tiers = await storage.getValueTierSettings();
+    res.json(tiers);
+  });
+
+  app.patch("/api/value-tier-settings/:tier", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const tier = decodeURIComponent(req.params.tier);
+    const { estimatedValue } = z.object({ estimatedValue: z.coerce.number().min(0) }).parse(req.body);
+    const updated = await storage.updateValueTierSetting(tier, estimatedValue);
+    res.json(updated);
   });
 
   // Profile picture upload for users

@@ -366,6 +366,18 @@ export type Announcement = typeof announcements.$inferSelect;
 export type InsertAnnouncement = z.infer<typeof insertAnnouncementSchema>;
 export type AnnouncementRead = typeof announcementReads.$inferSelect;
 
+export const valueTierSettings = pgTable("value_tier_settings", {
+  id: serial("id").primaryKey(),
+  tier: varchar("tier", { length: 10 }).notNull().unique(),
+  label: varchar("label", { length: 50 }),
+  estimatedValue: decimal("estimated_value", { precision: 12, scale: 2 }).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertValueTierSettingSchema = createInsertSchema(valueTierSettings).omit({ id: true, updatedAt: true });
+export type ValueTierSetting = typeof valueTierSettings.$inferSelect;
+export type InsertValueTierSetting = z.infer<typeof insertValueTierSettingSchema>;
+
 export const roleConfigs = pgTable("role_configs", {
   roleKey: varchar("role_key").primaryKey(),
   displayName: varchar("display_name").notNull(),
