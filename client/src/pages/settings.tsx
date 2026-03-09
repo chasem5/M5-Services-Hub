@@ -317,7 +317,7 @@ export default function Settings() {
         <TabsList className="mb-6">
           <TabsTrigger value="personal" data-testid="tab-personal">Personal</TabsTrigger>
           {currentUser.role === "admin" && (
-            <TabsTrigger value="company" data-testid="tab-company">Company</TabsTrigger>
+            <TabsTrigger value="company" data-testid="tab-company">Admin</TabsTrigger>
           )}
         </TabsList>
 
