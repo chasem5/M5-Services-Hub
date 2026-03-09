@@ -2696,7 +2696,7 @@ Respond with this JSON:
       const ext = objectName.split(".").pop()?.toLowerCase() || "jpeg";
       const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
       res.setHeader("Content-Type", mimeMap[ext] || "image/jpeg");
-      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("Cache-Control", "no-cache");
       res.send(buf);
     } catch (e: any) {
       res.status(500).end();

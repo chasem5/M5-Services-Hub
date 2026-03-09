@@ -50,6 +50,7 @@ interface GmailStatus {
 export default function Settings() {
   const { user: currentUser, logout } = useAuth();
   const { toast } = useToast();
+  const [avatarCacheBust, setAvatarCacheBust] = useState(Date.now());
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -92,6 +93,7 @@ export default function Settings() {
     },
     onSuccess: (data) => {
       form.setValue("profileImageUrl", data.url);
+      setAvatarCacheBust(Date.now());
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({ title: "Avatar uploaded", description: "Your profile picture has been updated." });
@@ -269,7 +271,7 @@ export default function Settings() {
                 <div className="flex flex-col md:flex-row items-start gap-8">
                   <div className="flex flex-col items-center gap-4">
                     <Avatar className="h-24 w-24 border-4 border-background shadow-xl ring-2 ring-primary/20">
-                      <AvatarImage src={form.watch("profileImageUrl") || undefined} />
+                      <AvatarImage src={form.watch("profileImageUrl") ? `/api/users/${currentUser.id}/avatar-img?t=${avatarCacheBust}` : undefined} />
                       <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
                         {currentUser.firstName?.[0]}{currentUser.lastName?.[0]}
                       </AvatarFallback>
