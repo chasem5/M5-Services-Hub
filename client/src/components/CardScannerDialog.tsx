@@ -23,11 +23,12 @@ interface CardScannerDialogProps {
   open: boolean;
   onClose: () => void;
   clients: Client[];
+  defaultClientId?: string;
 }
 
 type Step = "capture" | "scanning" | "review" | "saving";
 
-export function CardScannerDialog({ open, onClose, clients }: CardScannerDialogProps) {
+export function CardScannerDialog({ open, onClose, clients, defaultClientId }: CardScannerDialogProps) {
   const { toast } = useToast();
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -39,14 +40,14 @@ export function CardScannerDialog({ open, onClose, clients }: CardScannerDialogP
   const [fields, setFields] = useState<ScannedFields>({
     name: null, title: null, email: null, phone: null, company: null, linkedinUrl: null, notes: null,
   });
-  const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [selectedClientId, setSelectedClientId] = useState<string>(defaultClientId ?? "");
 
   function reset() {
     setStep("capture");
     setImagePreview(null);
     setImageBase64(null);
     setFields({ name: null, title: null, email: null, phone: null, company: null, linkedinUrl: null, notes: null });
-    setSelectedClientId("");
+    setSelectedClientId(defaultClientId ?? "");
   }
 
   function handleClose() {

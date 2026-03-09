@@ -99,7 +99,7 @@ function parseCSV(text: string): Record<string, string>[] {
     return obj;
   });
 }
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { 
   Table, 
   TableBody, 
@@ -386,6 +386,7 @@ const SERVICE_NEEDS = [
 
 
 export default function Customers() {
+  const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
   const [buildingSearch, setBuildingSearch] = useState("");
   const [buildingViewMode, setBuildingViewMode] = useState<"list" | "map">("list");
@@ -578,12 +579,13 @@ export default function Customers() {
       const res = await apiRequest("POST", "/api/clients", data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (newClient: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       setIsCreateDialogOpen(false);
       form.reset();
       setIndustryCustomMode(false);
       toast({ title: "Success", description: "Customer created successfully" });
+      if (newClient?.id) setLocation(`/customers/${newClient.id}`);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });

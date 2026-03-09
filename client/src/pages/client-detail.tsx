@@ -69,6 +69,7 @@ import {
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AttachmentsPanel } from "@/components/AttachmentsPanel";
 import { SearchableSelect } from "@/components/SearchableSelect";
+import { CardScannerDialog } from "@/components/CardScannerDialog";
 import { AddressLink } from "@/components/AddressLink";
 import { TierBadge } from "@/components/TierBadge";
 import { 
@@ -943,6 +944,7 @@ export default function ClientDetail() {
   const [spendFormData, setSpendFormData] = useState({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "", contactId: "" });
   const [isSubmittingSpend, setIsSubmittingSpend] = useState(false);
   const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
+  const [isCardScannerOpen, setIsCardScannerOpen] = useState(false);
   const [isEditContactDialogOpen, setIsEditContactDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<ClientContact | null>(null);
   const [orgChartEditId, setOrgChartEditId] = useState<number | null>(null);
@@ -2045,6 +2047,15 @@ export default function ClientDetail() {
                   Add Office
                 </Button>
                 <Button
+                  variant="outline"
+                  className="h-10 px-4"
+                  onClick={() => setIsCardScannerOpen(true)}
+                  data-testid="button-scan-business-card"
+                >
+                  <Smartphone className="mr-2 h-4 w-4" />
+                  Scan Card
+                </Button>
+                <Button
                   className="h-10 px-4"
                   onClick={() => openAddContactForOffice(null)}
                   data-testid="button-add-contact"
@@ -2258,6 +2269,17 @@ export default function ClientDetail() {
                 })()}
               </div>
             )}
+
+            {/* Card Scanner Dialog */}
+            <CardScannerDialog
+              open={isCardScannerOpen}
+              onClose={() => {
+                setIsCardScannerOpen(false);
+                queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+              }}
+              clients={allClients}
+              defaultClientId={String(clientId)}
+            />
 
             {/* Add Contact Dialog */}
             <Dialog open={isContactDialogOpen} onOpenChange={(open) => { setIsContactDialogOpen(open); if (!open) setDefaultOfficeId(null); }}>
