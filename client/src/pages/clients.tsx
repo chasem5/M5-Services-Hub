@@ -384,6 +384,25 @@ const SERVICE_NEEDS = [
   { key: "property_assessment", label: "Property Assessment", Icon: ClipboardList, color: "text-primary" },
 ] as const;
 
+const INDUSTRY_OPTIONS = [
+  "Property Management",
+  "Facility Management",
+  "Commercial Real Estate",
+  "Healthcare",
+  "Retail",
+  "Education",
+  "Hospitality",
+  "Government / Public Sector",
+  "Technology",
+  "Manufacturing",
+  "Financial Services",
+  "Legal Services",
+  "Construction / Development",
+  "Non-Profit",
+  "Industrial / Logistics",
+  "Mixed-Use Development",
+];
+
 export default function Customers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [buildingSearch, setBuildingSearch] = useState("");
@@ -404,6 +423,7 @@ export default function Customers() {
   const [openStagePickerId, setOpenStagePickerId] = useState<number | null>(null);
   const [openOwnerPickerId, setOpenOwnerPickerId] = useState<number | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [industryCustomMode, setIndustryCustomMode] = useState(false);
   const [isAddContactOpen, setIsAddContactOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [vcfImportOpen, setVcfImportOpen] = useState(false);
@@ -578,6 +598,7 @@ export default function Customers() {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       setIsCreateDialogOpen(false);
       form.reset();
+      setIndustryCustomMode(false);
       toast({ title: "Success", description: "Customer created successfully" });
     },
     onError: (error: Error) => {
@@ -1093,9 +1114,33 @@ export default function Customers() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Industry</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g. Property Management" {...field} value={field.value || ""} data-testid="input-customer-industry" />
-                      </FormControl>
+                      <SearchableSelect
+                        options={[
+                          ...INDUSTRY_OPTIONS.map(v => ({ value: v, label: v })),
+                          { value: "__custom__", label: "Custom..." },
+                        ]}
+                        value={industryCustomMode ? "__custom__" : (field.value || "")}
+                        onChange={(val) => {
+                          if (val === "__custom__") {
+                            setIndustryCustomMode(true);
+                            field.onChange("");
+                          } else {
+                            setIndustryCustomMode(false);
+                            field.onChange(val);
+                          }
+                        }}
+                        placeholder="Select industry..."
+                        data-testid="select-customer-industry"
+                      />
+                      {industryCustomMode && (
+                        <Input
+                          className="mt-2"
+                          placeholder="Type custom industry..."
+                          value={field.value || ""}
+                          onChange={(e) => field.onChange(e.target.value)}
+                          data-testid="input-customer-industry"
+                        />
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

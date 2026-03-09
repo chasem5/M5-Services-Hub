@@ -2600,7 +2600,7 @@ Respond with this JSON:
 
     try {
       const entityDir = objectStorageService.getPrivateObjectDir();
-      const filename = clientId ? `client_${clientId}_auto.${chosenExt}` : `logo_${Date.now()}.${chosenExt}`;
+      const filename = clientId ? `client_${clientId}_auto_${Date.now()}.${chosenExt}` : `logo_${Date.now()}.${chosenExt}`;
       const fullPath = `${entityDir}/logos/${filename}`;
       const { bucketName, objectName } = parseStoragePath(fullPath);
       const { objectStorageClient: gcsClient } = await import("./replit_integrations/object_storage/objectStorage");

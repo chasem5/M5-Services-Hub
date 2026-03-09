@@ -147,6 +147,25 @@ import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow, differenceInDays } from "date-fns";
 import { formatPhoneNumber } from "@/lib/phone";
 
+const INDUSTRY_OPTIONS = [
+  "Property Management",
+  "Facility Management",
+  "Commercial Real Estate",
+  "Healthcare",
+  "Retail",
+  "Education",
+  "Hospitality",
+  "Government / Public Sector",
+  "Technology",
+  "Manufacturing",
+  "Financial Services",
+  "Legal Services",
+  "Construction / Development",
+  "Non-Profit",
+  "Industrial / Logistics",
+  "Mixed-Use Development",
+];
+
 function LinkedInSyncButton({
   contactId,
   linkedinUrl,
@@ -914,6 +933,7 @@ export default function ClientDetail() {
   const { toast } = useToast();
   const [isAddSpendOpen, setIsAddSpendOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [clientIndustryCustomMode, setClientIndustryCustomMode] = useState(false);
   const [highlightedContactId, setHighlightedContactId] = useState<number | null>(null);
   const urlInitializedRef = useRef(false);
 
@@ -963,6 +983,14 @@ export default function ClientDetail() {
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
     queryKey: ["/api/clients", clientId],
   });
+
+  useEffect(() => {
+    if (client?.industry && !INDUSTRY_OPTIONS.includes(client.industry)) {
+      setClientIndustryCustomMode(true);
+    } else {
+      setClientIndustryCustomMode(false);
+    }
+  }, [client?.id]);
 
   const { data: contacts, isLoading: isLoadingContacts } = useQuery<ClientContact[]>({
     queryKey: ["/api/clients", clientId, "contacts"],
@@ -1540,9 +1568,33 @@ export default function ClientDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Industry</FormLabel>
-                          <FormControl>
-                            <Input {...field} data-testid="input-edit-client-industry" />
-                          </FormControl>
+                          <SearchableSelect
+                            options={[
+                              ...INDUSTRY_OPTIONS.map(v => ({ value: v, label: v })),
+                              { value: "__custom__", label: "Custom..." },
+                            ]}
+                            value={clientIndustryCustomMode ? "__custom__" : (field.value || "")}
+                            onChange={(val) => {
+                              if (val === "__custom__") {
+                                setClientIndustryCustomMode(true);
+                                field.onChange("");
+                              } else {
+                                setClientIndustryCustomMode(false);
+                                field.onChange(val);
+                              }
+                            }}
+                            placeholder="Select industry..."
+                            data-testid="select-edit-client-industry"
+                          />
+                          {clientIndustryCustomMode && (
+                            <Input
+                              className="mt-2"
+                              placeholder="Type custom industry..."
+                              value={field.value || ""}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              data-testid="input-edit-client-industry"
+                            />
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}
