@@ -1117,7 +1117,10 @@ export default function Customers() {
                       <Select
                         value={industryCustomMode ? "__custom__" : (field.value || "")}
                         onValueChange={(val) => {
-                          if (val === "__custom__") {
+                          if (val === "__none__") {
+                            setIndustryCustomMode(false);
+                            field.onChange("");
+                          } else if (val === "__custom__") {
                             setIndustryCustomMode(true);
                             field.onChange("");
                           } else {
@@ -1130,6 +1133,7 @@ export default function Customers() {
                           <SelectValue placeholder="Select industry..." />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="__none__">— None —</SelectItem>
                           {INDUSTRY_OPTIONS.map(v => (
                             <SelectItem key={v} value={v}>{v}</SelectItem>
                           ))}

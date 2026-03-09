@@ -2608,6 +2608,9 @@ Respond with this JSON:
       await gcsFile.save(imageBuffer, { contentType: mimeType });
       try { await gcsFile.makePublic(); } catch (_) {}
       const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
+      if (clientId) {
+        await storage.updateClient(clientId, { logoUrl: publicUrl } as any);
+      }
       return res.json({ url: publicUrl });
     } catch (e: any) {
       return res.status(500).json({ message: e.message });

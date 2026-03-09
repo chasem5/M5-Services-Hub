@@ -1458,7 +1458,7 @@ export default function ClientDetail() {
                       <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center overflow-hidden border">
                         {clientForm.watch("logoUrl") ? (
                           <img
-                            src={clientForm.watch("logoUrl") || ""}
+                            src={clientForm.watch("logoUrl")?.startsWith("https://storage.googleapis.com/") ? `/api/clients/${clientId}/logo-img?v=${encodeURIComponent(clientForm.watch("logoUrl") || "")}` : clientForm.watch("logoUrl") || ""}
                             alt="Logo Preview"
                             className="h-full w-full object-contain"
                           />
@@ -1572,7 +1572,10 @@ export default function ClientDetail() {
                           <Select
                             value={clientIndustryCustomMode ? "__custom__" : (field.value || "")}
                             onValueChange={(val) => {
-                              if (val === "__custom__") {
+                              if (val === "__none__") {
+                                setClientIndustryCustomMode(false);
+                                field.onChange("");
+                              } else if (val === "__custom__") {
                                 setClientIndustryCustomMode(true);
                                 field.onChange("");
                               } else {
@@ -1585,6 +1588,7 @@ export default function ClientDetail() {
                               <SelectValue placeholder="Select industry..." />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value="__none__">— None —</SelectItem>
                               {INDUSTRY_OPTIONS.map(v => (
                                 <SelectItem key={v} value={v}>{v}</SelectItem>
                               ))}
