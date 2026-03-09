@@ -1246,6 +1246,7 @@ export default function ClientDetail() {
   // Forms
   const clientForm = useForm({
     resolver: zodResolver(insertClientSchema),
+    resetOptions: { keepDirtyValues: true },
     values: client ? {
       name: client.name,
       industry: client.industry || "",
@@ -1457,7 +1458,7 @@ export default function ClientDetail() {
                       <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center overflow-hidden border">
                         {clientForm.watch("logoUrl") ? (
                           <img
-                            src={clientForm.watch("logoUrl")?.startsWith("https://storage.googleapis.com/") ? `/api/clients/${clientId}/logo-img` : clientForm.watch("logoUrl")}
+                            src={clientForm.watch("logoUrl") || ""}
                             alt="Logo Preview"
                             className="h-full w-full object-contain"
                           />
@@ -1484,9 +1485,9 @@ export default function ClientDetail() {
                                 const res = await fetch(`/api/fetch-logo?domain=${encodeURIComponent(domain)}&clientId=${clientId}`, { credentials: "include" });
                                 if (!res.ok) throw new Error("Not found");
                                 const data = await res.json();
-                                clientForm.setValue("logoUrl", data.url);
+                                clientForm.setValue("logoUrl", data.url, { shouldDirty: true });
                                 setLogoImgError(false);
-                                toast({ title: "Logo found", description: "Logo has been saved automatically." });
+                                toast({ title: "Logo found", description: "Click Save Changes to keep it." });
                               } catch (e) {
                                 toast({ title: "Logo not found", description: "Could not find a logo. Try uploading one manually.", variant: "destructive" });
                               }
@@ -1568,13 +1569,9 @@ export default function ClientDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Industry</FormLabel>
-                          <SearchableSelect
-                            options={[
-                              ...INDUSTRY_OPTIONS.map(v => ({ value: v, label: v })),
-                              { value: "__custom__", label: "Custom..." },
-                            ]}
+                          <Select
                             value={clientIndustryCustomMode ? "__custom__" : (field.value || "")}
-                            onChange={(val) => {
+                            onValueChange={(val) => {
                               if (val === "__custom__") {
                                 setClientIndustryCustomMode(true);
                                 field.onChange("");
@@ -1583,9 +1580,17 @@ export default function ClientDetail() {
                                 field.onChange(val);
                               }
                             }}
-                            placeholder="Select industry..."
-                            data-testid="select-edit-client-industry"
-                          />
+                          >
+                            <SelectTrigger data-testid="select-edit-client-industry">
+                              <SelectValue placeholder="Select industry..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {INDUSTRY_OPTIONS.map(v => (
+                                <SelectItem key={v} value={v}>{v}</SelectItem>
+                              ))}
+                              <SelectItem value="__custom__">Custom...</SelectItem>
+                            </SelectContent>
+                          </Select>
                           {clientIndustryCustomMode && (
                             <Input
                               className="mt-2"

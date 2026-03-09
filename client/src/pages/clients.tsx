@@ -1114,13 +1114,9 @@ export default function Customers() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Industry</FormLabel>
-                      <SearchableSelect
-                        options={[
-                          ...INDUSTRY_OPTIONS.map(v => ({ value: v, label: v })),
-                          { value: "__custom__", label: "Custom..." },
-                        ]}
+                      <Select
                         value={industryCustomMode ? "__custom__" : (field.value || "")}
-                        onChange={(val) => {
+                        onValueChange={(val) => {
                           if (val === "__custom__") {
                             setIndustryCustomMode(true);
                             field.onChange("");
@@ -1129,9 +1125,17 @@ export default function Customers() {
                             field.onChange(val);
                           }
                         }}
-                        placeholder="Select industry..."
-                        data-testid="select-customer-industry"
-                      />
+                      >
+                        <SelectTrigger data-testid="select-customer-industry">
+                          <SelectValue placeholder="Select industry..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {INDUSTRY_OPTIONS.map(v => (
+                            <SelectItem key={v} value={v}>{v}</SelectItem>
+                          ))}
+                          <SelectItem value="__custom__">Custom...</SelectItem>
+                        </SelectContent>
+                      </Select>
                       {industryCustomMode && (
                         <Input
                           className="mt-2"
