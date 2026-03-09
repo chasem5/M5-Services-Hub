@@ -46,6 +46,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -76,6 +86,7 @@ export default function ServiceCatalog() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ServiceCatalogItem | null>(null);
+  const [deactivateId, setDeactivateId] = useState<number | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -447,11 +458,7 @@ export default function ServiceCatalog() {
                               </DropdownMenuItem>
                               <DropdownMenuItem 
                                 className="text-destructive focus:text-destructive cursor-pointer"
-                                onClick={() => {
-                                  if (confirm("Are you sure you want to deactivate this item?")) {
-                                    deleteItemMutation.mutate(item.id);
-                                  }
-                                }}
+                                onClick={() => setDeactivateId(item.id)}
                                 data-testid={`button-delete-item-${item.id}`}
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
@@ -491,6 +498,26 @@ export default function ServiceCatalog() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deactivateId !== null} onOpenChange={(open) => { if (!open) setDeactivateId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate Item</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to deactivate this catalog item? It will no longer appear when building estimates.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deactivateId !== null) { deleteItemMutation.mutate(deactivateId); setDeactivateId(null); } }}
+            >
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

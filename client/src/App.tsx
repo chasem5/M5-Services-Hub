@@ -21,7 +21,6 @@ import InvitePage from "@/pages/invite";
 import AdminPage from "@/pages/admin";
 import EmailSync from "@/pages/email-sync";
 import Announcements from "@/pages/announcements";
-import { VersionChecker } from "@/components/VersionChecker";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function ProtectedRouter() {
@@ -56,7 +55,6 @@ function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <VersionChecker />
           <Switch>
             <Route path="/invite/:token" component={InvitePage} />
             <Route component={ProtectedRouter} />

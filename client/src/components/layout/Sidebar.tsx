@@ -168,7 +168,9 @@ export function AppSidebar() {
           </Link>
           <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
             <p className="text-sm font-semibold truncate">
-              {user?.firstName} {user?.lastName}
+              {(user?.firstName || user?.lastName)
+                ? `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim()
+                : user?.email}
             </p>
             <Badge
               variant="outline"

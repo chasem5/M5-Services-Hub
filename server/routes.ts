@@ -1049,27 +1049,6 @@ Do not include any other text, just the JSON.`,
     res.send(vcard);
   });
 
-  // Deal Tags
-  app.get("/api/deal-tags", isAuthenticated, async (_req, res) => {
-    const tags = await storage.listDealTags();
-    res.json(tags);
-  });
-
-  app.post("/api/deal-tags", isAuthenticated, async (req, res) => {
-    const { name, color } = z.object({
-      name: z.string().min(1),
-      color: z.string().optional().default("gray"),
-    }).parse(req.body);
-    const tag = await storage.createDealTag({ name, color });
-    res.json(tag);
-  });
-
-  app.delete("/api/deal-tags/:id", isAuthenticated, async (req, res) => {
-    const id = parseInt(req.params.id);
-    await storage.deleteDealTag(id);
-    res.sendStatus(204);
-  });
-
   // Leads
   app.get("/api/leads", isAuthenticated, async (req, res) => {
     const scopedUserId = await getScopedUserId(req, "leads");

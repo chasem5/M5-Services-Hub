@@ -112,6 +112,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -724,6 +734,8 @@ export default function Leads() {
   const [tagInput, setTagInput] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
   const [isManageStagesOpen, setIsManageStagesOpen] = useState(false);
+  const [deleteStageId, setDeleteStageId] = useState<number | null>(null);
+  const [deleteStageLabel, setDeleteStageLabel] = useState("");
   const [editingStageId, setEditingStageId] = useState<number | null>(null);
   const [editingStageLabel, setEditingStageLabel] = useState("");
   const [newStageLabel, setNewStageLabel] = useState("");
@@ -907,6 +919,7 @@ export default function Leads() {
     },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/activity-summary"] });
       if (selectedLead) setSelectedLead(updated);
     },
   });
@@ -1123,7 +1136,9 @@ export default function Leads() {
   const getUserName = (userId: string | null) => {
     if (!userId) return "Unassigned";
     const user = users?.find((u) => u.id === userId);
-    return user ? `${user.firstName} ${user.lastName}` : "Unknown User";
+    if (!user) return "Unknown User";
+    const name = [user.firstName, user.lastName].filter(Boolean).join(" ");
+    return name || user.email || "Unknown";
   };
 
   const formatCurrency = (value: string | number) =>
@@ -1458,10 +1473,10 @@ export default function Leads() {
               })}
             </div>
             <DragOverlay>
-              {activeDragId ? (
+              {activeDragId && leads?.find(l => l.id === activeDragId) ? (
                 <div className="w-[280px] rotate-3 opacity-80 cursor-grabbing pointer-events-none">
                   <LeadCard 
-                    lead={leads!.find(l => l.id === activeDragId)!}
+                    lead={leads.find(l => l.id === activeDragId)!}
                     formatCurrency={formatCurrency}
                     getBuildingName={getBuildingName}
                     getClientName={getClientName}
@@ -3143,11 +3158,7 @@ export default function Leads() {
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7 text-destructive hover:text-destructive"
-                  onClick={() => {
-                    if (confirm(`Delete stage "${stage.label}"? Leads in this stage will remain but won't appear in the board.`)) {
-                      deleteStageMutation.mutate(stage.id);
-                    }
-                  }}
+                  onClick={() => { setDeleteStageId(stage.id); setDeleteStageLabel(stage.label); }}
                   data-testid={`button-delete-stage-${stage.id}`}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -3462,6 +3473,26 @@ export default function Leads() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteStageId !== null} onOpenChange={(open) => { if (!open) setDeleteStageId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Stage "{deleteStageLabel}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Leads in this stage will remain but won't appear on the board until reassigned to another stage.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteStageId !== null) { deleteStageMutation.mutate(deleteStageId); setDeleteStageId(null); } }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -52,6 +52,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -87,6 +97,7 @@ export default function Proposals() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
   const { toast } = useToast();
 
   const { data: proposals, isLoading: isLoadingProposals } = useQuery<Proposal[]>({
@@ -135,6 +146,9 @@ export default function Proposals() {
         title: "Success",
         description: "Proposal updated",
       });
+    },
+    onError: () => {
+      toast({ title: "Failed to update proposal", variant: "destructive" });
     },
   });
 
@@ -404,11 +418,7 @@ export default function Proposals() {
                               <DropdownMenuSeparator />
                               <DropdownMenuItem 
                                 className="text-destructive focus:text-destructive cursor-pointer"
-                                onClick={() => {
-                                  if (confirm("Are you sure you want to delete this proposal?")) {
-                                    deleteProposalMutation.mutate(proposal.id);
-                                  }
-                                }}
+                                onClick={() => setDeleteId(proposal.id)}
                                 data-testid={`button-delete-proposal-${proposal.id}`}
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
@@ -438,6 +448,26 @@ export default function Proposals() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deleteId !== null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Proposal</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this proposal? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteId !== null) { deleteProposalMutation.mutate(deleteId); setDeleteId(null); } }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

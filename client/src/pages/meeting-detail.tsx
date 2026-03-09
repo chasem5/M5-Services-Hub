@@ -246,6 +246,7 @@ export default function MeetingDetailPage() {
       return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] }),
+    onError: () => toast({ title: "Failed to save changes", variant: "destructive" }),
   });
 
   const analyzeMutation = useMutation({
@@ -294,6 +295,7 @@ export default function MeetingDetailPage() {
       return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] }),
+    onError: () => toast({ title: "Failed to decline action", variant: "destructive" }),
     onSettled: (_, __, actionId) => {
       setActioningIds((prev) => { const n = { ...prev }; delete n[actionId]; return n; });
     },
@@ -309,6 +311,7 @@ export default function MeetingDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
       toast({ title: "Meeting marked as complete" });
     },
+    onError: () => toast({ title: "Failed to complete meeting", variant: "destructive" }),
   });
 
   const syncCalendarMutation = useMutation({

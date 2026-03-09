@@ -1501,33 +1501,6 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  // Deal Tags
-  async listDealTags(): Promise<DealTag[]> {
-    return await db.select().from(dealTags).orderBy(dealTags.name);
-  }
-
-  async createDealTag(data: InsertDealTag): Promise<DealTag> {
-    const [tag] = await db.insert(dealTags).values(data).returning();
-    return tag;
-  }
-
-  async deleteDealTag(id: number): Promise<void> {
-    await db.delete(dealTags).where(eq(dealTags.id, id));
-  }
-
-  async ensureDealTag(name: string): Promise<DealTag> {
-    const [existing] = await db.select().from(dealTags).where(eq(dealTags.name, name));
-    if (existing) return existing;
-    const [tag] = await db.insert(dealTags).values({ name }).returning();
-    return tag;
-  }
-
-  // User Profile Self-Edit
-  async updateUserProfile(id: string, data: { firstName?: string; lastName?: string; phone?: string; profileImageUrl?: string }): Promise<User> {
-    const [user] = await db.update(users).set({ ...data, updatedAt: new Date() }).where(eq(users.id, id)).returning();
-    return user;
-  }
-
   // Bulk Operations
   async deleteBulkClients(ids: number[]): Promise<void> {
     if (!ids.length) return;

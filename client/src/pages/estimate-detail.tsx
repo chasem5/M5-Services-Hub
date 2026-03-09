@@ -45,6 +45,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -85,6 +95,7 @@ export default function EstimateDetail() {
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClientIdForBuilding, setSelectedClientIdForBuilding] = useState<number | null>(null);
+  const [deleteItemId, setDeleteItemId] = useState<number | null>(null);
 
   const { data: estimate, isLoading: isLoadingEstimate } = useQuery<Estimate>({
     queryKey: ["/api/estimates", id],
@@ -348,7 +359,7 @@ export default function EstimateDetail() {
                                   variant="ghost" 
                                   size="icon" 
                                   className="h-8 w-8 text-destructive"
-                                  onClick={() => deleteLineItemMutation.mutate(item.id)}
+                                  onClick={() => setDeleteItemId(item.id)}
                                   data-testid={`button-delete-line-${item.id}`}
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -569,6 +580,26 @@ export default function EstimateDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteItemId !== null} onOpenChange={(open) => { if (!open) setDeleteItemId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Line Item</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove this line item? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteItemId !== null) { deleteLineItemMutation.mutate(deleteItemId); setDeleteItemId(null); } }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -50,6 +50,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -78,6 +88,7 @@ export default function Estimates() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedClientIdForBuilding, setSelectedClientIdForBuilding] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
   const { toast } = useToast();
 
   const { data: estimates, isLoading: isLoadingEstimates } = useQuery<Estimate[]>({
@@ -430,11 +441,7 @@ export default function Estimates() {
                             </DropdownMenuItem>
                             <DropdownMenuItem 
                               className="text-destructive focus:text-destructive cursor-pointer"
-                              onClick={() => {
-                                if (confirm("Are you sure you want to delete this estimate?")) {
-                                  deleteEstimateMutation.mutate(estimate.id);
-                                }
-                              }}
+                              onClick={() => setDeleteId(estimate.id)}
                               data-testid={`button-delete-estimate-${estimate.id}`}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
@@ -473,6 +480,26 @@ export default function Estimates() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deleteId !== null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Estimate</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this estimate? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteId !== null) { deleteEstimateMutation.mutate(deleteId); setDeleteId(null); } }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
