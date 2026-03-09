@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { User, type IndustryOption } from "@shared/schema";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Card,
@@ -306,19 +307,22 @@ export default function Settings() {
   if (!currentUser) return null;
 
   return (
-    <div className="container mx-auto p-4 md:p-6 space-y-8">
+    <div className="container mx-auto p-4 md:p-6 space-y-6">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-heading font-bold text-primary tracking-tight">Settings</h1>
         <p className="text-muted-foreground">Manage your account and team preferences.</p>
       </div>
 
-      <div className="grid gap-8">
+      <Tabs defaultValue="personal" className="w-full">
+        <TabsList className="mb-6">
+          <TabsTrigger value="personal" data-testid="tab-personal">Personal</TabsTrigger>
+          {currentUser.role === "admin" && (
+            <TabsTrigger value="company" data-testid="tab-company">Company</TabsTrigger>
+          )}
+        </TabsList>
 
-        {/* ─── My Account Section ─── */}
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">My Account</span>
-          <div className="flex-1 h-px bg-border" />
-        </div>
+        <TabsContent value="personal">
+      <div className="grid gap-8">
 
         <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
           <CardHeader className="bg-muted/30 pb-6 border-b">
@@ -687,13 +691,13 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        {/* ─── Company Settings Section (admin only) ─── */}
-        {currentUser.role === "admin" && <div className="contents">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">Company Settings</span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
+      </div>
+        </TabsContent>
 
+        {/* ─── Company Tab (admin only) ─── */}
+        {currentUser.role === "admin" && (
+        <TabsContent value="company">
+        <div className="grid gap-8">
             <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
               <CardHeader className="bg-muted/30 pb-6 border-b">
                 <div className="flex items-center gap-4">
@@ -910,8 +914,10 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
-        </div>}
-      </div>
+        </div>
+        </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 }
