@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,9 +38,18 @@ import {
   Settings2,
   Pencil,
   Plus,
+  X,
+  GitBranch,
+  Tag,
+  Users2,
+  Building2,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
+import type { IndustryOption } from "@shared/schema";
+import { PipelineStagesManager } from "@/components/PipelineStagesManager";
+import { ContactStagesManager } from "@/components/ContactStagesManager";
+import { DealTagsManager } from "@/components/DealTagsManager";
 
 interface Invite {
   id: number;
@@ -111,6 +121,7 @@ export default function AdminPage() {
   const [showAddRole, setShowAddRole] = useState(false);
   const [newRoleDisplayName, setNewRoleDisplayName] = useState("");
   const [deleteRoleKey, setDeleteRoleKey] = useState<string | null>(null);
+  const [newIndustryLabel, setNewIndustryLabel] = useState("");
   const { register, handleSubmit, reset, setValue, watch } = useForm({ defaultValues: { email: "", role: "member" } });
 
   if (currentUser && currentUser.role !== "admin") {
@@ -242,6 +253,25 @@ export default function AdminPage() {
     },
   });
 
+  const { data: industryOptions, isLoading: industryLoading } = useQuery<IndustryOption[]>({
+    queryKey: ["/api/industry-options"],
+  });
+
+  const addIndustryMutation = useMutation({
+    mutationFn: (label: string) => apiRequest("POST", "/api/industry-options", { label }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/industry-options"] });
+      setNewIndustryLabel("");
+    },
+    onError: () => toast({ title: "Failed to add industry", variant: "destructive" }),
+  });
+
+  const deleteIndustryMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/industry-options/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/industry-options"] }),
+    onError: () => toast({ title: "Failed to delete industry", variant: "destructive" }),
+  });
+
   const pendingInvites = invites.filter(inv => !inv.usedAt && isAfter(new Date(inv.expiresAt), new Date()));
   const usedInvites = invites.filter(inv => !!inv.usedAt);
   const expiredInvites = invites.filter(inv => !inv.usedAt && !isAfter(new Date(inv.expiresAt), new Date()));
@@ -275,6 +305,10 @@ export default function AdminPage() {
           <TabsTrigger value="permissions" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
             <Settings2 className="h-4 w-4" />
             Permissions
+          </TabsTrigger>
+          <TabsTrigger value="configuration" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
+            <Settings2 className="h-4 w-4" />
+            Configuration
           </TabsTrigger>
         </TabsList>
 
@@ -663,6 +697,133 @@ export default function AdminPage() {
                     </span>
                   ))}
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="configuration" className="pt-4 space-y-6">
+          {/* Pipeline Stages */}
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <GitBranch className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-heading">Pipeline Stages</CardTitle>
+                  <CardDescription className="text-xs">Configure deal pipeline stages and their order</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <PipelineStagesManager />
+            </CardContent>
+          </Card>
+
+          {/* Contact Stages */}
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <Users2 className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-heading">Contact Stages</CardTitle>
+                  <CardDescription className="text-xs">Configure contact lifecycle stages</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <ContactStagesManager inline />
+            </CardContent>
+          </Card>
+
+          {/* Deal Tags */}
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <Tag className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-heading">Deal Tags</CardTitle>
+                  <CardDescription className="text-xs">Manage tags used to label deals</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <DealTagsManager />
+            </CardContent>
+          </Card>
+
+          {/* Industry Options */}
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <Building2 className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-heading">Industry Options</CardTitle>
+                  <CardDescription className="text-xs">Manage the industry list shown on client records</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              {industryLoading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(industryOptions ?? []).map((opt) => (
+                    <div
+                      key={opt.id}
+                      data-testid={`industry-option-${opt.id}`}
+                      className="flex items-center gap-1.5 bg-muted rounded-md px-3 py-1.5 text-sm"
+                    >
+                      <span>{opt.label}</span>
+                      <button
+                        data-testid={`delete-industry-${opt.id}`}
+                        onClick={() => deleteIndustryMutation.mutate(opt.id)}
+                        disabled={deleteIndustryMutation.isPending}
+                        className="text-muted-foreground hover:text-destructive transition-colors ml-1"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Input
+                  data-testid="input-new-industry"
+                  placeholder="New industry label…"
+                  value={newIndustryLabel}
+                  onChange={(e) => setNewIndustryLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newIndustryLabel.trim()) {
+                      addIndustryMutation.mutate(newIndustryLabel.trim());
+                    }
+                  }}
+                  className="max-w-xs"
+                />
+                <Button
+                  data-testid="button-add-industry"
+                  onClick={() => {
+                    if (newIndustryLabel.trim()) addIndustryMutation.mutate(newIndustryLabel.trim());
+                  }}
+                  disabled={addIndustryMutation.isPending || !newIndustryLabel.trim()}
+                  size="sm"
+                >
+                  {addIndustryMutation.isPending ? (
+                    <Plus className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-1" />
+                  )}
+                  Add
+                </Button>
               </div>
             </CardContent>
           </Card>

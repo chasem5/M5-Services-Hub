@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { User, type IndustryOption } from "@shared/schema";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Card,
@@ -11,25 +9,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
@@ -41,12 +23,10 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useForm } from "react-hook-form";
+import { useQuery } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera, LogOut, X, Plus, Building2, GitBranch, Tag, Users2 } from "lucide-react";
-import { PipelineStagesManager } from "@/components/PipelineStagesManager";
-import { ContactStagesManager } from "@/components/ContactStagesManager";
-import { DealTagsManager } from "@/components/DealTagsManager";
+import { User as UserIcon, Shield, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera, LogOut } from "lucide-react";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -121,11 +101,6 @@ export default function Settings() {
     },
   });
 
-  const { data: users, isLoading: usersLoading } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-    enabled: currentUser?.role === "admin",
-  });
-
   const { data: gmailStatus, isLoading: gmailLoading } = useQuery<GmailStatus>({
     queryKey: ["/api/auth/gmail/status"],
     enabled: !!currentUser,
@@ -138,27 +113,6 @@ export default function Settings() {
 
   const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
-  const [newIndustryLabel, setNewIndustryLabel] = useState("");
-
-  const { data: industryOptions, isLoading: industryLoading } = useQuery<IndustryOption[]>({
-    queryKey: ["/api/industry-options"],
-    enabled: currentUser?.role === "admin",
-  });
-
-  const addIndustryMutation = useMutation({
-    mutationFn: (label: string) => apiRequest("POST", "/api/industry-options", { label }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/industry-options"] });
-      setNewIndustryLabel("");
-    },
-    onError: () => toast({ title: "Failed to add industry", variant: "destructive" }),
-  });
-
-  const deleteIndustryMutation = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/industry-options/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/industry-options"] }),
-    onError: () => toast({ title: "Failed to delete industry", variant: "destructive" }),
-  });
 
   useEffect(() => {
     if ("Notification" in window) {
@@ -176,22 +130,18 @@ export default function Settings() {
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
         throw new Error("Push notifications not supported");
       }
-
       const permission = await Notification.requestPermission();
       setNotificationPermission(permission);
       if (permission !== "granted") {
         throw new Error("Permission not granted");
       }
-
       const registration = await navigator.serviceWorker.ready;
       const res = await apiRequest("GET", "/api/push/vapid-public-key", undefined);
       const { publicKey } = await res.json();
-
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: publicKey,
       });
-
       await apiRequest("POST", "/api/push/subscribe", subscription);
     },
     onSuccess: () => {
@@ -238,20 +188,6 @@ export default function Settings() {
       toast({ title: "Google Calendar disconnected" });
     },
     onError: () => toast({ title: "Failed to disconnect Calendar", variant: "destructive" }),
-  });
-
-  const updateRoleMutation = useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
-      const res = await apiRequest("PUT", `/api/users/${userId}/role`, { role });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "Role updated", description: "User role has been successfully updated." });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Failed to update role", description: error.message, variant: "destructive" });
-    },
   });
 
   useEffect(() => {
@@ -310,20 +246,11 @@ export default function Settings() {
     <div className="container mx-auto p-4 md:p-6 space-y-6">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-heading font-bold text-primary tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">Manage your account and team preferences.</p>
+        <p className="text-muted-foreground">Manage your personal account preferences.</p>
       </div>
 
-      <Tabs defaultValue="personal" className="w-full">
-        <TabsList className="mb-6">
-          <TabsTrigger value="personal" data-testid="tab-personal">Personal</TabsTrigger>
-          {currentUser.role === "admin" && (
-            <TabsTrigger value="company" data-testid="tab-company">Company</TabsTrigger>
-          )}
-        </TabsList>
-
-        <TabsContent value="personal">
       <div className="grid gap-8">
-
+        {/* Profile Card */}
         <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
           <CardHeader className="bg-muted/30 pb-6 border-b">
             <div className="flex items-center gap-4">
@@ -550,7 +477,6 @@ export default function Settings() {
                 </Button>
               </div>
             )}
-
             {!gmailStatus?.connected && (
               <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
@@ -660,10 +586,10 @@ export default function Settings() {
                 <div>
                   <p className="font-semibold text-gray-900">{isSubscribed ? "Enabled" : "Disabled"}</p>
                   <p className="text-sm text-muted-foreground">
-                    {notificationPermission === 'denied' 
+                    {notificationPermission === 'denied'
                       ? "Notifications are blocked by your browser. Please enable them in your browser settings."
-                      : isSubscribed 
-                        ? "You are currently receiving push notifications on this device." 
+                      : isSubscribed
+                        ? "You are currently receiving push notifications on this device."
                         : "Enable notifications to stay updated on leads assigned to you and team announcements."}
                   </p>
                 </div>
@@ -690,234 +616,7 @@ export default function Settings() {
             </div>
           </CardContent>
         </Card>
-
       </div>
-        </TabsContent>
-
-        {/* ─── Company Tab (admin only) ─── */}
-        {currentUser.role === "admin" && (
-        <TabsContent value="company">
-        <div className="grid gap-8">
-            <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
-              <CardHeader className="bg-muted/30 pb-6 border-b">
-                <div className="flex items-center gap-4">
-                  <div className="bg-primary/10 p-2 rounded-full">
-                    <Settings2 className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-xl font-heading">Team Management</CardTitle>
-                    <CardDescription>Manage user roles and permissions</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
-              <Table className="min-w-[550px]">
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead className="pl-6">User</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead className="text-right pr-6">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {usersLoading ? (
-                    Array.from({ length: 3 }).map((_, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="pl-6"><Skeleton className="h-10 w-40" /></TableCell>
-                        <TableCell><Skeleton className="h-6 w-40" /></TableCell>
-                        <TableCell><Skeleton className="h-8 w-24" /></TableCell>
-                        <TableCell className="text-right pr-6"><Skeleton className="h-9 w-24 ml-auto" /></TableCell>
-                      </TableRow>
-                    ))
-                  ) : users?.map((user) => (
-                    <TableRow key={user.id} className="hover:bg-muted/30 transition-colors">
-                      <TableCell className="pl-6">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-10 w-10 border shadow-sm">
-                            <AvatarImage src={user.profileImageUrl ? `/api/users/${user.id}/avatar-img` : undefined} />
-                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
-                              {user.firstName?.[0]}{user.lastName?.[0]}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-sm">
-                              {user.firstName} {user.lastName}
-                            </span>
-                            {user.id === currentUser.id && (
-                              <span className="text-[10px] text-primary font-bold uppercase tracking-widest">(You)</span>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm font-medium text-muted-foreground">{user.email}</TableCell>
-                      <TableCell>
-                        <Badge 
-                          variant="secondary" 
-                          className={`capitalize font-bold border-0 ${
-                            user.role === 'admin' 
-                              ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' 
-                              : user.role === 'manager'
-                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
-                              : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300'
-                          }`}
-                        >
-                          {user.role}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right pr-6">
-                        <Select
-                          disabled={user.id === currentUser.id || updateRoleMutation.isPending}
-                          value={user.role}
-                          onValueChange={(value) =>
-                            updateRoleMutation.mutate({ userId: user.id, role: value })
-                          }
-                        >
-                          <SelectTrigger className="w-[140px] ml-auto h-9">
-                            <SelectValue placeholder="Select role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="manager">Manager</SelectItem>
-                            <SelectItem value="member">Member</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Pipeline Stages */}
-          <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
-            <CardHeader className="bg-muted/30 pb-6 border-b">
-              <div className="flex items-center gap-4">
-                <div className="bg-primary/10 p-2 rounded-full">
-                  <GitBranch className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-xl font-heading">Pipeline Stages</CardTitle>
-                  <CardDescription>Configure deal pipeline stages and their order</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-6">
-              <PipelineStagesManager />
-            </CardContent>
-          </Card>
-
-          {/* Contact Stages */}
-          <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
-            <CardHeader className="bg-muted/30 pb-6 border-b">
-              <div className="flex items-center gap-4">
-                <div className="bg-primary/10 p-2 rounded-full">
-                  <Users2 className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-xl font-heading">Contact Stages</CardTitle>
-                  <CardDescription>Configure contact lifecycle stages</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-6">
-              <ContactStagesManager inline />
-            </CardContent>
-          </Card>
-
-          {/* Deal Tags */}
-          <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
-            <CardHeader className="bg-muted/30 pb-6 border-b">
-              <div className="flex items-center gap-4">
-                <div className="bg-primary/10 p-2 rounded-full">
-                  <Tag className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-xl font-heading">Deal Tags</CardTitle>
-                  <CardDescription>Manage tags used to label deals</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-6">
-              <DealTagsManager />
-            </CardContent>
-          </Card>
-
-          {/* Industry Options */}
-          <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
-            <CardHeader className="bg-muted/30 pb-6 border-b">
-              <div className="flex items-center gap-4">
-                <div className="bg-primary/10 p-2 rounded-full">
-                  <Building2 className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <CardTitle className="text-xl font-heading">Industry Options</CardTitle>
-                  <CardDescription>Manage the industry list shown on client records</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              {industryLoading ? (
-                <div className="space-y-2">
-                  {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {(industryOptions ?? []).map((opt) => (
-                    <div
-                      key={opt.id}
-                      data-testid={`industry-option-${opt.id}`}
-                      className="flex items-center gap-1.5 bg-muted rounded-md px-3 py-1.5 text-sm"
-                    >
-                      <span>{opt.label}</span>
-                      <button
-                        data-testid={`delete-industry-${opt.id}`}
-                        onClick={() => deleteIndustryMutation.mutate(opt.id)}
-                        disabled={deleteIndustryMutation.isPending}
-                        className="text-muted-foreground hover:text-destructive transition-colors ml-1"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex gap-2 pt-2">
-                <Input
-                  data-testid="input-new-industry"
-                  placeholder="New industry label…"
-                  value={newIndustryLabel}
-                  onChange={(e) => setNewIndustryLabel(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newIndustryLabel.trim()) {
-                      addIndustryMutation.mutate(newIndustryLabel.trim());
-                    }
-                  }}
-                  className="max-w-xs"
-                />
-                <Button
-                  data-testid="button-add-industry"
-                  onClick={() => {
-                    if (newIndustryLabel.trim()) addIndustryMutation.mutate(newIndustryLabel.trim());
-                  }}
-                  disabled={addIndustryMutation.isPending || !newIndustryLabel.trim()}
-                  size="sm"
-                >
-                  {addIndustryMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4 mr-1" />
-                  )}
-                  Add
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-        </TabsContent>
-        )}
-      </Tabs>
     </div>
   );
 }
