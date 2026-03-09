@@ -532,6 +532,17 @@ export type InsertBuildingPortfolio = z.infer<typeof insertBuildingPortfolioSche
 export type PortfolioBuilding = typeof portfolioBuildings.$inferSelect;
 export type PortfolioContact = typeof portfolioContacts.$inferSelect;
 
+// Industry Options (company-wide, admin-managed)
+export const industryOptions = pgTable("industry_options", {
+  id: serial("id").primaryKey(),
+  label: varchar("label", { length: 100 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertIndustryOptionSchema = createInsertSchema(industryOptions).omit({ id: true, createdAt: true });
+export type IndustryOption = typeof industryOptions.$inferSelect;
+export type InsertIndustryOption = z.infer<typeof insertIndustryOptionSchema>;
+
 // Deal Tags (company-wide)
 export const dealTags = pgTable("deal_tags", {
   id: serial("id").primaryKey(),

@@ -157,7 +157,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertClientSchema, insertClientContactSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate, type ContactStage, type User } from "@shared/schema";
+import { insertClientSchema, insertClientContactSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate, type ContactStage, type User, type IndustryOption } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -384,24 +384,6 @@ const SERVICE_NEEDS = [
   { key: "property_assessment", label: "Property Assessment", Icon: ClipboardList, color: "text-primary" },
 ] as const;
 
-const INDUSTRY_OPTIONS = [
-  "Property Management",
-  "Facility Management",
-  "Commercial Real Estate",
-  "Healthcare",
-  "Retail",
-  "Education",
-  "Hospitality",
-  "Government / Public Sector",
-  "Technology",
-  "Manufacturing",
-  "Financial Services",
-  "Legal Services",
-  "Construction / Development",
-  "Non-Profit",
-  "Industrial / Logistics",
-  "Mixed-Use Development",
-];
 
 export default function Customers() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -414,6 +396,8 @@ export default function Customers() {
   const [contactSortDir, setContactSortDir] = useState<"asc" | "desc">("asc");
   const [companySortField, setCompanySortField] = useState<"name" | "tier" | "industry" | "revenue" | "spend">("name");
   const [companySortDir, setCompanySortDir] = useState<"asc" | "desc">("asc");
+  const { data: industryOptionsList } = useQuery<IndustryOption[]>({ queryKey: ["/api/industry-options"] });
+  const industryOptionLabels = industryOptionsList?.map(o => o.label) ?? [];
   const [industryFilter, setIndustryFilter] = useState("all");
   const [tierFilter, setTierFilter] = useState("all");
   const [contactTierFilter, setContactTierFilter] = useState("all");
@@ -1134,7 +1118,7 @@ export default function Customers() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__">— None —</SelectItem>
-                          {INDUSTRY_OPTIONS.map(v => (
+                          {industryOptionLabels.map(v => (
                             <SelectItem key={v} value={v}>{v}</SelectItem>
                           ))}
                           <SelectItem value="__custom__">Custom...</SelectItem>

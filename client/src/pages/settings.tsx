@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { User } from "@shared/schema";
+import { User, type IndustryOption } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Card,
@@ -42,7 +42,7 @@ import { Input } from "@/components/ui/input";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera, LogOut } from "lucide-react";
+import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera, LogOut, X, Plus, Building2 } from "lucide-react";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -134,6 +134,27 @@ export default function Settings() {
 
   const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [newIndustryLabel, setNewIndustryLabel] = useState("");
+
+  const { data: industryOptions, isLoading: industryLoading } = useQuery<IndustryOption[]>({
+    queryKey: ["/api/industry-options"],
+    enabled: currentUser?.role === "admin",
+  });
+
+  const addIndustryMutation = useMutation({
+    mutationFn: (label: string) => apiRequest("POST", "/api/industry-options", { label }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/industry-options"] });
+      setNewIndustryLabel("");
+    },
+    onError: () => toast({ title: "Failed to add industry", variant: "destructive" }),
+  });
+
+  const deleteIndustryMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/industry-options/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/industry-options"] }),
+    onError: () => toast({ title: "Failed to delete industry", variant: "destructive" }),
+  });
 
   useEffect(() => {
     if ("Notification" in window) {
@@ -746,6 +767,78 @@ export default function Settings() {
                   ))}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {currentUser.role === "admin" && (
+          <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
+            <CardHeader className="bg-muted/30 pb-6 border-b">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <Building2 className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-xl font-heading">Industry Options</CardTitle>
+                  <CardDescription>Manage the industry list shown on client records</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              {industryLoading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(industryOptions ?? []).map((opt) => (
+                    <div
+                      key={opt.id}
+                      data-testid={`industry-option-${opt.id}`}
+                      className="flex items-center gap-1.5 bg-muted rounded-md px-3 py-1.5 text-sm"
+                    >
+                      <span>{opt.label}</span>
+                      <button
+                        data-testid={`delete-industry-${opt.id}`}
+                        onClick={() => deleteIndustryMutation.mutate(opt.id)}
+                        disabled={deleteIndustryMutation.isPending}
+                        className="text-muted-foreground hover:text-destructive transition-colors ml-1"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Input
+                  data-testid="input-new-industry"
+                  placeholder="New industry label…"
+                  value={newIndustryLabel}
+                  onChange={(e) => setNewIndustryLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newIndustryLabel.trim()) {
+                      addIndustryMutation.mutate(newIndustryLabel.trim());
+                    }
+                  }}
+                  className="max-w-xs"
+                />
+                <Button
+                  data-testid="button-add-industry"
+                  onClick={() => {
+                    if (newIndustryLabel.trim()) addIndustryMutation.mutate(newIndustryLabel.trim());
+                  }}
+                  disabled={addIndustryMutation.isPending || !newIndustryLabel.trim()}
+                  size="sm"
+                >
+                  {addIndustryMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-1" />
+                  )}
+                  Add
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}

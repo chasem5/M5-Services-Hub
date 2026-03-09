@@ -143,6 +143,7 @@ export async function registerRoutes(
   // Run migrations first
   await storage.migrateLeadServiceTypes();
   await storage.migrateContactStages();
+  await storage.migrateIndustryOptions();
   // Seed default contact stages on startup
   await storage.seedDefaultContactStages();
   // Seed default pipeline stages on startup
@@ -2507,6 +2508,24 @@ Respond with this JSON:
 
   app.delete("/api/deal-tags/:id", isAuthenticated, requireRole(["admin"]), async (req, res) => {
     await storage.deleteDealTag(Number(req.params.id));
+    res.status(204).end();
+  });
+
+  // Industry Options
+  app.get("/api/industry-options", isAuthenticated, async (_req, res) => {
+    const options = await storage.listIndustryOptions();
+    res.json(options);
+  });
+
+  app.post("/api/industry-options", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    const { label } = req.body;
+    if (!label?.trim()) return res.status(400).json({ message: "Label required" });
+    const option = await storage.createIndustryOption({ label: label.trim(), sortOrder: 999 });
+    res.status(201).json(option);
+  });
+
+  app.delete("/api/industry-options/:id", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+    await storage.deleteIndustryOption(Number(req.params.id));
     res.status(204).end();
   });
 

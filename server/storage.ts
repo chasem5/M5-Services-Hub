@@ -35,8 +35,11 @@ import {
   portfolioBuildings,
   portfolioContacts,
   dealTags,
+  industryOptions,
   type DealTag,
   type InsertDealTag,
+  type IndustryOption,
+  type InsertIndustryOption,
   type BuildingPortfolio,
   type InsertBuildingPortfolio,
   type PortfolioBuilding,
@@ -206,6 +209,12 @@ export interface IStorage {
   seedDefaultContactStages(): Promise<void>;
   migrateContactStages(): Promise<void>;
   migrateLeadServiceTypes(): Promise<void>;
+  migrateIndustryOptions(): Promise<void>;
+
+  // Industry Options
+  listIndustryOptions(): Promise<IndustryOption[]>;
+  createIndustryOption(data: InsertIndustryOption): Promise<IndustryOption>;
+  deleteIndustryOption(id: number): Promise<void>;
   listPipelineStages(): Promise<PipelineStage[]>;
   createPipelineStage(stage: InsertPipelineStage): Promise<PipelineStage>;
   updatePipelineStage(id: number, stage: Partial<InsertPipelineStage>): Promise<PipelineStage>;
@@ -916,6 +925,56 @@ export class DatabaseStorage implements IStorage {
     } catch (e) {
       console.error("migrateLeadServiceTypes error:", e);
     }
+  }
+
+  async migrateIndustryOptions(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS industry_options (
+          id SERIAL PRIMARY KEY,
+          label VARCHAR(100) NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+      const existing = await db.select().from(industryOptions);
+      if (existing.length === 0) {
+        const defaults = [
+          "Property Management",
+          "Facility Management",
+          "Commercial Real Estate",
+          "Healthcare",
+          "Retail",
+          "Education",
+          "Hospitality",
+          "Government / Public Sector",
+          "Technology",
+          "Manufacturing",
+          "Financial Services",
+          "Construction / Development",
+          "Non-Profit",
+          "Industrial / Logistics",
+        ];
+        await db.insert(industryOptions).values(
+          defaults.map((label, i) => ({ label, sortOrder: i }))
+        );
+      }
+    } catch (e) {
+      console.error("migrateIndustryOptions error:", e);
+    }
+  }
+
+  async listIndustryOptions(): Promise<IndustryOption[]> {
+    return db.select().from(industryOptions).orderBy(industryOptions.sortOrder, industryOptions.createdAt);
+  }
+
+  async createIndustryOption(data: InsertIndustryOption): Promise<IndustryOption> {
+    const [created] = await db.insert(industryOptions).values(data).returning();
+    return created;
+  }
+
+  async deleteIndustryOption(id: number): Promise<void> {
+    await db.delete(industryOptions).where(eq(industryOptions.id, id));
   }
 
   // Pipeline Stages

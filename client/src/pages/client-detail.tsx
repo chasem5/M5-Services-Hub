@@ -135,7 +135,8 @@ import {
   type Estimate,
   type ActivityLog,
   type BuildingPortfolio,
-  type ContactStage
+  type ContactStage,
+  type IndustryOption
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { OrgChart } from "@/components/OrgChart";
@@ -147,24 +148,6 @@ import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow, differenceInDays } from "date-fns";
 import { formatPhoneNumber } from "@/lib/phone";
 
-const INDUSTRY_OPTIONS = [
-  "Property Management",
-  "Facility Management",
-  "Commercial Real Estate",
-  "Healthcare",
-  "Retail",
-  "Education",
-  "Hospitality",
-  "Government / Public Sector",
-  "Technology",
-  "Manufacturing",
-  "Financial Services",
-  "Legal Services",
-  "Construction / Development",
-  "Non-Profit",
-  "Industrial / Logistics",
-  "Mixed-Use Development",
-];
 
 function LinkedInSyncButton({
   contactId,
@@ -934,6 +917,8 @@ export default function ClientDetail() {
   const [isAddSpendOpen, setIsAddSpendOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [clientIndustryCustomMode, setClientIndustryCustomMode] = useState(false);
+  const { data: industryOptionsList } = useQuery<IndustryOption[]>({ queryKey: ["/api/industry-options"] });
+  const industryOptionLabels = industryOptionsList?.map(o => o.label) ?? [];
   const [highlightedContactId, setHighlightedContactId] = useState<number | null>(null);
   const urlInitializedRef = useRef(false);
 
@@ -985,7 +970,7 @@ export default function ClientDetail() {
   });
 
   useEffect(() => {
-    if (client?.industry && !INDUSTRY_OPTIONS.includes(client.industry)) {
+    if (client?.industry && industryOptionLabels.length > 0 && !industryOptionLabels.includes(client.industry)) {
       setClientIndustryCustomMode(true);
     } else {
       setClientIndustryCustomMode(false);
@@ -1589,7 +1574,7 @@ export default function ClientDetail() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="__none__">— None —</SelectItem>
-                              {INDUSTRY_OPTIONS.map(v => (
+                              {industryOptionLabels.map(v => (
                                 <SelectItem key={v} value={v}>{v}</SelectItem>
                               ))}
                               <SelectItem value="__custom__">Custom...</SelectItem>
