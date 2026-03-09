@@ -11,7 +11,6 @@ import {
   Mail,
   Megaphone,
 } from "lucide-react";
-import { useRef, useCallback } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
@@ -61,20 +60,7 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const { setOpen, setOpenMobile, isMobile } = useSidebar();
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleMouseEnter = useCallback(() => {
-    if (isMobile) return;
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setOpen(true), 250);
-  }, [isMobile, setOpen]);
-
-  const handleMouseLeave = useCallback(() => {
-    if (isMobile) return;
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setOpen(false), 400);
-  }, [isMobile, setOpen]);
+  const { setOpenMobile, isMobile } = useSidebar();
 
   const { data: myPerms } = useQuery<MyPermissions>({
     queryKey: ["/api/my-permissions"],
@@ -94,8 +80,6 @@ export function AppSidebar() {
     <Sidebar
       variant="sidebar"
       collapsible="icon"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
       <SidebarHeader className="p-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 px-2 overflow-hidden">
