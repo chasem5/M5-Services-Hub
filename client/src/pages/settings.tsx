@@ -42,7 +42,10 @@ import { Input } from "@/components/ui/input";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera, LogOut, X, Plus, Building2 } from "lucide-react";
+import { User as UserIcon, Shield, Settings2, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera, LogOut, X, Plus, Building2, GitBranch, Tag, Users2 } from "lucide-react";
+import { PipelineStagesManager } from "@/components/PipelineStagesManager";
+import { ContactStagesManager } from "@/components/ContactStagesManager";
+import { DealTagsManager } from "@/components/DealTagsManager";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -310,6 +313,13 @@ export default function Settings() {
       </div>
 
       <div className="grid gap-8">
+
+        {/* ─── My Account Section ─── */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">My Account</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+
         <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
           <CardHeader className="bg-muted/30 pb-6 border-b">
             <div className="flex items-center gap-4">
@@ -677,19 +687,25 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        {currentUser.role === "admin" && (
-          <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
-            <CardHeader className="bg-muted/30 pb-6 border-b">
-              <div className="flex items-center gap-4">
-                <div className="bg-primary/10 p-2 rounded-full">
-                  <Settings2 className="h-6 w-6 text-primary" />
+        {/* ─── Company Settings Section (admin only) ─── */}
+        {currentUser.role === "admin" && <div className="contents">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">Company Settings</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
+              <CardHeader className="bg-muted/30 pb-6 border-b">
+                <div className="flex items-center gap-4">
+                  <div className="bg-primary/10 p-2 rounded-full">
+                    <Settings2 className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl font-heading">Team Management</CardTitle>
+                    <CardDescription>Manage user roles and permissions</CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-xl font-heading">Team Management</CardTitle>
-                  <CardDescription>Manage user roles and permissions</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
+              </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
               <Table className="min-w-[550px]">
                 <TableHeader className="bg-muted/50">
@@ -769,9 +785,62 @@ export default function Settings() {
               </Table>
             </CardContent>
           </Card>
-        )}
 
-        {currentUser.role === "admin" && (
+          {/* Pipeline Stages */}
+          <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
+            <CardHeader className="bg-muted/30 pb-6 border-b">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <GitBranch className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-xl font-heading">Pipeline Stages</CardTitle>
+                  <CardDescription>Configure deal pipeline stages and their order</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <PipelineStagesManager />
+            </CardContent>
+          </Card>
+
+          {/* Contact Stages */}
+          <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
+            <CardHeader className="bg-muted/30 pb-6 border-b">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <Users2 className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-xl font-heading">Contact Stages</CardTitle>
+                  <CardDescription>Configure contact lifecycle stages</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <ContactStagesManager inline />
+            </CardContent>
+          </Card>
+
+          {/* Deal Tags */}
+          <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
+            <CardHeader className="bg-muted/30 pb-6 border-b">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <Tag className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-xl font-heading">Deal Tags</CardTitle>
+                  <CardDescription>Manage tags used to label deals</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <DealTagsManager />
+            </CardContent>
+          </Card>
+
+          {/* Industry Options */}
           <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
             <CardHeader className="bg-muted/30 pb-6 border-b">
               <div className="flex items-center gap-4">
@@ -841,7 +910,7 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
-        )}
+        </div>}
       </div>
     </div>
   );

@@ -1553,7 +1553,10 @@ export default function ClientDetail() {
                       name="industry"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Industry</FormLabel>
+                          <div className="flex items-center justify-between">
+                            <FormLabel>Industry</FormLabel>
+                            <Link to="/settings" className="text-xs text-primary hover:underline">Manage options →</Link>
+                          </div>
                           <Select
                             value={clientIndustryCustomMode ? "__custom__" : (field.value || "")}
                             onValueChange={(val) => {

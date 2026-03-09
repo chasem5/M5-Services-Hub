@@ -36,11 +36,12 @@ export function getStageBadgeClass(color: string | null | undefined): string {
 }
 
 interface Props {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
+  open?: boolean;
+  onOpenChange?: (v: boolean) => void;
+  inline?: boolean;
 }
 
-export function ContactStagesManager({ open, onOpenChange }: Props) {
+export function ContactStagesManager({ open, onOpenChange, inline }: Props) {
   const { toast } = useToast();
   const [newLabel, setNewLabel] = useState("");
   const [newColor, setNewColor] = useState("gray");
@@ -114,138 +115,153 @@ export function ContactStagesManager({ open, onOpenChange }: Props) {
     createMutation.mutate({ label: newLabel.trim(), color: newColor });
   };
 
+  const stageList = (
+    <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+      {stages.map((stage, i) => (
+        <div key={stage.id} className="flex items-center gap-2 rounded-lg border bg-card p-2">
+          <div className="flex flex-col gap-0.5">
+            <button
+              className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
+              onClick={() => moveStage(i, -1)}
+              disabled={i === 0}
+              data-testid={`button-stage-up-${stage.id}`}
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+            <button
+              className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
+              onClick={() => moveStage(i, 1)}
+              disabled={i === stages.length - 1}
+              data-testid={`button-stage-down-${stage.id}`}
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {editingId === stage.id ? (
+            <>
+              <Input
+                value={editLabel}
+                onChange={e => setEditLabel(e.target.value)}
+                className="h-8 flex-1 text-sm"
+                data-testid={`input-edit-stage-${stage.id}`}
+                autoFocus
+                onKeyDown={e => { if (e.key === "Enter") saveEdit(stage.id); if (e.key === "Escape") setEditingId(null); }}
+              />
+              <Select value={editColor} onValueChange={setEditColor}>
+                <SelectTrigger className="h-8 w-28 text-xs" data-testid={`select-edit-stage-color-${stage.id}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STAGE_COLORS.map(c => (
+                    <SelectItem key={c.value} value={c.value}>
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-1.5 py-0.5 rounded-full border ${c.cls}`}>
+                        {c.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <button
+                className="p-1 text-green-600 hover:text-green-700"
+                onClick={() => saveEdit(stage.id)}
+                data-testid={`button-save-stage-${stage.id}`}
+              >
+                <Check className="h-4 w-4" />
+              </button>
+              <button
+                className="p-1 text-muted-foreground hover:text-foreground"
+                onClick={() => setEditingId(null)}
+                data-testid={`button-cancel-stage-${stage.id}`}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span
+                className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(stage.color)}`}
+              >
+                {stage.label}
+              </span>
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  className="p-1 text-muted-foreground hover:text-foreground"
+                  onClick={() => startEdit(stage)}
+                  data-testid={`button-edit-stage-${stage.id}`}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  className="p-1 text-muted-foreground hover:text-destructive"
+                  onClick={() => deleteMutation.mutate(stage.id)}
+                  data-testid={`button-delete-stage-${stage.id}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  const addForm = (
+    <div className="border-t pt-4 space-y-3">
+      <Label className="text-sm font-semibold">Add New Stage</Label>
+      <div className="flex gap-2">
+        <Input
+          placeholder="Stage name..."
+          value={newLabel}
+          onChange={e => setNewLabel(e.target.value)}
+          className="flex-1"
+          data-testid="input-new-stage-label"
+          onKeyDown={e => { if (e.key === "Enter") handleCreate(); }}
+        />
+        <Select value={newColor} onValueChange={setNewColor}>
+          <SelectTrigger className="w-28" data-testid="select-new-stage-color">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {STAGE_COLORS.map(c => (
+              <SelectItem key={c.value} value={c.value}>
+                <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-1.5 py-0.5 rounded-full border ${c.cls}`}>
+                  {c.label}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          size="sm"
+          onClick={handleCreate}
+          disabled={!newLabel.trim() || createMutation.isPending}
+          data-testid="button-create-stage"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  if (inline) {
+    return (
+      <div className="space-y-2">
+        {stageList}
+        {addForm}
+      </div>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle>Manage Contact Stages</DialogTitle>
         </DialogHeader>
-
-        <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
-          {stages.map((stage, i) => (
-            <div key={stage.id} className="flex items-center gap-2 rounded-lg border bg-card p-2">
-              <div className="flex flex-col gap-0.5">
-                <button
-                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
-                  onClick={() => moveStage(i, -1)}
-                  disabled={i === 0}
-                  data-testid={`button-stage-up-${stage.id}`}
-                >
-                  <ChevronUp className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
-                  onClick={() => moveStage(i, 1)}
-                  disabled={i === stages.length - 1}
-                  data-testid={`button-stage-down-${stage.id}`}
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              {editingId === stage.id ? (
-                <>
-                  <Input
-                    value={editLabel}
-                    onChange={e => setEditLabel(e.target.value)}
-                    className="h-8 flex-1 text-sm"
-                    data-testid={`input-edit-stage-${stage.id}`}
-                    autoFocus
-                    onKeyDown={e => { if (e.key === "Enter") saveEdit(stage.id); if (e.key === "Escape") setEditingId(null); }}
-                  />
-                  <Select value={editColor} onValueChange={setEditColor}>
-                    <SelectTrigger className="h-8 w-28 text-xs" data-testid={`select-edit-stage-color-${stage.id}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {STAGE_COLORS.map(c => (
-                        <SelectItem key={c.value} value={c.value}>
-                          <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-1.5 py-0.5 rounded-full border ${c.cls}`}>
-                            {c.label}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <button
-                    className="p-1 text-green-600 hover:text-green-700"
-                    onClick={() => saveEdit(stage.id)}
-                    data-testid={`button-save-stage-${stage.id}`}
-                  >
-                    <Check className="h-4 w-4" />
-                  </button>
-                  <button
-                    className="p-1 text-muted-foreground hover:text-foreground"
-                    onClick={() => setEditingId(null)}
-                    data-testid={`button-cancel-stage-${stage.id}`}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span
-                    className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(stage.color)}`}
-                  >
-                    {stage.label}
-                  </span>
-                  <div className="ml-auto flex items-center gap-1">
-                    <button
-                      className="p-1 text-muted-foreground hover:text-foreground"
-                      onClick={() => startEdit(stage)}
-                      data-testid={`button-edit-stage-${stage.id}`}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      className="p-1 text-muted-foreground hover:text-destructive"
-                      onClick={() => deleteMutation.mutate(stage.id)}
-                      data-testid={`button-delete-stage-${stage.id}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="border-t pt-4 space-y-3">
-          <Label className="text-sm font-semibold">Add New Stage</Label>
-          <div className="flex gap-2">
-            <Input
-              placeholder="Stage name..."
-              value={newLabel}
-              onChange={e => setNewLabel(e.target.value)}
-              className="flex-1"
-              data-testid="input-new-stage-label"
-              onKeyDown={e => { if (e.key === "Enter") handleCreate(); }}
-            />
-            <Select value={newColor} onValueChange={setNewColor}>
-              <SelectTrigger className="w-28" data-testid="select-new-stage-color">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {STAGE_COLORS.map(c => (
-                  <SelectItem key={c.value} value={c.value}>
-                    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-1.5 py-0.5 rounded-full border ${c.cls}`}>
-                      {c.label}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              onClick={handleCreate}
-              disabled={!newLabel.trim() || createMutation.isPending}
-              data-testid="button-create-stage"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+        {stageList}
+        {addForm}
       </DialogContent>
     </Dialog>
   );

@@ -37,7 +37,7 @@ import {
   InsertTask,
   DealTag,
 } from "@shared/schema";
-import { useSearch } from "wouter";
+import { useSearch, Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -128,6 +128,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { PipelineStagesManager } from "@/components/PipelineStagesManager";
 import { TierBadge } from "@/components/TierBadge";
 import { AttachmentsPanel } from "@/components/AttachmentsPanel";
 import { SearchableSelect } from "@/components/SearchableSelect";
@@ -2068,7 +2069,10 @@ export default function Leads() {
               />
 
               <div className="space-y-2">
-                <FormLabel>Tags</FormLabel>
+                <div className="flex items-center justify-between">
+                  <FormLabel>Tags</FormLabel>
+                  <Link to="/settings" className="text-xs text-primary hover:underline">Manage tags →</Link>
+                </div>
                 <div className="flex gap-2">
                 <div className="relative">
                   <Input
@@ -2565,7 +2569,10 @@ export default function Leads() {
                           )}
                         />
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium">Tags</Label>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm font-medium">Tags</Label>
+                            <Link to="/settings" className="text-xs text-primary hover:underline">Manage tags →</Link>
+                          </div>
                           <div className="flex gap-2">
                           <div className="relative">
                             <Input
@@ -3094,153 +3101,7 @@ export default function Leads() {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-2 max-h-[420px] overflow-y-auto py-2">
-            {stages.map((stage, index) => (
-              <div
-                key={stage.id}
-                className="flex items-center gap-2 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
-                data-testid={`stage-row-${stage.id}`}
-              >
-                {/* Reorder arrows */}
-                <div className="flex flex-col gap-0.5">
-                  <button
-                    onClick={() => moveStage(index, "up")}
-                    disabled={index === 0}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
-                    data-testid={`button-stage-up-${stage.id}`}
-                  >
-                    <ChevronUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => moveStage(index, "down")}
-                    disabled={index === stages.length - 1}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
-                    data-testid={`button-stage-down-${stage.id}`}
-                  >
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-
-                {/* Color indicator */}
-                <div className={`h-3 w-3 rounded-full flex-shrink-0 ${getStageColors(stage.color).dot}`} />
-
-                {/* Label — editable inline */}
-                {editingStageId === stage.id ? (
-                  <Input
-                    autoFocus
-                    value={editingStageLabel}
-                    onChange={(e) => setEditingStageLabel(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        updateStageMutation.mutate({ id: stage.id, data: { label: editingStageLabel } });
-                      }
-                      if (e.key === "Escape") setEditingStageId(null);
-                    }}
-                    className="h-7 text-sm flex-1"
-                    data-testid={`input-stage-label-${stage.id}`}
-                  />
-                ) : (
-                  <span className="flex-1 text-sm font-medium truncate">{stage.label}</span>
-                )}
-
-                {/* Color picker */}
-                <select
-                  value={stage.color ?? "default"}
-                  onChange={(e) => {
-                    const val = e.target.value === "default" ? null : e.target.value;
-                    updateStageMutation.mutate({ id: stage.id, data: { color: val } });
-                  }}
-                  className="text-xs border rounded px-1.5 py-1 bg-background h-7"
-                  data-testid={`select-stage-color-${stage.id}`}
-                >
-                  <option value="default">Default</option>
-                  <option value="green">Green (Won)</option>
-                  <option value="red">Red (Lost)</option>
-                </select>
-
-                {/* Edit / Save button */}
-                {editingStageId === stage.id ? (
-                  <Button
-                    size="icon"
-                    variant="default"
-                    className="h-7 w-7"
-                    onClick={() => updateStageMutation.mutate({ id: stage.id, data: { label: editingStageLabel } })}
-                    disabled={updateStageMutation.isPending}
-                    data-testid={`button-save-stage-${stage.id}`}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  </Button>
-                ) : (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    onClick={() => {
-                      setEditingStageId(stage.id);
-                      setEditingStageLabel(stage.label);
-                    }}
-                    data-testid={`button-edit-stage-${stage.id}`}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-
-                {/* Delete button */}
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7 text-destructive hover:text-destructive"
-                  onClick={() => { setDeleteStageId(stage.id); setDeleteStageLabel(stage.label); }}
-                  data-testid={`button-delete-stage-${stage.id}`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))}
-          </div>
-
-          {/* Add new stage */}
-          <div className="border-t pt-3 space-y-2">
-            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Add New Stage</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Stage name..."
-                value={newStageLabel}
-                onChange={(e) => setNewStageLabel(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && newStageLabel.trim()) {
-                    const slug = newStageLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
-                    createStageMutation.mutate({ label: newStageLabel.trim(), slug, color: newStageColor });
-                  }
-                }}
-                className="flex-1 h-8"
-                data-testid="input-new-stage-name"
-              />
-              <select
-                value={newStageColor ?? "default"}
-                onChange={(e) => setNewStageColor(e.target.value === "default" ? null : e.target.value)}
-                className="text-xs border rounded px-1.5 py-1 bg-background h-8"
-                data-testid="select-new-stage-color"
-              >
-                <option value="default">Default</option>
-                <option value="green">Green</option>
-                <option value="red">Red</option>
-              </select>
-              <Button
-                size="sm"
-                className="h-8"
-                disabled={!newStageLabel.trim() || createStageMutation.isPending}
-                onClick={() => {
-                  const slug = newStageLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
-                  createStageMutation.mutate({ label: newStageLabel.trim(), slug, color: newStageColor });
-                }}
-                data-testid="button-add-stage"
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Add
-              </Button>
-            </div>
-          </div>
+          <PipelineStagesManager />
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsManageStagesOpen(false)}>
