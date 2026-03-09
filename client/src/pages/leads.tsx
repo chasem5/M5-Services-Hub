@@ -733,19 +733,6 @@ export default function Leads() {
   const [localScore, setLocalScore] = useState(50);
   useEffect(() => { setLocalScore(selectedLead?.confidenceScore ?? 50); }, [selectedLead?.id, selectedLead?.confidenceScore]);
 
-  useEffect(() => {
-    if (autoOpenedRef.current || !leads) return;
-    const params = new URLSearchParams(searchParams);
-    const idParam = params.get("id");
-    if (!idParam) return;
-    const match = leads.find(l => l.id === Number(idParam));
-    if (match) {
-      autoOpenedRef.current = true;
-      setSelectedLead(match);
-      setSelectedClientIdForBuildingEdit(match.clientId ?? null);
-      setSelectedClientIdForContactEdit(match.clientId ?? null);
-    }
-  }, [leads, searchParams]);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [tierFilter, setTierFilter] = useState<string>("all");
@@ -800,6 +787,20 @@ export default function Leads() {
   const { data: leads, isLoading: isLoadingLeads } = useQuery<Lead[]>({
     queryKey: ["/api/leads"],
   });
+
+  useEffect(() => {
+    if (autoOpenedRef.current || !leads) return;
+    const params = new URLSearchParams(searchParams);
+    const idParam = params.get("id");
+    if (!idParam) return;
+    const match = leads.find(l => l.id === Number(idParam));
+    if (match) {
+      autoOpenedRef.current = true;
+      setSelectedLead(match);
+      setSelectedClientIdForBuildingEdit(match.clientId ?? null);
+      setSelectedClientIdForContactEdit(match.clientId ?? null);
+    }
+  }, [leads, searchParams]);
 
   const { data: activitySummary } = useQuery<{ leadId: number; lastActivityAt: string | null; stageChangedAt: string | null }[]>({
     queryKey: ["/api/leads/activity-summary"],
