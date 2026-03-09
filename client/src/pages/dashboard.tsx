@@ -185,12 +185,11 @@ export default function Dashboard() {
     { id: "contact", title: "Add a contact", icon: UserPlus, href: "/customers", done: contacts.length > 0 || onboardingSteps["contact"] },
     { id: "lead", title: "Create your first lead", icon: Target, href: "/leads", done: leads.length > 0 || onboardingSteps["lead"] },
     { id: "activity", title: "Log your first activity", icon: Phone, action: () => setQuickAction("activity"), done: onboardingSteps["activity"] },
-    { id: "invite", title: "Invite a team member", icon: Users, href: "/settings", done: onboardingSteps["invite"] },
   ];
 
   const completedCount = onboardingItems.filter(item => item.done).length;
   const isNewUser = user && differenceInDays(new Date(), new Date(user.createdAt)) < 7;
-  const showOnboarding = isNewUser && !isDismissed && completedCount < 5;
+  const showOnboarding = isNewUser && !isDismissed && completedCount < 4;
 
   const getRelativeTime = (date: string | Date) =>
     formatDistanceToNow(new Date(date), { addSuffix: true });

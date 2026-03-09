@@ -42,6 +42,8 @@ import {
   TrendingUp,
   ArrowRight,
   Activity,
+  Copy,
+  MoreHorizontal,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import {
@@ -656,8 +658,28 @@ function ContactCard({
         {/* Contact info */}
         <div className="space-y-1">
           {contact.email && (
-            <div className="flex items-center text-sm text-muted-foreground">
-              <Mail className="mr-2 h-3.5 w-3.5 shrink-0" />{contact.email}
+            <div className="flex items-center text-sm text-muted-foreground group/email">
+              <Mail className="mr-2 h-3.5 w-3.5 shrink-0" />
+              <a
+                href={`mailto:${contact.email}`}
+                className="hover:text-primary hover:underline transition-colors truncate"
+                onClick={e => e.stopPropagation()}
+                data-testid={`link-email-${contact.id}`}
+              >
+                {contact.email}
+              </a>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.clipboard.writeText(contact.email!);
+                  toast({ title: "Email copied", description: contact.email });
+                }}
+                className="ml-1.5 opacity-0 group-hover/email:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                data-testid={`button-copy-email-${contact.id}`}
+                title="Copy email"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
             </div>
           )}
           {contact.phone && (
@@ -2001,30 +2023,62 @@ export default function ClientDetail() {
                               <Plus className="mr-1 h-3.5 w-3.5" />
                               Add Contact
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                              onClick={() => openEditOffice(office)}
-                              data-testid={`button-edit-office-${office.id}`}
-                            >
-                              <Edit className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={() => {
-                                setDeleteConfirm({
-                                  label: `Delete "${office.name}"`,
-                                  description: "Contacts assigned to this office will become unassigned. This cannot be undone.",
-                                  onConfirm: () => deleteOfficeMutation.mutate(office.id),
-                                });
-                              }}
-                              data-testid={`button-delete-office-${office.id}`}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                  data-testid={`button-office-menu-${office.id}`}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => openEditOffice(office)}
+                                  data-testid={`button-edit-office-${office.id}`}
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit Office
+                                </DropdownMenuItem>
+                                {officeContacts.filter((c: any) => c.linkedinUrl).length > 0 && (
+                                  <DropdownMenuItem
+                                    onClick={async () => {
+                                      const withLinkedin = officeContacts.filter((c: any) => c.linkedinUrl);
+                                      toast({ title: `Syncing ${withLinkedin.length} LinkedIn profile${withLinkedin.length !== 1 ? "s" : ""}...` });
+                                      for (const c of withLinkedin) {
+                                        try {
+                                          await apiRequest("POST", `/api/contacts/${c.id}/linkedin-enrich`, { linkedinUrl: (c as any).linkedinUrl, preview: false });
+                                          await new Promise(r => setTimeout(r, 500));
+                                        } catch {}
+                                      }
+                                      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+                                      toast({ title: "LinkedIn sync complete", description: `Updated ${withLinkedin.length} contact${withLinkedin.length !== 1 ? "s" : ""}` });
+                                    }}
+                                    data-testid={`button-bulk-linkedin-${office.id}`}
+                                  >
+                                    <SiLinkedin className="h-4 w-4 mr-2 text-[#0A66C2]" />
+                                    Sync LinkedIn for All Contacts
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => {
+                                    setDeleteConfirm({
+                                      label: `Delete "${office.name}"`,
+                                      description: "Contacts assigned to this office will become unassigned. This cannot be undone.",
+                                      onConfirm: () => deleteOfficeMutation.mutate(office.id),
+                                    });
+                                  }}
+                                  data-testid={`button-delete-office-${office.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete Office
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       </CardHeader>

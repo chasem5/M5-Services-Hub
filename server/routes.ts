@@ -140,6 +140,9 @@ export async function registerRoutes(
     res.json({ version });
   });
 
+  // Run migrations first
+  await storage.migrateLeadServiceTypes();
+  await storage.migrateContactStages();
   // Seed default contact stages on startup
   await storage.seedDefaultContactStages();
   // Seed default pipeline stages on startup

@@ -518,8 +518,9 @@ function LeadCard({
   const score = lead.confidenceScore ?? 50;
   const leadTasks = tasks.filter(t => t.relatedLeadId === lead.id);
   const contactName = getContactName(lead.contactId);
-  const serviceLabel = getServiceTypeLabel(lead.serviceType);
-  const serviceColor = getServiceTypeColor(lead.serviceType);
+  const effectiveServiceTypes: string[] = ((lead as any).serviceTypes?.length > 0
+    ? (lead as any).serviceTypes
+    : lead.serviceType ? [lead.serviceType] : []) as string[];
 
   const leadSummary = activitySummary?.find(s => s.leadId === lead.id);
   const daysInStage = useMemo(() => {
@@ -603,12 +604,12 @@ function LeadCard({
             </div>
 
             <div className="flex flex-wrap gap-1">
-              {serviceLabel && (
-                <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 w-fit font-medium border ${serviceColor}`}>
-                  <Briefcase className="h-2.5 w-2.5 mr-1" />
-                  {serviceLabel}
+              {effectiveServiceTypes.map((st, i) => (
+                <Badge key={st} variant="outline" className={`text-[9px] px-1.5 py-0 h-4 w-fit font-medium border ${getServiceTypeColor(st)}`}>
+                  {i === 0 && <Briefcase className="h-2.5 w-2.5 mr-1" />}
+                  {getServiceTypeLabel(st)}
                 </Badge>
-              )}
+              ))}
               {lead.tier && <TierBadge tier={lead.tier} size="xs" />}
             </div>
 
@@ -743,6 +744,8 @@ export default function Leads() {
   const [isEditingLead, setIsEditingLead] = useState(false);
   const [editTagInput, setEditTagInput] = useState("");
   const [editFormTags, setEditFormTags] = useState<string[]>([]);
+  const [formServiceTypes, setFormServiceTypes] = useState<string[]>([]);
+  const [editFormServiceTypes, setEditFormServiceTypes] = useState<string[]>([]);
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
   const [selectedClientIdForBuilding, setSelectedClientIdForBuilding] = useState<number | null>(null);
   const [selectedClientIdForBuildingEdit, setSelectedClientIdForBuildingEdit] = useState<number | null>(null);
@@ -1120,7 +1123,10 @@ export default function Leads() {
     const matchesSearch = lead.title.toLowerCase().includes(search.toLowerCase());
     const matchesStage = stageFilter === "all" || lead.stage === stageFilter;
     const matchesViewStage = !activeFilters?.stages?.length || activeFilters.stages.includes(lead.stage);
-    const matchesViewService = !activeFilters?.serviceTypes?.length || (lead.serviceType != null && activeFilters.serviceTypes.includes(lead.serviceType));
+    const leadServiceTypes: string[] = ((lead as any).serviceTypes?.length > 0
+      ? (lead as any).serviceTypes
+      : lead.serviceType ? [lead.serviceType] : []) as string[];
+    const matchesViewService = !activeFilters?.serviceTypes?.length || activeFilters.serviceTypes.some(f => leadServiceTypes.includes(f));
     const matchesViewTier = !activeFilters?.tiers?.length || (lead.tier != null && activeFilters.tiers.includes(lead.tier));
     const matchesViewTag = !activeFilters?.tags?.length || (lead.tags && activeFilters.tags.some(t => lead.tags!.includes(t)));
     const matchesTier = tierFilter === "all" || lead.tier === tierFilter;
@@ -1175,7 +1181,7 @@ export default function Leads() {
   };
 
   const onSubmit = (data: InsertLead) => {
-    createLeadMutation.mutate({ ...data, tags: formTags, confidenceStatus: createConfidenceStatus });
+    createLeadMutation.mutate({ ...data, tags: formTags, confidenceStatus: createConfidenceStatus, serviceTypes: formServiceTypes });
   };
 
   const getLeadTasks = (leadId: number) =>
@@ -1210,6 +1216,10 @@ export default function Leads() {
       renewalDate: lead.renewalDate ? new Date(lead.renewalDate) : null,
     });
     setEditFormTags(lead.tags ?? []);
+    const effectiveTypes = (lead as any).serviceTypes?.length > 0
+      ? (lead as any).serviceTypes as string[]
+      : lead.serviceType ? [lead.serviceType as string] : [];
+    setEditFormServiceTypes(effectiveTypes);
   };
 
   const addEditTag = async (tag: string) => {
@@ -1230,7 +1240,7 @@ export default function Leads() {
     if (!selectedLead) return;
     updateLeadMutation.mutate({
       id: selectedLead.id,
-      data: { ...data, tags: editFormTags, confidenceStatus: editConfidenceStatus },
+      data: { ...data, tags: editFormTags, confidenceStatus: editConfidenceStatus, serviceTypes: editFormServiceTypes },
     });
     setIsEditingLead(false);
   };
@@ -1546,11 +1556,20 @@ export default function Leads() {
                           ) : <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell>
-                          {lead.serviceType ? (
-                            <Badge variant="outline" className={`text-xs font-medium border ${getServiceTypeColor(lead.serviceType)}`}>
-                              {getServiceTypeLabel(lead.serviceType)}
-                            </Badge>
-                          ) : <span className="text-muted-foreground">—</span>}
+                          {(() => {
+                            const types: string[] = ((lead as any).serviceTypes?.length > 0
+                              ? (lead as any).serviceTypes
+                              : lead.serviceType ? [lead.serviceType] : []) as string[];
+                            return types.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {types.map(st => (
+                                  <Badge key={st} variant="outline" className={`text-xs font-medium border ${getServiceTypeColor(st)}`}>
+                                    {getServiceTypeLabel(st)}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : <span className="text-muted-foreground">—</span>;
+                          })()}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="capitalize">
@@ -1697,32 +1716,25 @@ export default function Leads() {
                   )}
                 />
               )}
-              <FormField
-                control={form.control}
-                name="serviceType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Service Type (Optional)</FormLabel>
-                    <Select
-                      onValueChange={(val) => field.onChange(val === "none" ? null : val)}
-                      value={field.value != null ? String(field.value) : "none"}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-lead-service-type">
-                          <SelectValue placeholder="Select service type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">No service type</SelectItem>
-                        {SERVICE_TYPE_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="space-y-2">
+                <Label>Services (Optional)</Label>
+                <div className="flex flex-wrap gap-2">
+                  {SERVICE_TYPE_OPTIONS.map((opt) => {
+                    const selected = formServiceTypes.includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setFormServiceTypes(prev => selected ? prev.filter(s => s !== opt.value) : [...prev, opt.value])}
+                        className={`inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${selected ? opt.color + " border-transparent" : "bg-muted/30 text-muted-foreground border-border/50 hover:border-border"}`}
+                        data-testid={`toggle-create-service-${opt.value}`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               {selectedClientIdForBuilding && buildingsForCreate.length > 0 && (
                 <FormField
                   control={form.control}
@@ -2381,32 +2393,25 @@ export default function Leads() {
                             )}
                           />
                         )}
-                        <FormField
-                          control={editLeadForm.control}
-                          name="serviceType"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Service Type (Optional)</FormLabel>
-                              <Select
-                                onValueChange={(val) => field.onChange(val === "none" ? null : val)}
-                                value={field.value != null ? String(field.value) : "none"}
-                              >
-                                <FormControl>
-                                  <SelectTrigger data-testid="select-edit-lead-service-type">
-                                    <SelectValue placeholder="Select service type" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="none">No service type</SelectItem>
-                                  {SERVICE_TYPE_OPTIONS.map((opt) => (
-                                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                        <div className="space-y-2">
+                          <Label>Services (Optional)</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {SERVICE_TYPE_OPTIONS.map((opt) => {
+                              const selected = editFormServiceTypes.includes(opt.value);
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => setEditFormServiceTypes(prev => selected ? prev.filter(s => s !== opt.value) : [...prev, opt.value])}
+                                  className={`inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${selected ? opt.color + " border-transparent" : "bg-muted/30 text-muted-foreground border-border/50 hover:border-border"}`}
+                                  data-testid={`toggle-edit-service-${opt.value}`}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                         {selectedClientIdForBuildingEdit && buildingsForEdit.length > 0 && (
                           <FormField
                             control={editLeadForm.control}
@@ -2728,16 +2733,25 @@ export default function Leads() {
                             <p className="font-medium text-sm">{getContactName(selectedLead.contactId)}</p>
                           </div>
                         )}
-                        {selectedLead.serviceType && (
-                          <div className="space-y-1">
-                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                              <Briefcase className="h-3 w-3" /> Service Type
-                            </p>
-                            <Badge variant="outline" className={`text-xs font-medium border w-fit ${getServiceTypeColor(selectedLead.serviceType)}`}>
-                              {getServiceTypeLabel(selectedLead.serviceType)}
-                            </Badge>
-                          </div>
-                        )}
+                        {(() => {
+                          const types: string[] = ((selectedLead as any).serviceTypes?.length > 0
+                            ? (selectedLead as any).serviceTypes
+                            : selectedLead.serviceType ? [selectedLead.serviceType] : []) as string[];
+                          return types.length > 0 ? (
+                            <div className="space-y-1">
+                              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                <Briefcase className="h-3 w-3" /> Services
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {types.map(st => (
+                                  <Badge key={st} variant="outline" className={`text-xs font-medium border w-fit ${getServiceTypeColor(st)}`}>
+                                    {getServiceTypeLabel(st)}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null;
+                        })()}
                         {selectedLead.buildingId && getBuildingName(selectedLead.buildingId) && (
                           <div className="space-y-1 col-span-2">
                             <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">

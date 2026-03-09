@@ -99,6 +99,7 @@ export const leads = pgTable("leads", {
   contactId: integer("contact_id").references(() => clientContacts.id),
   buildingId: integer("building_id").references(() => contactBuildings.id),
   serviceType: varchar("service_type", { enum: ["building_engineering", "facility_solutions", "janitorial", "special_projects", "property_assessment"] }),
+  serviceTypes: text("service_types").array().default([]),
   stage: varchar("stage").default("new_lead").notNull(),
   valueType: varchar("value_type", { length: 10 }).default("fixed").notNull(),
   value: decimal("value", { precision: 12, scale: 2 }).default("0").notNull(),

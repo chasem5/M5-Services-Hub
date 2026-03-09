@@ -204,6 +204,8 @@ export interface IStorage {
   deleteContactStage(id: number): Promise<void>;
   reorderContactStages(orderedIds: number[]): Promise<ContactStage[]>;
   seedDefaultContactStages(): Promise<void>;
+  migrateContactStages(): Promise<void>;
+  migrateLeadServiceTypes(): Promise<void>;
   listPipelineStages(): Promise<PipelineStage[]>;
   createPipelineStage(stage: InsertPipelineStage): Promise<PipelineStage>;
   updatePipelineStage(id: number, stage: Partial<InsertPipelineStage>): Promise<PipelineStage>;
@@ -880,13 +882,40 @@ export class DatabaseStorage implements IStorage {
     const existing = await db.select().from(contactStages);
     if (existing.length > 0) return;
     const defaults = [
-      { label: "New Contact", color: "gray", sortOrder: 0 },
-      { label: "Reached Out", color: "blue", sortOrder: 1 },
-      { label: "Connected", color: "purple", sortOrder: 2 },
-      { label: "Active Relationship", color: "green", sortOrder: 3 },
-      { label: "Inactive", color: "amber", sortOrder: 4 },
+      { label: "Prospect", color: "blue", sortOrder: 0 },
+      { label: "Customer", color: "green", sortOrder: 1 },
+      { label: "Not Interested", color: "red", sortOrder: 2 },
+      { label: "Networking Contact", color: "purple", sortOrder: 3 },
     ];
     await db.insert(contactStages).values(defaults);
+  }
+
+  async migrateContactStages(): Promise<void> {
+    try {
+      const newStages = [
+        { label: "Prospect", color: "blue", sortOrder: 0 },
+        { label: "Customer", color: "green", sortOrder: 1 },
+        { label: "Not Interested", color: "red", sortOrder: 2 },
+        { label: "Networking Contact", color: "purple", sortOrder: 3 },
+      ];
+      const existing = await db.select().from(contactStages);
+      const existingLabels = existing.map(s => s.label);
+      const alreadyMigrated = newStages.every(ns => existingLabels.includes(ns.label));
+      if (alreadyMigrated) return;
+      await db.delete(contactStages);
+      await db.insert(contactStages).values(newStages);
+    } catch (e) {
+      console.error("migrateContactStages error:", e);
+    }
+  }
+
+  async migrateLeadServiceTypes(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS service_types text[] DEFAULT '{}'`);
+      await db.execute(sql`UPDATE leads SET service_types = ARRAY[service_type::text] WHERE service_type IS NOT NULL AND (service_types IS NULL OR service_types = '{}')`);
+    } catch (e) {
+      console.error("migrateLeadServiceTypes error:", e);
+    }
   }
 
   // Pipeline Stages
