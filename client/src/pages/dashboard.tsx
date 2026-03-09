@@ -243,12 +243,12 @@ export default function Dashboard() {
             <CardDescription>
               Complete these steps to get the most out of M5 CRM.
               <span className="ml-2 font-medium text-primary">
-                {completedCount}/5 complete
+                {completedCount}/4 complete
               </span>
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {onboardingItems.map((item) => (
                 <div
                   key={item.id}
