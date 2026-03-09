@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
@@ -37,6 +37,7 @@ import {
   InsertTask,
   DealTag,
 } from "@shared/schema";
+import { useSearch } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -724,11 +725,27 @@ function LeadCard({
 }
 
 export default function Leads() {
+  const searchParams = useSearch();
   const [view, setView] = useState<"kanban" | "list">(() => window.innerWidth < 768 ? "list" : "kanban");
   const [isAddDealOpen, setIsAddDealOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const autoOpenedRef = useRef(false);
   const [localScore, setLocalScore] = useState(50);
   useEffect(() => { setLocalScore(selectedLead?.confidenceScore ?? 50); }, [selectedLead?.id, selectedLead?.confidenceScore]);
+
+  useEffect(() => {
+    if (autoOpenedRef.current || !leads) return;
+    const params = new URLSearchParams(searchParams);
+    const idParam = params.get("id");
+    if (!idParam) return;
+    const match = leads.find(l => l.id === Number(idParam));
+    if (match) {
+      autoOpenedRef.current = true;
+      setSelectedLead(match);
+      setSelectedClientIdForBuildingEdit(match.clientId ?? null);
+      setSelectedClientIdForContactEdit(match.clientId ?? null);
+    }
+  }, [leads, searchParams]);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [tierFilter, setTierFilter] = useState<string>("all");

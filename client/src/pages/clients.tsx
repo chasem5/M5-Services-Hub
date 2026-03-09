@@ -1172,13 +1172,22 @@ export default function Customers() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => {
+                            onClick={async () => {
                               const website = form.getValues("website");
-                              if (website) {
-                                const domain = website.replace(/^https?:\/\//, "").split("/")[0];
-                                field.onChange(`https://logo.clearbit.com/${domain}`);
-                              } else {
+                              if (!website) {
                                 toast({ title: "Please enter a website first" });
+                                return;
+                              }
+                              try {
+                                const domain = website.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+                                toast({ title: "Fetching logo...", description: "Looking up logo for " + domain });
+                                const res = await fetch(`/api/fetch-logo?domain=${encodeURIComponent(domain)}`, { credentials: "include" });
+                                if (!res.ok) throw new Error("Not found");
+                                const data = await res.json();
+                                field.onChange(data.url);
+                                toast({ title: "Logo found", description: "Logo fetched successfully." });
+                              } catch (e) {
+                                toast({ title: "Logo not found", description: "Could not find a logo. Try uploading one manually.", variant: "destructive" });
                               }
                             }}
                             data-testid="button-fetch-logo"

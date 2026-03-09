@@ -2564,6 +2564,59 @@ Respond with this JSON:
     }
   });
 
+  // Auto-fetch company logo from domain, store in GCS, return URL
+  app.get("/api/fetch-logo", isAuthenticated, async (req, res) => {
+    const domain = String(req.query.domain || "").trim();
+    const clientId = req.query.clientId ? Number(req.query.clientId) : null;
+    if (!domain) return res.status(400).json({ message: "domain is required" });
+
+    const candidates = [
+      `https://logo.clearbit.com/${domain}`,
+      `https://www.google.com/s2/favicons?domain=${domain}&sz=128`,
+    ];
+
+    let imageBuffer: Buffer | null = null;
+    let mimeType = "image/png";
+    let chosenExt = "png";
+
+    for (const url of candidates) {
+      try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        if (!response.ok) continue;
+        const ct = response.headers.get("content-type") || "";
+        if (!ct.startsWith("image/")) continue;
+        const ab = await response.arrayBuffer();
+        const buf = Buffer.from(ab);
+        if (buf.length < 100) continue; // too small, likely a placeholder
+        imageBuffer = buf;
+        mimeType = ct.split(";")[0];
+        const extMap: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/x-icon": "png", "image/vnd.microsoft.icon": "png" };
+        chosenExt = extMap[mimeType] || "png";
+        break;
+      } catch (_) { continue; }
+    }
+
+    if (!imageBuffer) return res.status(404).json({ message: "Could not fetch a logo for this domain" });
+
+    try {
+      const entityDir = objectStorageService.getPrivateObjectDir();
+      const filename = clientId ? `client_${clientId}_auto.${chosenExt}` : `logo_${Date.now()}.${chosenExt}`;
+      const fullPath = `${entityDir}/logos/${filename}`;
+      const { bucketName, objectName } = parseStoragePath(fullPath);
+      const { objectStorageClient: gcsClient } = await import("./replit_integrations/object_storage/objectStorage");
+      const gcsFile = gcsClient.bucket(bucketName).file(objectName);
+      await gcsFile.save(imageBuffer, { contentType: mimeType });
+      try { await gcsFile.makePublic(); } catch (_) {}
+      const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
+      if (clientId) {
+        await storage.updateClient(clientId, { logoUrl: publicUrl } as any);
+      }
+      return res.json({ url: publicUrl });
+    } catch (e: any) {
+      return res.status(500).json({ message: e.message });
+    }
+  });
+
   // Proxy route for serving stored images (logo, contact photos) through the backend
   app.get("/api/clients/:id/logo-img", isAuthenticated, async (req, res) => {
     try {

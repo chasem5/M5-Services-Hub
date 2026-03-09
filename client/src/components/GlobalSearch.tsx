@@ -99,7 +99,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
                   <CommandItem
                     key={`contact-${contact.id}`}
                     value={`contact ${contact.name} ${contact.title || ""} ${contact.email || ""} ${clientMap[contact.clientId] || ""}`}
-                    onSelect={() => navigate(`/customers/${contact.clientId}`)}
+                    onSelect={() => navigate(`/customers/${contact.clientId}?tab=contacts&contactId=${contact.id}`)}
                     data-testid={`search-result-contact-${contact.id}`}
                     className="flex items-center gap-3 cursor-pointer"
                   >
@@ -161,7 +161,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
                   <CommandItem
                     key={`task-${task.id}`}
                     value={`task ${task.title} ${task.status || ""} ${task.priority || ""}`}
-                    onSelect={() => navigate(`/tasks`)}
+                    onSelect={() => navigate(`/tasks?id=${task.id}`)}
                     data-testid={`search-result-task-${task.id}`}
                     className="flex items-center gap-3 cursor-pointer"
                   >

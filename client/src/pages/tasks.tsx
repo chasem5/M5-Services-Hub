@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { format, isBefore, startOfDay } from "date-fns";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import {
   Form,
   FormControl,
@@ -452,10 +452,12 @@ function ColumnHeader({
 }
 
 export default function TasksPage() {
+  const searchParams = useSearch();
   const { toast } = useToast();
   const [view, setView] = useState<"board" | "list">(() => window.innerWidth < 768 ? "list" : "board");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const autoOpenedRef = useRef(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeId, setActiveId] = useState<number | null>(null);
   const [newChecklistText, setNewChecklistText] = useState("");
@@ -477,6 +479,19 @@ export default function TasksPage() {
   const { data: tasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
   });
+
+  useEffect(() => {
+    if (autoOpenedRef.current || isLoadingTasks) return;
+    const params = new URLSearchParams(searchParams);
+    const idParam = params.get("id");
+    if (!idParam) return;
+    const match = tasks.find(t => t.id === Number(idParam));
+    if (match) {
+      autoOpenedRef.current = true;
+      setSelectedTask(match);
+    }
+  }, [tasks, isLoadingTasks, searchParams]);
+
   const { data: taskColumns = [], isLoading: isLoadingColumns } = useQuery<TaskColumn[]>({
     queryKey: ["/api/task-columns"],
   });

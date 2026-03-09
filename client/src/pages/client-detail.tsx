@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, Link, useLocation } from "wouter";
+import { useParams, Link, useLocation, useSearch } from "wouter";
 import { 
   Building2, 
   Users, 
@@ -910,9 +910,30 @@ export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
   const clientId = parseInt(id!);
   const [, setLocation] = useLocation();
+  const searchParams = useSearch();
   const { toast } = useToast();
   const [isAddSpendOpen, setIsAddSpendOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [highlightedContactId, setHighlightedContactId] = useState<number | null>(null);
+  const urlInitializedRef = useRef(false);
+
+  useEffect(() => {
+    if (urlInitializedRef.current) return;
+    const params = new URLSearchParams(searchParams);
+    const tab = params.get("tab");
+    const contactId = params.get("contactId");
+    if (tab) {
+      setActiveTab(tab);
+      urlInitializedRef.current = true;
+    }
+    if (contactId) {
+      const cid = Number(contactId);
+      setHighlightedContactId(cid);
+      setTimeout(() => setHighlightedContactId(null), 3000);
+      urlInitializedRef.current = true;
+    }
+  }, [searchParams]);
+
   const [isEditCompanyOpen, setIsEditCompanyOpen] = useState(false);
   const [spendFormData, setSpendFormData] = useState({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "", contactId: "" });
   const [isSubmittingSpend, setIsSubmittingSpend] = useState(false);
@@ -1423,7 +1444,7 @@ export default function ClientDetail() {
                             variant="outline"
                             size="sm"
                             className="h-8 text-xs"
-                            onClick={() => {
+                            onClick={async () => {
                               const website = clientForm.getValues("website");
                               if (!website) {
                                 toast({ title: "No website", description: "Please enter a website URL first", variant: "destructive" });
@@ -1431,9 +1452,15 @@ export default function ClientDetail() {
                               }
                               try {
                                 const domain = new URL(website.startsWith("http") ? website : `https://${website}`).hostname.replace("www.", "");
-                                clientForm.setValue("logoUrl", `https://logo.clearbit.com/${domain}`);
+                                toast({ title: "Fetching logo...", description: "Looking up logo for " + domain });
+                                const res = await fetch(`/api/fetch-logo?domain=${encodeURIComponent(domain)}&clientId=${clientId}`, { credentials: "include" });
+                                if (!res.ok) throw new Error("Not found");
+                                const data = await res.json();
+                                clientForm.setValue("logoUrl", data.url);
+                                setLogoImgError(false);
+                                toast({ title: "Logo found", description: "Logo has been saved automatically." });
                               } catch (e) {
-                                toast({ title: "Invalid website", description: "Could not extract domain from website URL", variant: "destructive" });
+                                toast({ title: "Logo not found", description: "Could not find a logo. Try uploading one manually.", variant: "destructive" });
                               }
                             }}
                             data-testid="button-logo-autofetch"
@@ -2098,7 +2125,7 @@ export default function ClientDetail() {
                                 draggable
                                 onDragStart={() => setDragContactId(contact.id)}
                                 onDragEnd={() => { setDragContactId(null); setDragOverOfficeId(null); }}
-                                className={`transition-opacity ${dragContactId === contact.id ? "opacity-40" : ""}`}
+                                className={`transition-all rounded-lg ${dragContactId === contact.id ? "opacity-40" : ""} ${highlightedContactId === contact.id ? "ring-2 ring-primary/60 ring-offset-2" : ""}`}
                                 data-testid={`drag-contact-${contact.id}`}
                               >
                                 <ContactCard
@@ -2164,7 +2191,7 @@ export default function ClientDetail() {
                               draggable
                               onDragStart={() => setDragContactId(contact.id)}
                               onDragEnd={() => { setDragContactId(null); setDragOverOfficeId(null); }}
-                              className={`transition-opacity ${dragContactId === contact.id ? "opacity-40" : ""}`}
+                              className={`transition-all rounded-lg ${dragContactId === contact.id ? "opacity-40" : ""} ${highlightedContactId === contact.id ? "ring-2 ring-primary/60 ring-offset-2" : ""}`}
                               data-testid={`drag-contact-${contact.id}`}
                             >
                               <ContactCard
