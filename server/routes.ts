@@ -1253,7 +1253,7 @@ Respond ONLY with a JSON object in this exact shape — no markdown, no explanat
   "healthLabel": "Strong" | "On Track" | "Stalled" | "At Risk",
   "headline": "One tight sentence summarizing deal health and context — not a restatement of fields.",
   "observation": "The most notable signal, risk, or opportunity that isn't obvious from just reading the data. Be specific.",
-  "nextStep": "The single most important action the BD team should take right now. Be concrete and actionable."
+  "nextStep": "A short, specific question or action phrased as pre-meeting preparation. e.g. 'Ask about the procurement approval process and who else is involved in the decision.' Should be something the BD rep can say or ask in their next conversation."
 }
 
 Rules:
@@ -1262,6 +1262,7 @@ Rules:
 - On Track = progressing normally, no red flags
 - Stalled = low recent activity, stuck in stage too long, or low confidence for stage
 - At Risk = overdue tasks, very long inactivity, confidence/stage mismatch, or other warning signs
+- nextStep should sound like meeting prep advice — something practical a BD rep would think before walking into a conversation
 - Use company names, dollar amounts, and stage names in your text where helpful
 - Do NOT just restate the data fields — interpret and synthesize`;
 

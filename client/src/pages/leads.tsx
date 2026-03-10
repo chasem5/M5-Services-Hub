@@ -715,45 +715,105 @@ function LeadCard({
           </CardContent>
         </Card>
       </HoverCardTrigger>
-      <HoverCardContent side="right" align="start" className="w-64 p-3" data-testid={`ai-summary-${lead.id}`}>
-        <div className="flex items-center gap-1.5 mb-2">
-          <Sparkles className="h-3 w-3 text-primary" />
-          <span className="text-xs font-bold text-primary">Quick Take</span>
-        </div>
-        {loadingAiSummary[lead.id] ? (
-          <div className="space-y-1.5">
-            <div className="h-2.5 bg-muted animate-pulse rounded w-3/4" />
-            <div className="h-2.5 bg-muted animate-pulse rounded w-full" />
-          </div>
-        ) : aiSummaries[lead.id] ? (
-          <>
-            {(() => {
-              const s = aiSummaries[lead.id];
-              const colorMap: Record<string, string> = {
-                "Strong": "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",
-                "On Track": "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
-                "Stalled": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400",
-                "At Risk": "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
-              };
-              const dotMap: Record<string, string> = {
-                "Strong": "bg-green-500", "On Track": "bg-blue-500",
-                "Stalled": "bg-yellow-500", "At Risk": "bg-red-500",
-              };
-              return (
-                <>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold mb-1.5 ${colorMap[s.healthLabel] ?? colorMap["On Track"]}`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${dotMap[s.healthLabel] ?? "bg-blue-500"}`} />
-                    {s.healthLabel}
+      <HoverCardContent side="right" align="start" className="w-72 p-0 overflow-hidden" data-testid={`ai-summary-${lead.id}`}>
+        {(() => {
+          // Compute health instantly from local data
+          const computedHealth: string =
+            (daysSinceActivity !== null && daysSinceActivity > 30) || score < 25 ? "At Risk" :
+            (daysSinceActivity !== null && daysSinceActivity > 14) || score < 40 ? "Stalled" :
+            score >= 70 && (daysSinceActivity === null || daysSinceActivity <= 7) ? "Strong" :
+            "On Track";
+
+          const aiHealth = aiSummaries[lead.id]?.healthLabel;
+          const healthLabel = aiHealth ?? computedHealth;
+
+          const colorMap: Record<string, { badge: string; dot: string; bar: string }> = {
+            "Strong":   { badge: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",  dot: "bg-green-500",  bar: "bg-green-500" },
+            "On Track": { badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",   dot: "bg-blue-500",   bar: "bg-blue-500" },
+            "Stalled":  { badge: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400", dot: "bg-yellow-500", bar: "bg-yellow-500" },
+            "At Risk":  { badge: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",      dot: "bg-red-500",    bar: "bg-red-500" },
+          };
+          const colors = colorMap[healthLabel] ?? colorMap["On Track"];
+
+          // Last activity label
+          const lastTouchLabel = daysSinceActivity === null
+            ? "No activity logged yet"
+            : daysSinceActivity === 0 ? "Today"
+            : daysSinceActivity === 1 ? "Yesterday"
+            : `${daysSinceActivity} days ago`;
+
+          const lastTouchFlag = daysSinceActivity !== null && daysSinceActivity > 14
+            ? " · getting stale" : "";
+
+          // Days in stage label
+          const stageLabel = lead.stage.replace(/_/g, " ");
+          const daysInStageLabel = daysInStage === 0 ? "Today"
+            : daysInStage === 1 ? "1 day"
+            : `${daysInStage} days`;
+
+          // Stage-based default meeting prep (instant fallback)
+          const stageDefaults: Record<string, string> = {
+            new_lead:      "Ask about their current service providers and what problems they're trying to solve.",
+            contacted:     "Gauge their level of interest and find out what they're actively evaluating.",
+            qualified:     "Confirm scope, budget range, and who else is involved in the decision.",
+            proposal_sent: "Ask if they've reviewed the proposal and what questions or concerns they have.",
+            negotiation:   "Clarify the remaining sticking points and confirm who has final approval.",
+            won:           "Discuss onboarding timeline and key contacts to loop in.",
+            lost:          "Ask what drove their decision and if there's any chance to re-engage.",
+          };
+          const aiNextStep = aiSummaries[lead.id]?.nextStep;
+          const meetingPrep = aiNextStep || stageDefaults[lead.stage] || "Check in on their current needs and decision timeline.";
+
+          return (
+            <>
+              {/* Header bar */}
+              <div className={`${colors.bar} h-0.5 w-full`} />
+              <div className="p-3 space-y-2.5">
+                {/* Title + health badge */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <CalendarIcon className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Meeting Brief</span>
+                  </div>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${colors.badge}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${colors.dot}`} />
+                    {healthLabel}
                   </span>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{s.headline}</p>
-                  <p className="text-[10px] text-muted-foreground/50 italic mt-1.5">Click deal for full analysis →</p>
-                </>
-              );
-            })()}
-          </>
-        ) : (
-          <p className="text-xs text-muted-foreground italic">Hover to generate...</p>
-        )}
+                </div>
+
+                {/* Last touchpoint */}
+                <div className="flex items-start gap-2">
+                  <Clock className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Last Touch</p>
+                    <p className="text-xs text-foreground">{lastTouchLabel}<span className="text-muted-foreground/60">{lastTouchFlag}</span></p>
+                  </div>
+                </div>
+
+                {/* Days in stage */}
+                <div className="flex items-start gap-2">
+                  <Target className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">In Stage</p>
+                    <p className="text-xs text-foreground capitalize">{stageLabel} · {daysInStageLabel}</p>
+                  </div>
+                </div>
+
+                {/* Meeting prep */}
+                <div className="flex items-start gap-2 pt-0.5 border-t border-border/60">
+                  <MessageSquare className="h-3 w-3 text-primary mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <p className="text-[10px] font-semibold text-primary uppercase tracking-wider">Before This Meeting</p>
+                      {aiNextStep && <Sparkles className="h-2.5 w-2.5 text-primary/60" />}
+                    </div>
+                    <p className="text-xs text-foreground leading-relaxed">{meetingPrep}</p>
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        })()}
       </HoverCardContent>
     </HoverCard>
   );
