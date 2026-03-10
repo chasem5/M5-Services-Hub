@@ -1433,32 +1433,10 @@ export default function Leads() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            {/* Pipeline Review — desktop */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 hidden md:inline-flex"
-              onClick={() => { setIsPipelineReviewOpen(true); runPipelineReview(); }}
-              data-testid="button-pipeline-review"
-            >
-              <ClipboardList className="h-3.5 w-3.5" />
-              Pipeline Review
-            </Button>
-            {/* Manage stages — desktop only; on mobile moves to overflow menu */}
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8 hidden md:inline-flex"
-              title="Manage stages"
-              onClick={() => setIsManageStagesOpen(true)}
-              data-testid="button-manage-stages"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-            {/* Mobile overflow menu for secondary actions */}
+            {/* Overflow menu for secondary actions */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 md:hidden" data-testid="button-mobile-more">
+                <Button variant="outline" size="icon" className="h-8 w-8" data-testid="button-mobile-more">
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
