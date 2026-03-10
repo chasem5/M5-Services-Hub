@@ -852,6 +852,7 @@ export default function ClientDetail() {
     queryKey: ["/api/portfolios", { clientId }],
     queryFn: async () => {
       const res = await fetch(`/api/portfolios?clientId=${clientId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch portfolios");
       return res.json();
     },
   });

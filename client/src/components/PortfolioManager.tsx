@@ -100,6 +100,7 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
     queryFn: async () => {
       const url = filterClientId ? `/api/portfolios?clientId=${filterClientId}` : "/api/portfolios";
       const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch portfolios");
       return res.json();
     },
   });
