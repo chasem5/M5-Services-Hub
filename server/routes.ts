@@ -1167,42 +1167,100 @@ Do not include any other text, just the JSON.`,
     const lead = await storage.getLead(id);
     if (!lead) return res.status(404).json({ message: "Lead not found" });
 
-    const [leadTasks, activityLogs] = await Promise.all([
-      storage.listTasks().then(t => t.filter(t => t.relatedLeadId === id).slice(0, 10)),
-      storage.listActivityLogs("lead", id).then(a => a.slice(0, 10)),
+    const [leadTasks, activityLogs, company, contact] = await Promise.all([
+      storage.listTasks().then(t => t.filter(t => t.relatedLeadId === id).slice(0, 15)),
+      storage.listActivityLogs("lead", id).then(a => a.slice(0, 15)),
+      lead.clientId ? storage.getClient(lead.clientId) : Promise.resolve(undefined),
+      lead.contactId ? storage.getClientContact(lead.contactId) : Promise.resolve(undefined),
     ]);
 
+    // Derived signals
+    const now = Date.now();
+    const dealAgeDays = Math.floor((now - new Date(lead.createdAt).getTime()) / 86400000);
+    const lastActivity = activityLogs[0];
+    const daysSinceActivity = lastActivity
+      ? Math.floor((now - new Date(lastActivity.createdAt).getTime()) / 86400000)
+      : null;
+    const daysUntilRenewal = lead.renewalDate
+      ? Math.floor((new Date(lead.renewalDate).getTime() - now) / 86400000)
+      : null;
+
+    // Human-readable activity formatting
+    function formatActivity(a: { action: string; createdAt: Date | string; metadata?: any }): string {
+      const date = new Date(a.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const meta = a.metadata;
+      if (!meta) return `${a.action} (${date})`;
+      if (meta.toStage) return `Stage moved to "${meta.toStage.replace(/_/g, " ")}" (${date})`;
+      if (meta.note) return `Note added: "${String(meta.note).slice(0, 80)}" (${date})`;
+      if (meta.field) return `Field "${meta.field}" updated (${date})`;
+      return `${a.action} (${date})`;
+    }
+
+    const openTaskCount = leadTasks.filter(t => t.status !== "done" && t.status !== "completed").length;
+    const overdueTaskCount = leadTasks.filter(t => {
+      if (!t.dueDate || t.status === "done" || t.status === "completed") return false;
+      return new Date(t.dueDate).getTime() < now;
+    }).length;
+
     const tasksSummary = leadTasks.length
-      ? leadTasks.map(t => `- Task: "${t.title}" (${t.status}, priority: ${t.priority})`).join("\n")
+      ? leadTasks.slice(0, 5).map(t => {
+          const due = t.dueDate ? `, due ${new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "";
+          const overdue = t.dueDate && new Date(t.dueDate).getTime() < now && t.status !== "done" ? " [OVERDUE]" : "";
+          return `- "${t.title}" (${t.status}, ${t.priority} priority${due}${overdue})`;
+        }).join("\n")
       : "No tasks linked.";
 
     const activitySummary = activityLogs.length
-      ? activityLogs.map(a => `- ${a.action} on ${new Date(a.createdAt).toLocaleDateString()}${a.metadata ? `: ${JSON.stringify(a.metadata)}` : ""}`).join("\n")
-      : "No recent activity.";
+      ? activityLogs.slice(0, 8).map(a => `- ${formatActivity(a)}`).join("\n")
+      : "No recent activity logged.";
 
-    const prompt = `You are a CRM assistant for M5 Services, a facility maintenance company. Summarize this lead in 2-3 concise sentences, focusing on the current status, key details, and any important next steps.
+    const stageGuide = `Stage reference (M5 pipeline):
+- new_lead: Just entered, not yet qualified
+- qualified: Needs confirmed, initial contact made
+- proposal: Actively scoping or writing SOW/budget
+- negotiation: Pricing or contract terms being discussed
+- won: Deal closed, work awarded
+- lost: Deal dead or awarded to competitor`;
 
-Lead: "${lead.title}"
-Stage: ${lead.stage.replace("_", " ")}
-Value: $${Number(lead.value).toLocaleString()}
-Confidence: ${lead.confidenceScore}%
-Service Type: ${lead.serviceType?.replace(/_/g, " ") ?? "Not specified"}
-Notes: ${lead.notes || "None"}
+    const serviceLabel = (lead.serviceTypes && lead.serviceTypes.length > 0
+      ? lead.serviceTypes
+      : lead.serviceType ? [lead.serviceType] : []
+    ).map(s => s.replace(/_/g, " ")).join(", ") || "Not specified";
 
-Recent Tasks:
-${tasksSummary}
+    const prompt = `You are a senior BD analyst at M5 Services, a commercial facility maintenance company (janitorial, building engineering, facility solutions, special projects). You are reviewing a deal in the CRM and must give a quick but genuinely insightful assessment — NOT a restatement of the fields.
 
-Recent Activity:
+${stageGuide}
+
+DEAL DATA:
+- Title: "${lead.title}"
+- Company: ${company?.name ?? "Unknown"}${contact ? ` | Contact: ${contact.name}${contact.title ? ` (${contact.title})` : ""}` : ""}
+- Stage: ${lead.stage.replace(/_/g, " ")} | Confidence: ${lead.confidenceScore ?? "N/A"}%
+- Value: $${Number(lead.value).toLocaleString()} (${lead.contractType?.replace(/_/g, " ") ?? "one-time"}${lead.recurringFrequency ? ", " + lead.recurringFrequency : ""})
+- Service: ${serviceLabel}
+- Deal age: ${dealAgeDays} day${dealAgeDays !== 1 ? "s" : ""}${daysSinceActivity !== null ? ` | Last activity: ${daysSinceActivity} day${daysSinceActivity !== 1 ? "s" : ""} ago` : " | No activity logged"}${daysUntilRenewal !== null ? ` | Renewal in ${daysUntilRenewal} days` : ""}
+- Tags: ${lead.tags?.join(", ") || "None"}
+- Open tasks: ${openTaskCount}${overdueTaskCount > 0 ? ` (${overdueTaskCount} OVERDUE)` : ""}
+- Notes: ${lead.notes?.trim() || "None"}
+
+Recent Activity (newest first):
 ${activitySummary}
 
-Write a concise, factual summary paragraph (no bullet points, no headers).`;
+Open/Active Tasks:
+${tasksSummary}
+
+INSTRUCTIONS:
+Write exactly 2-3 tight sentences. Do NOT list out the data — interpret it.
+1. First sentence: Where this deal stands and why it matters (deal health + context).
+2. Second sentence: The most notable signal, risk, or opportunity you see (something that isn't obvious from just reading the fields).
+3. Third sentence: The single most important next action the team should take right now.
+Be specific. Use company names, dollar amounts, stage names where helpful. No bullet points, no headers.`;
 
     try {
       const { openai } = await import("./openai");
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [{ role: "user", content: prompt }],
-        max_completion_tokens: 200,
+        max_completion_tokens: 300,
       });
       const summary = completion.choices[0]?.message?.content ?? "Unable to generate summary.";
       res.json({ summary });
