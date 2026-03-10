@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/button";
-import { Megaphone, RefreshCw, Menu, LayoutDashboard, Target, Users, CheckSquare, MoreHorizontal } from "lucide-react";
+import { Megaphone, RefreshCw, Menu, LayoutDashboard, Target, Users, CheckSquare, Mic } from "lucide-react";
 
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger, MobileSearchButton } from "@/components/GlobalSearch";
@@ -33,11 +33,11 @@ const BOTTOM_NAV_ITEMS = [
   { label: "Deals", icon: Target, href: "/leads" },
   { label: "Contacts", icon: Users, href: "/customers" },
   { label: "Tasks", icon: CheckSquare, href: "/tasks" },
+  { label: "Meetings", icon: Mic, href: "/meetings" },
 ];
 
 function BottomNav() {
   const [location] = useLocation();
-  const { setOpenMobile } = useSidebar();
 
   const isActive = (href: string) => {
     if (href === "/") return location === "/";
@@ -45,7 +45,7 @@ function BottomNav() {
   };
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border flex items-stretch h-16 safe-area-pb" data-testid="bottom-nav">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border flex items-stretch h-16" data-testid="bottom-nav">
       {BOTTOM_NAV_ITEMS.map(({ label, icon: Icon, href }) => (
         <Link key={href} href={href} className="flex-1">
           <button
@@ -57,14 +57,6 @@ function BottomNav() {
           </button>
         </Link>
       ))}
-      <button
-        className="flex-1 flex flex-col items-center justify-center gap-0.5 text-muted-foreground transition-colors"
-        onClick={() => setOpenMobile(true)}
-        data-testid="bottom-nav-more"
-      >
-        <MoreHorizontal className="h-5 w-5" />
-        <span className="text-[10px] font-medium">More</span>
-      </button>
     </nav>
   );
 }

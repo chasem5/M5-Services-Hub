@@ -1682,6 +1682,16 @@ export default function TasksPage() {
           })()}
         </SheetContent>
       </Sheet>
+
+      {/* Mobile FAB — Add Task */}
+      <button
+        className="md:hidden fixed bottom-20 right-4 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+        onClick={() => setIsAddOpen(true)}
+        data-testid="button-add-task-fab"
+        aria-label="Add Task"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
     </div>
   );
 }

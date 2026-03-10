@@ -1700,8 +1700,12 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
 
   app.post("/api/meetings", isAuthenticated, async (req, res) => {
     const userId = (req as any).user.claims.sub;
-    const { title } = z.object({ title: z.string().min(1) }).parse(req.body);
-    const meeting = await storage.createMeeting({ title, createdBy: userId, status: "recording" });
+    const { title, clientId, leadId } = z.object({
+      title: z.string().min(1),
+      clientId: z.number().int().optional(),
+      leadId: z.number().int().optional(),
+    }).parse(req.body);
+    const meeting = await storage.createMeeting({ title, createdBy: userId, status: "recording", clientId: clientId ?? null, leadId: leadId ?? null });
     res.json(meeting);
   });
 

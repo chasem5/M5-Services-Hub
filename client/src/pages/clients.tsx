@@ -41,6 +41,7 @@ import {
   Settings,
   Tag,
   Pencil,
+  Mic,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 const MapView = lazy(() => import("@/pages/map").then(m => ({ default: m.MapView })));
@@ -387,6 +388,7 @@ const SERVICE_NEEDS = [
 
 export default function Customers() {
   const [, setLocation] = useLocation();
+  const [activeTab, setActiveTab] = useState("companies");
   const [searchTerm, setSearchTerm] = useState("");
   const [buildingSearch, setBuildingSearch] = useState("");
   const [buildingViewMode, setBuildingViewMode] = useState<"list" | "map">("list");
@@ -425,6 +427,7 @@ export default function Customers() {
   const [logSpendContactId, setLogSpendContactId] = useState<number | null>(null);
   const [spendForm, setSpendForm] = useState({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "" });
   const [isLoggingSpend, setIsLoggingSpend] = useState(false);
+  const [isLoggingActivity, setIsLoggingActivity] = useState(false);
   const companiesFileRef = useRef<HTMLInputElement>(null);
   const contactsFileRef = useRef<HTMLInputElement>(null);
   const vcfFileRef = useRef<HTMLInputElement>(null);
@@ -1321,7 +1324,7 @@ export default function Customers() {
           </DialogContent>
         </Dialog>
 
-      <Tabs defaultValue="companies">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4">
           <TabsTrigger value="companies" className="flex items-center gap-2" data-testid="tab-companies">
             <Building2 className="h-4 w-4" />
@@ -2853,6 +2856,31 @@ export default function Customers() {
                   {/* Actions */}
                   <div className="pt-2 border-t space-y-2">
                     <button
+                      disabled={isLoggingActivity}
+                      onClick={async () => {
+                        setIsLoggingActivity(true);
+                        try {
+                          const res = await apiRequest("POST", "/api/meetings", {
+                            title: `Meeting with ${sc.name}`,
+                            clientId: sc.clientId,
+                            contactId: sc.id,
+                          });
+                          const meeting = await res.json();
+                          setSelectedContact(null);
+                          setLocation(`/meetings/${meeting.id}`);
+                        } catch {
+                          toast({ title: "Could not create meeting", variant: "destructive" });
+                        } finally {
+                          setIsLoggingActivity(false);
+                        }
+                      }}
+                      className="w-full h-9 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                      data-testid={`button-log-activity-${sc.id}`}
+                    >
+                      <Mic className="h-4 w-4" />
+                      {isLoggingActivity ? "Opening…" : "Log Activity / Meeting"}
+                    </button>
+                    <button
                       onClick={async () => {
                         try {
                           const res = await fetch(`/api/contacts/${sc.id}/vcard`);
@@ -3224,6 +3252,25 @@ export default function Customers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Mobile FAB — context-aware per tab */}
+      {activeTab !== "buildings" && (
+        <button
+          className="md:hidden fixed bottom-20 right-4 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+          onClick={() => {
+            if (activeTab === "contacts") {
+              contactForm.reset({ name: "", title: "", email: "", phone: "", clientId: contactCompanyFilter !== "all" ? parseInt(contactCompanyFilter) : undefined, isPrimary: false, serviceNeeds: [] });
+              setIsAddContactOpen(true);
+            } else {
+              setIsCreateDialogOpen(true);
+            }
+          }}
+          data-testid={`button-fab-${activeTab}`}
+          aria-label={activeTab === "contacts" ? "Add Contact" : "Add Company"}
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      )}
     </div>
   );
 }
