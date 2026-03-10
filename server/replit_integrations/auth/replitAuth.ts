@@ -108,7 +108,7 @@ export async function setupAuth(app: Express) {
     req.session.regenerate((err) => {
       if (err) return next(err);
       passport.authenticate(`replitauth:${req.hostname}`, {
-        prompt: "login consent",
+        prompt: "consent",
         scope: ["openid", "email", "profile", "offline_access"],
       })(req, res, next);
     });
