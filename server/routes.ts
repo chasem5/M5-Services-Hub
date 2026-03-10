@@ -1143,8 +1143,8 @@ Do not include any other text, just the JSON.`,
     try {
       const leadId = parseInt(req.params.id as string);
       const userId = (req as any).user?.claims?.sub;
-      const { content } = z.object({ content: z.string().min(1) }).parse(req.body);
-      const note = await storage.createLeadNote({ leadId, userId, content });
+      const { content, activityType } = z.object({ content: z.string().min(1), activityType: z.string().optional() }).parse(req.body);
+      const note = await storage.createLeadNote({ leadId, userId, content, activityType: activityType ?? null });
       res.json(note);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -1167,11 +1167,12 @@ Do not include any other text, just the JSON.`,
     const lead = await storage.getLead(id);
     if (!lead) return res.status(404).json({ message: "Lead not found" });
 
-    const [leadTasks, activityLogs, company, contact] = await Promise.all([
+    const [leadTasks, activityLogs, company, contact, leadNotesList] = await Promise.all([
       storage.listTasks().then(t => t.filter(t => t.relatedLeadId === id).slice(0, 15)),
       storage.listActivityLogs("lead", id).then(a => a.slice(0, 15)),
       lead.clientId ? storage.getClient(lead.clientId) : Promise.resolve(undefined),
       lead.contactId ? storage.getClientContact(lead.contactId) : Promise.resolve(undefined),
+      storage.listLeadNotes(id).then(n => n.slice(0, 20)),
     ]);
 
     // Derived signals
@@ -1214,6 +1215,14 @@ Do not include any other text, just the JSON.`,
       ? activityLogs.slice(0, 8).map(a => `- ${formatActivity(a)}`).join("\n")
       : "No recent activity logged.";
 
+    const activityLogSection = leadNotesList.length
+      ? leadNotesList.map(n => {
+          const date = new Date(n.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          const typeLabel = n.activityType ? n.activityType.charAt(0).toUpperCase() + n.activityType.slice(1) : "Note";
+          return `- [${typeLabel}] "${String(n.content).slice(0, 120)}" (${date})`;
+        }).join("\n")
+      : "No activity logged yet.";
+
     const stageGuide = `Stage reference (M5 pipeline):
 - new_lead: Just entered, not yet qualified
 - qualified: Needs confirmed, initial contact made
@@ -1240,9 +1249,12 @@ DEAL DATA:
 - Deal age: ${dealAgeDays} day${dealAgeDays !== 1 ? "s" : ""}${daysSinceActivity !== null ? ` | Last activity: ${daysSinceActivity} day${daysSinceActivity !== 1 ? "s" : ""} ago` : " | No activity logged"}${daysUntilRenewal !== null ? ` | Renewal in ${daysUntilRenewal} days` : ""}
 - Tags: ${lead.tags?.join(", ") || "None"}
 - Open tasks: ${openTaskCount}${overdueTaskCount > 0 ? ` (${overdueTaskCount} OVERDUE)` : ""}
-- Notes: ${lead.notes?.trim() || "None"}
+- Internal Notes: ${lead.notes?.trim() || "None"}
 
-Recent Activity (newest first):
+Activity Log (user-logged interactions, newest first):
+${activityLogSection}
+
+System Activity (newest first):
 ${activitySummary}
 
 Open/Active Tasks:

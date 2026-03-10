@@ -336,6 +336,7 @@ export const leadNotes = pgTable("lead_notes", {
   leadId: integer("lead_id").references(() => leads.id).notNull(),
   userId: varchar("user_id").references(() => users.id).notNull(),
   content: text("content").notNull(),
+  activityType: varchar("activity_type"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

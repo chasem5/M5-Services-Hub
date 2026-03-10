@@ -83,6 +83,11 @@ import {
   ShieldCheck,
   ClipboardList,
   Loader2,
+  Phone,
+  Mail,
+  Building,
+  CalendarDays,
+  CornerDownRight,
 } from "lucide-react";
 import {
   Card,
@@ -255,8 +260,18 @@ interface LeadNote {
   createdAt: string;
 }
 
-function LeadNotesTab({ leadId }: { leadId: number }) {
+const ACTIVITY_TYPES = [
+  { value: "note", label: "Note", icon: MessageSquare, color: "text-slate-500", bg: "bg-slate-100 dark:bg-slate-800" },
+  { value: "call", label: "Call", icon: Phone, color: "text-green-600", bg: "bg-green-100 dark:bg-green-900/40" },
+  { value: "email", label: "Email", icon: Mail, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/40" },
+  { value: "meeting", label: "Meeting", icon: UsersIcon, color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-900/40" },
+  { value: "site_visit", label: "Site Visit", icon: Building, color: "text-amber-600", bg: "bg-amber-100 dark:bg-amber-900/40" },
+  { value: "follow_up", label: "Follow-up", icon: CornerDownRight, color: "text-primary", bg: "bg-primary/10" },
+] as const;
+
+function LeadActivityTab({ leadId }: { leadId: number }) {
   const [draft, setDraft] = useState("");
+  const [activityType, setActivityType] = useState<string>("note");
   const { toast } = useToast();
   const { data: notes = [], isLoading } = useQuery<LeadNote[]>({
     queryKey: ["/api/leads", leadId, "notes"],
@@ -278,15 +293,16 @@ function LeadNotesTab({ leadId }: { leadId: number }) {
   }
 
   const addMutation = useMutation({
-    mutationFn: async (content: string) => {
-      const res = await apiRequest("POST", `/api/leads/${leadId}/notes`, { content });
+    mutationFn: async ({ content, activityType }: { content: string; activityType: string }) => {
+      const res = await apiRequest("POST", `/api/leads/${leadId}/notes`, { content, activityType });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads", leadId, "notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/activity-summary"] });
       setDraft("");
     },
-    onError: () => toast({ title: "Failed to save note", variant: "destructive" }),
+    onError: () => toast({ title: "Failed to save activity", variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -298,34 +314,61 @@ function LeadNotesTab({ leadId }: { leadId: number }) {
     },
   });
 
+  function handleSubmit() {
+    if (draft.trim()) addMutation.mutate({ content: draft.trim(), activityType });
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      if (draft.trim()) addMutation.mutate(draft.trim());
+      handleSubmit();
     }
+  }
+
+  function getActivityMeta(type: string | null | undefined) {
+    return ACTIVITY_TYPES.find(t => t.value === type) ?? ACTIVITY_TYPES[0];
   }
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap gap-1.5">
+          {ACTIVITY_TYPES.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setActivityType(value)}
+              data-testid={`button-activity-type-${value}`}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                activityType === value
+                  ? "bg-primary text-white border-primary"
+                  : "bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-3 w-3" />
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="relative">
           <Textarea
-            placeholder="Log an interaction, call, meeting note... (Ctrl+Enter to save)"
+            placeholder={`Log a ${getActivityMeta(activityType).label.toLowerCase()}... (Ctrl+Enter to save)`}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={3}
             className="pr-12 resize-none"
-            data-testid="textarea-lead-note-draft"
+            data-testid="textarea-lead-activity-draft"
           />
           <Button
             size="icon"
             className="absolute bottom-2 right-2 h-7 w-7"
-            onClick={() => { if (draft.trim()) addMutation.mutate(draft.trim()); }}
+            onClick={handleSubmit}
             disabled={!draft.trim() || addMutation.isPending}
-            data-testid="button-save-lead-note"
+            data-testid="button-save-lead-activity"
           >
-            <Send className="h-3.5 w-3.5" />
+            {addMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
           </Button>
         </div>
         <p className="text-[11px] text-muted-foreground">Ctrl+Enter to save quickly</p>
@@ -333,48 +376,55 @@ function LeadNotesTab({ leadId }: { leadId: number }) {
 
       {isLoading ? (
         <div className="space-y-2">
-          {[1, 2].map((i) => <div key={i} className="h-14 rounded bg-muted animate-pulse" />)}
+          {[1, 2].map((i) => <div key={i} className="h-16 rounded bg-muted animate-pulse" />)}
         </div>
       ) : notes.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">No notes yet — log your first interaction above</p>
+          <CalendarDays className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No activity logged yet — record your first call, email, or meeting note above</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {notes.map((note) => (
-            <div
-              key={note.id}
-              className="group flex gap-3 p-3 rounded-lg border bg-card hover:bg-muted/40 transition-colors"
-              data-testid={`card-lead-note-${note.id}`}
-            >
-              <div className="flex-shrink-0 mt-0.5">
-                <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
-                  <MessageSquare className="h-3.5 w-3.5 text-primary" />
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.content}</p>
-                <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
-                  <span>{getUserName(note.userId)}</span>
-                  <span>·</span>
-                  <span title={new Date(note.createdAt).toLocaleString()}>
-                    {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
-                  </span>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-muted-foreground hover:text-destructive"
-                onClick={() => deleteMutation.mutate(note.id)}
-                disabled={deleteMutation.isPending}
-                data-testid={`button-delete-note-${note.id}`}
+          {notes.map((note) => {
+            const meta = getActivityMeta((note as any).activityType);
+            const Icon = meta.icon;
+            return (
+              <div
+                key={note.id}
+                className="group flex gap-3 p-3 rounded-lg border bg-card hover:bg-muted/40 transition-colors"
+                data-testid={`card-lead-activity-${note.id}`}
               >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          ))}
+                <div className="flex-shrink-0 mt-0.5">
+                  <div className={`h-7 w-7 rounded-full flex items-center justify-center ${meta.bg}`}>
+                    <Icon className={`h-3.5 w-3.5 ${meta.color}`} />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${meta.color}`}>{meta.label}</span>
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.content}</p>
+                  <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+                    <span>{getUserName(note.userId)}</span>
+                    <span>·</span>
+                    <span title={new Date(note.createdAt).toLocaleString()}>
+                      {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => deleteMutation.mutate(note.id)}
+                  disabled={deleteMutation.isPending}
+                  data-testid={`button-delete-activity-${note.id}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -825,6 +875,8 @@ export default function Leads() {
   const [newStageLabel, setNewStageLabel] = useState("");
   const [newStageColor, setNewStageColor] = useState<string | null>(null);
   const [isEditingLead, setIsEditingLead] = useState(false);
+  const [isEditingInternalNotes, setIsEditingInternalNotes] = useState(false);
+  const [internalNotesDraft, setInternalNotesDraft] = useState("");
   const [editTagInput, setEditTagInput] = useState("");
   const [editFormTags, setEditFormTags] = useState<string[]>([]);
   const [formServiceTypes, setFormServiceTypes] = useState<string[]>([]);
@@ -1011,6 +1063,19 @@ export default function Leads() {
       setSelectedLead(updated);
       toast({ title: "Success", description: "Deal updated successfully" });
     },
+  });
+
+  const saveInternalNotesMutation = useMutation({
+    mutationFn: async ({ id, notes }: { id: number; notes: string }) => {
+      const res = await apiRequest("PUT", `/api/leads/${id}`, { notes });
+      return res.json();
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      setSelectedLead(updated);
+      setIsEditingInternalNotes(false);
+    },
+    onError: () => toast({ title: "Failed to save notes", variant: "destructive" }),
   });
 
   const patchConfidenceMutation = useMutation({
@@ -2401,7 +2466,7 @@ export default function Leads() {
               <Tabs defaultValue="details" className="mt-6">
                 <TabsList className="w-full grid grid-cols-5 h-auto">
                   <TabsTrigger value="details" className="py-2.5 text-xs sm:text-sm">Details</TabsTrigger>
-                  <TabsTrigger value="notes" className="py-2.5 text-xs sm:text-sm" data-testid="tab-notes">Notes</TabsTrigger>
+                  <TabsTrigger value="notes" className="py-2.5 text-xs sm:text-sm" data-testid="tab-activity">Activity</TabsTrigger>
                   <TabsTrigger value="attachments" className="py-2.5 text-xs sm:text-sm">Files</TabsTrigger>
                   <TabsTrigger value="tasks" className="py-2.5 text-xs sm:text-sm">
                     Tasks
@@ -2848,7 +2913,7 @@ export default function Leads() {
                           name="notes"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Notes</FormLabel>
+                              <FormLabel>Internal Notes</FormLabel>
                               <FormControl>
                                 <Textarea
                                   className="resize-none min-h-[100px]"
@@ -3089,19 +3154,67 @@ export default function Leads() {
                       <Separator />
 
                       <div className="space-y-2">
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Internal Notes</p>
-                        <Card className="bg-muted">
-                          <CardContent className="p-3 text-sm leading-relaxed whitespace-pre-wrap">
-                            {selectedLead.notes || "No notes provided."}
-                          </CardContent>
-                        </Card>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Internal Notes</p>
+                          {!isEditingInternalNotes && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInternalNotesDraft(selectedLead.notes ?? "");
+                                setIsEditingInternalNotes(true);
+                              }}
+                              className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+                              title="Edit notes"
+                              data-testid="button-edit-internal-notes"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        {isEditingInternalNotes ? (
+                          <div className="space-y-2">
+                            <Textarea
+                              value={internalNotesDraft}
+                              onChange={(e) => setInternalNotesDraft(e.target.value)}
+                              rows={4}
+                              className="resize-none text-sm"
+                              autoFocus
+                              data-testid="textarea-internal-notes"
+                            />
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => saveInternalNotesMutation.mutate({ id: selectedLead.id, notes: internalNotesDraft })}
+                                disabled={saveInternalNotesMutation.isPending}
+                                data-testid="button-save-internal-notes"
+                              >
+                                {saveInternalNotesMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+                                Save
+                              </Button>
+                              <button
+                                type="button"
+                                onClick={() => setIsEditingInternalNotes(false)}
+                                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                data-testid="button-cancel-internal-notes"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <Card className="bg-muted">
+                            <CardContent className="p-3 text-sm leading-relaxed whitespace-pre-wrap">
+                              {selectedLead.notes || <span className="text-muted-foreground italic">No notes yet — click the pencil to add one</span>}
+                            </CardContent>
+                          </Card>
+                        )}
                       </div>
                     </>
                   )}
                 </TabsContent>
 
                 <TabsContent value="notes" className="py-4">
-                  {selectedLead && <LeadNotesTab leadId={selectedLead.id} />}
+                  {selectedLead && <LeadActivityTab leadId={selectedLead.id} />}
                 </TabsContent>
 
                 <TabsContent value="attachments" className="py-4">
