@@ -295,6 +295,7 @@ export const emailMessages = pgTable("email_messages", {
   aiSummary: text("ai_summary"),
   aiSuggestedTasks: jsonb("ai_suggested_tasks"),
   aiConnectionSuggestions: jsonb("ai_connection_suggestions"),
+  aiCreateSuggestions: jsonb("ai_create_suggestions"),
   aiSentiment: varchar("ai_sentiment"),
   aiStageSuggestion: varchar("ai_stage_suggestion"),
   requiresResponse: boolean("requires_response").default(false).notNull(),

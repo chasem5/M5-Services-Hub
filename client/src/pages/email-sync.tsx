@@ -29,6 +29,15 @@ interface ConnectionSuggestion {
   reason: string;
 }
 
+interface CreateSuggestion {
+  type: "contact" | "client";
+  name: string;
+  email?: string;
+  company?: string;
+  title?: string;
+  reason: string;
+}
+
 interface EmailMessage {
   id: number;
   gmailMessageId: string;
@@ -49,6 +58,7 @@ interface EmailMessage {
   aiSummary: string | null;
   aiSuggestedTasks: { title: string; priority: string; dueInDays?: number }[] | null;
   aiConnectionSuggestions: ConnectionSuggestion[] | null;
+  aiCreateSuggestions: CreateSuggestion[] | null;
   aiSentiment: string | null;
   aiStageSuggestion: string | null;
   requiresResponse: boolean;
@@ -174,6 +184,11 @@ export default function EmailSyncPage() {
   const [clientComboOpen, setClientComboOpen] = useState(false);
   const [leadComboOpen, setLeadComboOpen] = useState(false);
   const [contactComboOpen, setContactComboOpen] = useState(false);
+  // Quick-create client dialog (from create suggestion)
+  const [quickClientDialogOpen, setQuickClientDialogOpen] = useState(false);
+  const [quickClientName, setQuickClientName] = useState("");
+  const [quickClientIndustry, setQuickClientIndustry] = useState("");
+  const [quickClientEmailForLink, setQuickClientEmailForLink] = useState<number | null>(null);
 
   const { data: emails = [], isLoading } = useQuery<EmailMessage[]>({
     queryKey: ["/api/email-messages", showDismissed],
@@ -348,6 +363,23 @@ export default function EmailSyncPage() {
       toast({ title: "Contact created and linked" });
     },
     onError: () => toast({ title: "Failed to create contact", variant: "destructive" }),
+  });
+
+  const quickClientMutation = useMutation({
+    mutationFn: ({ name, industry }: { name: string; industry?: string }) =>
+      apiRequest("POST", "/api/clients", { name, industry: industry || "" }) as Promise<{ id: number }>,
+    onSuccess: async (newClient) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      if (quickClientEmailForLink !== null) {
+        linkMutation.mutate({ id: quickClientEmailForLink, clientId: newClient.id });
+      }
+      setQuickClientDialogOpen(false);
+      setQuickClientName("");
+      setQuickClientIndustry("");
+      setQuickClientEmailForLink(null);
+      toast({ title: "Company created and linked" });
+    },
+    onError: () => toast({ title: "Failed to create company", variant: "destructive" }),
   });
 
   const aiFeedbackMutation = useMutation({
@@ -793,6 +825,69 @@ export default function EmailSyncPage() {
                             </div>
                           )}
 
+                          {/* AI create suggestions — "Not in your CRM?" */}
+                          {(msg.aiCreateSuggestions?.length ?? 0) > 0 && !msg.clientId && (
+                            <div className="mt-3 mb-3 p-3 rounded-lg border border-green-200 bg-green-50">
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs font-semibold text-green-800 flex items-center gap-1">
+                                  <UserPlus className="h-3.5 w-3.5" /> Not in your CRM?
+                                </p>
+                                <div className="flex items-center gap-0.5">
+                                  {(["thumbs_up", "thumbs_down"] as const).map(type => {
+                                    const fbKey = `${msg.id}-create_suggestion`;
+                                    const given = aiFeedbackGiven[fbKey];
+                                    return (
+                                      <button key={type} onClick={e => { e.stopPropagation(); submitFeedback(msg.id, "create_suggestion", type); }} disabled={!!given}
+                                        className={`p-0.5 rounded transition-colors ${given === type ? (type === "thumbs_up" ? "text-green-600" : "text-red-500") : "text-green-400 hover:text-green-700 disabled:opacity-30"}`}>
+                                        {type === "thumbs_up" ? <ThumbsUp className="h-3 w-3" /> : <ThumbsDown className="h-3 w-3" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-2">
+                                {msg.aiCreateSuggestions!.map((s, i) => (
+                                  <div key={i} className="flex items-start gap-3 bg-white border border-green-200 rounded-lg px-3 py-2.5 shadow-sm">
+                                    <div className="mt-0.5 shrink-0">
+                                      {s.type === "client" ? <Building2 className="h-4 w-4 text-green-600" /> : <UserPlus className="h-4 w-4 text-green-600" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-gray-900">{s.name}</p>
+                                      {(s.title || s.company) && (
+                                        <p className="text-xs text-gray-500">{[s.title, s.company].filter(Boolean).join(" at ")}</p>
+                                      )}
+                                      {s.email && <p className="text-xs text-gray-500">{s.email}</p>}
+                                      <p className="text-xs text-green-700 mt-0.5">{s.reason}</p>
+                                    </div>
+                                    <button
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        if (s.type === "contact") {
+                                          const nameParts = s.name.trim().split(" ");
+                                          setNewContactFirstName(nameParts[0] ?? "");
+                                          setNewContactLastName(nameParts.slice(1).join(" "));
+                                          setNewContactEmail(s.email ?? "");
+                                          setNewContactClientId("");
+                                          setAddContactDialogOpen(true);
+                                        } else {
+                                          setQuickClientName(s.name);
+                                          setQuickClientIndustry("");
+                                          setQuickClientEmailForLink(msg.id);
+                                          setQuickClientDialogOpen(true);
+                                        }
+                                      }}
+                                      data-testid={`create-suggestion-${s.type}-${i}`}
+                                      className="shrink-0 flex items-center gap-1 px-2.5 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 transition-colors whitespace-nowrap"
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                      {s.type === "client" ? "Add Company" : "Add Contact"}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           {/* AI Summary */}
                           {msg.aiSummary && (
                             <div className="mt-3 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -1129,6 +1224,45 @@ export default function EmailSyncPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Quick-create company dialog (from AI create suggestion) */}
+      <Dialog open={quickClientDialogOpen} onOpenChange={v => { setQuickClientDialogOpen(v); if (!v) { setQuickClientName(""); setQuickClientIndustry(""); setQuickClientEmailForLink(null); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Add New Company</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs text-gray-500">Company Name *</Label>
+              <Input
+                className="h-8 text-sm"
+                placeholder="e.g. CBRE, Cushman & Wakefield"
+                value={quickClientName}
+                onChange={e => setQuickClientName(e.target.value)}
+                data-testid="input-quick-client-name"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-gray-500">Industry (optional)</Label>
+              <Input
+                className="h-8 text-sm"
+                placeholder="e.g. Property Management"
+                value={quickClientIndustry}
+                onChange={e => setQuickClientIndustry(e.target.value)}
+                data-testid="input-quick-client-industry"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuickClientDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => quickClientMutation.mutate({ name: quickClientName, industry: quickClientIndustry })}
+              disabled={quickClientMutation.isPending || !quickClientName.trim()}
+              data-testid="button-confirm-quick-client"
+            >
+              {quickClientMutation.isPending ? "Creating..." : "Create & Link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -2606,7 +2606,7 @@ Return only valid JSON, no markdown.`;
       const userName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(" ") || currentUser.email || "the M5 employee";
       const userEmail = currentUser.gmailEmail || currentUser.email || "";
 
-      let aiResult = { summary: "", suggestedTasks: [] as any[], sentiment: "neutral", stageSuggestion: null as string | null, requiresResponse: false, connectionSuggestions: suggestions };
+      let aiResult = { summary: "", suggestedTasks: [] as any[], sentiment: "neutral", stageSuggestion: null as string | null, requiresResponse: false, connectionSuggestions: suggestions, createSuggestions: [] as any[] };
       try {
         const prompt = `You are an assistant for M5 Services, a facility maintenance company. Analyze this email and respond with ONLY valid JSON.
 
@@ -2630,7 +2630,8 @@ Respond with this JSON:
   "sentiment": "positive|neutral|negative|urgent",
   "stageSuggestion": null or one of: "new_lead|qualified|proposal_sent|won|lost",
   "requiresResponse": true or false (true only if inbound and M5 should reply — false for cc, outbound, automated/notifications/newsletters),
-  "connectionSuggestions": [] or array of {type: "client"|"contact"|"lead", id: number, name: string, confidence: "high"|"medium"|"low", reason: string} — CRITICAL: only use IDs that exactly appear in the "Known clients", "Known contacts", or "Active leads" lists above. Do NOT invent records or IDs. If no match exists, return an empty array.
+  "connectionSuggestions": [] or array of {type: "client"|"contact"|"lead", id: number, name: string, confidence: "high"|"medium"|"low", reason: string} — CRITICAL: only use IDs that exactly appear in the "Known clients", "Known contacts", or "Active leads" lists above. Do NOT invent records or IDs. If no match exists, return an empty array.,
+  "createSuggestions": [] or array of at most 2 objects {type: "contact"|"client", name: string, email?: string, company?: string, title?: string, reason: string} — ONLY include this when (1) the email sender or a key person mentioned is NOT found in the known clients/contacts/leads lists AND (2) they appear to be a real business contact worth adding to the CRM (prospect, property manager, decision maker, etc.). Do NOT suggest for automated emails, newsletters, internal M5 staff, or when connectionSuggestions already covers all key people.
 }`;
 
         const completion = await openai.chat.completions.create({
@@ -2655,13 +2656,29 @@ Respond with this JSON:
         const aiSuggestions = !clientId
           ? [...suggestions, ...validatedAiSuggestions.slice(0, 5)].slice(0, 6)
           : suggestions;
+        // Validate create suggestions — basic shape check only, no ID needed
+        const validatedCreateSuggestions = Array.isArray(parsed.createSuggestions)
+          ? parsed.createSuggestions
+              .filter((s: any) => s && typeof s.name === "string" && s.name.trim() && (s.type === "contact" || s.type === "client"))
+              .map((s: any) => ({
+                type: s.type as "contact" | "client",
+                name: s.name.trim(),
+                email: typeof s.email === "string" ? s.email.trim() || undefined : undefined,
+                company: typeof s.company === "string" ? s.company.trim() || undefined : undefined,
+                title: typeof s.title === "string" ? s.title.trim() || undefined : undefined,
+                reason: typeof s.reason === "string" ? s.reason : "",
+              }))
+              .slice(0, 2)
+          : [];
+
         aiResult = {
           summary: parsed.summary ?? "",
           suggestedTasks: Array.isArray(parsed.suggestedTasks) ? parsed.suggestedTasks.slice(0, 5) : [],
           sentiment: parsed.sentiment ?? "neutral",
           stageSuggestion: parsed.stageSuggestion ?? null,
-          requiresResponse: direction === "inbound" ? (parsed.requiresResponse ?? false) : false, // CC and outbound never require response
+          requiresResponse: direction === "inbound" ? (parsed.requiresResponse ?? false) : false,
           connectionSuggestions: aiSuggestions,
+          createSuggestions: clientId ? [] : validatedCreateSuggestions,
         };
       } catch {
         aiResult.connectionSuggestions = suggestions;
@@ -2690,6 +2707,7 @@ Respond with this JSON:
         aiSummary: aiResult.summary,
         aiSuggestedTasks: aiResult.suggestedTasks,
         aiConnectionSuggestions: aiResult.connectionSuggestions.length > 0 ? aiResult.connectionSuggestions : null,
+        aiCreateSuggestions: aiResult.createSuggestions.length > 0 ? aiResult.createSuggestions : null,
         aiSentiment: aiResult.sentiment,
         aiStageSuggestion: aiResult.stageSuggestion,
         requiresResponse: aiResult.requiresResponse,
