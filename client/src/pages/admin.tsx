@@ -416,7 +416,7 @@ export default function AdminPage() {
   useEffect(() => {
     const edits: Record<string, string> = {};
     for (const cfg of roleConfigs) {
-      if (cfg.roleKey === "admin") continue;
+      if (cfg.roleKey === "super_admin") continue;
       if (!(cfg.roleKey in roleLabelEdits)) edits[cfg.roleKey] = cfg.displayName;
     }
     if (Object.keys(edits).length > 0) setRoleLabelEdits(prev => ({ ...edits, ...prev }));
@@ -486,6 +486,7 @@ export default function AdminPage() {
   };
 
   const nonAdminRoles = roleConfigs.filter(c => c.roleKey !== "admin" && c.roleKey !== "super_admin");
+  const editableRoles = roleConfigs.filter(c => c.roleKey !== "super_admin");
 
   const updateRoleMutation = useMutation({
     mutationFn: ({ id, role }: { id: string; role: string }) =>
@@ -917,19 +918,19 @@ export default function AdminPage() {
               )}
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 w-28 shrink-0">
-                  <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs font-semibold px-2 py-0.5">
+                  <Badge className="bg-primary/10 text-primary border-primary/20 border text-xs font-semibold px-2 py-0.5">
                     <Lock className="h-3 w-3 mr-1" />
-                    Admin
+                    Super Admin
                   </Badge>
                 </div>
-                <Input value="Admin" disabled className="max-w-xs opacity-50" />
+                <Input value="Super Admin" disabled className="max-w-xs opacity-50" />
                 <span className="text-xs text-muted-foreground">Cannot be renamed or deleted</span>
               </div>
-              {nonAdminRoles.length > 0 && <Separator />}
-              {nonAdminRoles.map((cfg) => (
+              {editableRoles.length > 0 && <Separator />}
+              {editableRoles.map((cfg) => (
                 <div key={cfg.roleKey} className="flex items-center gap-3">
                   <div className="w-28 shrink-0">
-                    <Badge className="bg-slate-100 text-slate-600 border-slate-200 border text-xs font-semibold px-2 py-0.5 max-w-full truncate">
+                    <Badge className={`border text-xs font-semibold px-2 py-0.5 max-w-full truncate ${cfg.roleKey === "admin" ? "bg-red-100 text-red-700 border-red-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
                       {cfg.roleKey}
                     </Badge>
                   </div>
@@ -951,15 +952,17 @@ export default function AdminPage() {
                     {savedLabel === cfg.roleKey ? <Check className="h-3.5 w-3.5 text-green-600" /> : null}
                     {savedLabel === cfg.roleKey ? "Saved" : "Save"}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => setDeleteRoleKey(cfg.roleKey)}
-                    data-testid={`button-delete-role-${cfg.roleKey}`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {cfg.roleKey !== "admin" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeleteRoleKey(cfg.roleKey)}
+                      data-testid={`button-delete-role-${cfg.roleKey}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               ))}
             </CardContent>
@@ -981,7 +984,7 @@ export default function AdminPage() {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3 min-w-[180px]">Section</th>
-                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 min-w-[120px]">Admin</th>
+                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 min-w-[120px]">{getRoleLabel("admin")}</th>
                       {nonAdminRoles.map(cfg => (
                         <th key={cfg.roleKey} className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 min-w-[160px]">
                           <div className="flex items-center justify-center gap-1.5">
