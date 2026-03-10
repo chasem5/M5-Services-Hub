@@ -44,6 +44,7 @@ import {
   Mic,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
+import { BuildOpsIcon } from "@/components/BuildOpsIcon";
 const MapView = lazy(() => import("@/pages/map").then(m => ({ default: m.MapView })));
 
 // ── CSV utilities ────────────────────────────────────────────────────────────
@@ -1470,7 +1471,10 @@ export default function Customers() {
                                 )}
                               </div>
                               <div className="flex flex-col gap-1 min-w-0">
-                                <span className="text-base">{client.name}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-base">{client.name}</span>
+                                  {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
+                                </div>
                                 {(client.serviceNeeds ?? []).length > 0 && (
                                   <div className="flex flex-wrap gap-1">
                                     {(client.serviceNeeds ?? []).map(need => {
@@ -1597,7 +1601,10 @@ export default function Customers() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2 mb-1">
-                              <h3 className="font-bold text-sm truncate">{client.name}</h3>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <h3 className="font-bold text-sm truncate">{client.name}</h3>
+                                {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
+                              </div>
                               <TierBadge tier={client.tier} size="xs" />
                             </div>
                             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">

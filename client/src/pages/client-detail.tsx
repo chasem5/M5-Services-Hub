@@ -46,6 +46,8 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
+import { BuildOpsIcon } from "@/components/BuildOpsIcon";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Popover,
   PopoverContent,
@@ -1427,9 +1429,16 @@ export default function ClientDetail() {
             <Badge variant="outline" className="h-6">Customer ID: {client.id}</Badge>
             {(client as any).tier && <TierBadge tier={(client as any).tier} />}
             {(client as any).buildopsId && (
-              <Badge className="h-6 bg-blue-100 text-blue-700 border-blue-200 gap-1" data-testid="badge-buildops-synced">
-                <Zap className="h-3 w-3" /> BuildOps Linked
-              </Badge>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span data-testid="badge-buildops-synced" className="cursor-default">
+                      <BuildOpsIcon className="h-5 w-5" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Synced with BuildOps</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
           <div className="flex items-center gap-2 mt-1">
