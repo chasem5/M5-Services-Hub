@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plus,
@@ -86,7 +86,6 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
   const [editPortfolioName, setEditPortfolioName] = useState("");
 
   const [contactSearch, setContactSearch] = useState<Record<number, string>>({});
-  const [newRole, setNewRole] = useState<Record<number, string>>({});
 
   const { data: allBuildings = [], isLoading: buildingsLoading } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/contact-buildings"],
@@ -109,12 +108,15 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
 
   const createBuildingMutation = useMutation({
     mutationFn: async () => {
+      const resolvedClientId = filterClientId
+        ? filterClientId
+        : newBuildingClientId !== "none" ? parseInt(newBuildingClientId) : null;
       const res = await apiRequest("POST", "/api/contact-buildings", {
         name: newBuildingName.trim(),
         address: newBuildingAddress.trim() || null,
         lat: newBuildingLat ?? null,
         lng: newBuildingLng ?? null,
-        clientId: newBuildingClientId !== "none" ? parseInt(newBuildingClientId) : null,
+        clientId: resolvedClientId,
         contactId: newBuildingContactId !== "none" ? parseInt(newBuildingContactId) : null,
       });
       if (!res.ok) {
@@ -233,7 +235,15 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
     onError: () => toast({ title: "Failed to update portfolio", variant: "destructive" }),
   });
 
-  const filteredBuildings = allBuildings.filter(b => {
+  const companyFilteredBuildings = filterClientId
+    ? allBuildings.filter(b => {
+        if (b.clientId === filterClientId) return true;
+        const contact = allContacts.find(c => c.id === b.contactId);
+        return contact?.clientId === filterClientId;
+      })
+    : allBuildings;
+
+  const filteredBuildings = companyFilteredBuildings.filter(b => {
     if (!buildingSearch) return true;
     const q = buildingSearch.toLowerCase();
     const contact = allContacts.find(c => c.id === b.contactId);
@@ -244,6 +254,12 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
       (company?.name ?? "").toLowerCase().includes(q)
     );
   });
+
+  const companyContacts = filterClientId
+    ? allContacts.filter(c => c.clientId === filterClientId)
+    : allContacts;
+
+  const filterCompany = filterClientId ? clients.find(c => c.id === filterClientId) : null;
 
   const filteredPortfolios = portfolios.filter(p => {
     if (!portfolioSearch) return true;
@@ -260,9 +276,11 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
     });
   });
 
-  const newBuildingContacts = newBuildingClientId !== "none"
-    ? allContacts.filter(c => c.clientId === parseInt(newBuildingClientId))
-    : allContacts;
+  const newBuildingContacts = filterClientId
+    ? companyContacts
+    : newBuildingClientId !== "none"
+      ? allContacts.filter(c => c.clientId === parseInt(newBuildingClientId))
+      : allContacts;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-6 pb-6">
@@ -272,9 +290,11 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Building2 className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-semibold">Buildings</span>
-            {allBuildings.length > 0 && (
-              <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{allBuildings.length}</Badge>
+            <span className="text-sm font-semibold">
+              {filterCompany ? `${filterCompany.name} Buildings` : "Buildings"}
+            </span>
+            {companyFilteredBuildings.length > 0 && (
+              <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{companyFilteredBuildings.length}</Badge>
             )}
           </div>
           <Button
@@ -311,15 +331,21 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
               placeholder="Address (optional)"
               className="h-8 text-sm"
             />
-            <Select value={newBuildingClientId} onValueChange={v => { setNewBuildingClientId(v); setNewBuildingContactId("none"); }}>
-              <SelectTrigger className="h-8 text-xs" data-testid="select-building-company">
-                <SelectValue placeholder="Link to company (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No company</SelectItem>
-                {clients.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {filterClientId ? (
+              <div className="h-8 flex items-center px-3 text-xs bg-muted/50 rounded-md border text-muted-foreground">
+                {filterCompany?.name ?? "Company"} <span className="ml-1 text-[10px] opacity-60">(linked automatically)</span>
+              </div>
+            ) : (
+              <Select value={newBuildingClientId} onValueChange={v => { setNewBuildingClientId(v); setNewBuildingContactId("none"); }}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-building-company">
+                  <SelectValue placeholder="Link to company (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No company</SelectItem>
+                  {clients.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
             {newBuildingContacts.length > 0 && (
               <Select value={newBuildingContactId} onValueChange={setNewBuildingContactId}>
                 <SelectTrigger className="h-8 text-xs" data-testid="select-building-contact">
@@ -594,13 +620,19 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
               );
               const portfolioContactList = portfolio.contacts ?? [];
               const cSearch = contactSearch[portfolio.id] ?? "";
-              const availableContacts = allContacts.filter(c => {
+              const contactPool = filterClientId ? companyContacts : allContacts;
+              const availableContacts = contactPool.filter(c => {
                 const alreadyAdded = portfolioContactList.some(pc => pc.contactId === c.id);
                 if (alreadyAdded) return false;
-                if (!cSearch) return false;
+                if (!filterClientId && !cSearch) return false;
+                if (!filterClientId && cSearch) {
+                  const q = cSearch.toLowerCase();
+                  const company = clients.find(cl => cl.id === c.clientId);
+                  return c.name.toLowerCase().includes(q) || (c.title ?? "").toLowerCase().includes(q) || (company?.name ?? "").toLowerCase().includes(q);
+                }
+                if (!cSearch) return true;
                 const q = cSearch.toLowerCase();
-                const company = clients.find(cl => cl.id === c.clientId);
-                return c.name.toLowerCase().includes(q) || (c.title ?? "").toLowerCase().includes(q) || (company?.name ?? "").toLowerCase().includes(q);
+                return c.name.toLowerCase().includes(q) || (c.title ?? "").toLowerCase().includes(q);
               });
 
               return (
@@ -727,62 +759,110 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
                       {/* Contacts in this portfolio */}
                       <div>
                         <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Contacts</p>
-                        {portfolioContactList.length === 0 ? (
-                          <p className="text-xs text-muted-foreground italic mb-1.5">No contacts added yet.</p>
+
+                        {filterClientId ? (
+                          /* Company context: checklist of all company contacts */
+                          <div className="border rounded-lg overflow-hidden">
+                            {companyContacts.length === 0 ? (
+                              <p className="text-xs text-muted-foreground p-3 text-center italic">No contacts for this company yet.</p>
+                            ) : (
+                              <div className="divide-y max-h-44 overflow-y-auto">
+                                {companyContacts.map(c => {
+                                  const isAdded = portfolioContactList.some(pc => pc.contactId === c.id);
+                                  return (
+                                    <div
+                                      key={c.id}
+                                      className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted/40 transition-colors"
+                                      data-testid={`row-portfolio-contact-${c.id}`}
+                                    >
+                                      <button
+                                        className={cn(
+                                          "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                                          isAdded
+                                            ? "bg-primary border-primary text-white"
+                                            : "border-border hover:border-primary/50"
+                                        )}
+                                        onClick={() => {
+                                          if (isAdded) {
+                                            removeContactMutation.mutate({ portfolioId: portfolio.id, contactId: c.id });
+                                          } else {
+                                            addContactMutation.mutate({ portfolioId: portfolio.id, contactId: c.id });
+                                          }
+                                        }}
+                                        data-testid={`checkbox-contact-${c.id}-portfolio-${portfolio.id}`}
+                                      >
+                                        {isAdded && <Check className="h-2.5 w-2.5" />}
+                                      </button>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium truncate">{c.name}</p>
+                                        {c.title && <p className="text-[10px] text-muted-foreground truncate">{c.title}</p>}
+                                      </div>
+                                      {isAdded && (
+                                        <span className="text-[10px] text-primary font-medium shrink-0">Added</span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         ) : (
-                          <div className="space-y-1 mb-1.5">
-                            {portfolioContactList.map(pc => {
-                              const c = allContacts.find(x => x.id === pc.contactId);
-                              if (!c) return null;
-                              return (
-                                <div key={pc.contactId} className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-muted/40 group/row" data-testid={`row-portfolio-contact-${pc.contactId}`}>
-                                  <Users className="h-3 w-3 text-muted-foreground shrink-0" />
-                                  <span className="flex-1 truncate">{c.name}</span>
-                                  {pc.role && <span className="text-muted-foreground text-[10px]">{pc.role}</span>}
-                                  <button
-                                    className="opacity-0 group-hover/row:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                                    onClick={() => removeContactMutation.mutate({ portfolioId: portfolio.id, contactId: pc.contactId })}
-                                    data-testid={`button-remove-contact-${pc.contactId}`}
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {/* Add contact search */}
-                        <Input
-                          placeholder="Search contacts to add..."
-                          value={cSearch}
-                          onChange={e => setContactSearch(prev => ({ ...prev, [portfolio.id]: e.target.value }))}
-                          className="h-7 text-xs"
-                          data-testid={`input-search-contacts-${portfolio.id}`}
-                        />
-                        {cSearch && availableContacts.length > 0 && (
-                          <div className="border rounded overflow-hidden mt-1 max-h-32 overflow-y-auto">
-                            {availableContacts.slice(0, 6).map(c => {
-                              const co = clients.find(cl => cl.id === c.clientId);
-                              return (
-                                <button
-                                  key={c.id}
-                                  className="w-full text-left px-3 py-1.5 hover:bg-muted/50 transition-colors border-b last:border-b-0"
-                                  onClick={() => {
-                                    addContactMutation.mutate({ portfolioId: portfolio.id, contactId: c.id, role: newRole[portfolio.id] || undefined });
-                                    setContactSearch(prev => ({ ...prev, [portfolio.id]: "" }));
-                                    setNewRole(prev => ({ ...prev, [portfolio.id]: "" }));
-                                  }}
-                                  data-testid={`option-contact-${c.id}`}
-                                >
-                                  <p className="text-xs font-medium">{c.name}</p>
-                                  <p className="text-[10px] text-muted-foreground">{[c.title, co?.name].filter(Boolean).join(" · ")}</p>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {cSearch && availableContacts.length === 0 && (
-                          <p className="text-xs text-muted-foreground mt-1 px-1">No contacts found</p>
+                          /* No company context: show added contacts + search to add more */
+                          <>
+                            {portfolioContactList.length > 0 && (
+                              <div className="space-y-1 mb-2">
+                                {portfolioContactList.map(pc => {
+                                  const c = allContacts.find(x => x.id === pc.contactId);
+                                  if (!c) return null;
+                                  return (
+                                    <div key={pc.contactId} className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-muted/40 group/row" data-testid={`row-portfolio-contact-${pc.contactId}`}>
+                                      <Users className="h-3 w-3 text-muted-foreground shrink-0" />
+                                      <span className="flex-1 truncate">{c.name}</span>
+                                      {pc.role && <span className="text-muted-foreground text-[10px]">{pc.role}</span>}
+                                      <button
+                                        className="opacity-0 group-hover/row:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                        onClick={() => removeContactMutation.mutate({ portfolioId: portfolio.id, contactId: pc.contactId })}
+                                        data-testid={`button-remove-contact-${pc.contactId}`}
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            <Input
+                              placeholder="Search contacts to add..."
+                              value={cSearch}
+                              onChange={e => setContactSearch(prev => ({ ...prev, [portfolio.id]: e.target.value }))}
+                              className="h-7 text-xs"
+                              data-testid={`input-search-contacts-${portfolio.id}`}
+                            />
+                            {cSearch && availableContacts.length > 0 && (
+                              <div className="border rounded overflow-hidden mt-1 max-h-32 overflow-y-auto">
+                                {availableContacts.slice(0, 6).map(c => {
+                                  const co = clients.find(cl => cl.id === c.clientId);
+                                  return (
+                                    <button
+                                      key={c.id}
+                                      className="w-full text-left px-3 py-1.5 hover:bg-muted/50 transition-colors border-b last:border-b-0"
+                                      onClick={() => {
+                                        addContactMutation.mutate({ portfolioId: portfolio.id, contactId: c.id });
+                                        setContactSearch(prev => ({ ...prev, [portfolio.id]: "" }));
+                                      }}
+                                      data-testid={`option-contact-${c.id}`}
+                                    >
+                                      <p className="text-xs font-medium">{c.name}</p>
+                                      <p className="text-[10px] text-muted-foreground">{[c.title, co?.name].filter(Boolean).join(" · ")}</p>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {cSearch && availableContacts.length === 0 && (
+                              <p className="text-xs text-muted-foreground mt-1 px-1">No contacts found</p>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>

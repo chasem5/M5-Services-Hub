@@ -29,7 +29,6 @@ import {
   ClipboardList,
   Paperclip,
   X,
-  Home,
   Map,
   Linkedin,
   AlertCircle,
@@ -133,7 +132,6 @@ import {
   type Client, 
   type ClientOffice,
   type ClientContact,
-  type ContactBuilding,
   type BdSpendEntry,
   type Lead, 
   type Estimate,
@@ -401,88 +399,6 @@ function BuildOpsPushButton({ clientId, buildopsId }: { clientId: number; buildo
   );
 }
 
-function BuildingActivityRow({
-  building,
-  isExpanded,
-  onToggleExpand,
-  onEdit,
-  onDelete,
-}: {
-  building: ContactBuilding;
-  isExpanded: boolean;
-  onToggleExpand: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const { data: activity } = useQuery<{ leads: Lead[]; estimates: Estimate[] }>({
-    queryKey: ["/api/buildings", building.id, "activity"],
-    enabled: isExpanded,
-  });
-
-  const totalCount = (activity?.leads.length ?? 0) + (activity?.estimates.length ?? 0);
-
-  return (
-    <div className="rounded hover:bg-muted/30 transition-colors">
-      <div className="flex items-start justify-between pl-2 py-1 group/building">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium truncate">{building.name}</p>
-          {building.address && <AddressLink address={building.address} className="text-[11px] text-muted-foreground truncate" />}
-          {building.notes && <p className="text-[11px] text-muted-foreground italic truncate">{building.notes}</p>}
-          <button
-            type="button"
-            onClick={onToggleExpand}
-            className="flex items-center gap-1 mt-0.5 text-[10px] text-primary/70 hover:text-primary font-medium transition-colors"
-            data-testid={`button-toggle-building-activity-${building.id}`}
-          >
-            {isExpanded ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />}
-            {isExpanded ? "Hide" : "Show"} linked activity
-            {totalCount > 0 && <span className="text-muted-foreground">· {totalCount} item{totalCount !== 1 ? "s" : ""}</span>}
-          </button>
-        </div>
-        <div className="flex items-center gap-0.5 opacity-0 group-hover/building:opacity-100 transition-opacity shrink-0 ml-2">
-          <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-            onClick={onEdit} data-testid={`button-edit-building-${building.id}`}>
-            <Edit className="h-3 w-3" />
-          </button>
-          <button type="button" className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-destructive"
-            onClick={onDelete} data-testid={`button-delete-building-${building.id}`}>
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="pl-3 pb-2 space-y-1.5">
-          {!activity ? (
-            <p className="text-[10px] text-muted-foreground">Loading...</p>
-          ) : activity.leads.length === 0 && activity.estimates.length === 0 ? (
-            <p className="text-[10px] text-muted-foreground italic">No deals or estimates linked to this building yet.</p>
-          ) : (
-            <>
-              {activity.leads.map(lead => (
-                <div key={lead.id} className="flex items-center gap-2 text-[10px] bg-muted/40 rounded px-2 py-1" data-testid={`building-deal-${building.id}-${lead.id}`}>
-                  <Target className="h-2.5 w-2.5 text-primary shrink-0" />
-                  <span className="font-medium truncate flex-1">{lead.title}</span>
-                  <span className="text-muted-foreground capitalize shrink-0">{lead.stage.replace("_", " ")}</span>
-                  <span className="font-mono shrink-0">${Number(lead.value).toLocaleString()}</span>
-                </div>
-              ))}
-              {activity.estimates.map(est => (
-                <div key={est.id} className="flex items-center gap-2 text-[10px] bg-muted/40 rounded px-2 py-1" data-testid={`building-estimate-${building.id}-${est.id}`}>
-                  <FileText className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-                  <span className="font-medium truncate flex-1">{est.title}</span>
-                  <span className="text-muted-foreground capitalize shrink-0">{est.status}</span>
-                  <span className="font-mono shrink-0">${Number(est.total).toLocaleString()}</span>
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ContactCard({
   contact,
   onEdit,
@@ -494,28 +410,9 @@ function ContactCard({
   onDelete: (id: number) => void;
   onAddToPortfolio?: (contactId: number) => void;
 }) {
-  const [isPortfolioOpen, setIsPortfolioOpen] = useState(false);
-  const [isAddingBuilding, setIsAddingBuilding] = useState(false);
-  const [editingBuilding, setEditingBuilding] = useState<ContactBuilding | null>(null);
-  const [expandedBuildingId, setExpandedBuildingId] = useState<number | null>(null);
   const [avatarError, setAvatarError] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
-  const [addName, setAddName] = useState("");
-  const [addAddress, setAddAddress] = useState("");
-  const [addLat, setAddLat] = useState<number | null>(null);
-  const [addLng, setAddLng] = useState<number | null>(null);
-  const [addNotes, setAddNotes] = useState("");
-  const [editName, setEditName] = useState("");
-  const [editAddress, setEditAddress] = useState("");
-  const [editLat, setEditLat] = useState<number | null>(null);
-  const [editLng, setEditLng] = useState<number | null>(null);
-  const [editNotes, setEditNotes] = useState("");
   const { toast } = useToast();
-
-  const { data: buildings = [], isLoading: isLoadingBuildings } = useQuery<ContactBuilding[]>({
-    queryKey: ["/api/contacts", contact.id, "buildings"],
-    enabled: isPortfolioOpen,
-  });
 
   const { data: contactStages = [] } = useQuery<ContactStage[]>({
     queryKey: ["/api/contact-stages"],
@@ -537,63 +434,6 @@ function ContactCard({
     const u = cardUsers.find((u: any) => u.id === userId);
     if (!u) return userId;
     return u.firstName ? `${u.firstName} ${u.lastName ?? ""}`.trim() : u.email;
-  };
-
-  const addBuildingMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/contacts/${contact.id}/buildings`, {
-        name: addName.trim(),
-        address: addAddress.trim() || null,
-        lat: addLat ?? null,
-        lng: addLng ?? null,
-        notes: addNotes.trim() || null,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "buildings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      setAddName(""); setAddAddress(""); setAddLat(null); setAddLng(null); setAddNotes("");
-      setIsAddingBuilding(false);
-    },
-    onError: () => { toast({ title: "Failed to add building", variant: "destructive" }); },
-  });
-
-  const updateBuildingMutation = useMutation({
-    mutationFn: async (b: ContactBuilding) => {
-      const res = await apiRequest("PUT", `/api/contacts/${contact.id}/buildings/${b.id}`, {
-        name: editName.trim(),
-        address: editAddress.trim() || null,
-        lat: editLat ?? null,
-        lng: editLng ?? null,
-        notes: editNotes.trim() || null,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "buildings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      setEditingBuilding(null);
-    },
-    onError: () => { toast({ title: "Failed to update building", variant: "destructive" }); },
-  });
-
-  const deleteBuildingMutation = useMutation({
-    mutationFn: async (buildingId: number) => {
-      await apiRequest("DELETE", `/api/contacts/${contact.id}/buildings/${buildingId}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id, "buildings"] });
-    },
-  });
-
-  const openEditBuilding = (b: ContactBuilding) => {
-    setEditingBuilding(b);
-    setEditName(b.name);
-    setEditAddress(b.address ?? "");
-    setEditLat(b.lat != null ? parseFloat(String(b.lat)) : null);
-    setEditLng(b.lng != null ? parseFloat(String(b.lng)) : null);
-    setEditNotes(b.notes ?? "");
   };
 
   const contactServiceNeeds: string[] = (contact.serviceNeeds as string[] | null) ?? [];
@@ -751,107 +591,6 @@ function ContactCard({
           </div>
         )}
 
-        {/* Portfolio toggle */}
-        <button
-          type="button"
-          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors w-full pt-0.5"
-          onClick={() => setIsPortfolioOpen(v => !v)}
-          data-testid={`button-toggle-portfolio-${contact.id}`}
-        >
-          {isPortfolioOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          <Home className="h-3.5 w-3.5" />
-          Portfolio{!isPortfolioOpen && buildings.length === 0 && !isPortfolioOpen ? "" : ` · ${buildings.length} building${buildings.length !== 1 ? "s" : ""}`}
-        </button>
-
-        {/* Portfolio panel */}
-        {isPortfolioOpen && (
-          <div className="space-y-2 pl-1 border-l-2 border-border/50 ml-1">
-            {isLoadingBuildings ? (
-              <p className="text-xs text-muted-foreground pl-2 py-1">Loading...</p>
-            ) : buildings.length === 0 && !isAddingBuilding ? (
-              <p className="text-xs text-muted-foreground pl-2 py-1 italic">No buildings added yet.</p>
-            ) : (
-              buildings.map(b => (
-                <div key={b.id}>
-                  {editingBuilding?.id === b.id ? (
-                    <div className="space-y-2 pl-2 py-2 rounded-md bg-muted/30 border">
-                      <Input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Building name"
-                        className="h-7 text-xs" data-testid={`input-edit-building-name-${b.id}`} />
-                      <AddressAutocomplete
-                        value={editAddress}
-                        onChange={(addr, lat, lng) => { setEditAddress(addr); if (lat !== undefined) setEditLat(lat); if (lng !== undefined) setEditLng(lng); }}
-                        placeholder="Search address..."
-                        className="h-7 text-xs"
-                        data-testid={`input-edit-building-address-${b.id}`}
-                      />
-                      {editLat && <p className="text-[10px] text-green-600 pl-0.5">📍 Location confirmed</p>}
-                      <Input value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Notes (optional)"
-                        className="h-7 text-xs" data-testid={`input-edit-building-notes-${b.id}`} />
-                      <div className="flex gap-2">
-                        <Button size="sm" className="h-7 text-xs px-3"
-                          disabled={!editName.trim() || updateBuildingMutation.isPending}
-                          onClick={() => updateBuildingMutation.mutate(b)}
-                          data-testid={`button-save-building-${b.id}`}>
-                          Save
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7 text-xs px-2"
-                          onClick={() => setEditingBuilding(null)} data-testid={`button-cancel-edit-building-${b.id}`}>
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <BuildingActivityRow
-                      building={b}
-                      isExpanded={expandedBuildingId === b.id}
-                      onToggleExpand={() => setExpandedBuildingId(expandedBuildingId === b.id ? null : b.id)}
-                      onEdit={() => openEditBuilding(b)}
-                      onDelete={() => deleteBuildingMutation.mutate(b.id)}
-                    />
-                  )}
-                </div>
-              ))
-            )}
-
-            {/* Add Building inline form */}
-            {isAddingBuilding ? (
-              <div className="space-y-2 pl-2 py-2 rounded-md bg-muted/20 border border-dashed">
-                <Input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Building name *"
-                  className="h-7 text-xs" autoFocus data-testid={`input-add-building-name-${contact.id}`} />
-                <AddressAutocomplete
-                  value={addAddress}
-                  onChange={(addr, lat, lng) => { setAddAddress(addr); if (lat !== undefined) setAddLat(lat); if (lng !== undefined) setAddLng(lng); }}
-                  placeholder="Search address..."
-                  className="h-7 text-xs"
-                  data-testid={`input-add-building-address-${contact.id}`}
-                />
-                {addLat && <p className="text-[10px] text-green-600 pl-0.5">📍 Location confirmed</p>}
-                <Input value={addNotes} onChange={e => setAddNotes(e.target.value)} placeholder="Notes (optional)"
-                  className="h-7 text-xs" data-testid={`input-add-building-notes-${contact.id}`} />
-                <div className="flex gap-2">
-                  <Button size="sm" className="h-7 text-xs px-3"
-                    disabled={!addName.trim() || addBuildingMutation.isPending}
-                    onClick={() => addBuildingMutation.mutate()}
-                    data-testid={`button-save-add-building-${contact.id}`}>
-                    Add
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-xs px-2"
-                    onClick={() => { setIsAddingBuilding(false); setAddName(""); setAddAddress(""); setAddLat(null); setAddLng(null); setAddNotes(""); }}
-                    data-testid={`button-cancel-add-building-${contact.id}`}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <button type="button"
-                className="flex items-center gap-1 pl-2 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
-                onClick={() => setIsAddingBuilding(true)}
-                data-testid={`button-add-building-${contact.id}`}>
-                <Plus className="h-3 w-3" /> Add building
-              </button>
-            )}
-          </div>
-        )}
       </CardContent>
     </Card>
   );
@@ -3107,7 +2846,7 @@ export default function ClientDetail() {
                   Portfolio Map
                 </CardTitle>
                 <CardDescription>
-                  Offices and contact buildings for {client.name} — {allBuildings.filter(b => b.lat).length} of {allBuildings.length} location{allBuildings.length !== 1 ? "s" : ""} mapped
+                  Offices and buildings for {client.name} — {allBuildings.filter(b => b.lat).length} of {allBuildings.length} location{allBuildings.length !== 1 ? "s" : ""} mapped
                 </CardDescription>
               </CardHeader>
               <CardContent className="pb-6">

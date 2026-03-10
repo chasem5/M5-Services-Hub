@@ -286,7 +286,7 @@ function BuildingsList({ buildings, offices, contacts, clients: clientsList, lea
         <div className="px-6 pt-4 pb-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
             <Landmark className="h-3.5 w-3.5" />
-            Contact Buildings
+            Buildings
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 px-6 pb-6">
