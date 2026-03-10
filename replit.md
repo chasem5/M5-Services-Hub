@@ -20,6 +20,7 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 - **Estimation Tool** — Estimate builder at `/estimates/:id` with line items from catalog or custom, auto-computed totals + tax
 - **Proposals** — Proposal builder linked to estimates, status workflow (Draft → Sent → Signed), PDF export with M5 branding
 - **Activity Timeline** — Reusable timeline component used on lead, client, and estimate detail views
+- **Email Sync** — Gmail OAuth integration with two-panel desktop layout (email list + detail pane); AI-powered analysis (summary, sentiment, tasks, stage suggestions); domain-based auto-linking to clients; AI connection suggestions for unmatched emails; dismiss individual emails or entire sender addresses (blocklist); link to client/deal/contact from detail pane; quick-create contact from email; auto-sync every 15 minutes for all connected users; last-synced timestamp in header
 - **Settings** — Profile view; Admin-only team member role management
 
 ## Architecture

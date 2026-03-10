@@ -2494,67 +2494,112 @@ Return only valid JSON, no markdown.`;
   });
 
   // Email Sync
-  app.post("/api/email/sync", isAuthenticated, async (req, res) => {
-    try {
-      const userId = (req as any).user?.claims?.sub;
-      const { getGmailMessages, getUserGmailAddress } = await import("./gmail");
-      const { openai } = await import("./openai");
+  // Helper to extract domain from email or URL
+  function extractDomain(emailOrUrl: string): string {
+    if (!emailOrUrl) return "";
+    const lower = emailOrUrl.toLowerCase().trim();
+    if (lower.includes("@")) return lower.split("@")[1] ?? "";
+    return lower.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] ?? "";
+  }
 
-      const currentUser = await storage.getUser(userId);
-      if (!currentUser || !currentUser.gmailConnected) {
-        return res.status(400).json({ message: "Connect your Gmail account in Settings before syncing." });
+  // Core sync logic extracted so auto-sync can call it too
+  async function performEmailSync(userId: string): Promise<{ newEmails: number; totalSynced: number; remindersCreated: number }> {
+    const { getGmailMessages, getUserGmailAddress } = await import("./gmail");
+    const { openai } = await import("./openai");
+
+    const currentUser = await storage.getUser(userId);
+    if (!currentUser || !currentUser.gmailConnected) throw new Error("Gmail not connected");
+
+    const [rawEmails, myAddress, dismissedList] = await Promise.all([
+      getGmailMessages(currentUser, 50),
+      getUserGmailAddress(currentUser),
+      storage.getDismissedSenders(userId),
+    ]);
+
+    const dismissedAddresses = new Set(dismissedList.map(d => d.emailAddress.toLowerCase()));
+
+    const allClients = await storage.listClients();
+    const allContacts = await storage.listAllClientContacts();
+    const allLeads = await storage.listLeads();
+
+    const clientEmailMap = new Map<string, number>();
+    const clientDomainMap = new Map<string, number[]>();
+    for (const c of allClients) {
+      if (c.email) clientEmailMap.set(c.email.toLowerCase(), c.id);
+      const website = c.website ?? "";
+      const emailDomain = c.email ? extractDomain(c.email) : "";
+      const siteDomain = extractDomain(website);
+      for (const domain of [emailDomain, siteDomain].filter(Boolean)) {
+        if (!clientDomainMap.has(domain)) clientDomainMap.set(domain, []);
+        clientDomainMap.get(domain)!.push(c.id);
+      }
+    }
+
+    const contactEmailMap = new Map<string, { clientId: number | null; contactId: number }>();
+    for (const ct of allContacts) {
+      if (ct.email) contactEmailMap.set(ct.email.toLowerCase(), { clientId: ct.clientId, contactId: ct.id });
+    }
+
+    const clientContext = allClients.slice(0, 30).map(c => ({ id: c.id, name: c.name, email: c.email, website: c.website }));
+    const leadContext = allLeads.slice(0, 30).map(l => ({ id: l.id, title: l.title, stage: l.stage, clientId: l.clientId }));
+    const contactContext = allContacts.slice(0, 30).map(ct => ({ id: ct.id, name: ct.name, email: ct.email, clientId: ct.clientId }));
+
+    let newEmails = 0;
+
+    for (const raw of rawEmails) {
+      const fromLower = raw.fromEmail.toLowerCase();
+
+      // Skip dismissed senders
+      if (dismissedAddresses.has(fromLower)) continue;
+
+      const direction = fromLower === myAddress.toLowerCase() ? "outbound" : "inbound";
+
+      let clientId: number | null = null;
+      let contactId: number | null = null;
+      let autoLinked = false;
+      const suggestions: { type: string; id: number; name: string; confidence: string; reason: string }[] = [];
+
+      // 1. Exact email match
+      if (clientEmailMap.has(fromLower)) {
+        clientId = clientEmailMap.get(fromLower)!;
+        autoLinked = true;
+      } else if (contactEmailMap.has(fromLower)) {
+        const match = contactEmailMap.get(fromLower)!;
+        clientId = match.clientId;
+        contactId = match.contactId;
+        autoLinked = true;
+      } else {
+        for (const to of raw.toEmails) {
+          const toLower = to.toLowerCase();
+          if (clientEmailMap.has(toLower)) { clientId = clientEmailMap.get(toLower)!; autoLinked = true; break; }
+          if (contactEmailMap.has(toLower)) { const m = contactEmailMap.get(toLower)!; clientId = m.clientId; contactId = m.contactId; autoLinked = true; break; }
+        }
       }
 
-      const [rawEmails, myAddress] = await Promise.all([
-        getGmailMessages(currentUser, 50),
-        getUserGmailAddress(currentUser),
-      ]);
-
-      const allClients = await storage.listClients();
-      const allContacts = await storage.listAllClientContacts();
-      const allLeads = await storage.listLeads();
-
-      const clientEmailMap = new Map<string, number>();
-      for (const c of allClients) {
-        if (c.email) clientEmailMap.set(c.email.toLowerCase(), c.id);
-      }
-      const contactEmailMap = new Map<string, { clientId: number | null; contactId: number }>(); 
-      for (const ct of allContacts) {
-        if (ct.email) contactEmailMap.set(ct.email.toLowerCase(), { clientId: ct.clientId, contactId: ct.id });
-      }
-
-      const clientContext = allClients.slice(0, 30).map(c => ({ id: c.id, name: c.name, email: c.email }));
-      const leadContext = allLeads.slice(0, 30).map(l => ({ id: l.id, title: l.title, stage: l.stage, clientId: l.clientId }));
-
-      let newEmails = 0;
-      const savedEmails: any[] = [];
-
-      for (const raw of rawEmails) {
-        const direction = raw.fromEmail.toLowerCase() === myAddress.toLowerCase() ? "outbound" : "inbound";
-
-        let clientId: number | null = null;
-        let contactId: number | null = null;
-
-        const fromLower = raw.fromEmail.toLowerCase();
-        if (clientEmailMap.has(fromLower)) {
-          clientId = clientEmailMap.get(fromLower)!;
-        } else if (contactEmailMap.has(fromLower)) {
-          const match = contactEmailMap.get(fromLower)!;
-          clientId = match.clientId;
-          contactId = match.contactId;
-        } else {
-          for (const to of raw.toEmails) {
-            const toLower = to.toLowerCase();
-            if (clientEmailMap.has(toLower)) { clientId = clientEmailMap.get(toLower)!; break; }
-            if (contactEmailMap.has(toLower)) { const m = contactEmailMap.get(toLower)!; clientId = m.clientId; contactId = m.contactId; break; }
+      // 2. Domain-based matching (if no exact match)
+      if (!clientId) {
+        const fromDomain = extractDomain(fromLower);
+        const skipDomains = new Set(["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "aol.com", "me.com"]);
+        if (fromDomain && !skipDomains.has(fromDomain)) {
+          const matchedClientIds = clientDomainMap.get(fromDomain) ?? [];
+          if (matchedClientIds.length === 1) {
+            clientId = matchedClientIds[0];
+            autoLinked = true;
+          } else if (matchedClientIds.length > 1) {
+            for (const cid of matchedClientIds) {
+              const c = allClients.find(x => x.id === cid);
+              if (c) suggestions.push({ type: "client", id: cid, name: c.name, confidence: "medium", reason: `Domain match: ${fromDomain}` });
+            }
           }
         }
+      }
 
-        const leadId = clientId ? (allLeads.find(l => l.clientId === clientId)?.id ?? null) : null;
+      const leadId = clientId ? (allLeads.find(l => l.clientId === clientId)?.id ?? null) : null;
 
-        let aiResult = { summary: "", suggestedTasks: [] as any[], sentiment: "neutral", stageSuggestion: null as string | null, requiresResponse: false };
-        try {
-          const prompt = `You are an assistant for M5 Services, a facility maintenance company. Analyze this email and respond with ONLY valid JSON.
+      // 3. AI analysis + connection suggestions for unmatched emails
+      let aiResult = { summary: "", suggestedTasks: [] as any[], sentiment: "neutral", stageSuggestion: null as string | null, requiresResponse: false, connectionSuggestions: suggestions };
+      try {
+        const prompt = `You are an assistant for M5 Services, a facility maintenance company. Analyze this email and respond with ONLY valid JSON.
 
 Email:
 From: ${raw.fromName} <${raw.fromEmail}>
@@ -2562,98 +2607,147 @@ Subject: ${raw.subject}
 Body: ${raw.fullBody.slice(0, 2000)}
 
 Known clients: ${JSON.stringify(clientContext.slice(0, 15))}
+Known contacts: ${JSON.stringify(contactContext.slice(0, 15))}
 Active leads: ${JSON.stringify(leadContext.slice(0, 10))}
 Direction: ${direction} (${direction === "inbound" ? "client emailed M5" : "M5 emailed client"})
+Already matched clientId: ${clientId ?? "none"}
 
 Respond with this JSON:
 {
   "summary": "1-2 sentence summary of the email",
   "suggestedTasks": [{"title": "task title", "priority": "high|medium|low", "dueInDays": 1}],
   "sentiment": "positive|neutral|negative|urgent",
-  "stageSuggestion": null or one of: "new_lead|qualification|proposal|negotiation|won|lost",
-  "requiresResponse": true or false (true only if inbound and M5 should reply — exclude automated/notifications/newsletters)
+  "stageSuggestion": null or one of: "new_lead|qualified|proposal_sent|won|lost",
+  "requiresResponse": true or false (true only if inbound and M5 should reply — exclude automated/notifications/newsletters),
+  "connectionSuggestions": [] or array of {type: "client"|"contact"|"lead", id: number, name: string, confidence: "high"|"medium"|"low", reason: string} — suggest CRM records that seem related to this email based on names/companies mentioned, only if not already matched
 }`;
 
-          const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "user", content: prompt }],
-            response_format: { type: "json_object" },
-            max_completion_tokens: 500,
-          });
-          const parsed = JSON.parse(completion.choices[0].message.content ?? "{}");
-          aiResult = {
-            summary: parsed.summary ?? "",
-            suggestedTasks: Array.isArray(parsed.suggestedTasks) ? parsed.suggestedTasks.slice(0, 5) : [],
-            sentiment: parsed.sentiment ?? "neutral",
-            stageSuggestion: parsed.stageSuggestion ?? null,
-            requiresResponse: direction === "inbound" ? (parsed.requiresResponse ?? false) : false,
-          };
-        } catch {}
-
-        const msgData: any = {
-          gmailMessageId: raw.gmailMessageId,
-          gmailThreadId: raw.gmailThreadId,
-          userId,
-          direction,
-          fromEmail: raw.fromEmail,
-          fromName: raw.fromName ?? null,
-          toEmails: raw.toEmails,
-          subject: raw.subject,
-          bodySnippet: raw.bodySnippet,
-          fullBody: raw.fullBody,
-          receivedAt: raw.receivedAt,
-          clientId: clientId ?? null,
-          leadId: leadId ?? null,
-          contactId: contactId ?? null,
-          aiSummary: aiResult.summary,
-          aiSuggestedTasks: aiResult.suggestedTasks,
-          aiSentiment: aiResult.sentiment,
-          aiStageSuggestion: aiResult.stageSuggestion,
-          requiresResponse: aiResult.requiresResponse,
-          followUpReminderCreated: false,
-          isProcessed: true,
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 600,
+        });
+        const parsed = JSON.parse(completion.choices[0].message.content ?? "{}");
+        const aiSuggestions = Array.isArray(parsed.connectionSuggestions) && !clientId
+          ? [...suggestions, ...parsed.connectionSuggestions.slice(0, 5)].slice(0, 6)
+          : suggestions;
+        aiResult = {
+          summary: parsed.summary ?? "",
+          suggestedTasks: Array.isArray(parsed.suggestedTasks) ? parsed.suggestedTasks.slice(0, 5) : [],
+          sentiment: parsed.sentiment ?? "neutral",
+          stageSuggestion: parsed.stageSuggestion ?? null,
+          requiresResponse: direction === "inbound" ? (parsed.requiresResponse ?? false) : false,
+          connectionSuggestions: aiSuggestions,
         };
-
-        const existing = await storage.listEmailMessages({ userId });
-        const alreadyExists = existing.some(e => e.gmailMessageId === raw.gmailMessageId);
-        if (!alreadyExists) newEmails++;
-
-        await storage.upsertEmailMessage(msgData);
-        savedEmails.push({ ...msgData, clientId, leadId });
+      } catch {
+        aiResult.connectionSuggestions = suggestions;
       }
 
-      const unresponded = await storage.listUnrespondedInboundEmails(2, userId);
-      let remindersCreated = 0;
-      for (const email of unresponded) {
-        await storage.createReminder({
-          userId,
-          title: `Follow up needed: "${(email.subject ?? "").slice(0, 60)}"`,
-          message: `This client email hasn't been responded to in over 2 days. ${email.aiSummary ? `Summary: ${email.aiSummary}` : ""}`,
-          dueAt: new Date(),
-          relatedLeadId: email.leadId ?? null,
-          relatedClientId: email.clientId ?? null,
-        } as any);
-        await storage.updateEmailMessage(email.id, { followUpReminderCreated: true });
-        remindersCreated++;
-      }
+      const existing = await storage.listEmailMessages({ userId, includeDismissed: true });
+      const alreadyExists = existing.some(e => e.gmailMessageId === raw.gmailMessageId);
+      if (!alreadyExists) newEmails++;
 
-      res.json({ newEmails, totalSynced: rawEmails.length, remindersCreated });
+      await storage.upsertEmailMessage({
+        gmailMessageId: raw.gmailMessageId,
+        gmailThreadId: raw.gmailThreadId,
+        userId,
+        direction,
+        fromEmail: raw.fromEmail,
+        fromName: raw.fromName ?? null,
+        toEmails: raw.toEmails,
+        subject: raw.subject,
+        bodySnippet: raw.bodySnippet,
+        fullBody: raw.fullBody,
+        receivedAt: raw.receivedAt,
+        clientId: clientId ?? null,
+        leadId: leadId ?? null,
+        contactId: contactId ?? null,
+        aiSummary: aiResult.summary,
+        aiSuggestedTasks: aiResult.suggestedTasks,
+        aiConnectionSuggestions: aiResult.connectionSuggestions.length > 0 ? aiResult.connectionSuggestions : null,
+        aiSentiment: aiResult.sentiment,
+        aiStageSuggestion: aiResult.stageSuggestion,
+        requiresResponse: aiResult.requiresResponse,
+        followUpReminderCreated: false,
+        isProcessed: true,
+        isDismissed: false,
+        autoLinked,
+      } as any);
+    }
+
+    const unresponded = await storage.listUnrespondedInboundEmails(2, userId);
+    let remindersCreated = 0;
+    for (const email of unresponded) {
+      await storage.createReminder({
+        userId,
+        title: `Follow up needed: "${(email.subject ?? "").slice(0, 60)}"`,
+        message: `This client email hasn't been responded to in over 2 days. ${email.aiSummary ? `Summary: ${email.aiSummary}` : ""}`,
+        dueAt: new Date(),
+        relatedLeadId: email.leadId ?? null,
+        relatedClientId: email.clientId ?? null,
+      } as any);
+      await storage.updateEmailMessage(email.id, { followUpReminderCreated: true });
+      remindersCreated++;
+    }
+
+    return { newEmails, totalSynced: rawEmails.length, remindersCreated };
+  }
+
+  // Track last sync time per user in memory
+  const lastSyncTime = new Map<string, Date>();
+
+  app.post("/api/email/sync", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    try {
+      const result = await performEmailSync(userId);
+      lastSyncTime.set(userId, new Date());
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message ?? "Email sync failed" });
     }
   });
 
+  app.get("/api/email/sync-status", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    const last = lastSyncTime.get(userId) ?? null;
+    res.json({ lastSynced: last ? last.toISOString() : null });
+  });
+
+  // Auto-sync every 15 minutes for all connected users
+  setInterval(async () => {
+    try {
+      const allUsers = await storage.listUsers();
+      for (const user of allUsers) {
+        if (user.gmailConnected && user.gmailAccessToken) {
+          try {
+            await performEmailSync(user.id);
+            lastSyncTime.set(user.id, new Date());
+          } catch {}
+        }
+      }
+    } catch {}
+  }, 15 * 60 * 1000);
+
   app.get("/api/email-messages", isAuthenticated, async (req, res) => {
     const userId = (req as any).user?.claims?.sub;
     const clientId = req.query.clientId ? parseInt(req.query.clientId as string) : undefined;
     const leadId = req.query.leadId ? parseInt(req.query.leadId as string) : undefined;
-    const filters = clientId ? { clientId } : leadId ? { leadId } : { userId };
+    const includeDismissed = req.query.includeDismissed === "true";
+    const filters = clientId ? { clientId, includeDismissed } : leadId ? { leadId, includeDismissed } : { userId, includeDismissed };
     const msgs = await storage.listEmailMessages(filters);
     res.json(msgs);
   });
 
+  app.patch("/api/email-messages/:id/dismiss", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const updated = await storage.updateEmailMessage(id, { isDismissed: true });
+    res.json(updated);
+  });
+
   app.patch("/api/email-messages/:id/link", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
+    const userId = (req as any).user?.claims?.sub;
     const { clientId, leadId, contactId } = z.object({
       clientId: z.number().nullable().optional(),
       leadId: z.number().nullable().optional(),
@@ -2664,6 +2758,16 @@ Respond with this JSON:
       ...(leadId !== undefined ? { leadId: leadId ?? null } : {}),
       ...(contactId !== undefined ? { contactId: contactId ?? null } : {}),
     });
+    if (leadId) {
+      const email = await storage.getEmailMessage(id);
+      await storage.createActivityLog({
+        entityType: "lead",
+        entityId: leadId,
+        action: "email_linked",
+        details: `Email linked: "${email?.subject ?? ""}" from ${email?.fromEmail ?? ""}`,
+        userId,
+      } as any);
+    }
     res.json(updated);
   });
 
@@ -2715,6 +2819,26 @@ Respond with this JSON:
       userId: (req as any).user?.claims?.sub,
     } as any);
     res.json(lead);
+  });
+
+  // Dismissed Senders
+  app.get("/api/dismissed-senders", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    const senders = await storage.getDismissedSenders(userId);
+    res.json(senders);
+  });
+
+  app.post("/api/dismissed-senders", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    const { emailAddress } = z.object({ emailAddress: z.string().email() }).parse(req.body);
+    const sender = await storage.addDismissedSender(userId, emailAddress);
+    res.json(sender);
+  });
+
+  app.delete("/api/dismissed-senders/:emailAddress", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    await storage.removeDismissedSender(userId, decodeURIComponent(req.params.emailAddress));
+    res.json({ ok: true });
   });
 
   // My permissions (any authenticated user)

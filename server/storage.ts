@@ -26,6 +26,7 @@ import {
   roleConfigs,
   rolePermissions,
   emailMessages,
+  dismissedSenders,
   leadNotes,
   announcements,
   announcementReads,
@@ -51,6 +52,7 @@ import {
   type PortfolioBuilding,
   type PortfolioContact,
   type BuildingContact,
+  type DismissedSender,
   type User,
   type UpsertUser,
   type Client,
@@ -303,11 +305,17 @@ export interface IStorage {
   deleteLeadNote(id: number): Promise<void>;
 
   // Email Messages
-  listEmailMessages(filters?: { clientId?: number; leadId?: number; userId?: string }): Promise<EmailMessage[]>;
+  listEmailMessages(filters?: { clientId?: number; leadId?: number; userId?: string; includeDismissed?: boolean }): Promise<EmailMessage[]>;
   getEmailMessage(id: number): Promise<EmailMessage | undefined>;
   upsertEmailMessage(data: InsertEmailMessage): Promise<EmailMessage>;
   updateEmailMessage(id: number, data: Partial<InsertEmailMessage>): Promise<EmailMessage>;
   listUnrespondedInboundEmails(olderThanDays: number, userId: string): Promise<EmailMessage[]>;
+
+  // Dismissed Senders
+  getDismissedSenders(userId: string): Promise<DismissedSender[]>;
+  addDismissedSender(userId: string, emailAddress: string): Promise<DismissedSender>;
+  removeDismissedSender(userId: string, emailAddress: string): Promise<void>;
+  isDismissedSender(userId: string, emailAddress: string): Promise<boolean>;
 
   // Announcements
   listAnnouncements(userId: string): Promise<Announcement[]>;
@@ -1435,14 +1443,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Email Messages
-  async listEmailMessages(filters?: { clientId?: number; leadId?: number; userId?: string }): Promise<EmailMessage[]> {
-    let query = db.select().from(emailMessages).orderBy(desc(emailMessages.receivedAt)) as any;
+  async listEmailMessages(filters?: { clientId?: number; leadId?: number; userId?: string; includeDismissed?: boolean }): Promise<EmailMessage[]> {
+    const conditions: any[] = [];
     if (filters?.clientId) {
-      query = query.where(eq(emailMessages.clientId, filters.clientId));
+      conditions.push(eq(emailMessages.clientId, filters.clientId));
     } else if (filters?.leadId) {
-      query = query.where(eq(emailMessages.leadId, filters.leadId));
+      conditions.push(eq(emailMessages.leadId, filters.leadId));
     } else if (filters?.userId) {
-      query = query.where(eq(emailMessages.userId, filters.userId));
+      conditions.push(eq(emailMessages.userId, filters.userId));
+    }
+    if (!filters?.includeDismissed) {
+      conditions.push(eq(emailMessages.isDismissed, false));
+    }
+    let query = db.select().from(emailMessages).orderBy(desc(emailMessages.receivedAt)) as any;
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
     }
     return await query;
   }
@@ -1509,6 +1524,28 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return results;
+  }
+
+  // Dismissed Senders
+  async getDismissedSenders(userId: string): Promise<DismissedSender[]> {
+    return db.select().from(dismissedSenders).where(eq(dismissedSenders.userId, userId)).orderBy(desc(dismissedSenders.createdAt));
+  }
+
+  async addDismissedSender(userId: string, emailAddress: string): Promise<DismissedSender> {
+    const existing = await db.select().from(dismissedSenders).where(and(eq(dismissedSenders.userId, userId), eq(dismissedSenders.emailAddress, emailAddress.toLowerCase())));
+    if (existing.length > 0) return existing[0];
+    const [created] = await db.insert(dismissedSenders).values({ userId, emailAddress: emailAddress.toLowerCase() }).returning();
+    await db.update(emailMessages).set({ isDismissed: true }).where(and(eq(emailMessages.userId, userId), eq(emailMessages.fromEmail, emailAddress.toLowerCase())));
+    return created;
+  }
+
+  async removeDismissedSender(userId: string, emailAddress: string): Promise<void> {
+    await db.delete(dismissedSenders).where(and(eq(dismissedSenders.userId, userId), eq(dismissedSenders.emailAddress, emailAddress.toLowerCase())));
+  }
+
+  async isDismissedSender(userId: string, emailAddress: string): Promise<boolean> {
+    const rows = await db.select().from(dismissedSenders).where(and(eq(dismissedSenders.userId, userId), eq(dismissedSenders.emailAddress, emailAddress.toLowerCase())));
+    return rows.length > 0;
   }
 
   // Lead Notes

@@ -293,11 +293,14 @@ export const emailMessages = pgTable("email_messages", {
   contactId: integer("contact_id").references(() => clientContacts.id),
   aiSummary: text("ai_summary"),
   aiSuggestedTasks: jsonb("ai_suggested_tasks"),
+  aiConnectionSuggestions: jsonb("ai_connection_suggestions"),
   aiSentiment: varchar("ai_sentiment"),
   aiStageSuggestion: varchar("ai_stage_suggestion"),
   requiresResponse: boolean("requires_response").default(false).notNull(),
   followUpReminderCreated: boolean("follow_up_reminder_created").default(false).notNull(),
   isProcessed: boolean("is_processed").default(false).notNull(),
+  isDismissed: boolean("is_dismissed").default(false).notNull(),
+  autoLinked: boolean("auto_linked").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -333,6 +336,17 @@ export type InsertPushSubscription = z.infer<typeof insertPushSubscriptionSchema
 export const insertEmailMessageSchema = createInsertSchema(emailMessages).omit({ id: true, createdAt: true });
 export type EmailMessage = typeof emailMessages.$inferSelect;
 export type InsertEmailMessage = z.infer<typeof insertEmailMessageSchema>;
+
+export const dismissedSenders = pgTable("dismissed_senders", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  emailAddress: varchar("email_address").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertDismissedSenderSchema = createInsertSchema(dismissedSenders).omit({ id: true, createdAt: true });
+export type DismissedSender = typeof dismissedSenders.$inferSelect;
+export type InsertDismissedSender = z.infer<typeof insertDismissedSenderSchema>;
 
 export const leadNotes = pgTable("lead_notes", {
   id: serial("id").primaryKey(),
