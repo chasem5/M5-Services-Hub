@@ -90,6 +90,8 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Building2 } from "lucide-react";
+import { BuildOpsIcon } from "@/components/BuildOpsIcon";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function EstimateDetail() {
   const [, params] = useRoute("/estimates/:id");
@@ -193,8 +195,15 @@ export default function EstimateDetail() {
 
   const pushBuildopsMutation = useMutation({
     mutationFn: async () => {
-      toast({ title: "BuildOps Quotes API", description: "Coming soon — Quotes API spec pending", variant: "default" });
+      const res = await apiRequest("POST", `/api/buildops/push-estimate/${id}`, {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
     },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id] });
+      toast({ title: "Pushed to BuildOps", description: data.quoteNumber ? `Quote #${data.quoteNumber} created` : "Quote created in BuildOps" });
+    },
+    onError: (err: any) => toast({ title: "Push failed", description: err.message, variant: "destructive" }),
   });
 
   const form = useForm({
@@ -307,6 +316,18 @@ export default function EstimateDetail() {
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-heading font-bold">{estimate.title}</h1>
               <Badge variant="outline" className="capitalize">{estimate.status}</Badge>
+              {(estimate as any).buildopsQuoteId && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-default" data-testid="badge-buildops-quote-linked">
+                        <BuildOpsIcon className="h-5 w-5" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Linked to BuildOps Quote</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </div>
             <p className="text-muted-foreground">Estimate #{estimate.id} • {currentClient?.name}</p>
           </div>

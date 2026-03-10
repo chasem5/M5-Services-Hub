@@ -56,15 +56,17 @@ Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `co
 
 ## BuildOps Integration
 
-- `server/buildops.ts` — BuildOps API service layer; base URL `https://public-api.live.buildops.com`; Bearer token auth + tenantId query param
-- Functions: `testConnection`, `getCustomers` (paginated), `getCustomerById`, `createCustomer`, `updateCustomer`, `mapClientToCustomer`
-- Credentials stored in `app_settings` table as `buildopsApiKey` + `buildopsTenantId`; retrieved at request time via `getBuildOpsCreds()`
-- Routes: `POST /api/buildops/test`, `POST /api/buildops/sync-pull`, `POST /api/buildops/push-client/:id`, `POST /api/buildops/push-all`, `GET /api/buildops/last-sync`
-- `clients.buildopsId` — stores BuildOps customer UUID; `leads.buildopsId` — reserved for future quote reference
-- `buildops_sync_log` table — audit trail of all pull/push operations
-- Admin → BuildOps tab: API key + tenant ID config, test connection, pull from BuildOps, push all
-- Client detail: "Push to BuildOps" / "Sync to BuildOps" button; "BuildOps Linked" badge when synced
-- Estimate detail: "AI Generate Scope" button — calls GPT-4o to generate scope of work + line items; "Push to BuildOps" stub (Quotes API pending)
+- `server/buildops.ts` — BuildOps API service layer; base URL `https://public-api.live.buildops.com`
+- **Auth**: Client credentials flow — POST `/v1/auth/token` with `clientId` + `clientSecret`; token cached 55min in-memory; `tenantId` sent as request header
+- Functions: `testConnection`, `getCustomers`, `getCustomerById`, `createCustomer`, `updateCustomer`, `mapClientToCustomer`, `getDepartments`, `createQuote`, `getServiceAgreements`
+- Credentials stored in `app_settings` as `buildopsClientId` + `buildopsClientSecret` + `buildopsTenantId` + `buildopsDefaultDepartmentId`
+- Routes: `POST /api/buildops/test`, `GET /api/buildops/departments`, `POST /api/buildops/sync-pull`, `POST /api/buildops/push-client/:id`, `POST /api/buildops/push-all`, `POST /api/buildops/push-estimate/:estimateId`, `GET /api/clients/:id/buildops-agreements`, `GET /api/buildops/last-sync`
+- `clients.buildopsId` — BuildOps customer UUID; `estimates.buildopsQuoteId` — BuildOps quote UUID (set after push)
+- `buildops_sync_log` table — audit trail of all pull/push operations (`entityType` can be `client` or `estimate`)
+- Admin → BuildOps tab: Client ID + Client Secret (masked) + Tenant ID; Test Connection; Default Department dropdown (loads after successful test); pull/push sync controls
+- Client detail: BuildOpsIcon tooltip badge when synced; "Push to BuildOps"/"Sync to BuildOps" button; BuildOps Service Agreements section on overview tab (loads when client has `buildopsId`)
+- Estimate detail: "AI Generate Scope" (GPT-4o), "Push to BuildOps" (live — creates quote in BuildOps, stores `buildopsQuoteId`); BuildOpsIcon badge when linked
+- `client/src/components/BuildOpsIcon.tsx` — reusable orange "B" SVG icon, shown on clients list (table+card), client-detail header, estimate-detail header
 
 ## Branding
 

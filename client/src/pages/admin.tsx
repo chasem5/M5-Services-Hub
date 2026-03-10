@@ -118,27 +118,38 @@ interface RolePermission { id: number; roleKey: string; module: string; accessLe
 
 function BuildOpsPanel() {
   const { toast } = useToast();
-  const [apiKey, setApiKey] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
   const [tenantId, setTenantId] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
   const [connStatus, setConnStatus] = useState<"idle" | "ok" | "error">("idle");
   const [connError, setConnError] = useState<string | null>(null);
+  const [selectedDeptId, setSelectedDeptId] = useState("");
 
-  const { data: storedApiKey } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsApiKey"] });
+  const { data: storedClientId } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsClientId"] });
   const { data: storedTenantId } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsTenantId"] });
+  const { data: storedDeptId } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsDefaultDepartmentId"] });
   const { data: lastSync } = useQuery<{ createdAt: string; message: string; action: string } | null>({ queryKey: ["/api/buildops/last-sync"] });
+  const { data: departments } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/buildops/departments"],
+    enabled: connStatus === "ok",
+  });
 
-  useEffect(() => { if (storedApiKey?.value) setApiKey(storedApiKey.value); }, [storedApiKey]);
+  useEffect(() => { if (storedClientId?.value) setClientId(storedClientId.value); }, [storedClientId]);
   useEffect(() => { if (storedTenantId?.value) setTenantId(storedTenantId.value); }, [storedTenantId]);
+  useEffect(() => { if (storedDeptId?.value) setSelectedDeptId(storedDeptId.value); }, [storedDeptId]);
 
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("PUT", "/api/settings/buildopsApiKey", { value: apiKey });
+      await apiRequest("PUT", "/api/settings/buildopsClientId", { value: clientId });
+      if (clientSecret) await apiRequest("PUT", "/api/settings/buildopsClientSecret", { value: clientSecret });
       await apiRequest("PUT", "/api/settings/buildopsTenantId", { value: tenantId });
+      if (selectedDeptId) await apiRequest("PUT", "/api/settings/buildopsDefaultDepartmentId", { value: selectedDeptId });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsApiKey"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsClientId"] });
       queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsTenantId"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsDefaultDepartmentId"] });
       toast({ title: "Settings saved" });
     },
     onError: () => toast({ title: "Failed to save", variant: "destructive" }),
@@ -150,8 +161,14 @@ function BuildOpsPanel() {
       return res.json();
     },
     onSuccess: (data) => {
-      if (data.ok) { setConnStatus("ok"); setConnError(null); }
-      else { setConnStatus("error"); setConnError(data.error ?? "Connection failed"); }
+      if (data.ok) {
+        setConnStatus("ok");
+        setConnError(null);
+        queryClient.invalidateQueries({ queryKey: ["/api/buildops/departments"] });
+      } else {
+        setConnStatus("error");
+        setConnError(data.error ?? "Connection failed");
+      }
     },
     onError: (err: any) => { setConnStatus("error"); setConnError(err.message); },
   });
@@ -194,7 +211,7 @@ function BuildOpsPanel() {
             </div>
             <div>
               <CardTitle className="text-base font-heading">BuildOps Integration</CardTitle>
-              <CardDescription className="text-xs">Connect M5 Services CRM to BuildOps for customer sync</CardDescription>
+              <CardDescription className="text-xs">Connect M5 Services CRM to BuildOps for customer and quote sync</CardDescription>
             </div>
             {connStatus === "ok" && (
               <Badge className="ml-auto bg-green-100 text-green-700 border-green-200 gap-1">
@@ -211,22 +228,31 @@ function BuildOpsPanel() {
         <CardContent className="p-6 space-y-5">
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">API Key</label>
+              <label className="text-sm font-medium">Client ID</label>
+              <Input
+                value={clientId}
+                onChange={e => setClientId(e.target.value)}
+                placeholder="Enter BuildOps Client ID"
+                data-testid="input-buildops-client-id"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Client Secret</label>
               <div className="relative">
                 <Input
-                  type={showApiKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={e => setApiKey(e.target.value)}
-                  placeholder="Enter BuildOps API key"
+                  type={showSecret ? "text" : "password"}
+                  value={clientSecret}
+                  onChange={e => setClientSecret(e.target.value)}
+                  placeholder={storedClientId?.value ? "Leave blank to keep existing secret" : "Enter BuildOps Client Secret"}
                   className="pr-10"
-                  data-testid="input-buildops-api-key"
+                  data-testid="input-buildops-client-secret"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowApiKey(v => !v)}
+                  onClick={() => setShowSecret(v => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
@@ -239,6 +265,22 @@ function BuildOpsPanel() {
                 data-testid="input-buildops-tenant-id"
               />
             </div>
+            {connStatus === "ok" && departments && departments.length > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Default Department (for Quotes)</label>
+                <Select value={selectedDeptId} onValueChange={setSelectedDeptId}>
+                  <SelectTrigger data-testid="select-buildops-department">
+                    <SelectValue placeholder="Select a department..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Required when pushing estimates as quotes to BuildOps.</p>
+              </div>
+            )}
             {connError && (
               <p className="text-xs text-destructive flex items-center gap-1">
                 <AlertCircle className="h-3 w-3" /> {connError}
@@ -257,7 +299,7 @@ function BuildOpsPanel() {
                 variant="outline"
                 size="sm"
                 onClick={() => testMutation.mutate()}
-                disabled={testMutation.isPending || !apiKey || !tenantId}
+                disabled={testMutation.isPending || !clientId || !tenantId}
                 data-testid="button-test-buildops"
               >
                 {testMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />}

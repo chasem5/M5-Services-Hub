@@ -954,6 +954,57 @@ function ClientEmailsTab({ clientId }: { clientId: number }) {
   );
 }
 
+function BuildOpsAgreementsSection({ clientId }: { clientId: number }) {
+  const { data: agreements, isLoading } = useQuery<Array<{
+    id: string;
+    agreementNumber?: number | string;
+    name?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    totalAmount?: number;
+  }>>({ queryKey: ["/api/clients", clientId, "buildops-agreements"] });
+
+  if (isLoading) return null;
+  if (!agreements || agreements.length === 0) return null;
+
+  return (
+    <Card className="shadow-sm border-border/40 bg-card">
+      <CardHeader className="flex flex-row items-center gap-3 pb-3">
+        <BuildOpsIcon className="h-5 w-5 shrink-0" />
+        <CardTitle className="text-base font-semibold">BuildOps Service Agreements</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="divide-y divide-border/50">
+          {agreements.map(sa => (
+            <div key={sa.id} className="px-6 py-3 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {sa.name ?? (sa.agreementNumber ? `Agreement #${sa.agreementNumber}` : "Unnamed Agreement")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {sa.startDate ? new Date(sa.startDate).toLocaleDateString() : "—"}
+                  {sa.endDate ? ` → ${new Date(sa.endDate).toLocaleDateString()}` : ""}
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {sa.totalAmount != null && (
+                  <span className="text-sm font-medium">
+                    ${sa.totalAmount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </span>
+                )}
+                {sa.status && (
+                  <Badge variant="outline" className="capitalize text-xs">{sa.status.toLowerCase().replace(/_/g, " ")}</Badge>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
   const clientId = parseInt(id!);
@@ -1814,6 +1865,11 @@ export default function ClientDetail() {
                 </div>
               );
             })()}
+
+            {/* ── BuildOps Service Agreements ── */}
+            {(client as any).buildopsId && (
+              <BuildOpsAgreementsSection clientId={clientId} />
+            )}
 
             {/* ── Two-column section ── */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">

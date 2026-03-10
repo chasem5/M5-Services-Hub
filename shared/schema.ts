@@ -187,6 +187,7 @@ export const estimates = pgTable("estimates", {
   tax: decimal("tax", { precision: 12, scale: 2 }).default("0").notNull(),
   total: decimal("total", { precision: 12, scale: 2 }).default("0").notNull(),
   notes: text("notes"),
+  buildopsQuoteId: varchar("buildops_quote_id"),
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

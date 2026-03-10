@@ -2953,22 +2953,35 @@ Respond with this JSON:
 
   // ── BuildOps Integration ─────────────────────────────────────────────────
 
-  async function getBuildOpsCreds(): Promise<{ apiKey: string; tenantId: string } | null> {
-    const apiKey = await storage.getAppSetting("buildopsApiKey");
+  async function getBuildOpsCreds(): Promise<{ clientId: string; clientSecret: string; tenantId: string } | null> {
+    const clientId = await storage.getAppSetting("buildopsClientId");
+    const clientSecret = await storage.getAppSetting("buildopsClientSecret");
     const tenantId = await storage.getAppSetting("buildopsTenantId");
-    if (!apiKey || !tenantId) return null;
-    return { apiKey, tenantId };
+    if (!clientId || !clientSecret || !tenantId) return null;
+    return { clientId, clientSecret, tenantId };
   }
 
   app.post("/api/buildops/test", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
-      if (!creds) return res.json({ ok: false, error: "API key and tenant ID not configured" });
+      if (!creds) return res.json({ ok: false, error: "Client ID, Client Secret, and Tenant ID not configured" });
       const { testConnection } = await import("./buildops");
-      const result = await testConnection(creds.apiKey, creds.tenantId);
+      const result = await testConnection(creds.clientId, creds.clientSecret, creds.tenantId);
       res.json(result);
     } catch (err: any) {
       res.json({ ok: false, error: err.message });
+    }
+  });
+
+  app.get("/api/buildops/departments", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getDepartments } = await import("./buildops");
+      const departments = await getDepartments(creds.clientId, creds.clientSecret, creds.tenantId);
+      res.json(departments);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 
@@ -2981,7 +2994,7 @@ Respond with this JSON:
       let allCustomers: any[] = [];
       let page = 0;
       while (true) {
-        const batch = await getCustomers(creds.apiKey, creds.tenantId, page, 100);
+        const batch = await getCustomers(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
         allCustomers = allCustomers.concat(batch.items ?? []);
         if (allCustomers.length >= batch.totalCount || (batch.items ?? []).length === 0) break;
         page++;
@@ -3037,10 +3050,10 @@ Respond with this JSON:
 
       let buildopsCustomer: any;
       if (client.buildopsId) {
-        buildopsCustomer = await updateCustomer(creds.apiKey, creds.tenantId, client.buildopsId, payload);
+        buildopsCustomer = await updateCustomer(creds.clientId, creds.clientSecret, creds.tenantId, client.buildopsId, payload);
         await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: client.buildopsId, action: "push", message: "Updated existing BuildOps customer" });
       } else {
-        buildopsCustomer = await createCustomer(creds.apiKey, creds.tenantId, payload);
+        buildopsCustomer = await createCustomer(creds.clientId, creds.clientSecret, creds.tenantId, payload);
         await storage.updateClient(client.id, { buildopsId: buildopsCustomer.id });
         await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: buildopsCustomer.id, action: "push", message: "Created new BuildOps customer" });
       }
@@ -3066,7 +3079,7 @@ Respond with this JSON:
       for (const client of withoutId) {
         try {
           const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone });
-          const buildopsCustomer = await createCustomer(creds.apiKey, creds.tenantId, payload);
+          const buildopsCustomer = await createCustomer(creds.clientId, creds.clientSecret, creds.tenantId, payload);
           await storage.updateClient(client.id, { buildopsId: buildopsCustomer.id });
           await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: buildopsCustomer.id, action: "push", message: "Bulk push" });
           pushed++;
@@ -3076,6 +3089,62 @@ Respond with this JSON:
       }
 
       res.json({ ok: true, pushed, errors, skipped: allClients.length - withoutId.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/buildops/push-estimate/:estimateId", isAuthenticated, async (req, res) => {
+    try {
+      const estimateId = parseInt(req.params.estimateId as string);
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) return res.status(404).json({ message: "Estimate not found" });
+
+      const client = await storage.getClient(estimate.clientId);
+      const lineItems = await storage.listEstimateLineItems(estimateId);
+      const defaultDeptId = await storage.getAppSetting("buildopsDefaultDepartmentId");
+
+      if (!defaultDeptId) return res.status(400).json({ message: "No default department configured in BuildOps settings" });
+
+      const { createQuote } = await import("./buildops");
+      const quote = await createQuote(creds.clientId, creds.clientSecret, creds.tenantId, {
+        departmentId: defaultDeptId,
+        name: estimate.title,
+        scopeOfWork: estimate.notes ?? undefined,
+        billingCustomerId: client?.buildopsId ?? undefined,
+        items: lineItems.map(li => ({
+          description: li.description,
+          quantity: parseFloat(li.quantity),
+          unitPrice: parseFloat(li.unitPrice),
+        })),
+      });
+
+      await storage.updateEstimate(estimateId, { buildopsQuoteId: quote.id } as any);
+      await storage.createBuildopsSyncLog({ entityType: "estimate", entityId: estimateId, buildopsId: quote.id, action: "push", message: `Quote #${quote.quoteNumber ?? quote.id} created in BuildOps` });
+
+      res.json({ ok: true, buildopsQuoteId: quote.id, quoteNumber: quote.quoteNumber });
+    } catch (err: any) {
+      await storage.createBuildopsSyncLog({ entityType: "estimate", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/clients/:id/buildops-agreements", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+      if (!client.buildopsId) return res.json([]);
+
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.json([]);
+
+      const { getServiceAgreements } = await import("./buildops");
+      const agreements = await getServiceAgreements(creds.clientId, creds.clientSecret, creds.tenantId, client.buildopsId);
+      res.json(agreements);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

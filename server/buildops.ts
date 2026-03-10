@@ -1,5 +1,45 @@
 const BASE_URL = "https://public-api.live.buildops.com";
 
+// ── Token cache ───────────────────────────────────────────────────────────────
+interface TokenCache {
+  token: string;
+  expiresAt: number;
+}
+const tokenCache = new Map<string, TokenCache>();
+
+async function getToken(clientId: string, clientSecret: string): Promise<string> {
+  const cacheKey = `${clientId}:${clientSecret}`;
+  const cached = tokenCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.token;
+
+  const res = await fetch(`${BASE_URL}/v1/auth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ clientId, clientSecret }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `Auth failed: HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  const token = data.access_token ?? data.token ?? data.accessToken;
+  if (!token) throw new Error("No token in BuildOps auth response");
+
+  tokenCache.set(cacheKey, { token, expiresAt: Date.now() + 55 * 60 * 1000 });
+  return token;
+}
+
+function buildOpsHeaders(token: string, tenantId: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    tenantId,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+}
+
+// ── Shared types ──────────────────────────────────────────────────────────────
+
 export interface BuildOpsCustomer {
   id: string;
   name: string;
@@ -22,23 +62,47 @@ export interface BuildOpsAddress {
   addressType?: string;
 }
 
+export interface BuildOpsDepartment {
+  id: string;
+  name: string;
+}
+
+export interface BuildOpsQuote {
+  id: string;
+  quoteNumber?: number;
+  name?: string;
+  status?: string;
+  totalAmount?: number;
+  scopeOfWork?: string;
+}
+
+export interface BuildOpsServiceAgreement {
+  id: string;
+  agreementNumber?: number | string;
+  name?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  totalAmount?: number;
+  customerId?: string;
+}
+
 interface BuildOpsListResponse<T> {
   totalCount: number;
   items: T[];
 }
 
-function buildOpsHeaders(apiKey: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  };
-}
+// ── Customers ─────────────────────────────────────────────────────────────────
 
-export async function testConnection(apiKey: string, tenantId: string): Promise<{ ok: boolean; error?: string }> {
+export async function testConnection(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string
+): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch(`${BASE_URL}/v1/customers?tenantId=${encodeURIComponent(tenantId)}&limit=1`, {
-      headers: buildOpsHeaders(apiKey),
+    const token = await getToken(clientId, clientSecret);
+    const res = await fetch(`${BASE_URL}/v1/customers?page=0&page_size=1`, {
+      headers: buildOpsHeaders(token, tenantId),
     });
     if (res.ok) return { ok: true };
     const body = await res.json().catch(() => ({}));
@@ -49,14 +113,16 @@ export async function testConnection(apiKey: string, tenantId: string): Promise<
 }
 
 export async function getCustomers(
-  apiKey: string,
+  clientId: string,
+  clientSecret: string,
   tenantId: string,
   page = 0,
-  limit = 100
+  pageSize = 100
 ): Promise<BuildOpsListResponse<BuildOpsCustomer>> {
+  const token = await getToken(clientId, clientSecret);
   const res = await fetch(
-    `${BASE_URL}/v1/customers?tenantId=${encodeURIComponent(tenantId)}&page=${page}&limit=${limit}`,
-    { headers: buildOpsHeaders(apiKey) }
+    `${BASE_URL}/v1/customers?page=${page}&page_size=${pageSize}`,
+    { headers: buildOpsHeaders(token, tenantId) }
   );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -65,11 +131,16 @@ export async function getCustomers(
   return res.json();
 }
 
-export async function getCustomerById(apiKey: string, tenantId: string, id: string): Promise<BuildOpsCustomer> {
-  const res = await fetch(
-    `${BASE_URL}/v1/customers/${id}?tenantId=${encodeURIComponent(tenantId)}`,
-    { headers: buildOpsHeaders(apiKey) }
-  );
+export async function getCustomerById(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  id: string
+): Promise<BuildOpsCustomer> {
+  const token = await getToken(clientId, clientSecret);
+  const res = await fetch(`${BASE_URL}/v1/customers/${id}`, {
+    headers: buildOpsHeaders(token, tenantId),
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message ?? `HTTP ${res.status}`);
@@ -78,13 +149,15 @@ export async function getCustomerById(apiKey: string, tenantId: string, id: stri
 }
 
 export async function createCustomer(
-  apiKey: string,
+  clientId: string,
+  clientSecret: string,
   tenantId: string,
   data: { name: string; email?: string | null; phonePrimary?: string | null; status?: string }
 ): Promise<BuildOpsCustomer> {
-  const res = await fetch(`${BASE_URL}/v1/customers?tenantId=${encodeURIComponent(tenantId)}`, {
+  const token = await getToken(clientId, clientSecret);
+  const res = await fetch(`${BASE_URL}/v1/customers`, {
     method: "POST",
-    headers: buildOpsHeaders(apiKey),
+    headers: buildOpsHeaders(token, tenantId),
     body: JSON.stringify({ ...data, status: data.status ?? "active" }),
   });
   if (!res.ok) {
@@ -95,14 +168,16 @@ export async function createCustomer(
 }
 
 export async function updateCustomer(
-  apiKey: string,
+  clientId: string,
+  clientSecret: string,
   tenantId: string,
   id: string,
   data: { name?: string; email?: string | null; phonePrimary?: string | null }
 ): Promise<BuildOpsCustomer> {
-  const res = await fetch(`${BASE_URL}/v1/customers/${id}?tenantId=${encodeURIComponent(tenantId)}`, {
+  const token = await getToken(clientId, clientSecret);
+  const res = await fetch(`${BASE_URL}/v1/customers/${id}`, {
     method: "PUT",
-    headers: buildOpsHeaders(apiKey),
+    headers: buildOpsHeaders(token, tenantId),
     body: JSON.stringify(data),
   });
   if (!res.ok) {
@@ -122,4 +197,81 @@ export function mapClientToCustomer(client: {
     email: client.email || null,
     phonePrimary: client.phone || null,
   };
+}
+
+// ── Departments ───────────────────────────────────────────────────────────────
+
+export async function getDepartments(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string
+): Promise<BuildOpsDepartment[]> {
+  const token = await getToken(clientId, clientSecret);
+  const res = await fetch(`${BASE_URL}/v1/departments?page=0&page_size=100`, {
+    headers: buildOpsHeaders(token, tenantId),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return data.departments ?? data.items ?? [];
+}
+
+// ── Quotes ────────────────────────────────────────────────────────────────────
+
+export interface QuoteLineItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  name?: string;
+}
+
+export interface CreateQuotePayload {
+  propertyId?: string;
+  departmentId: string;
+  name: string;
+  scopeOfWork?: string;
+  billingCustomerId?: string;
+  items?: QuoteLineItem[];
+}
+
+export async function createQuote(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  payload: CreateQuotePayload
+): Promise<BuildOpsQuote> {
+  const token = await getToken(clientId, clientSecret);
+  const res = await fetch(`${BASE_URL}/v1/quotes`, {
+    method: "POST",
+    headers: buildOpsHeaders(token, tenantId),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── Service Agreements ────────────────────────────────────────────────────────
+
+export async function getServiceAgreements(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  customerId: string
+): Promise<BuildOpsServiceAgreement[]> {
+  const token = await getToken(clientId, clientSecret);
+  const res = await fetch(
+    `${BASE_URL}/v1/service-agreements?customer_id=${encodeURIComponent(customerId)}&page=0&page_size=50`,
+    { headers: buildOpsHeaders(token, tenantId) }
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return data.items ?? [];
 }
