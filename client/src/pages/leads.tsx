@@ -81,6 +81,8 @@ import {
   ArrowRight,
   TrendingDown,
   ShieldCheck,
+  ClipboardList,
+  Loader2,
 } from "lucide-react";
 import {
   Card,
@@ -715,7 +717,7 @@ function LeadCard({
           </CardContent>
         </Card>
       </HoverCardTrigger>
-      <HoverCardContent side="right" align="start" className="w-72 p-0 overflow-hidden" data-testid={`ai-summary-${lead.id}`}>
+      <HoverCardContent side="right" align="start" className="w-64 p-0 overflow-hidden" data-testid={`ai-summary-${lead.id}`}>
         {(() => {
           // Compute health instantly from local data
           const computedHealth: string =
@@ -724,8 +726,9 @@ function LeadCard({
             score >= 70 && (daysSinceActivity === null || daysSinceActivity <= 7) ? "Strong" :
             "On Track";
 
-          const aiHealth = aiSummaries[lead.id]?.healthLabel;
-          const healthLabel = aiHealth ?? computedHealth;
+          const aiData = aiSummaries[lead.id];
+          const healthLabel = aiData?.healthLabel ?? computedHealth;
+          const isLoading = loadingAiSummary[lead.id];
 
           const colorMap: Record<string, { badge: string; dot: string; bar: string }> = {
             "Strong":   { badge: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",  dot: "bg-green-500",  bar: "bg-green-500" },
@@ -735,80 +738,69 @@ function LeadCard({
           };
           const colors = colorMap[healthLabel] ?? colorMap["On Track"];
 
-          // Last activity label
-          const lastTouchLabel = daysSinceActivity === null
-            ? "No activity logged yet"
+          // Compact meta line
+          const lastTouchShort = daysSinceActivity === null ? "No activity"
             : daysSinceActivity === 0 ? "Today"
             : daysSinceActivity === 1 ? "Yesterday"
-            : `${daysSinceActivity} days ago`;
+            : `${daysSinceActivity}d ago`;
 
-          const lastTouchFlag = daysSinceActivity !== null && daysSinceActivity > 14
-            ? " · getting stale" : "";
-
-          // Days in stage label
           const stageLabel = lead.stage.replace(/_/g, " ");
-          const daysInStageLabel = daysInStage === 0 ? "Today"
-            : daysInStage === 1 ? "1 day"
-            : `${daysInStage} days`;
+          const daysInStageShort = daysInStage === 0 ? "today"
+            : daysInStage === 1 ? "1d in stage"
+            : `${daysInStage}d in stage`;
 
-          // Stage-based default meeting prep (instant fallback)
-          const stageDefaults: Record<string, string> = {
-            new_lead:      "Ask about their current service providers and what problems they're trying to solve.",
-            contacted:     "Gauge their level of interest and find out what they're actively evaluating.",
-            qualified:     "Confirm scope, budget range, and who else is involved in the decision.",
-            proposal_sent: "Ask if they've reviewed the proposal and what questions or concerns they have.",
-            negotiation:   "Clarify the remaining sticking points and confirm who has final approval.",
-            won:           "Discuss onboarding timeline and key contacts to loop in.",
-            lost:          "Ask what drove their decision and if there's any chance to re-engage.",
+          // Discussion line: AI headline if loaded, else computed fallback
+          const fallbackDiscussion =
+            (daysSinceActivity !== null && daysSinceActivity > 30) ? `No activity in ${daysSinceActivity} days — worth a check-in.` :
+            (daysSinceActivity !== null && daysSinceActivity > 14) ? `Quiet for ${daysSinceActivity} days. Verify still active.` :
+            score < 40 ? `Confidence is low at ${score}% — clarify where this stands.` :
+            score >= 70 ? `Strong at ${score}% confidence — push for next step.` :
+            `In ${stageLabel}, ${score}% confidence. Moving normally.`;
+
+          const discussion = aiData?.headline || fallbackDiscussion;
+
+          // Verdict
+          const verdictMap: Record<string, { label: string; cls: string }> = {
+            "Strong":   { label: "✓ Keep moving",     cls: "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-700" },
+            "On Track": { label: "✓ No issues",        cls: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-700" },
+            "Stalled":  { label: "→ Quick check-in",   cls: "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-700" },
+            "At Risk":  { label: "→ Needs discussion", cls: "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-700" },
           };
-          const aiNextStep = aiSummaries[lead.id]?.nextStep;
-          const meetingPrep = aiNextStep || stageDefaults[lead.stage] || "Check in on their current needs and decision timeline.";
+          const verdict = verdictMap[healthLabel] ?? verdictMap["On Track"];
 
           return (
             <>
-              {/* Header bar */}
-              <div className={`${colors.bar} h-0.5 w-full`} />
-              <div className="p-3 space-y-2.5">
-                {/* Title + health badge */}
+              <div className={`${colors.bar} h-1 w-full`} />
+              <div className="p-3 space-y-2">
+                {/* Health + meta */}
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <CalendarIcon className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Meeting Brief</span>
-                  </div>
                   <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${colors.badge}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${colors.dot}`} />
                     {healthLabel}
                   </span>
+                  <span className="text-[10px] text-muted-foreground">{lastTouchShort} · {daysInStageShort}</span>
                 </div>
 
-                {/* Last touchpoint */}
-                <div className="flex items-start gap-2">
-                  <Clock className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Last Touch</p>
-                    <p className="text-xs text-foreground">{lastTouchLabel}<span className="text-muted-foreground/60">{lastTouchFlag}</span></p>
-                  </div>
-                </div>
-
-                {/* Days in stage */}
-                <div className="flex items-start gap-2">
-                  <Target className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">In Stage</p>
-                    <p className="text-xs text-foreground capitalize">{stageLabel} · {daysInStageLabel}</p>
-                  </div>
-                </div>
-
-                {/* Meeting prep */}
-                <div className="flex items-start gap-2 pt-0.5 border-t border-border/60">
-                  <MessageSquare className="h-3 w-3 text-primary mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1 mb-0.5">
-                      <p className="text-[10px] font-semibold text-primary uppercase tracking-wider">Before This Meeting</p>
-                      {aiNextStep && <Sparkles className="h-2.5 w-2.5 text-primary/60" />}
+                {/* Discussion line */}
+                <div>
+                  {isLoading ? (
+                    <div className="space-y-1.5">
+                      <div className="h-2 bg-muted animate-pulse rounded w-full" />
+                      <div className="h-2 bg-muted animate-pulse rounded w-4/5" />
                     </div>
-                    <p className="text-xs text-foreground leading-relaxed">{meetingPrep}</p>
-                  </div>
+                  ) : (
+                    <div className="flex items-start gap-1.5">
+                      <p className="text-xs text-foreground leading-relaxed flex-1">{discussion}</p>
+                      {aiData?.headline && <Sparkles className="h-2.5 w-2.5 text-primary/50 shrink-0 mt-0.5" />}
+                    </div>
+                  )}
+                </div>
+
+                {/* Verdict chip */}
+                <div className="pt-1 border-t border-border/50">
+                  <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${verdict.cls}`}>
+                    {verdict.label}
+                  </span>
                 </div>
               </div>
             </>
@@ -863,6 +855,9 @@ export default function Leads() {
   interface AiSummaryData { healthLabel: string; headline: string; observation: string; nextStep: string; }
   const [aiSummaries, setAiSummaries] = useState<Record<number, AiSummaryData>>({});
   const [loadingAiSummary, setLoadingAiSummary] = useState<Record<number, boolean>>({});
+  // Pipeline review report
+  const [isPipelineReviewOpen, setIsPipelineReviewOpen] = useState(false);
+  const [reviewRunning, setReviewRunning] = useState(false);
   // For create form: contact dropdown
   const [selectedClientIdForContact, setSelectedClientIdForContact] = useState<number | null>(null);
   const [selectedClientIdForContactEdit, setSelectedClientIdForContactEdit] = useState<number | null>(null);
@@ -1172,6 +1167,21 @@ export default function Leads() {
     if (selectedLead?.id) fetchAiSummary(selectedLead.id);
   }, [selectedLead?.id]);
 
+  // Run pipeline review: fetch AI for all active deals in batches of 3
+  const runPipelineReview = async () => {
+    const activeDeals = (leads ?? []).filter(l => l.stage !== "won" && l.stage !== "lost");
+    if (activeDeals.length === 0) return;
+    setReviewRunning(true);
+    const batches: Lead[][] = [];
+    for (let i = 0; i < activeDeals.length; i += 3) {
+      batches.push(activeDeals.slice(i, i + 3));
+    }
+    for (const batch of batches) {
+      await Promise.all(batch.map(l => fetchAiSummary(l.id, true)));
+    }
+    setReviewRunning(false);
+  };
+
   const moveStage = (index: number, direction: "up" | "down") => {
     const newOrder = [...stages];
     const target = direction === "up" ? index - 1 : index + 1;
@@ -1423,6 +1433,17 @@ export default function Leads() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            {/* Pipeline Review — desktop */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 hidden md:inline-flex"
+              onClick={() => { setIsPipelineReviewOpen(true); runPipelineReview(); }}
+              data-testid="button-pipeline-review"
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+              Pipeline Review
+            </Button>
             {/* Manage stages — desktop only; on mobile moves to overflow menu */}
             <Button
               variant="outline"
@@ -1442,6 +1463,10 @@ export default function Leads() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => { setIsPipelineReviewOpen(true); runPipelineReview(); }} data-testid="option-pipeline-review-mobile">
+                  <ClipboardList className="h-4 w-4 mr-2" />
+                  Pipeline Review
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setIsManageStagesOpen(true)} data-testid="option-manage-stages-mobile">
                   <Settings className="h-4 w-4 mr-2" />
                   Manage Stages
@@ -3329,6 +3354,199 @@ export default function Leads() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Pipeline Review Dialog */}
+      <Dialog open={isPipelineReviewOpen} onOpenChange={(open) => { setIsPipelineReviewOpen(open); if (!open) setReviewRunning(false); }}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <ClipboardList className="h-4.5 w-4.5 text-primary" />
+                </div>
+                <div>
+                  <DialogTitle className="text-lg font-bold">Pipeline Review</DialogTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={runPipelineReview}
+                disabled={reviewRunning}
+                data-testid="button-run-review"
+              >
+                {reviewRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                {reviewRunning ? "Analyzing…" : "Refresh"}
+              </Button>
+            </div>
+            {reviewRunning && (() => {
+              const activeDeals = (leads ?? []).filter(l => l.stage !== "won" && l.stage !== "lost");
+              const done = activeDeals.filter(l => aiSummaries[l.id] || (loadingAiSummary[l.id] === false)).length;
+              const pct = activeDeals.length > 0 ? Math.round((done / activeDeals.length) * 100) : 0;
+              return (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                    <span>Analyzing deals…</span>
+                    <span>{done} / {activeDeals.length}</span>
+                  </div>
+                  <Progress value={pct} className="h-1.5" />
+                </div>
+              );
+            })()}
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="px-6 py-4 space-y-3">
+              {(() => {
+                const activeDeals = (leads ?? []).filter(l => l.stage !== "won" && l.stage !== "lost");
+
+                if (activeDeals.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <ClipboardList className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                      <p className="font-medium">No active deals in the pipeline</p>
+                    </div>
+                  );
+                }
+
+                const healthOrder = { "At Risk": 0, "Stalled": 1, "On Track": 2, "Strong": 3, "Unknown": 4 };
+
+                const dealsWithHealth = activeDeals.map(lead => {
+                  const summary = activitySummary?.find(s => s.leadId === lead.id);
+                  const daysActivity = summary?.lastActivityAt ? differenceInDays(new Date(), new Date(summary.lastActivityAt)) : null;
+                  const sc = lead.confidenceScore ?? 50;
+                  const computedHealth: string =
+                    (daysActivity !== null && daysActivity > 30) || sc < 25 ? "At Risk" :
+                    (daysActivity !== null && daysActivity > 14) || sc < 40 ? "Stalled" :
+                    sc >= 70 && (daysActivity === null || daysActivity <= 7) ? "Strong" :
+                    "On Track";
+                  const aiData = aiSummaries[lead.id];
+                  const healthLabel = aiData?.healthLabel ?? computedHealth;
+                  return { lead, healthLabel, aiData, daysActivity, computedHealth };
+                });
+
+                const sorted = [...dealsWithHealth].sort((a, b) =>
+                  (healthOrder[a.healthLabel as keyof typeof healthOrder] ?? 4) -
+                  (healthOrder[b.healthLabel as keyof typeof healthOrder] ?? 4)
+                );
+
+                const colorMap: Record<string, { badge: string; dot: string; row: string }> = {
+                  "Strong":   { badge: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",   dot: "bg-green-500",   row: "border-l-green-500" },
+                  "On Track": { badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",    dot: "bg-blue-500",    row: "border-l-blue-400" },
+                  "Stalled":  { badge: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400", dot: "bg-yellow-500",  row: "border-l-yellow-500" },
+                  "At Risk":  { badge: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",       dot: "bg-red-500",     row: "border-l-red-500" },
+                };
+
+                const stageDefaults: Record<string, string> = {
+                  new_lead:      "Reach out to introduce M5 and learn about their current service gaps.",
+                  contacted:     "Follow up on initial interest and qualify their budget and timeline.",
+                  qualified:     "Confirm scope, decision-makers, and when they expect to move forward.",
+                  proposal_sent: "Check if they've reviewed the proposal and address any open questions.",
+                  negotiation:   "Resolve remaining objections and confirm the approval path.",
+                };
+
+                return sorted.map(({ lead, healthLabel, aiData, daysActivity }) => {
+                  const colors = colorMap[healthLabel] ?? colorMap["On Track"];
+                  const isLoading = loadingAiSummary[lead.id];
+                  const clientName = getClientName(lead.clientId);
+                  const value = formatLeadValue(lead);
+                  const stageLabel = lead.stage.replace(/_/g, " ");
+
+                  const verdictMap: Record<string, { label: string; cls: string }> = {
+                    "Strong":   { label: "✓ Keep moving",      cls: "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-700" },
+                    "On Track": { label: "✓ No issues",         cls: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-700" },
+                    "Stalled":  { label: "→ Quick check-in",    cls: "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-700" },
+                    "At Risk":  { label: "→ Needs discussion",  cls: "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-700" },
+                  };
+                  const verdict = verdictMap[healthLabel] ?? verdictMap["On Track"];
+
+                  return (
+                    <div
+                      key={lead.id}
+                      className={`border-l-4 ${colors.row} bg-card rounded-r-lg border border-l-4 border-border/60 p-4 space-y-3 cursor-pointer hover:shadow-sm transition-shadow`}
+                      onClick={() => { setIsPipelineReviewOpen(false); openLeadDetail(lead); }}
+                      data-testid={`review-row-${lead.id}`}
+                    >
+                      {/* Row header */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-bold text-sm leading-tight">{lead.title}</h3>
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${colors.badge}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${colors.dot}`} />
+                              {healthLabel}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                            {clientName} · <span className="capitalize">{stageLabel}</span> · {value}
+                            {daysActivity !== null && (
+                              <span className="ml-1 opacity-70">· last touch {daysActivity === 0 ? "today" : daysActivity === 1 ? "yesterday" : `${daysActivity}d ago`}</span>
+                            )}
+                          </p>
+                        </div>
+                        <span className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full ${verdict.cls}`}>
+                          {verdict.label}
+                        </span>
+                      </div>
+
+                      {/* Key Signal + Action Item */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            Key Signal
+                          </p>
+                          {isLoading ? (
+                            <div className="space-y-1">
+                              <div className="h-2 bg-muted animate-pulse rounded w-full" />
+                              <div className="h-2 bg-muted animate-pulse rounded w-3/4" />
+                            </div>
+                          ) : (
+                            <p className="text-xs text-foreground leading-relaxed">
+                              {aiData?.observation || (daysActivity !== null && daysActivity > 14
+                                ? `No activity in ${daysActivity} days — deal may be stalling.`
+                                : `Deal is in ${stageLabel} stage with ${lead.confidenceScore ?? 50}% confidence.`)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-semibold text-primary uppercase tracking-wider flex items-center gap-1">
+                            <ArrowRight className="h-2.5 w-2.5" />
+                            Action Item
+                          </p>
+                          {isLoading ? (
+                            <div className="space-y-1">
+                              <div className="h-2 bg-muted animate-pulse rounded w-full" />
+                              <div className="h-2 bg-muted animate-pulse rounded w-2/3" />
+                            </div>
+                          ) : (
+                            <p className="text-xs text-foreground leading-relaxed">
+                              {aiData?.nextStep || stageDefaults[lead.stage] || "Review deal status and identify next steps."}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="px-6 py-4 border-t shrink-0">
+            <p className="text-[11px] text-muted-foreground flex-1">
+              {(leads ?? []).filter(l => l.stage !== "won" && l.stage !== "lost").length} active deal{(leads ?? []).filter(l => l.stage !== "won" && l.stage !== "lost").length !== 1 ? "s" : ""} · click any row to open deal
+            </p>
+            <Button variant="outline" onClick={() => setIsPipelineReviewOpen(false)} data-testid="button-close-review">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Manage Pipeline Stages Dialog */}
       <Dialog open={isManageStagesOpen} onOpenChange={setIsManageStagesOpen}>
