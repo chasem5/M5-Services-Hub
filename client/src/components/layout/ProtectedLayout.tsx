@@ -3,14 +3,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/button";
-import { Megaphone, RefreshCw, Menu } from "lucide-react";
+import { Megaphone, RefreshCw, Menu, LayoutDashboard, Target, Users, CheckSquare, MoreHorizontal } from "lucide-react";
 
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger, MobileSearchButton } from "@/components/GlobalSearch";
 import { QuickActionsBar } from "@/components/QuickActionsBar";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 function MobileMenuButton() {
   const { setOpenMobile, isMobile } = useSidebar();
@@ -25,6 +25,47 @@ function MobileMenuButton() {
     >
       <Menu className="h-5 w-5" />
     </Button>
+  );
+}
+
+const BOTTOM_NAV_ITEMS = [
+  { label: "Home", icon: LayoutDashboard, href: "/" },
+  { label: "Deals", icon: Target, href: "/leads" },
+  { label: "Contacts", icon: Users, href: "/customers" },
+  { label: "Tasks", icon: CheckSquare, href: "/tasks" },
+];
+
+function BottomNav() {
+  const [location] = useLocation();
+  const { setOpenMobile } = useSidebar();
+
+  const isActive = (href: string) => {
+    if (href === "/") return location === "/";
+    return location.startsWith(href);
+  };
+
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border flex items-stretch h-16 safe-area-pb" data-testid="bottom-nav">
+      {BOTTOM_NAV_ITEMS.map(({ label, icon: Icon, href }) => (
+        <Link key={href} href={href} className="flex-1">
+          <button
+            className={`w-full h-full flex flex-col items-center justify-center gap-0.5 transition-colors ${isActive(href) ? "text-primary" : "text-muted-foreground"}`}
+            data-testid={`bottom-nav-${label.toLowerCase()}`}
+          >
+            <Icon className="h-5 w-5" />
+            <span className="text-[10px] font-medium">{label}</span>
+          </button>
+        </Link>
+      ))}
+      <button
+        className="flex-1 flex flex-col items-center justify-center gap-0.5 text-muted-foreground transition-colors"
+        onClick={() => setOpenMobile(true)}
+        data-testid="bottom-nav-more"
+      >
+        <MoreHorizontal className="h-5 w-5" />
+        <span className="text-[10px] font-medium">More</span>
+      </button>
+    </nav>
   );
 }
 
@@ -211,7 +252,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
           </header>
           <main
             ref={mainRef}
-            className="flex-1 overflow-y-auto overflow-x-hidden relative"
+            className="flex-1 overflow-y-auto overflow-x-hidden relative pb-16 md:pb-0"
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
@@ -251,6 +292,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
+      <BottomNav />
     </SidebarProvider>
   );
 }

@@ -1293,20 +1293,21 @@ export default function Leads() {
       <header className="flex flex-col gap-3 p-4 md:p-6 bg-background border-b shadow-sm">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
               <Target className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-2xl font-heading font-bold">Deal Management</h1>
-              <p className="text-muted-foreground">Manage your sales pipeline and track opportunities</p>
+              <h1 className="text-2xl font-heading font-bold">Deals</h1>
+              <p className="text-muted-foreground hidden md:block">Manage your sales pipeline and track opportunities</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* View toggle — always visible */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 gap-1.5" data-testid="button-view-selector">
                   {view === "kanban" ? <LayoutGrid className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
-                  {view === "kanban" ? "Board" : "List"}
+                  <span className="hidden sm:inline">{view === "kanban" ? "Board" : "List"}</span>
                   <ChevronDown className="h-3 w-3 ml-0.5 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
@@ -1323,22 +1324,50 @@ export default function Leads() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            {/* Manage stages — desktop only; on mobile moves to overflow menu */}
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 hidden md:inline-flex"
               title="Manage stages"
               onClick={() => setIsManageStagesOpen(true)}
               data-testid="button-manage-stages"
             >
               <Settings className="h-4 w-4" />
             </Button>
+            {/* Mobile overflow menu for secondary actions */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8 md:hidden" data-testid="button-mobile-more">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setIsManageStagesOpen(true)} data-testid="option-manage-stages-mobile">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Manage Stages
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  setEditingView(null);
+                  setNewViewName("");
+                  setNewViewStages([]);
+                  setNewViewServiceTypes([]);
+                  setNewViewTiers([]);
+                  setNewViewTags([]);
+                  setIsManageViewsOpen(true);
+                }} data-testid="option-new-view-mobile">
+                  <BookmarkPlus className="h-4 w-4 mr-2" />
+                  New View
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {/* Add Deal — desktop only; on mobile use FAB */}
             <Button onClick={() => {
               form.reset();
               setFormTags([]);
               setTagInput("");
               setIsAddDealOpen(true);
-            }} data-testid="button-add-lead">
+            }} className="hidden md:inline-flex" data-testid="button-add-lead">
               <Plus className="h-4 w-4 mr-2" />
               Add Deal
             </Button>
@@ -1368,8 +1397,8 @@ export default function Leads() {
           </div>
         </div>
 
-        {/* Pipeline View switcher */}
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Pipeline View switcher — desktop only */}
+        <div className="hidden md:flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setActiveViewId(null)}
             className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${!activeViewId ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
@@ -2183,6 +2212,21 @@ export default function Leads() {
         </SheetContent>
       </Sheet>
 
+      {/* Mobile FAB — Add Deal */}
+      <button
+        className="md:hidden fixed bottom-20 right-4 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
+        onClick={() => {
+          form.reset();
+          setFormTags([]);
+          setTagInput("");
+          setIsAddDealOpen(true);
+        }}
+        data-testid="button-add-deal-fab"
+        aria-label="Add Deal"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+
       {/* Lead Detail Sheet */}
       <Sheet open={!!selectedLead} onOpenChange={(open) => {
         if (!open) {
@@ -2191,7 +2235,7 @@ export default function Leads() {
           setIsAddTaskOpen(false);
         }
       }}>
-        <SheetContent className="sm:max-w-xl overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
           {selectedLead && (
             <>
               <SheetHeader>
@@ -2261,19 +2305,19 @@ export default function Leads() {
               </SheetHeader>
 
               <Tabs defaultValue="details" className="mt-6">
-                <TabsList className="w-full grid grid-cols-5">
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                  <TabsTrigger value="notes" data-testid="tab-notes">Notes</TabsTrigger>
-                  <TabsTrigger value="attachments">Files</TabsTrigger>
-                  <TabsTrigger value="tasks">
+                <TabsList className="w-full grid grid-cols-5 h-auto">
+                  <TabsTrigger value="details" className="py-2.5 text-xs sm:text-sm">Details</TabsTrigger>
+                  <TabsTrigger value="notes" className="py-2.5 text-xs sm:text-sm" data-testid="tab-notes">Notes</TabsTrigger>
+                  <TabsTrigger value="attachments" className="py-2.5 text-xs sm:text-sm">Files</TabsTrigger>
+                  <TabsTrigger value="tasks" className="py-2.5 text-xs sm:text-sm">
                     Tasks
                     {detailLeadTasks.length > 0 && (
-                      <Badge variant="secondary" className="ml-1.5 h-4 px-1.5 text-[10px]">
+                      <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
                         {detailLeadTasks.length}
                       </Badge>
                     )}
                   </TabsTrigger>
-                  <TabsTrigger value="activity">Timeline</TabsTrigger>
+                  <TabsTrigger value="activity" className="py-2.5 text-xs sm:text-sm">Timeline</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="details" className="space-y-6 py-4">
