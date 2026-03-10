@@ -984,6 +984,7 @@ export default function AdminPage() {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3 min-w-[180px]">Section</th>
+                      <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 min-w-[130px]">Super Admin</th>
                       <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 min-w-[120px]">{getRoleLabel("admin")}</th>
                       {nonAdminRoles.map(cfg => (
                         <th key={cfg.roleKey} className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 min-w-[160px]">
@@ -1000,6 +1001,12 @@ export default function AdminPage() {
                         <td className="px-6 py-4">
                           <p className="text-sm font-medium">{mod.label}</p>
                           <p className="text-xs text-muted-foreground">{mod.description}</p>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <Badge className="bg-primary/10 text-primary border-primary/20 border text-xs font-medium gap-1">
+                            <Lock className="h-3 w-3" />
+                            Full Access
+                          </Badge>
                         </td>
                         <td className="px-4 py-4 text-center">
                           <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs font-medium gap-1">
@@ -1028,6 +1035,38 @@ export default function AdminPage() {
                                 <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
                               )}
                             </div>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                    {[
+                      { label: "Team Management", description: "Invite team members and assign roles" },
+                      { label: "Roles & Permissions", description: "Configure role names and module access levels" },
+                      { label: "System Configuration", description: "BuildOps integration, value tiers and system settings" },
+                    ].map((sys) => (
+                      <tr key={sys.label} className="hover:bg-muted/30 transition-colors bg-muted/10">
+                        <td className="px-6 py-4">
+                          <p className="text-sm font-medium">{sys.label}</p>
+                          <p className="text-xs text-muted-foreground">{sys.description}</p>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <Badge className="bg-primary/10 text-primary border-primary/20 border text-xs font-medium gap-1">
+                            <Lock className="h-3 w-3" />
+                            Full Access
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <Badge className="bg-slate-100 text-slate-500 border-slate-200 border text-xs font-medium gap-1">
+                            <Lock className="h-3 w-3" />
+                            No Access
+                          </Badge>
+                        </td>
+                        {nonAdminRoles.map(cfg => (
+                          <td key={cfg.roleKey} className="px-4 py-4 text-center">
+                            <Badge className="bg-slate-100 text-slate-500 border-slate-200 border text-xs font-medium gap-1">
+                              <Lock className="h-3 w-3" />
+                              No Access
+                            </Badge>
                           </td>
                         ))}
                       </tr>
