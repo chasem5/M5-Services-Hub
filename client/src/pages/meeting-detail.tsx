@@ -222,6 +222,8 @@ export default function MeetingDetailPage() {
   const [actioningIds, setActioningIds] = useState<Record<number, "approve" | "decline">>({});
 
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [chunkCount, setChunkCount] = useState(0);
+  const [liveChunkStatus, setLiveChunkStatus] = useState<"idle" | "sending" | "ok" | "error">("idle");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -350,6 +352,7 @@ export default function MeetingDetailPage() {
       if (isFinal) toast({ title: "No audio detected. Try speaking closer to the mic.", variant: "destructive" });
       return false;
     }
+    setLiveChunkStatus("sending");
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
     try {
@@ -360,11 +363,19 @@ export default function MeetingDetailPage() {
       });
       if (res.ok) {
         const { text } = await res.json();
-        if (text) setLiveTranscript((prev) => prev + (prev ? " " : "") + text);
+        if (text) {
+          setLiveTranscript((prev) => prev + (prev ? " " : "") + text);
+          setChunkCount((n) => n + 1);
+          setLiveChunkStatus("ok");
+        } else {
+          setLiveChunkStatus("ok");
+        }
         return true;
       }
+      setLiveChunkStatus("error");
       if (isFinal) toast({ title: "Transcription failed. You can type or paste your notes below.", variant: "destructive" });
     } catch {
+      setLiveChunkStatus("error");
       if (isFinal) toast({ title: "Transcription failed. Check your connection and try again.", variant: "destructive" });
     }
     return false;
@@ -373,9 +384,16 @@ export default function MeetingDetailPage() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
+      setChunkCount(0);
+      setLiveChunkStatus("idle");
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -384,25 +402,26 @@ export default function MeetingDetailPage() {
       recorder.start();
       setIsRecording(true);
 
-      // Send a chunk every 15 seconds
       chunkIntervalRef.current = setInterval(() => {
         if (recorder.state === "recording") {
           recorder.requestData();
           const t = setTimeout(() => {
-            const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+            const currentChunks = [...chunksRef.current];
             chunksRef.current = [];
-            sendChunk(blob);
-          }, 500);
+            if (currentChunks.length > 0) {
+              const blob = new Blob(currentChunks, { type: mimeType || "audio/webm" });
+              sendChunk(blob);
+            }
+          }, 800);
           chunkFlushTimeoutRef.current = t;
         }
-      }, 15000);
+      }, 20000);
     } catch {
       toast({ title: "Microphone access denied. Please allow microphone permissions.", variant: "destructive" });
     }
   };
 
   const stopRecording = () => {
-    // Cancel both the interval and any pending flush timeout to avoid race conditions
     if (chunkIntervalRef.current) clearInterval(chunkIntervalRef.current);
     if (chunkFlushTimeoutRef.current) clearTimeout(chunkFlushTimeoutRef.current);
     chunkFlushTimeoutRef.current = null;
@@ -414,12 +433,20 @@ export default function MeetingDetailPage() {
     setIsTranscribing(true);
 
     recorder.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      const currentChunks = [...chunksRef.current];
       chunksRef.current = [];
-      await sendChunk(blob, true);
+      const mimeType = recorder.mimeType || "audio/webm";
+      if (currentChunks.length > 0) {
+        const blob = new Blob(currentChunks, { type: mimeType });
+        await sendChunk(blob, true);
+      }
       recorder.stream.getTracks().forEach((t) => t.stop());
       setIsTranscribing(false);
-      toast({ title: "Recording stopped. Review your transcript then click Finish & Analyze." });
+      setLiveChunkStatus("idle");
+      await apiRequest("PUT", `/api/meetings/${meetingId}`, { status: "stopped" });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      toast({ title: "Recording saved. Review your transcript then click Finish & Analyze." });
     };
     recorder.stop();
   };
@@ -485,6 +512,7 @@ export default function MeetingDetailPage() {
   const isComplete = meeting.status === "complete";
   const isProcessing = meeting.status === "processing";
   const showReview = meeting.status === "review" || meeting.status === "complete";
+  const isStopped = meeting.status === "stopped";
   const transcript = liveTranscript || meeting.rawTranscript || "";
 
   return (
@@ -751,30 +779,55 @@ export default function MeetingDetailPage() {
 
               {/* Record controls */}
               {inputMode === "record" && (
-                <div className="flex items-center gap-3">
-                  {isTranscribing ? (
-                    <Button disabled className="gap-2" data-testid="button-transcribing">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Transcribing…
-                    </Button>
-                  ) : !isRecording ? (
-                    <Button onClick={startRecording} className="gap-2" data-testid="button-start-recording">
-                      <Mic className="h-4 w-4" />
-                      Start Recording
-                    </Button>
-                  ) : (
-                    <Button onClick={stopRecording} variant="destructive" className="gap-2" data-testid="button-stop-recording">
-                      <Square className="h-3.5 w-3.5 fill-current" />
-                      Stop Recording
-                    </Button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-3">
+                    {isTranscribing ? (
+                      <Button disabled className="gap-2" data-testid="button-transcribing">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Saving final chunk…
+                      </Button>
+                    ) : !isRecording ? (
+                      <Button onClick={startRecording} className="gap-2" data-testid="button-start-recording">
+                        <Mic className="h-4 w-4" />
+                        Start Recording
+                      </Button>
+                    ) : (
+                      <Button onClick={stopRecording} variant="destructive" className="gap-2" data-testid="button-stop-recording">
+                        <Square className="h-3.5 w-3.5 fill-current" />
+                        Stop Recording
+                      </Button>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {isTranscribing
+                        ? "Saving your final audio chunk, please wait…"
+                        : isRecording
+                        ? "Recording live — audio is transcribed every 20 seconds."
+                        : isStopped
+                        ? "Recording stopped. Review transcript below, then click Finish & Analyze."
+                        : "Click to start capturing your meeting audio via microphone."}
+                    </p>
+                  </div>
+                  {isRecording && (
+                    <div className="flex items-center gap-3 pl-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-xs font-medium text-red-600">LIVE</span>
+                      </div>
+                      {liveChunkStatus === "sending" && (
+                        <span className="flex items-center gap-1 text-xs text-blue-600">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Transcribing chunk…
+                        </span>
+                      )}
+                      {liveChunkStatus === "ok" && chunkCount > 0 && (
+                        <span className="flex items-center gap-1 text-xs text-green-600">
+                          <Check className="h-3 w-3" /> {chunkCount} chunk{chunkCount !== 1 ? "s" : ""} transcribed
+                        </span>
+                      )}
+                      {liveChunkStatus === "error" && (
+                        <span className="text-xs text-red-500 font-medium">Chunk failed — check connection</span>
+                      )}
+                    </div>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    {isTranscribing
-                      ? "Processing your audio, please wait…"
-                      : isRecording
-                      ? "Audio is being transcribed every 15 seconds…"
-                      : "Click to start capturing your meeting audio via microphone."}
-                  </p>
                 </div>
               )}
 

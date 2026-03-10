@@ -70,6 +70,11 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string; icon: React.
     badge: "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400",
     icon: <Radio className="h-3 w-3" />,
   },
+  stopped: {
+    label: "Needs Analysis",
+    badge: "bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400",
+    icon: <AlertCircle className="h-3 w-3" />,
+  },
   processing: {
     label: "Processing",
     badge: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400",
