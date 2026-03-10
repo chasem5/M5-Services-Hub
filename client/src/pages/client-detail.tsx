@@ -1402,42 +1402,42 @@ export default function ClientDetail() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="w-full justify-start border-b rounded-none h-12 bg-transparent p-0 gap-6">
-          <TabsTrigger value="overview" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
-            <Building2 className="mr-2 h-4 w-4" />
-            Overview
+        <TabsList className="w-full justify-start border-b rounded-none h-12 bg-transparent p-0 gap-1 md:gap-6 overflow-x-auto scrollbar-hide">
+          <TabsTrigger value="overview" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+            <Building2 className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Overview</span>
           </TabsTrigger>
-          <TabsTrigger value="contacts" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
-            <Users className="mr-2 h-4 w-4" />
-            Contacts
+          <TabsTrigger value="contacts" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+            <Users className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Contacts</span>
           </TabsTrigger>
-          <TabsTrigger value="deals" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
-            <Target className="mr-2 h-4 w-4" />
-            Leads
+          <TabsTrigger value="deals" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+            <Target className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Leads</span>
           </TabsTrigger>
-          <TabsTrigger value="estimates" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
-            <FileText className="mr-2 h-4 w-4" />
-            Estimates
+          <TabsTrigger value="estimates" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+            <FileText className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Estimates</span>
           </TabsTrigger>
-          <TabsTrigger value="orgchart" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
-            <GitBranch className="mr-2 h-4 w-4" />
-            Org Chart
+          <TabsTrigger value="orgchart" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+            <GitBranch className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Org Chart</span>
           </TabsTrigger>
-          <TabsTrigger value="portfolio-map" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium" data-testid="tab-portfolio-map">
-            <Map className="mr-2 h-4 w-4" />
-            Portfolio Map
+          <TabsTrigger value="portfolio-map" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-portfolio-map">
+            <Map className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Portfolio Map</span>
           </TabsTrigger>
-          <TabsTrigger value="activity" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
-            <History className="mr-2 h-4 w-4" />
-            Activity
+          <TabsTrigger value="activity" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+            <History className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Activity</span>
           </TabsTrigger>
-          <TabsTrigger value="emails" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium" data-testid="tab-emails">
-            <Mail className="mr-2 h-4 w-4" />
-            Emails
+          <TabsTrigger value="emails" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-emails">
+            <Mail className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Emails</span>
           </TabsTrigger>
-          <TabsTrigger value="attachments" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium">
-            <Paperclip className="mr-2 h-4 w-4" />
-            Files
+          <TabsTrigger value="attachments" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+            <Paperclip className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Files</span>
           </TabsTrigger>
         </TabsList>
 
@@ -1805,10 +1805,10 @@ export default function ClientDetail() {
                           href={client.website.startsWith("http") ? client.website : `https://${client.website}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-sm text-primary hover:underline flex items-center gap-1"
+                          className="text-sm text-primary hover:underline flex items-center gap-1 min-w-0 overflow-hidden"
                           data-testid="link-company-website"
                         >
-                          {client.website}
+                          <span className="truncate">{client.website}</span>
                           <ExternalLink className="h-3 w-3 shrink-0" />
                         </a>
                       ) : (
