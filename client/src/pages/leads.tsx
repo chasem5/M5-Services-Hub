@@ -549,14 +549,6 @@ function LeadCard({
     return differenceInDays(new Date(), activityDate);
   }, [leadSummary]);
 
-  const stalenessColor = useMemo(() => {
-    if (daysSinceActivity === null) return "border-l-muted";
-    if (daysSinceActivity < 14) return "border-l-green-500";
-    if (daysSinceActivity < 30) return "border-l-yellow-500";
-    if (daysSinceActivity < 60) return "border-l-orange-500";
-    return "border-l-red-500";
-  }, [daysSinceActivity]);
-
   if (isDragging && !isOverlay) {
     return (
       <div 
@@ -575,7 +567,7 @@ function LeadCard({
           style={style}
           {...attributes}
           {...listeners}
-          className={`hover-elevate cursor-grab active:cursor-grabbing border-border/60 shadow-sm transition-shadow hover:shadow-md border-l-4 ${stalenessColor} ${isOverlay ? "cursor-grabbing shadow-xl ring-2 ring-primary" : ""}`}
+          className={`hover-elevate cursor-grab active:cursor-grabbing border-border shadow-sm transition-shadow hover:shadow-md ${isOverlay ? "cursor-grabbing shadow-xl ring-2 ring-primary" : ""}`}
           onClick={(e) => {
             if (isOverlay) return;
             // Prevent opening detail if dragging
