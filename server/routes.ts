@@ -1227,7 +1227,7 @@ Do not include any other text, just the JSON.`,
       : lead.serviceType ? [lead.serviceType] : []
     ).map(s => s.replace(/_/g, " ")).join(", ") || "Not specified";
 
-    const prompt = `You are a senior BD analyst at M5 Services, a commercial facility maintenance company (janitorial, building engineering, facility solutions, special projects). You are reviewing a deal in the CRM and must give a quick but genuinely insightful assessment — NOT a restatement of the fields.
+    const prompt = `You are a senior BD analyst at M5 Services, a commercial facility maintenance company (janitorial, building engineering, facility solutions, special projects). Analyze this deal and respond with a JSON object only.
 
 ${stageGuide}
 
@@ -1248,22 +1248,40 @@ ${activitySummary}
 Open/Active Tasks:
 ${tasksSummary}
 
-INSTRUCTIONS:
-Write exactly 2-3 tight sentences. Do NOT list out the data — interpret it.
-1. First sentence: Where this deal stands and why it matters (deal health + context).
-2. Second sentence: The most notable signal, risk, or opportunity you see (something that isn't obvious from just reading the fields).
-3. Third sentence: The single most important next action the team should take right now.
-Be specific. Use company names, dollar amounts, stage names where helpful. No bullet points, no headers.`;
+Respond ONLY with a JSON object in this exact shape — no markdown, no explanation:
+{
+  "healthLabel": "Strong" | "On Track" | "Stalled" | "At Risk",
+  "headline": "One tight sentence summarizing deal health and context — not a restatement of fields.",
+  "observation": "The most notable signal, risk, or opportunity that isn't obvious from just reading the data. Be specific.",
+  "nextStep": "The single most important action the BD team should take right now. Be concrete and actionable."
+}
+
+Rules:
+- healthLabel must be exactly one of: Strong, On Track, Stalled, At Risk
+- Strong = high confidence, active engagement, clear path forward
+- On Track = progressing normally, no red flags
+- Stalled = low recent activity, stuck in stage too long, or low confidence for stage
+- At Risk = overdue tasks, very long inactivity, confidence/stage mismatch, or other warning signs
+- Use company names, dollar amounts, and stage names in your text where helpful
+- Do NOT just restate the data fields — interpret and synthesize`;
 
     try {
       const { openai } = await import("./openai");
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [{ role: "user", content: prompt }],
-        max_completion_tokens: 300,
+        max_completion_tokens: 350,
+        response_format: { type: "json_object" },
       });
-      const summary = completion.choices[0]?.message?.content ?? "Unable to generate summary.";
-      res.json({ summary });
+      const raw = completion.choices[0]?.message?.content ?? "{}";
+      const parsed = JSON.parse(raw);
+      const result = {
+        healthLabel: (["Strong", "On Track", "Stalled", "At Risk"].includes(parsed.healthLabel) ? parsed.healthLabel : "On Track") as string,
+        headline: parsed.headline ?? "No summary available.",
+        observation: parsed.observation ?? "",
+        nextStep: parsed.nextStep ?? "",
+      };
+      res.json(result);
     } catch (err: any) {
       console.error("AI summary error:", err);
       res.status(500).json({ message: "AI summary failed", error: err.message });

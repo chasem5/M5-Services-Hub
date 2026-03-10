@@ -76,6 +76,11 @@ import {
   BookmarkPlus,
   MessageSquare,
   Send,
+  RefreshCw,
+  AlertTriangle,
+  ArrowRight,
+  TrendingDown,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Card,
@@ -413,7 +418,7 @@ function KanbanColumn({
   openLeadDetail: (lead: Lead) => void;
   tasks: Task[];
   loadingAiSummary: Record<number, boolean>;
-  aiSummaries: Record<number, string>;
+  aiSummaries: Record<number, { healthLabel: string; headline: string; observation: string; nextStep: string }>;
   fetchAiSummary: (id: number) => void;
   activitySummary: any[] | undefined;
 }) {
@@ -510,7 +515,7 @@ function LeadCard({
   openLeadDetail: (lead: Lead) => void;
   tasks: Task[];
   loadingAiSummary: Record<number, boolean>;
-  aiSummaries: Record<number, string>;
+  aiSummaries: Record<number, { healthLabel: string; headline: string; observation: string; nextStep: string }>;
   fetchAiSummary: (id: number) => void;
   activitySummary: any[] | undefined;
   isOverlay?: boolean;
@@ -710,21 +715,44 @@ function LeadCard({
           </CardContent>
         </Card>
       </HoverCardTrigger>
-      <HoverCardContent side="right" align="start" className="w-72 p-3" data-testid={`ai-summary-${lead.id}`}>
+      <HoverCardContent side="right" align="start" className="w-64 p-3" data-testid={`ai-summary-${lead.id}`}>
         <div className="flex items-center gap-1.5 mb-2">
-          <Sparkles className="h-3.5 w-3.5 text-primary" />
-          <span className="text-xs font-bold text-primary">AI Summary</span>
+          <Sparkles className="h-3 w-3 text-primary" />
+          <span className="text-xs font-bold text-primary">Quick Take</span>
         </div>
         {loadingAiSummary[lead.id] ? (
           <div className="space-y-1.5">
-            <div className="h-3 bg-muted animate-pulse rounded w-full" />
-            <div className="h-3 bg-muted animate-pulse rounded w-5/6" />
-            <div className="h-3 bg-muted animate-pulse rounded w-4/6" />
+            <div className="h-2.5 bg-muted animate-pulse rounded w-3/4" />
+            <div className="h-2.5 bg-muted animate-pulse rounded w-full" />
           </div>
-        ) : aiSummaries[lead.id] !== undefined ? (
-          <p className="text-xs text-muted-foreground leading-relaxed">{aiSummaries[lead.id] || "No summary available."}</p>
+        ) : aiSummaries[lead.id] ? (
+          <>
+            {(() => {
+              const s = aiSummaries[lead.id];
+              const colorMap: Record<string, string> = {
+                "Strong": "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",
+                "On Track": "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
+                "Stalled": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400",
+                "At Risk": "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
+              };
+              const dotMap: Record<string, string> = {
+                "Strong": "bg-green-500", "On Track": "bg-blue-500",
+                "Stalled": "bg-yellow-500", "At Risk": "bg-red-500",
+              };
+              return (
+                <>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold mb-1.5 ${colorMap[s.healthLabel] ?? colorMap["On Track"]}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${dotMap[s.healthLabel] ?? "bg-blue-500"}`} />
+                    {s.healthLabel}
+                  </span>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{s.headline}</p>
+                  <p className="text-[10px] text-muted-foreground/50 italic mt-1.5">Click deal for full analysis →</p>
+                </>
+              );
+            })()}
+          </>
         ) : (
-          <p className="text-xs text-muted-foreground italic">Hover to generate summary...</p>
+          <p className="text-xs text-muted-foreground italic">Hover to generate...</p>
         )}
       </HoverCardContent>
     </HoverCard>
@@ -771,8 +799,9 @@ export default function Leads() {
   const [newViewTiers, setNewViewTiers] = useState<string[]>([]);
   const [newViewTags, setNewViewTags] = useState<string[]>([]);
   const [editingView, setEditingView] = useState<PipelineView | null>(null);
-  // AI summaries cache: leadId -> summary string
-  const [aiSummaries, setAiSummaries] = useState<Record<number, string>>({});
+  // AI summaries cache: leadId -> structured analysis
+  interface AiSummaryData { healthLabel: string; headline: string; observation: string; nextStep: string; }
+  const [aiSummaries, setAiSummaries] = useState<Record<number, AiSummaryData>>({});
   const [loadingAiSummary, setLoadingAiSummary] = useState<Record<number, boolean>>({});
   // For create form: contact dropdown
   const [selectedClientIdForContact, setSelectedClientIdForContact] = useState<number | null>(null);
@@ -1059,19 +1088,29 @@ export default function Leads() {
     },
   });
 
-  const fetchAiSummary = async (leadId: number) => {
-    if (aiSummaries[leadId] || loadingAiSummary[leadId]) return;
+  const fetchAiSummary = async (leadId: number, force = false) => {
+    if (!force && (aiSummaries[leadId] || loadingAiSummary[leadId])) return;
     setLoadingAiSummary(prev => ({ ...prev, [leadId]: true }));
     try {
       const res = await apiRequest("POST", `/api/leads/${leadId}/ai-summary`, {});
       const data = await res.json();
-      setAiSummaries(prev => ({ ...prev, [leadId]: data.summary }));
+      setAiSummaries(prev => ({ ...prev, [leadId]: {
+        healthLabel: data.healthLabel ?? "On Track",
+        headline: data.headline ?? "No summary available.",
+        observation: data.observation ?? "",
+        nextStep: data.nextStep ?? "",
+      }}));
     } catch {
-      setAiSummaries(prev => ({ ...prev, [leadId]: "Unable to generate summary at this time." }));
+      setAiSummaries(prev => ({ ...prev, [leadId]: { healthLabel: "Unknown", headline: "Unable to generate summary at this time.", observation: "", nextStep: "" } }));
     } finally {
       setLoadingAiSummary(prev => ({ ...prev, [leadId]: false }));
     }
   };
+
+  // Auto-fetch AI analysis when a lead detail panel opens
+  useEffect(() => {
+    if (selectedLead?.id) fetchAiSummary(selectedLead.id);
+  }, [selectedLead?.id]);
 
   const moveStage = (index: number, direction: "up" | "down") => {
     const newOrder = [...stages];
@@ -2321,6 +2360,87 @@ export default function Leads() {
                 </TabsList>
 
                 <TabsContent value="details" className="space-y-6 py-4">
+                  {/* AI Deal Analysis Card */}
+                  {!isEditingLead && (() => {
+                    const s = aiSummaries[selectedLead.id];
+                    const isLoading = loadingAiSummary[selectedLead.id];
+                    const colorMap: Record<string, string> = {
+                      "Strong": "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",
+                      "On Track": "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
+                      "Stalled": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400",
+                      "At Risk": "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
+                    };
+                    const dotMap: Record<string, string> = {
+                      "Strong": "bg-green-500", "On Track": "bg-blue-500",
+                      "Stalled": "bg-yellow-500", "At Risk": "bg-red-500",
+                    };
+                    return (
+                      <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3" data-testid="ai-analysis-card">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-3.5 w-3.5 text-primary" />
+                            <span className="text-xs font-bold text-primary uppercase tracking-wide">AI Deal Analysis</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {s && !isLoading && (
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${colorMap[s.healthLabel] ?? colorMap["On Track"]}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${dotMap[s.healthLabel] ?? "bg-blue-500"}`} />
+                                {s.healthLabel}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => {
+                                setAiSummaries(prev => { const n = {...prev}; delete n[selectedLead.id]; return n; });
+                                fetchAiSummary(selectedLead.id, true);
+                              }}
+                              className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+                              title="Refresh analysis"
+                              data-testid="button-refresh-ai-analysis"
+                            >
+                              <RefreshCw className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {isLoading ? (
+                          <div className="space-y-2">
+                            <div className="h-3 bg-muted animate-pulse rounded w-full" />
+                            <div className="h-3 bg-muted animate-pulse rounded w-5/6" />
+                            <div className="h-3 bg-muted animate-pulse rounded w-3/4" />
+                          </div>
+                        ) : s ? (
+                          <div className="space-y-3">
+                            <p className="text-xs text-muted-foreground italic leading-relaxed">{s.headline}</p>
+                            {s.observation && (
+                              <div className="flex gap-2.5">
+                                <div className="mt-0.5 shrink-0 h-4 w-4 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                                  <AlertTriangle className="h-2.5 w-2.5 text-amber-600 dark:text-amber-400" />
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Key Signal</p>
+                                  <p className="text-xs text-foreground leading-relaxed">{s.observation}</p>
+                                </div>
+                              </div>
+                            )}
+                            {s.nextStep && (
+                              <div className="flex gap-2.5">
+                                <div className="mt-0.5 shrink-0 h-4 w-4 rounded-full bg-primary/10 flex items-center justify-center">
+                                  <ArrowRight className="h-2.5 w-2.5 text-primary" />
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">Next Step</p>
+                                  <p className="text-xs text-foreground leading-relaxed">{s.nextStep}</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">Generating analysis...</p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {isEditingLead ? (
                     <Form {...editLeadForm}>
                       <form onSubmit={editLeadForm.handleSubmit(saveLeadEdits)} className="space-y-4">
