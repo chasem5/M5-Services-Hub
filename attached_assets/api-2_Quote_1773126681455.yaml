@@ -1,0 +1,785 @@
+openapi: 3.0.3
+info:
+  version: 1.0.0
+  title: Sales & CRM
+  description: Quotes API endpoints
+  contact:
+    name: BuildOps Support
+    url: 'https://buildops.com/support'
+    email: support@buildops.com
+servers:
+  - url: 'https://public-api.live.buildops.com'
+    description: Production Server
+  - url: 'https://public-api.dev.buildops.com'
+    description: Development Server
+paths:
+  '/v1/quotes/{id}':
+    get:
+      tags:
+        - Quotes
+      summary: Get Quote by ID
+      description: Get Quote by ID
+      operationId: QuoteController_getQuoteById
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: id
+          in: path
+          description: quoteId identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Quote retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v1/quotes:
+    get:
+      tags:
+        - Quotes
+      summary: Get all Quotes
+      description: Get all Quotes
+      operationId: QuoteController_getAllQuotes
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: page
+          in: query
+          description: page
+          required: false
+          schema:
+            type: number
+            minimum: 0
+            default: 0
+        - name: page_size
+          in: query
+          description: page size
+          required: false
+          schema:
+            type: number
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: quote_number
+          in: query
+          description: quote number
+          required: false
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Quotes retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  query:
+                    $ref: '#/components/schemas/QueryBody'
+                  totalCount:
+                    type: number
+                  links:
+                    $ref: '#/components/schemas/Links'
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Quote'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+    post:
+      tags:
+        - Quotes
+      summary: Create a Quote
+      description: Create a Quote
+      operationId: post-v1-quotes
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                propertyId:
+                  type: string
+                  description: Property ID
+                  format: uuid
+                departmentId:
+                  type: string
+                  description: Department ID
+                  format: uuid
+                name:
+                  type: string
+                  description: Title
+                issueDescription:
+                  type: string
+                expirationDate:
+                  type: string
+                  format: date-time
+                  example: '2023-05-30T13:16:46Z'
+                versionLabel:
+                  type: string
+                  description: Version title field
+                ownerId:
+                  type: string
+                  description: Project Manager ID (Employee)
+                  format: uuid
+                accountManagerId:
+                  type: string
+                  description: Account Manager ID (Employee)
+                  format: uuid
+                salesById:
+                  type: string
+                  description: Sold By ID (Employee)
+                  format: uuid
+                serviceAgreementId:
+                  type: string
+                  description: Service Agreement ID
+                  format: uuid
+                customerPoNumber:
+                  type: string
+                  description: Customer PO Number
+                blanketPOId:
+                  type: string
+                  description: Blanket PO ID
+                  format: uuid
+                billingCustomerId:
+                  type: string
+                  description: 'Customer ID. If not provided, the billing customer from property will be used.'
+                  format: uuid
+                priceBookId:
+                  type: string
+                  description: 'Pricebook ID. If not provided, the pricebook from property, customer or default pricebook will be used.'
+                  format: uuid
+                dueDate:
+                  type: string
+                  format: date-time
+                  example: '2023-05-30T13:16:46Z'
+                expirationLength:
+                  type: integer
+                  description: Expiration (days)
+                  format: int32
+                  default: 30
+                jobTypeId:
+                  type: string
+                  description: Job Type ID
+                  format: uuid
+                description:
+                  type: string
+                  description: Internal Notes field
+                orderedById:
+                  type: string
+                  description: Company Representative / Ordered By ID
+                  format: uuid
+                propertyRepId:
+                  type: string
+                  description: Property Representative
+                  format: uuid
+                taxRateId:
+                  type: string
+                  description: 'Tax Rate ID. If not provided, the property''s '
+                  format: uuid
+                scopeOfWork:
+                  type: string
+                  description: Scope of Work
+                serviceZoneIds:
+                  type: array
+                  description: Service Zone IDs. Required when Zone Management feature is enabled
+                  items:
+                    type: string
+                    format: uuid
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/QuoteLineProduct'
+                discounts:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/QuoteLineProduct'
+                sections:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: Section name
+                      description:
+                        type: string
+                        description: Section Description
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/QuoteLineProduct'
+                      laborItems:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/QuoteLineLabor'
+              required:
+                - propertyId
+                - departmentId
+      responses:
+        '201':
+          description: Quote Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Quote'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          allOf:
+                            - type: object
+                              properties:
+                                id:
+                                  type: string
+                                  format: uuid
+                            - $ref: '#/components/schemas/QuoteLineProduct'
+                      discounts:
+                        type: array
+                        items:
+                          allOf:
+                            - type: object
+                              properties:
+                                id:
+                                  type: string
+                                  format: uuid
+                            - $ref: '#/components/schemas/QuoteLineProduct'
+                      sections:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            name:
+                              type: string
+                              description: Section name
+                            description:
+                              type: string
+                              description: Section Description
+                            items:
+                              type: array
+                              items:
+                                allOf:
+                                  - type: object
+                                    properties:
+                                      id:
+                                        type: string
+                                        format: uuid
+                                  - $ref: '#/components/schemas/QuoteLineProduct'
+                            laborItems:
+                              type: array
+                              items:
+                                allOf:
+                                  - type: object
+                                    properties:
+                                      id:
+                                        type: string
+                                        format: uuid
+                                  - $ref: '#/components/schemas/QuoteLineLabor'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Page number for pagination
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    page_size:
+      name: page_size
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Authorization:
+      name: Authorization
+      in: header
+      description: Bearer token for authentication
+      required: true
+      schema:
+        type: string
+        example: Bearer your-jwt-token-here
+    tenantId:
+      name: tenantId
+      in: header
+      description: Tenant ID for the request
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: 123e4567-e89b-12d3-a456-426614174000
+  securitySchemes:
+    authorization:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    400-Bad-Request:
+      description: 'Bad Request: Invalid or missing parameters.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Bad Request
+              message:
+                type: string
+                example: Invalid request parameters
+    401-Unauthorized:
+      description: 'Unauthorized: User is not authenticated.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Unauthorized
+              message:
+                type: string
+                example: Authentication required
+    403-Forbidden:
+      description: 'Forbidden: User lacks required permissions.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Forbidden
+              message:
+                type: string
+                example: Insufficient permissions
+    404-Not-Found:
+      description: 'Not Found: The resource with the given ID does not exist.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Not Found
+              message:
+                type: string
+                example: Resource not found
+    409-Conflict-Record:
+      description: 'Conflict: The record already exists or conflicts with existing data.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Conflict
+              message:
+                type: string
+                example: Record already exists
+    500-Internal-Server-Error:
+      description: An unexpected error occurred on the server.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Internal Server Error
+              message:
+                type: string
+                example: An unexpected error occurred
+  schemas:
+    Quote:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        tenantId:
+          type: string
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        quoteNumber:
+          type: number
+        customIdentifier:
+          type: string
+          nullable: true
+        internalApprovalStatus:
+          type: string
+          nullable: true
+        internalApprovalNote:
+          type: string
+          nullable: true
+        internalApprovalApprovedById:
+          type: string
+          nullable: true
+        internalApprovalApprovedByDateTime:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        issueDescription:
+          type: string
+          nullable: true
+        expirationDate:
+          type: string
+          nullable: true
+        approvalDateTime:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        billingStatus:
+          type: string
+          nullable: true
+        version:
+          type: number
+          nullable: true
+        versionLabel:
+          type: string
+          nullable: true
+        ownerId:
+          type: string
+          nullable: true
+        accountManagerId:
+          type: string
+          nullable: true
+        taxCodeId:
+          type: string
+          nullable: true
+        salesById:
+          type: string
+          nullable: true
+        departmentId:
+          type: string
+          nullable: true
+        customerPoNumber:
+          type: string
+          nullable: true
+        blanketPOId:
+          type: string
+          nullable: true
+        rejectedReason:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+          nullable: true
+        serviceAgreementId:
+          type: string
+          nullable: true
+        priceBookId:
+          type: string
+          nullable: true
+        dueDate:
+          type: string
+          nullable: true
+        expirationLength:
+          type: number
+          nullable: true
+        jobTypeId:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        billTo:
+          type: string
+          nullable: true
+        orderedById:
+          type: string
+          nullable: true
+        propertyRepId:
+          type: string
+          nullable: true
+        propertyId:
+          type: string
+        taxRateId:
+          type: string
+          nullable: true
+        billingCustomerId:
+          type: string
+          nullable: true
+        subTotal:
+          type: number
+          nullable: true
+        subTotalOverride:
+          type: number
+          nullable: true
+        taskSubTotal:
+          type: number
+          nullable: true
+        subTotalAmountTaxable:
+          type: number
+          nullable: true
+        subTotalAmountNonTaxable:
+          type: number
+          nullable: true
+        subTotalAmountTaxableOverride:
+          type: number
+          nullable: true
+        totalTaxAmount:
+          type: number
+          nullable: true
+        totalTaxAmountOverride:
+          type: number
+          nullable: true
+        totalAmountQuoted:
+          type: number
+          nullable: true
+        totalAmountQuotedOverride:
+          type: number
+          nullable: true
+        totalEstimatedCost:
+          type: number
+          nullable: true
+        totalBudgetedHours:
+          type: number
+          nullable: true
+        scopeOfWork:
+          type: string
+          nullable: true
+        audit:
+          $ref: '#/components/schemas/AuditInfo'
+      required:
+        - id
+    AuditInfo:
+      type: object
+      title: AuditInfo
+      properties:
+        createdBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        createdDate:
+          $ref: '#/components/schemas/createdDate'
+          example: '2023-05-30T13:16:46Z'
+        createdDateTime:
+          type: number
+          nullable: true
+          example: 1626118480793
+        deletedBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        deletedDate:
+          type: string
+          nullable: true
+          example: '2023-05-17T13:44:24Z'
+        deletedDateTime:
+          type: number
+          nullable: true
+          example: 1626118480793
+        lastUpdatedBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        lastUpdatedDate:
+          $ref: '#/components/schemas/lastUpdatedDate'
+          example: '2023-05-17T13:44:24Z'
+        lastUpdatedDateTime:
+          type: number
+          nullable: true
+          example: 1626118480793
+    UserAuditInfo:
+      x-internal: true
+      x-stoplight:
+        internallyExcluded: true
+        errorMessage: This object is set as internal and excluded.
+    createdDate:
+      type: string
+      nullable: true
+      example: '2023-05-30T13:16:46Z'
+    lastUpdatedDate:
+      type: string
+      nullable: true
+      example: '2023-05-17T13:44:24Z'
+    QueryBody:
+      $ref: '#/components/schemas/QueryBody_2'
+    QueryBody_2:
+      x-internal: true
+      x-stoplight:
+        internallyExcluded: true
+        errorMessage: This object is set as internal and excluded.
+    Links:
+      $ref: '#/components/schemas/Links_2'
+    Links_2:
+      x-internal: true
+      x-stoplight:
+        internallyExcluded: true
+        errorMessage: This object is set as internal and excluded.
+    QuoteLineProduct:
+      type: object
+      title: QuoteLineProduct
+      description: Model that represents an item of a Quote.
+      properties:
+        productId:
+          type: string
+          description: Product ID
+          format: uuid
+        description:
+          type: string
+        quantity:
+          type: number
+          default: 1
+        unitCost:
+          type: number
+        unitPrice:
+          type: number
+        taxable:
+          type: boolean
+          description: 'Is this item taxable?. If not provided, the product taxable will be used.'
+          default: false
+        costCodeId:
+          type: string
+          description: 'Cost Code ID. If not provided, the product cost code will be used.'
+          format: uuid
+        jobCostTypeId:
+          type: string
+          description: 'Job Cost Type ID. If not provided, the product job cost type will be used'
+          format: uuid
+        revenueTypeId:
+          type: string
+          description: 'Job Cost ID used for Revenue. If not provided, the product revenue type will be used.'
+          format: uuid
+        taxCodeId:
+          type: string
+          description: Tax Code ID. Available only when line level tax feature is enabled.
+          format: uuid
+        departmentId:
+          type: string
+          description: 'Department ID. If not provided, the quote department will be used.'
+          format: uuid
+      required:
+        - productId
+        - quantity
+        - unitCost
+        - unitPrice
+    QuoteLineLabor:
+      type: object
+      title: QuoteLineLabor
+      description: Model that represents a labor item of a Quote.
+      properties:
+        billingHours:
+          type: number
+          description: Billing Hours
+        payrollHours:
+          type: number
+          description: payroll hours
+        description:
+          type: string
+        labourRateGroupId:
+          type: string
+          description: Labor Rate Group ID
+          format: uuid
+        labourTypeId:
+          type: string
+          description: |
+            Labor Type ID
+          format: uuid
+        jobCostTypeId:
+          type: string
+          description: Job Cost Type ID
+          format: uuid
+        payrollHourTypeId:
+          type: string
+          description: Payroll Hour Type ID
+          format: uuid
+        billingHourTypeId:
+          type: string
+          description: 'Billing Hour Type id. If not provided, the payroll to billing hour type mapping will be used'
+          format: uuid
+        unitCost:
+          type: number
+          description: Unit Cost
+        unitPrice:
+          type: number
+          description: Unit Price
+        isTaxable:
+          type: boolean
+        taxCodeId:
+          type: string
+          description: Tax Rate ID. Only available for tenants with multiple taxes enabled
+          format: uuid
+      required:
+        - billingHours
+        - payrollHours
+        - labourRateGroupId
+        - labourTypeId
+        - payrollHourTypeId
+security:
+  - authorization: []

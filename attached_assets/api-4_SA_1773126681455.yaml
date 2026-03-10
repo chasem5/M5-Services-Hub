@@ -1,0 +1,3420 @@
+openapi: 3.0.3
+info:
+  version: 1.0.0
+  title: Service Agreements
+  description: Service Agreements API endpoints
+  contact:
+    name: BuildOps Support
+    url: 'https://buildops.com/support'
+    email: support@buildops.com
+servers:
+  - url: 'https://public-api.live.buildops.com'
+    description: Production Server
+  - url: 'https://public-api.dev.buildops.com'
+    description: Development Server
+paths:
+  /v1/checklists:
+    get:
+      tags:
+        - Checklists
+      summary: Fetch checklists
+      description: Retrieves a paginated list of checklists.
+      operationId: get-v1-checklists
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: asset_type_id
+          in: query
+          description: Asset type ID to filter checklists by.
+          required: false
+          schema:
+            type: string
+            nullable: true
+            description: Asset type ID to filter checklists by.
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        - name: checklist_type
+          in: query
+          description: Type of checklist to filter by
+          required: false
+          schema:
+            $ref: '#/components/schemas/ChecklistType'
+        - name: page
+          in: query
+          description: The page to get (0-indexed)
+          required: false
+          schema:
+            type: string
+            description: The page to get (0-indexed)
+            default: '0'
+            example: '0'
+          examples:
+            default:
+              value: '0'
+        - name: page_size
+          in: query
+          description: The number of items to get per page
+          required: false
+          schema:
+            type: string
+            description: The number of items to get per page
+            default: '10'
+            example: '10'
+          examples:
+            default:
+              value: '10'
+      responses:
+        '200':
+          description: Checklists fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChecklistResponse'
+                allOf:
+                  - $ref: '#/components/schemas/GenericListResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: User is authenticated but doesn't have access to the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: 2np5mfubf8uh0
+  /v1/service-agreements:
+    get:
+      tags:
+        - ServiceAgreements
+      summary: Fetch Service Agreements
+      description: Retrieves a paginated list of Service Agreements.
+      operationId: get-v1-service-agreement
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: customer_id
+          in: query
+          description: Customer ID to filter service agreements by.
+          required: false
+          schema:
+            type: string
+            nullable: true
+            description: Customer ID to filter service agreements by.
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        - name: page
+          in: query
+          description: The page to get (0-indexed)
+          required: false
+          schema:
+            type: string
+            description: The page to get (0-indexed)
+            default: '0'
+            example: '0'
+          examples:
+            default:
+              value: '0'
+        - name: page_size
+          in: query
+          description: The number of items to get per page
+          required: false
+          schema:
+            type: string
+            description: The number of items to get per page
+            default: '10'
+            example: '10'
+          examples:
+            default:
+              value: '10'
+        - $ref: '#/components/parameters/start'
+        - $ref: '#/components/parameters/end'
+        - $ref: '#/components/parameters/dateFilterType'
+        - $ref: '#/components/parameters/advanced_scheduling_state'
+        - $ref: '#/components/parameters/agreement_number'
+      responses:
+        '200':
+          description: Service agreements fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      pageSize:
+                        type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceAgreement'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: User is authenticated but doesn't have access to the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: ui9s9lyolwnhf
+    post:
+      tags:
+        - ServiceAgreements
+      summary: Create service agreement
+      description: Creates a service agreement.
+      operationId: post-v1-service-agreement
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceAgreementRequest'
+      responses:
+        '200':
+          description: Service agreement created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAgreement'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: User is authenticated but doesn't have access to the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: m9xr5eo2cyyuj
+  '/v1/service-agreements/{serviceAgreementId}':
+    get:
+      tags:
+        - ServiceAgreements
+      summary: Get service agreement by ID
+      description: Retrieves a service agreement by its ID.
+      operationId: get-v1-service-agreement-serviceAgreementId
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: serviceAgreementId
+          in: path
+          description: Service Agreement ID
+          required: true
+          schema:
+            type: string
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '200':
+          description: Service agreement fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAgreementWithLegacyAuditResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: User is authenticated but doesn't have access to the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: n1rdf9rnhl89b
+    patch:
+      tags:
+        - ServiceAgreements
+      summary: Update service agreement by ID
+      description: Updates a service agreement by its ID.
+      operationId: patch-v1-service-agreement-serviceAgreementId
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: serviceAgreementId
+          in: path
+          description: Service Agreement ID
+          required: true
+          schema:
+            type: string
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServiceAgreementRequest'
+      responses:
+        '200':
+          description: Service agreement updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAgreement'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: User is authenticated but doesn't have access to the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: rzcx2wjaixlng
+  '/v1/service-agreements/{serviceAgreementId}/properties':
+    get:
+      tags:
+        - ServiceAgreements
+      summary: Fetch customer properties
+      description: Retrieves a paginated list of associated properties with a service agreement.
+      operationId: get-v1-service-agreement-properties
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: page
+          in: query
+          description: The page number to retrieve (0-indexed)
+          required: false
+          schema:
+            type: string
+            default: '0'
+            example: '0'
+        - name: page_size
+          in: query
+          description: Number of items to return per page (max 100)
+          required: false
+          schema:
+            type: string
+            default: '10'
+            example: '10'
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '200':
+          description: Customer Properties fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      pageSize:
+                        type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PropertyGetResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-properties-get
+    post:
+      tags:
+        - ServiceAgreements
+      summary: Add customer property
+      description: Adds an association between a property and a service agreement.
+      operationId: post-v1-service-agreement-property
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PropertyPostRequest'
+      responses:
+        '201':
+          description: Customer Properties added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyPostResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-properties-post
+  '/v1/service-agreements/{serviceAgreementId}/properties/{propertyId}':
+    delete:
+      tags:
+        - ServiceAgreements
+      summary: Delete customer property
+      description: Removes a property association from a service agreement.
+      operationId: delete-v1-service-agreement-property
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: delete_associated_entities
+          in: query
+          description: Whether to delete entities associated with this property
+          required: false
+          schema:
+            type: boolean
+            default: false
+            example: false
+          examples:
+            default:
+              value: false
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        - name: propertyId
+          in: path
+          description: Unique identifier of the property to remove
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '204':
+          description: Property successfully removed from service agreement
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-properties-delete
+  '/v1/service-agreements/{serviceAgreementId}/property-checklists':
+    get:
+      tags:
+        - ServiceAgreements
+      summary: Fetch customer property checklists
+      description: Retrieves a paginated list of customer property checklists associated with a service agreement.
+      operationId: get-v1-service-agreement-property-checklists
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: page_size
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '200':
+          description: Property Checklists fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      pageSize:
+                        type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomerPropertyChecklistResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-property-checklists-get
+    post:
+      tags:
+        - ServiceAgreements
+      summary: Add customer property checklist
+      description: Associates a customer property checklist with a service agreement.
+      operationId: post-v1-service-agreement-property-checklist
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: delete_associated_entities
+          in: query
+          description: Whether to delete entities such as maintenance templates with this property checklist
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PropertyChecklistPostRequest'
+      responses:
+        '200':
+          description: Property Checklist added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPropertyChecklistResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-property-checklists-post
+  '/v1/service-agreements/{serviceAgreementId}/property-checklists/{id}':
+    delete:
+      tags:
+        - ServiceAgreements
+      summary: Delete customer property checklist
+      description: Removes a customer property checklist association from a service agreement.
+      operationId: delete-v1-service-agreement-property-checklist
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: delete_associated_entities
+          in: query
+          description: Whether to delete entities such as maintenance templates associated with this property checklist
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        - name: id
+          in: path
+          description: ID of the property checklist association to delete
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '204':
+          description: Property Checklist deleted successfully
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-property-checklists-delete
+  '/v1/service-agreements/{serviceAgreementId}/asset-checklists':
+    get:
+      tags:
+        - ServiceAgreements
+      summary: Fetch asset checklists
+      description: Retrieves a paginated list of asset checklists associated with a service agreement.
+      operationId: get-v1-service-agreement-asset-checklists
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: page_size
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '200':
+          description: Asset Checklists fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      pageSize:
+                        type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssetChecklistResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-asset-checklists-get
+    post:
+      tags:
+        - ServiceAgreements
+      summary: Add asset checklist
+      description: Associates an asset checklist with a service agreement.
+      operationId: post-v1-service-agreement-asset-checklist
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: delete_associated_entities
+          in: query
+          description: Whether to delete entities such as maintenance templates associated with this asset checklist
+          required: false
+          schema:
+            type: boolean
+            default: false
+            example: false
+          examples:
+            default:
+              value: false
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetChecklistPostRequest'
+      responses:
+        '200':
+          description: Asset Checklist added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetChecklistResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-asset-checklists-post
+  '/v1/service-agreements/{serviceAgreementId}/asset-checklists/{id}':
+    delete:
+      tags:
+        - ServiceAgreements
+      summary: Delete asset checklist
+      description: Removes an asset checklist association from a service agreement.
+      operationId: delete-v1-service-agreement-asset-checklist
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: delete_associated_entities
+          in: query
+          description: Whether to delete entities such as maintenance templates associated with this asset checklist
+          required: false
+          schema:
+            type: boolean
+            default: false
+            example: false
+          examples:
+            default:
+              value: false
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        - name: id
+          in: path
+          description: ID of the asset checklist association to delete
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '204':
+          description: Asset Checklist deleted successfully
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-asset-checklists-delete
+  '/v1/service-agreements/{serviceAgreementId}/task-templates':
+    get:
+      tags:
+        - ServiceAgreements
+      summary: Fetch task templates
+      description: Retrieves a paginated list of task templates associated with a service agreement
+      operationId: get-v1-service-agreement-task-templates
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: page_size
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '200':
+          description: Task templates fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      pageSize:
+                        type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaskTemplateListItem'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-task-templates-get
+    post:
+      tags:
+        - ServiceAgreements
+      summary: Create task template
+      description: Creates a new asset or property task template associated with a service agreement
+      operationId: post-v1-service-agreement-task-template
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: asset_id
+          in: query
+          description: 'ID of the asset to associate with the task template, null if this is a property task template'
+          required: false
+          schema:
+            type: string
+            nullable: true
+            format: uuid
+        - name: property_id
+          in: query
+          description: 'ID of the property to associate with the task template, null if this is a asset task template'
+          required: false
+          schema:
+            type: string
+            nullable: true
+            format: uuid
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTemplatePostRequest'
+      responses:
+        '200':
+          description: Task template created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplateResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-task-templates-post
+    patch:
+      tags:
+        - ServiceAgreements
+      summary: Update task template
+      description: |
+        Updates an existing asset or property task template associated with a service agreement
+
+        ⚠️ **Warning**
+        Using this endpoint may change the task template id of the underlying task template.
+        Therefore, it is recommended to update the input task template id with the new task template id returned in the response.
+      operationId: patch-v1-service-agreement-task-template
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - $ref: '#/components/parameters/TaskTemplateId'
+        - $ref: '#/components/parameters/PropertyId'
+        - $ref: '#/components/parameters/AssetId'
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTemplatePatchRequest'
+      responses:
+        '200':
+          description: Task template updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplatePatchResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-task-templates-patch
+    delete:
+      tags:
+        - ServiceAgreements
+      summary: Delete task template
+      description: Removes an asset or property task template from a service agreement
+      operationId: delete-v1-service-agreement-task-template
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - $ref: '#/components/parameters/TaskTemplateId'
+        - $ref: '#/components/parameters/PropertyId'
+        - $ref: '#/components/parameters/AssetId'
+        - name: delete_associated_entities
+          in: query
+          description: Whether to delete entities such as maintenance templates associated with this task template
+          required: false
+          schema:
+            type: boolean
+            default: false
+            example: false
+          examples:
+            default:
+              value: false
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '204':
+          description: Task template successfully removed from service agreement
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+      x-spotlight:
+        id: sa-task-templates-delete
+  '/v1/service-agreements/{serviceAgreementId}/task-templates/products':
+    get:
+      tags:
+        - ServiceAgreements
+      summary: Fetch products
+      description: Retrieves a paginated list of products associated with a task template.
+      operationId: getTaskTemplateProducts
+      parameters:
+        - $ref: '#/components/parameters/TaskTemplateId'
+        - $ref: '#/components/parameters/PropertyId'
+        - $ref: '#/components/parameters/AssetId'
+        - name: page
+          in: query
+          description: The page to get (0-indexed)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: page_size
+          in: query
+          description: The number of items to get per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '200':
+          description: Task template products fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaskTemplateProductResponse'
+                  query:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      pageSize:
+                        type: integer
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+    post:
+      tags:
+        - ServiceAgreements
+      summary: Add product
+      description: |
+        Adds a product to a task template
+
+        ⚠️ **Warning**
+        Using this endpoint may change the task template id of the underlying task template.
+        Therefore, it is recommended to update the input task template id with the new task template id returned in the response.
+      operationId: createTaskTemplateProduct
+      parameters:
+        - $ref: '#/components/parameters/TaskTemplateId'
+        - $ref: '#/components/parameters/PropertyId'
+        - $ref: '#/components/parameters/AssetId'
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskTemplateProductRequest'
+      responses:
+        '201':
+          description: Task template product added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplateProductResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/service-agreements/{serviceAgreementId}/task-templates/products/{id}':
+    patch:
+      tags:
+        - ServiceAgreements
+      summary: Update product
+      description: Updates a product in a task template
+      operationId: updateTaskTemplateProduct
+      parameters:
+        - $ref: '#/components/parameters/TaskTemplateId'
+        - $ref: '#/components/parameters/PropertyId'
+        - $ref: '#/components/parameters/AssetId'
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        - name: id
+          in: path
+          description: ID of the task template product to update
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskTemplateProductRequest'
+      responses:
+        '200':
+          description: Task template product updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskTemplateProductResponse'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+    delete:
+      tags:
+        - ServiceAgreements
+      summary: Delete product
+      description: Deletes a product from a task template assignment
+      operationId: deleteTaskTemplateProduct
+      parameters:
+        - $ref: '#/components/parameters/TaskTemplateId'
+        - $ref: '#/components/parameters/PropertyId'
+        - $ref: '#/components/parameters/AssetId'
+        - name: serviceAgreementId
+          in: path
+          description: Unique identifier of the service agreement
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        - name: id
+          in: path
+          description: ID of the task template product to delete
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+          examples:
+            default:
+              value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '204':
+          description: Task template product deleted successfully
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The resource with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v1/service-agreement-types:
+    get:
+      tags:
+        - ServiceAgreementTypes
+      summary: Fetch service agreement types
+      description: Retrieves a paginated list of service agreement types.
+      operationId: get-v1-service-agreement-types
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: page
+          in: query
+          description: The page to get (0-indexed)
+          required: false
+          schema:
+            type: integer
+            description: The page to get (0-indexed)
+            minimum: 0
+            default: 0
+            example: 0
+        - name: page_size
+          in: query
+          description: The number of items to get per page
+          required: false
+          schema:
+            type: integer
+            description: The number of items to get per page
+            minimum: 1
+            maximum: 100
+            default: 10
+            example: 10
+      responses:
+        '200':
+          description: Service agreement types fetched successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      pageSize:
+                        type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceAgreementType'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/service-agreement-types/{id}':
+    get:
+      tags:
+        - ServiceAgreementTypes
+      summary: Get service agreement type by ID
+      description: Retrieves a single service agreement type by its unique identifier.
+      operationId: get-v1-service-agreement-type-by-id
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: id
+          in: path
+          description: Unique identifier of the service agreement type
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 176bd770-a0b7-48ac-87af-8da402f51db5
+          examples:
+            default:
+              value: 176bd770-a0b7-48ac-87af-8da402f51db5
+      responses:
+        '200':
+          description: Service agreement type retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAgreementType'
+        '400':
+          description: 'Bad Request: Invalid or missing parameters.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '401':
+          description: 'Unauthorized: User is not authenticated.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '403':
+          description: 'Forbidden: User lacks required permissions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '404':
+          description: 'Not Found: The service agreement type with the given ID does not exist.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '500':
+          description: An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/service-agreements/{serviceAgreementId}/budgets':
+    get:
+      tags:
+        - Service Agreement Budgets
+      summary: Get budget information
+      description: 'Retrieves monthly and annual budget information for a service agreement, including budget buckets.'
+      operationId: get-service-agreement-budgets
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: customerPropertyId
+          in: query
+          description: Customer property ID (required for SEPARATE property bundle mode)
+          required: false
+          schema:
+            type: string
+            nullable: true
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        - name: serviceAgreementId
+          in: path
+          description: Service agreement ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '200':
+          description: Successfully retrieved budget information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAgreementBudgetResponse'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '404':
+          description: Service agreement not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '422':
+          description: Unresolved bulk operations exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/service-agreements/{serviceAgreementId}/budgets/initialize':
+    post:
+      tags:
+        - Service Agreement Budgets
+      summary: Initialize budget structure
+      description: |
+        Initializes the budget structure for a service agreement. Creates monthly budget records and
+        budget buckets for all months in the service agreement period. Automatically creates budget
+        buckets for all active cost types at $0. Handles both TOGETHER mode (contract-wide budgets)
+        and SEPARATE mode (per-property budgets) based on the service agreement's bundle mode.
+      operationId: initialize-service-agreement-budgets
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: serviceAgreementId
+          in: path
+          description: Service agreement ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      responses:
+        '204':
+          description: Budget structure successfully initialized (No Content)
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '404':
+          description: Service agreement not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '422':
+          description: Unresolved bulk operations exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/service-agreements/{serviceAgreementId}/budgets/buckets':
+    patch:
+      tags:
+        - Service Agreement Budgets
+      summary: Update budget buckets
+      description: |
+        Updates multiple budget buckets in a single request. Validates that all bucket IDs belong
+        to the specified service agreement and tenant. Supports partial updates - only fields
+        provided in the request will be updated.
+      operationId: update-budget-buckets
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: customerPropertyId
+          in: query
+          description: Customer property ID (required for SEPARATE property bundle mode)
+          required: false
+          schema:
+            type: string
+            nullable: true
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        - name: serviceAgreementId
+          in: path
+          description: Service agreement ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetBucketListUpdateRequest'
+            examples:
+              default:
+                value:
+                  budgetBuckets:
+                    - id: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+                      amount: 2000
+                      hours: 50
+                      laborRate: 75
+                    - id: 3ddc9bc2-7e61-50dd-cb25-65f5bd8fd342
+                      amount: 1500
+      responses:
+        '200':
+          description: Successfully updated budget buckets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetBucketListUpdateResponse'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '404':
+          description: Service agreement or budget buckets not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+        '422':
+          description: 'Validation error (e.g., duplicate bucket IDs, buckets don''t belong to SA)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseDto'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Page number for pagination
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    page_size:
+      name: page_size
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    start:
+      name: start
+      in: query
+      description: ISO 8601 string to filter data based on last modified date time
+      schema:
+        type: string
+        format: date-time
+    end:
+      name: end
+      in: query
+      description: ISO 8601 string to filter data based on last modified date time
+      schema:
+        type: string
+        format: date-time
+    dateFilterType:
+      name: dateFilterType
+      in: query
+      description: 'The filter type for the filtering based on different dates (possible values createdDate, lastUpdatedDate, startDate, endDate)'
+      schema:
+        type: string
+        default: lastUpdatedDate
+    advanced_scheduling_state:
+      name: advanced_scheduling_state
+      in: query
+      description: Filter by advanced scheduling state
+      schema:
+        type: string
+        enum:
+          - DRAFT
+          - ACTIVE
+          - ACTIVATING
+          - UNDER_REVISION
+          - ERROR
+          - EXPIRED
+          - CANCELED
+    agreement_number:
+      name: agreement_number
+      in: query
+      description: Filter service agreements by agreement number
+      schema:
+        type: string
+    TaskTemplateId:
+      name: task_template_id
+      in: query
+      description: ID of the task template
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      examples:
+        default:
+          value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+    AssetId:
+      name: asset_id
+      in: query
+      description: ID of the asset
+      required: false
+      schema:
+        type: string
+        nullable: true
+        format: uuid
+        example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      examples:
+        default:
+          value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+    PropertyId:
+      name: property_id
+      in: query
+      description: ID of the property
+      required: false
+      schema:
+        type: string
+        nullable: true
+        format: uuid
+        example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      examples:
+        default:
+          value: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+    Authorization:
+      name: Authorization
+      in: header
+      description: Bearer token for authentication
+      required: true
+      schema:
+        type: string
+        example: Bearer your-jwt-token-here
+    tenantId:
+      name: tenantId
+      in: header
+      description: Tenant ID for the request
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: 123e4567-e89b-12d3-a456-426614174000
+  securitySchemes:
+    authorization:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    400-Bad-Request:
+      description: 'Bad Request: Invalid or missing parameters.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Bad Request
+              message:
+                type: string
+                example: Invalid request parameters
+    401-Unauthorized:
+      description: 'Unauthorized: User is not authenticated.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Unauthorized
+              message:
+                type: string
+                example: Authentication required
+    403-Forbidden:
+      description: 'Forbidden: User lacks required permissions.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Forbidden
+              message:
+                type: string
+                example: Insufficient permissions
+    404-Not-Found:
+      description: 'Not Found: The resource with the given ID does not exist.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Not Found
+              message:
+                type: string
+                example: Resource not found
+    409-Conflict-Record:
+      description: 'Conflict: The record already exists or conflicts with existing data.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Conflict
+              message:
+                type: string
+                example: Record already exists
+    500-Internal-Server-Error:
+      description: An unexpected error occurred on the server.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Internal Server Error
+              message:
+                type: string
+                example: An unexpected error occurred
+  schemas:
+    ChecklistType:
+      type: string
+      enum:
+        - PROPERTY_CHECKLIST
+        - ASSET_CHECKLIST
+      description: Type of checklist - either for a property or for a specific asset type
+      example: ASSET_CHECKLIST
+    ChecklistResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        audit:
+          $ref: '#/components/schemas/SlimAuditInfo'
+        name:
+          type: string
+          description: Name of the checklist
+          example: HVAC Maintenance
+        isArchived:
+          type: boolean
+          description: Whether this element is archived
+          example: false
+        assetTypeId:
+          type: string
+          nullable: true
+          description: Asset type ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        checklistType:
+          $ref: '#/components/schemas/ChecklistType'
+    SlimAuditInfo:
+      type: object
+      properties:
+        createdBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        deletedBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        lastUpdatedBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        createdDate:
+          type: string
+          description: Created date
+          example: '2021-01-01T00:00:00.000Z'
+        deletedDate:
+          type: string
+          description: Deleted date
+        lastUpdatedDate:
+          type: string
+          description: Last updated date
+          example: '2021-01-01T00:00:00.000Z'
+    UserAuditInfo:
+      x-internal: true
+      x-stoplight:
+        internallyExcluded: true
+        errorMessage: This object is set as internal and excluded.
+    GenericListResponse:
+      type: object
+      properties:
+        query:
+          $ref: '#/components/schemas/QueryResponse'
+        items:
+          type: array
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/BaseResponse'
+    QueryResponse:
+      type: object
+      properties:
+        page:
+          type: integer
+          description: The current page (0-indexed)
+          format: int32
+          example: 0
+        pageSize:
+          type: integer
+          description: The number of items per page
+    BaseResponse:
+      type: object
+      description: Items
+      properties:
+        id:
+          type: string
+          description: ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        audit:
+          $ref: '#/components/schemas/SlimAuditInfo'
+    ErrorResponseDto:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message
+          example: Invalid query parameters
+        status:
+          type: integer
+          description: Status Code
+          format: int32
+    ServiceAgreement:
+      type: object
+      title: ServiceAgreement
+      properties:
+        id:
+          type: string
+          description: ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        audit:
+          $ref: '#/components/schemas/SlimAuditInfo'
+        customerId:
+          type: string
+          description: Customer ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        billingCustomerId:
+          type: string
+          description: Billing Customer ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        agreementName:
+          type: string
+          description: Agreement Name
+          example: Agreement 1
+        agreementNumber:
+          type: string
+          description: Agreement Number
+          example: SA1234
+        departmentId:
+          type: string
+          description: Department ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        priceBookId:
+          type: string
+          description: Price Book ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        serviceAgreementTypeId:
+          type: string
+          description: Service Agreement Type ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        projectManagerId:
+          type: string
+          nullable: true
+          description: Project manager employee ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        soldById:
+          type: string
+          nullable: true
+          description: Sold by employee ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        startDate:
+          type: string
+          description: 'Start Date. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          example: '2021-01-01T00:00:00.000Z'
+        endDate:
+          type: string
+          nullable: true
+          description: 'End Date. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          example: '2021-01-01T00:00:00.000Z'
+        advancedSchedulingState:
+          $ref: '#/components/schemas/AdvancedSchedulingState'
+        customerPoNumber:
+          type: string
+          nullable: true
+          description: Customer PO Number
+          example: PO1234
+    AdvancedSchedulingState:
+      type: string
+      enum:
+        - DRAFT
+        - ACTIVE
+        - ACTIVATING
+        - UNDER_REVISION
+        - ERROR
+        - EXPIRED
+        - CANCELED
+      description: Advanced scheduling state
+    CreateServiceAgreementRequest:
+      type: object
+      properties:
+        customerId:
+          type: string
+          description: Customer ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        billingCustomerId:
+          type: string
+          description: Billing Customer ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        agreementName:
+          type: string
+          description: Agreement Name
+          example: Agreement 1
+        agreementNumber:
+          type: string
+          description: Agreement Number
+          example: SA1234
+        departmentId:
+          type: string
+          description: Department ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        priceBookId:
+          type: string
+          description: Price Book ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        serviceAgreementTypeId:
+          type: string
+          description: Service Agreement Type ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        projectManagerId:
+          type: string
+          description: Project manager employee ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        soldById:
+          type: string
+          description: Sold by employee ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        startDate:
+          type: string
+          description: 'Start Date. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          example: '2021-01-01T00:00:00.000-08:00'
+        endDate:
+          type: string
+          description: 'End Date. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          example: '2021-01-01T00:00:00.000-08:00'
+        customerPoNumber:
+          type: string
+          description: Customer PO Number
+          example: PO1234
+      required:
+        - customerId
+        - billingCustomerId
+        - agreementName
+        - agreementNumber
+        - departmentId
+        - serviceAgreementTypeId
+        - startDate
+    ServiceAgreementWithLegacyAuditResponse:
+      type: object
+      title: ServiceAgreementWithLegacyAuditResponse
+      properties:
+        id:
+          type: string
+          description: ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        audit:
+          $ref: '#/components/schemas/AuditInfo'
+        customerId:
+          type: string
+          description: Customer ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        billingCustomerId:
+          type: string
+          description: Billing Customer ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        agreementName:
+          type: string
+          description: Agreement Name
+          example: Agreement 1
+        agreementNumber:
+          type: string
+          description: Agreement Number
+          example: SA1234
+        departmentId:
+          type: string
+          description: Department ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        priceBookId:
+          type: string
+          description: Price Book ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        serviceAgreementTypeId:
+          type: string
+          description: Service Agreement Type ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        projectManagerId:
+          type: string
+          nullable: true
+          description: Project manager employee ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        soldById:
+          type: string
+          nullable: true
+          description: Sold by employee ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        startDate:
+          type: string
+          description: 'Start Date. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          example: '2021-01-01T00:00:00.000Z'
+        endDate:
+          type: string
+          nullable: true
+          description: 'End Date. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          example: '2021-01-01T00:00:00.000Z'
+        advancedSchedulingState:
+          $ref: '#/components/schemas/AdvancedSchedulingState'
+        customerPoNumber:
+          type: string
+          nullable: true
+          description: Customer PO Number
+          example: PO1234
+    AuditInfo:
+      type: object
+      properties:
+        createdBy:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+        modifiedBy:
+          type: string
+        modifiedDate:
+          type: string
+          format: date-time
+    UpdateServiceAgreementRequest:
+      type: object
+      properties:
+        customerId:
+          type: string
+          description: Customer ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        billingCustomerId:
+          type: string
+          description: Billing Customer ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        agreementName:
+          type: string
+          description: Agreement Name
+          example: Agreement 1
+        agreementNumber:
+          type: string
+          description: Agreement Number
+          example: SA1234
+        departmentId:
+          type: string
+          description: Department ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        priceBookId:
+          type: string
+          description: Price Book ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        serviceAgreementTypeId:
+          type: string
+          description: Service Agreement Type ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        projectManagerId:
+          type: string
+          description: Project manager employee ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        soldById:
+          type: string
+          description: Sold by employee ID
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        startDate:
+          type: string
+          description: 'Start Date. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          example: '2021-01-01T00:00:00.000-08:00'
+        endDate:
+          type: string
+          description: 'End Date. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          example: '2021-01-01T00:00:00.000-08:00'
+        customerPoNumber:
+          type: string
+          description: Customer PO Number
+          example: PO1234
+    PropertyGetResponse:
+      type: object
+      title: CustomerPropertyResponse
+      properties:
+        propertyId:
+          type: string
+          description: Unique identifier of the property
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      required:
+        - propertyId
+    PropertyPostRequest:
+      type: object
+      properties:
+        propertyId:
+          type: string
+          description: Unique identifier of the property
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      required:
+        - propertyId
+    PropertyPostResponse:
+      type: object
+      properties:
+        propertyId:
+          type: string
+          description: Unique identifier of the property
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      required:
+        - propertyId
+    CustomerPropertyChecklistResponse:
+      type: object
+      title: PropertyChecklist
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the customer property checklist association
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        checklistId:
+          type: string
+          description: Unique identifier of the checklist
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        propertyId:
+          type: string
+          description: Unique identifier of the property
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      required:
+        - id
+        - checklistId
+        - propertyId
+    PropertyChecklistPostRequest:
+      type: object
+      properties:
+        propertyId:
+          type: string
+          description: Unique identifier of the property
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        checklistId:
+          type: string
+          description: Unique identifier of the checklist
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      required:
+        - propertyId
+        - checklistId
+    AssetChecklistResponse:
+      type: object
+      title: AssetChecklist
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the asset checklist association
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        checklistId:
+          type: string
+          description: Unique identifier of the checklist
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        assetId:
+          type: string
+          description: Unique identifier of the asset
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      required:
+        - id
+        - checklistId
+        - assetId
+    AssetChecklistPostRequest:
+      type: object
+      properties:
+        assetId:
+          type: string
+          description: Unique identifier of the asset
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        checklistId:
+          type: string
+          description: Unique identifier of the checklist
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      required:
+        - assetId
+        - checklistId
+    TaskTemplateListItem:
+      type: object
+      title: TaskTemplate
+      properties:
+        name:
+          type: string
+          description: Name of the task template
+          example: Monthly HVAC Maintenance
+        description:
+          type: string
+          description: Description of the task template
+          example: Regular maintenance check of HVAC systems
+        laborEstimate:
+          type: integer
+          description: Estimated labor time in minutes
+          example: 120
+        frequency:
+          type: string
+          enum:
+            - DAILY
+            - WEEKLY
+            - BIWEEKLY
+            - MONTHLY
+            - QUARTERLY
+            - SEMIANNUALLY
+            - ANNUALLY
+          description: Frequency of the task
+          example: MONTHLY
+        yearlyTotal:
+          type: integer
+          description: Number of occurrences per year
+          example: 12
+        startDate:
+          type: string
+          description: Start date in ISO format
+          format: date-time
+          example: '2023-01-01T00:00:00.000Z'
+        isAssetTask:
+          type: boolean
+          description: Whether this task is associated with an asset
+          example: false
+        propertyAssetId:
+          type: string
+          description: ID of the associated property asset
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        taskTemplateChecklistId:
+          type: string
+          description: ID of the checklist associated with this task
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        customerPropertyId:
+          type: string
+          description: ID of the customer property
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        taskTemplateId:
+          type: string
+          description: ID of the task template
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      required:
+        - name
+        - frequency
+        - startDate
+        - taskTemplateChecklistId
+        - customerPropertyId
+        - taskTemplateId
+    TaskTemplatePostRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the task template
+          example: Monthly HVAC Maintenance
+        description:
+          type: string
+          description: Description of the task template
+          example: Regular maintenance check of HVAC systems
+        taskTemplateChecklistId:
+          type: string
+          description: ID of the checklist to use for this task
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        startDate:
+          type: string
+          description: 'Start date in epoch seconds. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          format: date-time
+          example: '2023-01-01T00:00:00.000Z'
+        frequency:
+          type: string
+          enum:
+            - DAILY
+            - WEEKLY
+            - BIWEEKLY
+            - MONTHLY
+            - QUARTERLY
+            - SEMIANNUALLY
+            - ANNUALLY
+          description: Frequency of the task
+          example: MONTHLY
+        numberOfOccurrences:
+          type: integer
+          description: Number of times the task should occur
+          example: 12
+        laborEstimate:
+          type: integer
+          description: Estimated labor time in minutes
+          example: 120
+      required:
+        - name
+        - taskTemplateChecklistId
+        - startDate
+    TaskTemplateResponse:
+      type: object
+      properties:
+        taskTemplateId:
+          type: string
+          description: Unique identifier of the task template
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        name:
+          type: string
+          description: Name of the task template
+          example: Monthly HVAC Maintenance
+        description:
+          type: string
+          description: Description of the task template
+          example: Regular maintenance check of HVAC systems
+        taskChecklistId:
+          type: string
+          description: ID of the checklist associated with this task
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        startDate:
+          type: string
+          description: 'Start date in epoch seconds. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          format: date-time
+          example: '2023-01-01T00:00:00.000Z'
+        frequency:
+          type: string
+          enum:
+            - DAILY
+            - WEEKLY
+            - BIWEEKLY
+            - MONTHLY
+            - QUARTERLY
+            - SEMIANNUALLY
+            - ANNUALLY
+          description: Frequency of the task
+          example: MONTHLY
+        numberOfOccurrences:
+          type: integer
+          description: Number of times the task should occur
+          example: 12
+        laborEstimate:
+          type: integer
+          description: Estimated labor time in minutes
+          example: 120
+    TaskTemplatePatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the task template
+          example: Monthly HVAC Maintenance
+        description:
+          type: string
+          description: Description of the task template
+          example: Regular maintenance check of HVAC systems
+        startDate:
+          type: string
+          description: 'Start date in epoch seconds. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          format: date-time
+          example: '2023-01-01T00:00:00.000Z'
+        frequency:
+          type: string
+          enum:
+            - DAILY
+            - WEEKLY
+            - BIWEEKLY
+            - MONTHLY
+            - QUARTERLY
+            - SEMIANNUALLY
+            - ANNUALLY
+          description: Frequency of the task
+          example: MONTHLY
+        numberOfOccurrences:
+          type: integer
+          description: Number of times the task should occur
+          example: 12
+        laborEstimate:
+          type: integer
+          description: Estimated labor time in minutes
+          example: 120
+    TaskTemplatePatchResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the task template
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        name:
+          type: string
+          description: Name of the task template
+        description:
+          type: string
+          description: Description of the task template
+          example: Regular maintenance check of HVAC systems
+        startDate:
+          type: string
+          description: 'Start date in epoch seconds. The time should correspond to the first moment of the day referenced in the relevant timezone (ie 00:00:00.000).'
+          format: date-time
+          example: '2023-01-01T00:00:00.000Z'
+        frequency:
+          type: string
+          enum:
+            - DAILY
+            - WEEKLY
+            - BIWEEKLY
+            - MONTHLY
+            - QUARTERLY
+            - SEMIANNUALLY
+            - ANNUALLY
+          description: Frequency of the task
+          example: MONTHLY
+        numberOfOccurrences:
+          type: integer
+          description: Number of times the task should occur
+          example: 12
+        laborEstimate:
+          type: integer
+          description: Estimated labor time in minutes
+          example: 120
+    TaskTemplateProductResponse:
+      type: object
+      title: TaskTemplateProduct
+      properties:
+        id:
+          type: string
+          description: The ID corresponding to the product assignment on the task template
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        taskTemplateId:
+          type: string
+          description: ID of the task template
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        productId:
+          type: string
+          description: ID of the product
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        description:
+          type: string
+          description: A description of the product
+          example: HVAC Filter 20x20x1
+        quantity:
+          type: number
+          description: The quantity of the product
+          format: decimal
+          example: 1
+    CreateTaskTemplateProductRequest:
+      type: object
+      properties:
+        productId:
+          type: string
+          description: ID of the product
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        quantity:
+          type: integer
+          description: Quantity of the product
+          example: 1
+        description:
+          type: string
+          description: Description override for the product
+          example: HVAC Filter 20x20x1
+      required:
+        - productId
+        - quantity
+    UpdateTaskTemplateProductRequest:
+      type: object
+      properties:
+        productId:
+          type: string
+          description: ID of the product
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        quantity:
+          type: number
+          description: Quantity of the product
+          format: decimal
+          example: 1
+        description:
+          type: string
+          description: Description override for the product
+    ServiceAgreementType:
+      type: object
+      title: ServiceAgreementType
+      description: Represents a service agreement type with its configuration
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the service agreement type
+          format: uuid
+          example: 176bd770-a0b7-48ac-87af-8da402f51db5
+        name:
+          type: string
+          description: Name of the service agreement type
+          example: Maintenance Contract
+        isDefault:
+          type: boolean
+          description: Whether this is the default service agreement type
+          default: false
+          example: false
+        excludePlannedMaintenances:
+          type: boolean
+          description: Whether planned maintenances are excluded from this service agreement type
+          default: false
+          example: false
+        isArchived:
+          type: boolean
+          description: Whether this service agreement type is archived
+          default: false
+          example: false
+        audit:
+          $ref: '#/components/schemas/SlimAuditInfo'
+      required:
+        - id
+        - name
+    ServiceAgreementBudgetResponse:
+      type: object
+      properties:
+        serviceAgreementStartDate:
+          type: integer
+          description: Service agreement start date (Unix timestamp in milliseconds)
+          format: int64
+          example: 1672531200000
+        serviceAgreementEndDate:
+          type: integer
+          nullable: true
+          description: Service agreement end date (Unix timestamp in milliseconds)
+          format: int64
+          example: 1704067200000
+        monthlyBudgets:
+          type: array
+          description: Monthly budget breakdowns
+          items:
+            $ref: '#/components/schemas/MonthlyBudget'
+        annualBudgets:
+          type: array
+          description: Annual budget summaries
+          items:
+            $ref: '#/components/schemas/AnnualBudget'
+    MonthlyBudget:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Monthly budget ID
+          format: uuid
+        customerPropertyId:
+          type: string
+          nullable: true
+          description: Customer property ID (for SEPARATE mode)
+          format: uuid
+        workTypeId:
+          type: string
+          description: Work type ID
+          format: uuid
+        year:
+          type: integer
+          description: 'Year (e.g., 2024)'
+          example: 2024
+        month:
+          type: integer
+          description: Month (1-12)
+          minimum: 1
+          maximum: 12
+          example: 3
+        budgetBuckets:
+          type: array
+          description: Budget buckets for this month
+          items:
+            $ref: '#/components/schemas/BudgetBucketResponse'
+    BudgetBucketResponse:
+      allOf:
+        - $ref: '#/components/schemas/BaseResponse'
+        - type: object
+          properties:
+            amount:
+              type: number
+              description: Budget amount
+              format: decimal
+              example: 1500
+            hours:
+              type: number
+              description: Budgeted hours
+              format: decimal
+              example: 40
+            laborRate:
+              type: number
+              description: Labor rate
+              format: decimal
+              example: 75
+            hourTypeId:
+              type: string
+              nullable: true
+              description: Hour type UUID
+              format: uuid
+            costTypeId:
+              type: string
+              nullable: true
+              description: Cost type UUID
+              format: uuid
+            laborGroupId:
+              type: string
+              nullable: true
+              description: Labor group UUID
+              format: uuid
+            laborTypeId:
+              type: string
+              nullable: true
+              description: Labor type UUID
+              format: uuid
+            isTotal:
+              type: boolean
+              description: Whether this is a total row (true) or detail row (false)
+              example: false
+    AnnualBudget:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Annual budget ID
+          format: uuid
+        customerPropertyId:
+          type: string
+          nullable: true
+          description: Customer property ID (for SEPARATE mode)
+          format: uuid
+        workTypeId:
+          type: string
+          description: Work type ID
+          format: uuid
+        year:
+          type: integer
+          description: 'Year (e.g., 2024)'
+          example: 2024
+        budgetBuckets:
+          type: array
+          description: Budget buckets for this year
+          items:
+            $ref: '#/components/schemas/BudgetBucketResponse'
+    BudgetBucketListUpdateRequest:
+      type: object
+      properties:
+        budgetBuckets:
+          type: array
+          description: List of budget bucket updates
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/BudgetBucketUpdateRequest'
+      required:
+        - budgetBuckets
+    BudgetBucketUpdateRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Budget bucket ID (UUID)
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        amount:
+          type: number
+          description: Budget amount with max 2 decimal places
+          format: decimal
+          minimum: 0
+          example: 1500
+        hours:
+          type: number
+          description: Budgeted hours with max 2 decimal places
+          format: decimal
+          minimum: 0
+          example: 40
+        laborRate:
+          type: number
+          description: Labor rate with max 2 decimal places
+          format: decimal
+          minimum: 0
+          example: 75
+        hourTypeId:
+          type: string
+          nullable: true
+          description: Hour type UUID reference
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        costTypeId:
+          type: string
+          nullable: true
+          description: Cost type UUID reference
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        laborGroupId:
+          type: string
+          nullable: true
+          description: Labor group UUID reference
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+        laborTypeId:
+          type: string
+          nullable: true
+          description: Labor type UUID reference
+          format: uuid
+          example: 2cdc8ab1-6d50-49cc-ba14-54e4ac7ec231
+      required:
+        - id
+    BudgetBucketListUpdateResponse:
+      type: object
+      properties:
+        budgetBuckets:
+          type: array
+          description: List of updated budget buckets
+          items:
+            $ref: '#/components/schemas/BudgetBucketResponse'
+security:
+  - authorization: []
