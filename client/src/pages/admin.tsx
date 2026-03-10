@@ -298,6 +298,23 @@ export default function AdminPage() {
     onError: () => toast({ title: "Failed to save tier value", variant: "destructive" }),
   });
 
+  const [receiptEmailInput, setReceiptEmailInput] = useState("");
+  const { data: receiptEmailData } = useQuery<{ key: string; value: string | null }>({
+    queryKey: ["/api/settings/receiptEmail"],
+  });
+  useEffect(() => {
+    if (receiptEmailData?.value) setReceiptEmailInput(receiptEmailData.value);
+  }, [receiptEmailData]);
+  const saveReceiptEmailMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("PUT", "/api/settings/receiptEmail", { value: receiptEmailInput.trim() }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/receiptEmail"] });
+      toast({ title: "Receipt email saved" });
+    },
+    onError: () => toast({ title: "Failed to save receipt email", variant: "destructive" }),
+  });
+
   const pendingInvites = invites.filter(inv => !inv.usedAt && isAfter(new Date(inv.expiresAt), new Date()));
   const usedInvites = invites.filter(inv => !!inv.usedAt);
   const expiredInvites = invites.filter(inv => !inv.usedAt && !isAfter(new Date(inv.expiresAt), new Date()));
@@ -911,6 +928,44 @@ export default function AdminPage() {
                   Add
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Spend Receipt Email */}
+          <Card className="border-none shadow-sm bg-card">
+            <CardHeader className="pb-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/10 p-2 rounded-full">
+                  <Mail className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-heading">Spend Receipt Email</CardTitle>
+                  <CardDescription className="text-xs">When a BD spend is logged, a receipt summary will be automatically emailed here. Also requires SMTP credentials set by your administrator.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="flex gap-2 max-w-md">
+                <Input
+                  type="email"
+                  placeholder="receipts@m5svcs.com"
+                  value={receiptEmailInput}
+                  onChange={e => setReceiptEmailInput(e.target.value)}
+                  data-testid="input-receipt-email"
+                />
+                <Button
+                  onClick={() => saveReceiptEmailMutation.mutate()}
+                  disabled={!receiptEmailInput.trim() || saveReceiptEmailMutation.isPending}
+                  data-testid="button-save-receipt-email"
+                >
+                  {saveReceiptEmailMutation.isPending ? "Saving..." : "Save"}
+                </Button>
+              </div>
+              {receiptEmailData?.value && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Currently sending receipts to <span className="font-medium text-foreground">{receiptEmailData.value}</span>
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

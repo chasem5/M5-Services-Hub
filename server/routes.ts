@@ -34,6 +34,7 @@ import { z } from "zod";
 import multer from "multer";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
 import webpush from "web-push";
+import { sendSpendReceiptEmail } from "./email";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const objectStorageService = new ObjectStorageService();
@@ -1674,6 +1675,57 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     const userId = (req as any).user.claims.sub;
     const parsed = insertBdSpendEntrySchema.parse({ ...req.body, clientId, createdBy: userId });
     const entry = await storage.createSpendEntry(parsed);
+    (async () => {
+      try {
+        const receiptEmail = await storage.getAppSetting("receiptEmail");
+        if (receiptEmail) {
+          const [user, client] = await Promise.all([
+            storage.getUser(userId),
+            storage.getClient(clientId),
+          ]);
+          await sendSpendReceiptEmail(receiptEmail, {
+            amount: entry.amount,
+            category: entry.category,
+            date: entry.date,
+            description: entry.description,
+            loggedByName: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : (user?.email ?? "Unknown"),
+            clientName: client?.name ?? null,
+          });
+        }
+      } catch (err) {
+        console.error("[email] Failed to send spend receipt:", err);
+      }
+    })();
+    res.status(201).json(entry);
+  });
+
+  app.post("/api/spend", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const parsed = insertBdSpendEntrySchema.parse({ ...req.body, createdBy: userId });
+    const entry = await storage.createSpendEntry(parsed);
+    (async () => {
+      try {
+        const receiptEmail = await storage.getAppSetting("receiptEmail");
+        if (receiptEmail) {
+          const user = await storage.getUser(userId);
+          let clientName: string | null = null;
+          if (entry.clientId) {
+            const client = await storage.getClient(entry.clientId);
+            clientName = client?.name ?? null;
+          }
+          await sendSpendReceiptEmail(receiptEmail, {
+            amount: entry.amount,
+            category: entry.category,
+            date: entry.date,
+            description: entry.description,
+            loggedByName: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : (user?.email ?? "Unknown"),
+            clientName,
+          });
+        }
+      } catch (err) {
+        console.error("[email] Failed to send spend receipt:", err);
+      }
+    })();
     res.status(201).json(entry);
   });
 
@@ -1681,6 +1733,21 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
     const id = parseInt(req.params.id);
     await storage.deleteSpendEntry(id);
     res.sendStatus(204);
+  });
+
+  // ── App Settings ─────────────────────────────────────────────────────────────
+
+  app.get("/api/settings/:key", isAuthenticated, async (req, res) => {
+    const key = req.params.key as string;
+    const value = await storage.getAppSetting(key);
+    res.json({ key, value });
+  });
+
+  app.put("/api/settings/:key", isAuthenticated, requireRole("admin", "manager"), async (req, res) => {
+    const key = req.params.key as string;
+    const { value } = z.object({ value: z.string() }).parse(req.body);
+    await storage.setAppSetting(key, value);
+    res.json({ key, value });
   });
 
   // ── Meetings ─────────────────────────────────────────────────────────────────

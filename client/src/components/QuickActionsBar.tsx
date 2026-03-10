@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Target, Users, Building2, CheckSquare, CreditCard, Phone, Calendar as CalendarIcon, AlertTriangle } from "lucide-react";
+import { Plus, Target, Users, Building2, CheckSquare, CreditCard, Phone, Calendar as CalendarIcon, AlertTriangle, Receipt } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -39,7 +39,7 @@ import { formatPhoneNumber } from "@/lib/phone";
 import type { Client, ClientContact, Lead, PipelineStage, User } from "@shared/schema";
 import { CardScannerDialog } from "@/components/CardScannerDialog";
 
-export type ActiveDialog = "deal" | "contact" | "company" | "task" | "activity" | null;
+export type ActiveDialog = "deal" | "contact" | "company" | "task" | "activity" | "spend" | null;
 
 interface QuickActionsBarProps {
   externalDialog?: ActiveDialog;
@@ -97,6 +97,10 @@ export function QuickActionsBar({ externalDialog, onExternalOpen, showButton = t
               <CheckSquare className="mr-2 h-4 w-4 text-primary" />
               Add Task
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => open("spend")} data-testid="quick-action-spend">
+              <Receipt className="mr-2 h-4 w-4 text-primary" />
+              Log Spend
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setScannerOpen(true)} data-testid="quick-action-scan">
               <CreditCard className="mr-2 h-4 w-4 text-primary" />
               Scan Card
@@ -121,7 +125,7 @@ export function QuickActionsBar({ externalDialog, onExternalOpen, showButton = t
         clients={clients}
         onAddAnotherContact={(clientId) => {
           close();
-          setTimeout(() => setActiveDialog("contact"), 100);
+          setTimeout(() => open("contact"), 100);
         }}
       />
       <AddCompanyDialog
@@ -129,7 +133,7 @@ export function QuickActionsBar({ externalDialog, onExternalOpen, showButton = t
         onClose={close}
         onAddContact={(clientId) => {
           close();
-          setTimeout(() => setActiveDialog("contact"), 100);
+          setTimeout(() => open("contact"), 100);
         }}
       />
       <AddTaskDialog
@@ -142,6 +146,12 @@ export function QuickActionsBar({ externalDialog, onExternalOpen, showButton = t
       <LogActivityDialog
         open={activeDialog === "activity"}
         onClose={close}
+      />
+      <LogSpendDialog
+        open={activeDialog === "spend"}
+        onClose={close}
+        clients={clients}
+        allContacts={allContacts}
       />
     </>
   );
@@ -813,6 +823,160 @@ function AddTaskDialog({
             data-testid="button-quick-task-submit"
           >
             {mutation.isPending ? "Adding..." : "Add Task"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function LogSpendDialog({
+  open,
+  onClose,
+  clients,
+  allContacts,
+}: {
+  open: boolean;
+  onClose: () => void;
+  clients: Client[];
+  allContacts: ClientContact[];
+}) {
+  const { toast } = useToast();
+  const today = new Date().toISOString().split("T")[0];
+  const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState("meals_entertainment");
+  const [date, setDate] = useState(today);
+  const [description, setDescription] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [contactId, setContactId] = useState("");
+
+  const reset = () => {
+    setAmount(""); setCategory("meals_entertainment"); setDate(today);
+    setDescription(""); setClientId(""); setContactId("");
+  };
+
+  const clientOptions = clients.map(c => ({ value: String(c.id), label: c.name }));
+  const contactOptions = (clientId
+    ? allContacts.filter(c => c.clientId === parseInt(clientId))
+    : allContacts
+  ).map(c => ({ value: String(c.id), label: c.name, sublabel: c.title ?? undefined }));
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/spend", {
+        amount: parseFloat(amount).toFixed(2),
+        category,
+        date: new Date(date),
+        description: description.trim() || null,
+        clientId: clientId ? parseInt(clientId) : undefined,
+        contactId: contactId ? parseInt(contactId) : null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({ title: "Spend logged", description: "Receipt email will be sent if configured." });
+      reset();
+      onClose();
+    },
+    onError: () => toast({ title: "Failed to log spend", variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) { reset(); onClose(); } }}>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>Log Spend</DialogTitle>
+          <DialogDescription>Record a BD expense. A receipt email will be sent automatically if configured.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-sm font-medium">Amount ($) <span className="text-destructive">*</span></Label>
+              <Input
+                className="mt-1.5"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                data-testid="input-spend-amount"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Date <span className="text-destructive">*</span></Label>
+              <Input
+                className="mt-1.5"
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                data-testid="input-spend-date"
+              />
+            </div>
+          </div>
+          <div>
+            <Label className="text-sm font-medium">Category</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="mt-1.5" data-testid="select-spend-category">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="meals_entertainment">Meals & Entertainment</SelectItem>
+                <SelectItem value="gifts">Gifts</SelectItem>
+                <SelectItem value="travel">Travel</SelectItem>
+                <SelectItem value="events">Events</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-sm font-medium">Company <span className="text-destructive">*</span></Label>
+            <div className="mt-1.5">
+              <SearchableSelect
+                options={[{ value: "", label: "Select company..." }, ...clientOptions]}
+                value={clientId}
+                onChange={(v) => { setClientId(v); setContactId(""); }}
+                placeholder="Select company..."
+                searchPlaceholder="Search companies..."
+                data-testid="select-spend-client"
+              />
+            </div>
+          </div>
+          {clientId && contactOptions.length > 0 && (
+            <div>
+              <Label className="text-sm font-medium">Contact</Label>
+              <div className="mt-1.5">
+                <SearchableSelect
+                  options={[{ value: "", label: "No contact" }, ...contactOptions]}
+                  value={contactId}
+                  onChange={setContactId}
+                  placeholder="Select contact..."
+                  searchPlaceholder="Search contacts..."
+                  data-testid="select-spend-contact"
+                />
+              </div>
+            </div>
+          )}
+          <div>
+            <Label className="text-sm font-medium">Description</Label>
+            <Textarea
+              className="mt-1.5 min-h-[70px]"
+              placeholder="e.g. Lunch with facility manager at ABC Building"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              data-testid="textarea-spend-description"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { reset(); onClose(); }}>Cancel</Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!amount || parseFloat(amount) <= 0 || !clientId || mutation.isPending}
+            data-testid="button-spend-submit"
+          >
+            {mutation.isPending ? "Logging..." : "Log Spend"}
           </Button>
         </DialogFooter>
       </DialogContent>

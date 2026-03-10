@@ -37,6 +37,7 @@ import {
   dealTags,
   industryOptions,
   valueTierSettings,
+  appSettings,
   type DealTag,
   type InsertDealTag,
   type IndustryOption,
@@ -286,6 +287,10 @@ export interface IStorage {
 
   // Calendar Tokens
   updateCalendarTokens(userId: string, data: { calendarAccessToken: string; calendarRefreshToken: string | null; calendarTokenExpiry: Date | null; calendarEmail: string | null; calendarConnected: boolean }): Promise<User>;
+
+  // App Settings
+  getAppSetting(key: string): Promise<string | null>;
+  setAppSetting(key: string, value: string): Promise<void>;
 
   // Lead Notes
   listLeadNotes(leadId: number): Promise<LeadNote[]>;
@@ -1780,6 +1785,17 @@ export class DatabaseStorage implements IStorage {
         stageChangedAt: r.stageChangedAt ? new Date(r.stageChangedAt) : null,
       };
     });
+  }
+  async getAppSetting(key: string): Promise<string | null> {
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    return row?.value ?? null;
+  }
+
+  async setAppSetting(key: string, value: string): Promise<void> {
+    await db
+      .insert(appSettings)
+      .values({ key, value, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
   }
 }
 

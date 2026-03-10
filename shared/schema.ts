@@ -566,3 +566,11 @@ export const dealTags = pgTable("deal_tags", {
 export const insertDealTagSchema = createInsertSchema(dealTags).omit({ id: true, createdAt: true });
 export type DealTag = typeof dealTags.$inferSelect;
 export type InsertDealTag = z.infer<typeof insertDealTagSchema>;
+
+// App Settings (key-value store for company-wide configuration)
+export const appSettings = pgTable("app_settings", {
+  key: varchar("key").primaryKey(),
+  value: text("value"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type AppSetting = typeof appSettings.$inferSelect;
