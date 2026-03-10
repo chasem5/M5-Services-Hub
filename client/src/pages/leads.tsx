@@ -184,8 +184,8 @@ const STAGE_COLORS = {
     value: "text-red-700 dark:text-red-400",
   },
   default: {
-    column: "bg-muted/50 border-border/50",
-    header: "bg-background/50 border-b rounded-t-lg",
+    column: "bg-muted/70 border-border",
+    header: "bg-background border-b border-border rounded-t-lg",
     dot: "bg-muted-foreground/40",
     badge: "",
     value: "text-muted-foreground",
@@ -567,7 +567,7 @@ function LeadCard({
           style={style}
           {...attributes}
           {...listeners}
-          className={`hover-elevate cursor-grab active:cursor-grabbing border-border shadow-sm transition-shadow hover:shadow-md ${isOverlay ? "cursor-grabbing shadow-xl ring-2 ring-primary" : ""}`}
+          className={`hover-elevate cursor-grab active:cursor-grabbing border-border shadow transition-shadow hover:shadow-md ${isOverlay ? "cursor-grabbing shadow-xl ring-2 ring-primary" : ""}`}
           onClick={(e) => {
             if (isOverlay) return;
             // Prevent opening detail if dragging
