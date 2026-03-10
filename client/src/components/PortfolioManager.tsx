@@ -234,7 +234,7 @@ function BuildingCard({
 
       {/* Building Contacts Checklist */}
       {isContactsExpanded && filterClientId && (
-        <div className="border-t border-border/50 px-3 py-2">
+        <div className="border-t border-border/50 px-3 py-2" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
             <Users className="h-3 w-3" />
             Contacts for this Building
