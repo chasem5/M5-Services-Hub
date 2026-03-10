@@ -1,0 +1,2852 @@
+openapi: 3.0.3
+info:
+  version: 1.0.0
+  title: Master Data
+  description: Master Data API endpoints
+  contact:
+    name: BuildOps Support
+    url: 'https://buildops.com/support'
+    email: support@buildops.com
+servers:
+  - url: 'https://public-api.live.buildops.com'
+    description: Production Server
+  - url: 'https://public-api.dev.buildops.com'
+    description: Development Server
+paths:
+  /v1/customers:
+    get:
+      tags:
+        - Customers
+      summary: Get Customers List
+      description: 'This endpoint retrieves all customers associated with a tenant. Customers are individuals or companies that have a relationship with the given tenant. The endpoint returns a list of customer objects containing relevant information such as customer ID, name, contact details, and any other associated data. The response will reflect the customers specifically tied to the provided tenant ID'
+      operationId: get-v1-customers
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - name: include_inactive
+          in: query
+          description: if true the list will return all customers including inactive ones
+          schema:
+            type: string
+            default: 'false'
+      responses:
+        '200':
+          description: |
+            List of customers filtered by tenant id.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalCount:
+                    type: number
+                    description: Total items of records on this request.
+                  items:
+                    type: array
+                    description: Array of customers.
+                    items:
+                      $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+    post:
+      tags:
+        - Customers
+      summary: Create a customer
+      description: |-
+        The 'create customer' endpoint is responsible for adding a new customer associated with a specific tenant. By using this endpoint, you can submit the necessary data to create a new customer object, including information such as customer ID, name, contact details, and any other relevant data associated with the customer.
+
+        When making a request to this endpoint through the API with the appropriate parameters, a new customer will be created and linked to the tenant identified by its ID. The endpoint will return a response indicating the success or outcome of the customer creation operation.
+
+        It is important to note that creating a customer requires including all mandatory and valid information necessary for the customer to be properly registered in the system. Make sure to provide the correct data when using this endpoint to avoid errors and ensure that the new customer is successfully added to the corresponding tenant.
+      operationId: post-v1-customers
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+      requestBody:
+        description: ''
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                accountNumber:
+                  type: string
+                  nullable: true
+                customerType:
+                  type: string
+                  nullable: true
+                isActive:
+                  type: boolean
+                  nullable: true
+                email:
+                  type: string
+                  nullable: true
+                  format: email
+                customerNumber:
+                  type: string
+                  nullable: true
+                creditLimit:
+                  type: number
+                  nullable: true
+                isTaxable:
+                  type: boolean
+                  nullable: true
+                taxRateValue:
+                  type: number
+                  nullable: true
+                taxCodeId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                sameAddress:
+                  type: boolean
+                  nullable: true
+                phonePrimary:
+                  type: string
+                  nullable: true
+                  example: 555-123-1234
+                phoneAlternate:
+                  type: string
+                  nullable: true
+                  example: 555-123-1234
+                receiveSMS:
+                  type: boolean
+                  nullable: true
+                taxExemptIdValue:
+                  type: string
+                  nullable: true
+                taxRateId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                paymentTermId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                invoicePresetId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                invoiceDeliveryPref:
+                  type: string
+                  nullable: true
+                priceBookId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                status:
+                  type: string
+                  enum:
+                    - active
+                    - inactive
+                    - disabled
+                  default: active
+                accountingAttributes:
+                  type: object
+                  nullable: true
+                  properties:
+                    accountingRefId:
+                      type: string
+                      nullable: true
+                    accountingVersion:
+                      type: string
+                      nullable: true
+                addresses:
+                  type: array
+                  nullable: true
+                  items:
+                    $ref: '#/components/schemas/Address_2'
+              required:
+                - name
+      responses:
+        '201':
+          description: Customer created with successfull.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '409':
+          $ref: '#/components/responses/409-Conflict-Record'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+        '502':
+          description: Bad Gateway
+        '503':
+          description: Service Unavailable
+        '504':
+          description: Gateway Timeout
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/customers/{id}':
+    get:
+      tags:
+        - Customers
+      summary: Get Customer by ID
+      description: |-
+        The 'get customer by customer id' endpoint allows you to retrieve a specific customer's information based on their unique customer ID. By using this endpoint, you can provide the customer ID as a parameter in the API request to fetch the relevant customer object.
+
+        Upon a successful request to this endpoint, the API will return detailed information about the customer associated with the provided customer ID. This information may include the customer's name, contact details, and any other associated data specific to that customer.
+
+        It's important to note that the customer ID must be accurate and valid to ensure the retrieval of the correct customer data. Additionally, if the customer ID provided does not match any existing customer in the system, the API will respond with an appropriate error message indicating that the customer could not be found.
+      operationId: get-v1-customers-id
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: id
+          in: path
+          description: Customer ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Get Customer by customer ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+        '502':
+          description: Bad Gateway
+        '503':
+          description: Service Unavailable
+        '504':
+          description: Gateway Timeout
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+    put:
+      tags:
+        - Customers
+      summary: Update a Customer by ID
+      description: |-
+        The 'Update a customer by Id' allows you to update the information of an existing customer.
+
+        When using the 'Update a customer by Id' method, you will need to provide the updated data for the customer in the request body. This could include changes to the customer's name, contact details, or any other associated information.
+
+        Upon a successful request to this endpoint, the API will process the provided data and apply the updates to the corresponding customer record. The response will confirm the successful update, along with any relevant details about the modified customer.
+
+        It is crucial to ensure that the customer ID provided in the request matches an existing customer in the system. Additionally, the data sent in the request body must be accurate and properly formatted to avoid any unintended changes or errors during the update process.
+      operationId: put-v1-customers-id
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: id
+          in: path
+          description: Customer ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                accountNumber:
+                  type: string
+                  nullable: true
+                customerType:
+                  type: string
+                  nullable: true
+                customerTypeValue:
+                  type: string
+                  description: 'Deprecated: use customerType instead'
+                isActive:
+                  type: boolean
+                  nullable: true
+                email:
+                  type: string
+                  nullable: true
+                  format: email
+                customerNumber:
+                  type: string
+                  nullable: true
+                creditLimit:
+                  type: number
+                  nullable: true
+                isTaxable:
+                  type: boolean
+                  nullable: true
+                taxRateValue:
+                  type: number
+                  nullable: true
+                taxCodeId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                sameAddress:
+                  type: boolean
+                  nullable: true
+                phonePrimary:
+                  type: string
+                  nullable: true
+                  example: 555-123-1234
+                phoneAlternate:
+                  type: string
+                  nullable: true
+                  example: 555-123-1234
+                receiveSMS:
+                  type: boolean
+                  nullable: true
+                taxExemptIdValue:
+                  type: string
+                  nullable: true
+                taxRateId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                paymentTermId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                invoicePresetId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                invoiceDeliveryPref:
+                  type: string
+                  nullable: true
+                priceBookId:
+                  type: string
+                  nullable: true
+                  format: uuid
+                status:
+                  type: string
+                  enum:
+                    - active
+                    - inactive
+                    - disabled
+                  default: active
+                accountingAttributes:
+                  type: object
+                  nullable: true
+                  properties:
+                    accountingRefId:
+                      type: string
+                      nullable: true
+                    accountingVersion:
+                      type: string
+                      nullable: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '409':
+          $ref: '#/components/responses/409-Conflict-Record'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+        '502':
+          description: Bad Gateway
+        '503':
+          description: Service Unavailable
+        '504':
+          description: Gateway Timeout
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v1/employees:
+    get:
+      tags:
+        - Employees
+      summary: Get Employees List
+      description: Get Employee List
+      operationId: get-v1-employees
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/page_size'
+        - $ref: '#/components/parameters/include_inactive'
+        - name: name
+          in: query
+          description: Employee Name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalCount:
+                    type: number
+                    example: 5020
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/employees/{employeeId}':
+    get:
+      tags:
+        - Employees
+      summary: Get Employee by Employee ID
+      description: Get Employee by ID
+      operationId: get-v1-employees-employeeId
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: employeeId
+          in: path
+          description: Employee ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee:
+    post:
+      tags:
+        - Employees
+      summary: Batch create Employees
+      description: Create multiple Employees in single request
+      operationId: batchCreateEmployees
+      parameters:
+        - $ref: '#/components/parameters/tenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              items:
+                $ref: '#/components/schemas/CreateEmployeeRequestV3'
+      responses:
+        '201':
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/BatchEmployeeCRUDResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/GenericApiErrorApiErrorDetail'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+    patch:
+      tags:
+        - Employees
+      summary: Batch update Employees
+      description: Update multiple Employees in single request
+      operationId: batchUpdateEmployees
+      parameters:
+        - $ref: '#/components/parameters/tenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              items:
+                $ref: '#/components/schemas/UpdateEmployeeRequestV3'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/BatchEmployeeCRUDResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/GenericApiErrorApiErrorDetail'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/list:
+    get:
+      tags:
+        - Employees
+      summary: List of Employees
+      description: Get paginated list of Employees with sorting and filtering
+      operationId: getEmployeesPaginated
+      parameters:
+        - $ref: '#/components/parameters/tenantId'
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: sortBy
+          in: query
+          required: false
+          schema:
+            type: string
+            default: createdDateTime
+        - name: sortOrder
+          in: query
+          required: false
+          schema:
+            type: string
+            default: desc
+        - name: filters
+          in: query
+          required: false
+          schema:
+            type: array
+            default: []
+            items:
+              $ref: '#/components/schemas/EmployeeRequestFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/NewGenericListResponsePublicEmployeePayload'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/GenericApiErrorApiErrorDetail'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/resend-invite-email:
+    post:
+      tags:
+        - Employees
+      summary: Resend invite emails to employees
+      description: Resend invitation emails to multiple employees
+      operationId: batchResentInviteEmailToEmployees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UpdateEmployeesResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/list-by-ids:
+    post:
+      tags:
+        - Employees
+      summary: Fetch employees by IDs
+      description: Retrieve multiple employees by their IDs
+      operationId: fetchEmployeesByIds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EmployeePublicApiResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/invite:
+    post:
+      tags:
+        - Employees
+      summary: Batch invite employees
+      description: Send invitations to multiple employees
+      operationId: batchInviteEmployees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UpdateEmployeesResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/get-sso-status:
+    post:
+      tags:
+        - Employees
+      summary: Get SSO status for employees
+      description: Retrieve Single Sign-On status for multiple employees
+      operationId: fetchSsoStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  additionalProperties:
+                    type: boolean
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/enable-login:
+    post:
+      tags:
+        - Employees
+      summary: Enable login for employees
+      description: Enable login access for multiple employees
+      operationId: batchEnableLoginForEmployees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UpdateEmployeesResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/disable-login:
+    post:
+      tags:
+        - Employees
+      summary: Disable login for employees
+      description: Disable login access for multiple employees
+      operationId: batchDisableLoginForEmployees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UpdateEmployeesResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/deactivate:
+    post:
+      tags:
+        - Employees
+      summary: Batch deactivate employees
+      description: Deactivate multiple employees
+      operationId: batchDeactivateEmployees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UpdateEmployeesResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/activate:
+    post:
+      tags:
+        - Employees
+      summary: Batch activate employees
+      description: Activate multiple employees
+      operationId: batchActivateEmployees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UpdateEmployeesResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/update-usernames-or-emails:
+    patch:
+      tags:
+        - Employees
+      summary: Update usernames or emails
+      description: Batch update usernames or email addresses for employees
+      operationId: batchUpdateUsernamesOrEmailsSync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              items:
+                $ref: '#/components/schemas/UsernameOrEmailUpdatesRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UpdateAuth0UsernamesOrEmailsResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/update-passwords:
+    patch:
+      tags:
+        - Employees
+      summary: Update passwords
+      description: Batch update passwords for employees
+      operationId: batchUpdatePasswordsSync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 20
+              items:
+                $ref: '#/components/schemas/PasswordUpdatesRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UpdateAuth0PasswordsResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/my/update-password:
+    patch:
+      tags:
+        - Employees
+      summary: Update my password
+      description: Allow an employee to update their own password
+      operationId: updateMyPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v2/employee/list-by-email:
+    get:
+      tags:
+        - Employees
+      summary: Fetch employees by email
+      description: Retrieve employees by their email address
+      operationId: fetchEmployeesByEmail
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EmployeePublicApiResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v2/employee/by-username/{userName}':
+    get:
+      tags:
+        - Employees
+      summary: Find employee by username
+      description: Retrieve an employee by their username
+      operationId: findByUserName
+      parameters:
+        - name: userName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/EmployeeResponse'
+        '400':
+          description: Bad Request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/addresses/{id}':
+    put:
+      tags:
+        - Addresses
+      summary: Update Address By Address ID
+      description: Update Address By Address ID
+      operationId: put-v1-addresses
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: id
+          in: path
+          description: Address ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                billTo:
+                  type: string
+                shipTo:
+                  type: string
+                addressType:
+                  type: string
+                  enum:
+                    - billingAddress
+                    - propertyAddress
+                    - businessAddress
+                    - shippingAddress
+                addressLine1:
+                  type: string
+                addressLine2:
+                  type: string
+                isActive:
+                  type: boolean
+                  default: true
+                city:
+                  type: string
+                country:
+                  type: string
+                state:
+                  type: string
+                zipcode:
+                  type: string
+                latitude:
+                  type: string
+                longitude:
+                  type: string
+                status:
+                  type: string
+                version:
+                  type: number
+              required:
+                - addressType
+                - version
+              x-examples:
+                Example 1:
+                  billTo: Miguel Public API Test insominia - new2
+                  shipTo: Miguel Public API Test insominia - new2
+                  addressType: billingAddress
+                  addressLine1: One Infinite Loop
+                  addressLine2: Test
+                  isActive: true
+                  city: Cupertino
+                  country: US
+                  state: CA
+                  zipcode: '95014'
+                  latitude: '37.33181199'
+                  longitude: '-122.03014610'
+                  status: active
+                  version: 2
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Address_2'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '409':
+          $ref: '#/components/responses/409-Conflict-Record'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+    get:
+      tags:
+        - Addresses
+      summary: Get Address by ID
+      description: Get Address By ID
+      operationId: get-v1-addresses-id
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: id
+          in: path
+          description: Address ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Address_2'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/customers/{id}/properties':
+    get:
+      tags:
+        - Customers
+      summary: Get Properties List by customerId
+      description: Get Properties List by customerId
+      operationId: get-v1-customers-id-properties
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/page_size'
+        - $ref: '#/components/parameters/include_inactive'
+        - name: include_addresses
+          in: query
+          description: Allows to return properties with his addresses.
+          schema:
+            type: boolean
+            default: false
+        - name: id
+          in: path
+          description: Customer ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    $ref: '#/components/schemas/QueryBody'
+                  totalCount:
+                    type: number
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomerProperty'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v1/settings/custom-fields/customer-tags:
+    get:
+      tags:
+        - Customers
+        - Settings
+      summary: Get Customer Tags by TenantId
+      description: Get Customer Tags by TenantId
+      operationId: get-v1-settings-custom-fields-customer-tags
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/page_size'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  query:
+                    $ref: '#/components/schemas/QueryBody'
+                  totalCount:
+                    type: number
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomerTag'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/customers/{id}/tags':
+    post:
+      tags:
+        - Customers
+      summary: Associate Customer Tag to a Customer
+      description: Associate Customer Tag to a Customer
+      operationId: post-v1-customers-id-tags
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: id
+          in: path
+          description: Customer ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+                format: uuid
+      responses:
+        '201':
+          description: Created
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  '/v1/customers/{id}/tags/{tagId}':
+    delete:
+      tags:
+        - Customers
+      summary: Disassociate a Customer Tag for a Customer
+      description: Disassociate a Customer Tag for a Customer
+      operationId: delete-v1-customers-id-tags-tagId
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - name: id
+          in: path
+          description: Customer ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: tagId
+          in: path
+          description: Tag ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '403':
+          $ref: '#/components/responses/403-Forbidden'
+        '404':
+          $ref: '#/components/responses/404-Not-Found'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+  /v1/addresses:
+    get:
+      tags:
+        - Addresses
+      summary: Get Addresses List by TenantId
+      description: Get Addresses List by TenantId
+      operationId: get-v1-addresses
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/tenantId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/page_size'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalCount:
+                    type: number
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Address_2'
+        '400':
+          $ref: '#/components/responses/400-Bad-Request'
+        '401':
+          $ref: '#/components/responses/401-Unauthorized'
+        '500':
+          $ref: '#/components/responses/500-Internal-Server-Error'
+      security:
+        - authorization: []
+      servers:
+        - url: 'https://public-api.live.buildops.com'
+          description: Production Server
+        - url: 'https://public-api.dev.buildops.com'
+          description: Development Server
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Page number for pagination
+      schema:
+        type: number
+        minimum: 0
+        default: 0
+    Limit:
+      name: limit
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    page_size:
+      name: page_size
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+    include_inactive:
+      name: include_inactive
+      in: query
+      description: Include inactive records in results
+      schema:
+        type: boolean
+        default: false
+    Authorization:
+      name: Authorization
+      in: header
+      description: Bearer token for authentication
+      required: true
+      schema:
+        type: string
+        example: Bearer your-jwt-token-here
+    tenantId:
+      name: tenantId
+      in: header
+      description: Tenant ID for the request
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: 123e4567-e89b-12d3-a456-426614174000
+  securitySchemes:
+    authorization:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    400-Bad-Request:
+      description: 'Bad Request: Invalid or missing parameters.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Bad Request
+              message:
+                type: string
+                example: Invalid request parameters
+    401-Unauthorized:
+      description: 'Unauthorized: User is not authenticated.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Unauthorized
+              message:
+                type: string
+                example: Authentication required
+    403-Forbidden:
+      description: 'Forbidden: User lacks required permissions.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Forbidden
+              message:
+                type: string
+                example: Insufficient permissions
+    404-Not-Found:
+      description: 'Not Found: The resource with the given ID does not exist.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Not Found
+              message:
+                type: string
+                example: Resource not found
+    409-Conflict-Record:
+      description: 'Conflict: The record already exists or conflicts with existing data.'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Conflict
+              message:
+                type: string
+                example: Record already exists
+    500-Internal-Server-Error:
+      description: An unexpected error occurred on the server.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Internal Server Error
+              message:
+                type: string
+                example: An unexpected error occurred
+  schemas:
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+          description: GUID.  Key for this record.
+          format: uuid
+          example: 11785575-1328-4063-9683-e2f7a18d5a7d
+        name:
+          type: string
+          nullable: true
+        accountNumber:
+          type: string
+          nullable: true
+        customerType:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        customerNumber:
+          type: string
+          nullable: true
+        creditLimit:
+          type: number
+          nullable: true
+        isTaxable:
+          type: boolean
+          nullable: true
+        taxRateValue:
+          type: number
+          nullable: true
+        taxCodeId:
+          $ref: '#/components/schemas/taxCodeId'
+        sameAddress:
+          type: boolean
+          nullable: true
+        phonePrimary:
+          type: string
+          nullable: true
+        phoneAlternate:
+          type: string
+          nullable: true
+        receiveSMS:
+          type: boolean
+          nullable: true
+        taxExemptIdValue:
+          type: string
+          nullable: true
+        taxRateId:
+          $ref: '#/components/schemas/taxRateId'
+        paymentTermId:
+          type: string
+          nullable: true
+          example: 11785575-1328-4063-9683-e2f7a18d5a7d
+        invoicePresetId:
+          type: string
+          nullable: true
+          example: 11785575-1328-4063-9683-e2f7a18d5a7d
+        invoiceDeliveryPref:
+          type: string
+          nullable: true
+        priceBookId:
+          type: string
+          nullable: true
+          example: 11785575-1328-4063-9683-e2f7a18d5a7d
+        status:
+          type: string
+          nullable: true
+        accountingAttributes:
+          $ref: '#/components/schemas/AccountingAttribute'
+        addresses:
+          $ref: '#/components/schemas/addresses'
+        audit:
+          $ref: '#/components/schemas/AuditInfo_2'
+        logoUrl:
+          type: string
+          nullable: true
+        websiteUrl:
+          type: string
+          nullable: true
+        version:
+          type: number
+        tenantId:
+          type: string
+          nullable: true
+        tenantCompanyId:
+          type: string
+        amountNotToExceed:
+          type: number
+          nullable: true
+      required:
+        - id
+    taxCodeId:
+      type: string
+      nullable: true
+    taxRateId:
+      type: string
+      nullable: true
+    AccountingAttribute:
+      x-internal: true
+      x-stoplight:
+        internallyExcluded: true
+        errorMessage: This object is set as internal and excluded.
+    addresses:
+      type: object
+      nullable: true
+      properties:
+        totalCount:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Address'
+    Address:
+      type: object
+      title: Address
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          example: 11785575-1328-4063-9683-e2f7a18d5a7d
+        billTo:
+          type: string
+          nullable: true
+        shipTo:
+          type: string
+          nullable: true
+        addressType:
+          type: string
+          enum:
+            - billingAddress
+            - businessAddress
+            - propertyAddress
+            - shippingAddress
+        addressLine1:
+          type: string
+          nullable: true
+        addressLine2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        zipcode:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        latitude:
+          type: string
+          nullable: true
+          example: '40.785091'
+        longitude:
+          type: string
+          nullable: true
+          example: '-73.968285'
+        status:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+          nullable: true
+        version:
+          type: number
+          nullable: true
+        propertyId:
+          type: string
+          nullable: true
+        customerId:
+          type: string
+          nullable: true
+        audit:
+          $ref: '#/components/schemas/AuditInfo'
+      required:
+        - addressType
+    AuditInfo:
+      type: object
+      title: AuditInfo
+      properties:
+        createdBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        createdDate:
+          type: string
+          nullable: true
+          example: '2023-05-30T13:16:46Z'
+        createdDateTime:
+          type: number
+          nullable: true
+          example: 1626118480793
+        deletedBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        deletedDate:
+          type: string
+          nullable: true
+          example: '2023-05-17T13:44:24Z'
+        deletedDateTime:
+          type: number
+          nullable: true
+          example: 1626118480793
+        lastUpdatedBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        lastUpdatedDate:
+          type: string
+          nullable: true
+          example: '2023-05-17T13:44:24Z'
+        lastUpdatedDateTime:
+          type: number
+          nullable: true
+          example: 1626118480793
+    UserAuditInfo:
+      x-internal: true
+      x-stoplight:
+        internallyExcluded: true
+        errorMessage: This object is set as internal and excluded.
+    AuditInfo_2:
+      type: object
+      title: AuditInfo
+      properties:
+        createdBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        createdDate:
+          $ref: '#/components/schemas/createdDate'
+          example: '2023-05-30T13:16:46Z'
+        createdDateTime:
+          type: number
+          nullable: true
+          example: 1626118480793
+        deletedBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        deletedDate:
+          type: string
+          nullable: true
+          example: '2023-05-17T13:44:24Z'
+        deletedDateTime:
+          type: number
+          nullable: true
+          example: 1626118480793
+        lastUpdatedBy:
+          $ref: '#/components/schemas/UserAuditInfo'
+        lastUpdatedDate:
+          $ref: '#/components/schemas/lastUpdatedDate'
+          example: '2023-05-17T13:44:24Z'
+        lastUpdatedDateTime:
+          type: number
+          nullable: true
+          example: 1626118480793
+    createdDate:
+      type: string
+      nullable: true
+      example: '2023-05-30T13:16:46Z'
+    lastUpdatedDate:
+      type: string
+      nullable: true
+      example: '2023-05-17T13:44:24Z'
+    Address_2:
+      type: object
+      title: Address
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          example: 11785575-1328-4063-9683-e2f7a18d5a7d
+        billTo:
+          type: string
+          nullable: true
+        shipTo:
+          type: string
+          nullable: true
+        addressType:
+          type: string
+          enum:
+            - billingAddress
+            - businessAddress
+            - propertyAddress
+            - shippingAddress
+        addressLine1:
+          type: string
+          nullable: true
+        addressLine2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        zipcode:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        latitude:
+          type: string
+          nullable: true
+          example: '40.785091'
+        longitude:
+          type: string
+          nullable: true
+          example: '-73.968285'
+        status:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+          nullable: true
+        version:
+          $ref: '#/components/schemas/version'
+        propertyId:
+          $ref: '#/components/schemas/propertyId'
+        customerId:
+          $ref: '#/components/schemas/customerId'
+        audit:
+          $ref: '#/components/schemas/AuditInfo_2'
+      required:
+        - addressType
+    version:
+      type: number
+      nullable: true
+    propertyId:
+      type: string
+      nullable: true
+    customerId:
+      type: string
+      nullable: true
+    Employee:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 6ab7fe81-70a2-4d64-a996-ff8f9a360862
+        isActive:
+          type: boolean
+          nullable: true
+        isAdmin:
+          type: boolean
+          nullable: true
+        isDoNotCall:
+          type: boolean
+          nullable: true
+        isEmailOptOut:
+          type: boolean
+          nullable: true
+        isSmsOptOut:
+          type: boolean
+          nullable: true
+        salutation:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+          example: John Doe
+        firstName:
+          type: string
+          nullable: true
+          example: John
+        lastName:
+          type: string
+          nullable: true
+          example: Doe
+        middleName:
+          type: string
+          nullable: true
+          example: Kevin
+        nickName:
+          type: string
+          nullable: true
+          example: Nickname example
+        profilePictureUrl:
+          type: string
+          nullable: true
+          example: path/example/photo.png
+        userTitle:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+          example: john@doe.com
+        personalEmail:
+          type: string
+          nullable: true
+          example: personal@email.com
+        cellPhone:
+          type: string
+          nullable: true
+        landlinePhone:
+          type: string
+          nullable: true
+        contactType:
+          type: string
+          nullable: true
+          example: employee
+        status:
+          type: string
+          nullable: true
+        companyId:
+          type: string
+          nullable: true
+          example: 6ab7fe81-70a2-4d64-a996-ff8f9a360862
+        hierarchy:
+          type: string
+          nullable: true
+          example: 6ab7fe81-70a2-4d64-a996-ff8f9a360862
+        entityType:
+          type: string
+          nullable: true
+        version:
+          type: integer
+          nullable: true
+        tenantId:
+          type: string
+          nullable: true
+          example: 6ab7fe81-70a2-4d64-a996-ff8f9a360862
+        tenantCompanyId:
+          type: string
+          nullable: true
+          example: 6ab7fe81-70a2-4d64-a996-ff8f9a360862
+        isTech:
+          type: boolean
+          nullable: true
+        isSales:
+          type: boolean
+          nullable: true
+        code:
+          type: string
+          nullable: true
+          example: '222'
+        accountingRefId:
+          type: string
+          nullable: true
+          example: 6ab7fe81-70a2-4d64-a996-ff8f9a360862
+        userName:
+          type: string
+          nullable: true
+          example: user@name.com
+        isCrewMember:
+          type: boolean
+          nullable: true
+        labourTypeId:
+          type: string
+          nullable: true
+        isDispatcher:
+          type: boolean
+          nullable: true
+        offlineUpdatedDateTime:
+          type: string
+          nullable: true
+          example: '2023-05-30T13:16:46Z'
+        labourRateGroupId:
+          type: string
+          nullable: true
+          example: 6ab7fe81-70a2-4d64-a996-ff8f9a360862
+        primaryEmployeeId:
+          type: string
+          nullable: true
+          example: 6ab7fe81-70a2-4d64-a996-ff8f9a360862
+        appRoleId:
+          type: string
+          nullable: true
+          example: 6ab7fe81-70a2-4d64-a996-ff8f9a360862
+        sso:
+          type: boolean
+          nullable: true
+          example: false
+        isCrmPlusUser:
+          type: boolean
+          nullable: true
+        audit:
+          $ref: '#/components/schemas/AuditInfo_2'
+    CreateEmployeeRequestV3:
+      type: object
+      properties:
+        email:
+          type: string
+          description: Work email of the employee
+        userName:
+          type: string
+          description: Identifying userName of Employee
+          example: johndoe or john.doe@gmail.com
+        userTitle:
+          type: string
+          description: Overrides title from Role if not blank
+        firstName:
+          type: string
+          minLength: 1
+        lastName:
+          type: string
+          minLength: 1
+        appRoleId:
+          type: string
+          format: uuid
+        labourRateGroupId:
+          type: string
+          format: uuid
+        labourTypeId:
+          type: string
+          format: uuid
+        personalEmail:
+          type: string
+          format: email
+        cellPhone:
+          type: string
+        landlinePhone:
+          type: string
+        code:
+          type: string
+        accountingRefId:
+          type: string
+          format: uuid
+        isTech:
+          type: boolean
+        isSales:
+          type: boolean
+        isDispatcher:
+          type: boolean
+        aiOptimizationDisabled:
+          type: boolean
+        departments:
+          type: array
+          minItems: 1
+          maxItems: 2147483647
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/IdPayload'
+        personnelPayrollHourRates:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreatePayrollCostPayload'
+        labourRateModifiers:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/IdPayload'
+        contactAddresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContactAddressPayload'
+        enableMfa:
+          type: boolean
+          description: Enable Employee-level MFA only if you have MFA set up for the tenant
+      required:
+        - email
+        - userName
+        - firstName
+        - lastName
+        - appRoleId
+        - labourRateGroupId
+        - labourTypeId
+    IdPayload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+      required:
+        - id
+    CreatePayrollCostPayload:
+      type: object
+      properties:
+        hourTypeId:
+          type: string
+          format: uuid
+        cost:
+          type: number
+      required:
+        - hourTypeId
+        - cost
+    ContactAddressPayload:
+      type: object
+      properties:
+        addressLine1:
+          type: string
+        addressLine2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zipcode:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+    BatchEmployeeCRUDResponse:
+      type: object
+      properties:
+        hasErrors:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Result'
+    Result:
+      type: object
+      properties:
+        employee:
+          $ref: '#/components/schemas/PublicEmployeePayload'
+        error:
+          $ref: '#/components/schemas/GenericApiErrorApiErrorDetail'
+    PublicEmployeePayload:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        tenantCompanyId:
+          type: string
+        userName:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        isActive:
+          type: boolean
+        appRoleId:
+          type: string
+        laborRateGroupId:
+          type: string
+        laborTypeId:
+          type: string
+        profilePictureUrl:
+          type: string
+        personalEmail:
+          type: string
+        cellPhone:
+          type: string
+        landlinePhone:
+          type: string
+        code:
+          type: string
+        accountingRefId:
+          type: string
+        isTech:
+          type: boolean
+        isSales:
+          type: boolean
+        isDispatcher:
+          type: boolean
+        sso:
+          type: boolean
+        aiOptimizationDisabled:
+          type: boolean
+        mfaEnabled:
+          type: boolean
+        auditInfo:
+          $ref: '#/components/schemas/BaseAuditInfoPayload'
+        departments:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdPayload'
+        contactAddresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContactAddress'
+        personnelPayrollHourRates:
+          type: array
+          items:
+            $ref: '#/components/schemas/PayrollCost'
+        labourRateModifiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/LabourRateModifier'
+    BaseAuditInfoPayload:
+      type: object
+      properties:
+        createdBy:
+          $ref: '#/components/schemas/ExecutorAuditInfoPayload'
+        createDateTime:
+          type: integer
+          format: int64
+        lastUpdatedBy:
+          $ref: '#/components/schemas/ExecutorAuditInfoPayload'
+        lastUpdatedDateTime:
+          type: integer
+          format: int64
+    ExecutorAuditInfoPayload:
+      type: object
+      properties:
+        userName:
+          type: string
+    ContactAddress:
+      type: object
+      properties:
+        addressLine1:
+          type: string
+        addressLine2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zipcode:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+    PayrollCost:
+      type: object
+      properties:
+        hourTypeId:
+          type: string
+        cost:
+          type: number
+    LabourRateModifier:
+      type: object
+      properties:
+        id:
+          type: string
+    GenericApiErrorApiErrorDetail:
+      type: object
+      properties:
+        type:
+          type: string
+        status:
+          type: integer
+          format: int32
+        title:
+          type: string
+          minLength: 1
+        detail:
+          type: string
+        instance:
+          type: string
+          minLength: 1
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiErrorDetail'
+      required:
+        - title
+        - instance
+    ApiErrorDetail:
+      type: object
+      properties:
+        description:
+          type: string
+    UpdateEmployeeRequestV3:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        userTitle:
+          type: string
+        labourRateGroupId:
+          type: string
+          format: uuid
+        labourTypeId:
+          type: string
+          format: uuid
+        departments:
+          type: array
+          minItems: 1
+          maxItems: 2147483647
+          items:
+            $ref: '#/components/schemas/IdPayload'
+        contactAddresses:
+          type: array
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/ContactAddressPayload'
+        personalEmail:
+          type: string
+          format: email
+        cellPhone:
+          type: string
+        landlinePhone:
+          type: string
+        code:
+          type: string
+        accountingRefId:
+          type: string
+          format: uuid
+        isTech:
+          type: boolean
+        isSales:
+          type: boolean
+        isDispatcher:
+          type: boolean
+        aiOptimizationDisabled:
+          type: boolean
+        enableMfa:
+          type: boolean
+      required:
+        - id
+    EmployeeRequestFilter:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - STATUS
+            - IS_ACTIVE
+        value:
+          type: string
+    NewGenericListResponsePublicEmployeePayload:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicEmployeePayload'
+    UpdateEmployeesResponse:
+      type: object
+      properties:
+        hasErrors:
+          type: boolean
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpdateResult'
+    UpdateResult:
+      type: object
+      properties:
+        employee:
+          $ref: '#/components/schemas/Employee'
+        error:
+          $ref: '#/components/schemas/ApiError'
+    ApiError:
+      type: object
+      properties:
+        apiVersion:
+          type: string
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            errors:
+              type: array
+              items:
+                type: object
+                properties:
+                  domain:
+                    type: string
+                  reason:
+                    type: string
+                  message:
+                    type: string
+    EmployeePublicApiResponse:
+      type: object
+      properties:
+        isActive:
+          type: boolean
+        salutation:
+          type: string
+        name:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        middleName:
+          type: string
+        nickName:
+          type: string
+        profilePictureUrl:
+          type: string
+        userTitle:
+          type: string
+        email:
+          type: string
+        personalEmail:
+          type: string
+        cellPhone:
+          type: string
+        landlinePhone:
+          type: string
+        contactType:
+          type: string
+        status:
+          type: string
+        companyId:
+          type: string
+        id:
+          type: string
+        entityType:
+          type: string
+        version:
+          type: integer
+          format: int32
+        tenantId:
+          type: string
+        tenantCompanyId:
+          type: string
+        isTech:
+          type: boolean
+        isSales:
+          type: boolean
+        code:
+          type: string
+        accountingRefId:
+          type: string
+        userName:
+          type: string
+        isCrewMember:
+          type: boolean
+        labourTypeId:
+          type: string
+        isDispatcher:
+          type: boolean
+        offlineUpdatedDateTime:
+          type: integer
+          format: int64
+        labourRateGroupId:
+          type: string
+        primaryEmployeeId:
+          type: string
+        appRoleId:
+          type: string
+        sso:
+          type: boolean
+        isCrmPlusUser:
+          type: boolean
+        audit:
+          $ref: '#/components/schemas/AuditInfoResponse'
+    AuditInfoResponse:
+      type: object
+      properties:
+        createdBy:
+          $ref: '#/components/schemas/AuditUserInfoResponse'
+        createdDate:
+          type: string
+        createdDateTime:
+          type: integer
+          format: int64
+        deletedBy:
+          $ref: '#/components/schemas/AuditUserInfoResponse'
+        deletedDate:
+          type: string
+        deletedDateTime:
+          type: integer
+          format: int64
+        lastUpdatedBy:
+          $ref: '#/components/schemas/AuditUserInfoResponse'
+        lastUpdatedDate:
+          type: string
+        lastUpdatedDateTime:
+          type: integer
+          format: int64
+    AuditUserInfoResponse:
+      type: object
+      properties:
+        username:
+          type: string
+    UsernameOrEmailUpdatesRequest:
+      type: object
+      description: Request to update an employee's username or email. Can only update either username or email at one time.
+      properties:
+        employeeId:
+          type: string
+        newUsername:
+          type: string
+          description: New username for the employee
+          example: johndoe or john.doe@gmail.com
+        newEmail:
+          type: string
+          description: New work email for the employee
+          example: john.doe@gmail.com
+      required:
+        - employeeId
+    UpdateAuth0UsernamesOrEmailsResponse:
+      type: object
+      properties:
+        hasErrors:
+          type: boolean
+        updateResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpdateResult'
+    PasswordUpdatesRequest:
+      type: object
+      properties:
+        employeeId:
+          type: string
+          format: uuid
+        newPassword:
+          type: string
+      required:
+        - employeeId
+        - newPassword
+    UpdateAuth0PasswordsResponse:
+      type: object
+      properties:
+        hasErrors:
+          type: boolean
+        updateResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpdateResult'
+    PasswordUpdateRequest:
+      type: object
+      properties:
+        newPassword:
+          type: string
+      required:
+        - newPassword
+    EmployeeResponse:
+      type: object
+      properties:
+        employee:
+          $ref: '#/components/schemas/Employee'
+    QueryBody:
+      $ref: '#/components/schemas/QueryBody_2'
+    QueryBody_2:
+      x-internal: true
+      x-stoplight:
+        internallyExcluded: true
+        errorMessage: This object is set as internal and excluded.
+    CustomerProperty:
+      type: object
+      properties:
+        id:
+          type: string
+        companyName:
+          type: string
+          nullable: true
+        accountNumber:
+          type: string
+          nullable: true
+        customerPropertyTypeValue:
+          type: string
+          nullable: true
+        amountNotToExceed:
+          type: number
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        logoUrl:
+          type: string
+          nullable: true
+        parentCompanyId:
+          type: string
+          nullable: true
+        phonePrimary:
+          type: string
+          nullable: true
+        phoneAlternate:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        websiteUrl:
+          type: string
+          nullable: true
+        receiveSMS:
+          type: boolean
+          nullable: true
+        sameAddress:
+          type: boolean
+          nullable: true
+        customerId:
+          type: string
+          nullable: true
+        version:
+          type: integer
+        taxRateValue:
+          type: string
+          nullable: true
+        taxRateName:
+          type: string
+          nullable: true
+        taxRateId:
+          type: string
+          nullable: true
+        isTaxable:
+          type: boolean
+          nullable: true
+        billingCustomerId:
+          type: string
+          nullable: true
+        billTo:
+          type: string
+          nullable: true
+        priceBookId:
+          type: string
+          nullable: true
+        taxCodeId:
+          type: string
+          nullable: true
+        nextInvoiceTemplateVersion:
+          type: integer
+          nullable: true
+        tenantId:
+          type: string
+          nullable: true
+        tenantCompanyId:
+          type: string
+          nullable: true
+        accountingAttributes:
+          $ref: '#/components/schemas/AccountingAttribute'
+        audit:
+          $ref: '#/components/schemas/AuditInfo_2'
+        addresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Address_2'
+      required:
+        - id
+      x-examples:
+        Example 1:
+          id: 12abcaed-c348-4a77-b342-9ed9c1c1e446
+          companyName: 'Nouria Dover #1114'
+          accountNumber: null
+          customerPropertyTypeValue: Gas Station
+          customerPropertyTypeSortKey: null
+          amountNotToExceed: null
+          email: null
+          logoUrl: null
+          parentCompanyId: null
+          phonePrimary: null
+          phoneAlternate: null
+          status: active
+          websiteUrl: null
+          receiveSMS: false
+          sameAddress: true
+          parentId: 04409fa6-0a43-4dfe-8cc8-946c6484e676
+          entityType: CustomerProperty
+          version: 1
+          taxRateValue: null
+          taxRateId: null
+          isTaxable: false
+          billingCustomerId: 04409fa6-0a43-4dfe-8cc8-946c6484e676
+          billTo: 'Nouria Energy Corporation '
+          offlineUpdatedDateTime: null
+          priceBookId: null
+          taxCodeId: null
+          nextInvoiceTemplateVersion: 1
+          tenantId: df513f84-5c1b-42cc-8e23-4e53129166ca
+          tenantCompanyId: 09f34637-9ccd-4cfc-b437-1e99a9b3ca12
+          accountingAttributes:
+            accountingRefId: 80001B25-1621369396
+            accountingVersion: '1621369396'
+          audit:
+            createdBy:
+              username: Terri Rothfuchs
+            createdDate: '2021-05-18T20:23:13.000Z'
+            createdDateTime: 1621369393809
+            deletedBy:
+              username: null
+            deletedDate: null
+            deletedDateTime: null
+            lastUpdatedBy:
+              username: System
+            lastUpdatedDate: '2021-06-03T10:39:19.000Z'
+            lastUpdatedDateTime: 1622716759424
+    CustomerTag:
+      type: object
+      title: CustomerTag
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        tagName:
+          type: string
+          nullable: true
+        audit:
+          $ref: '#/components/schemas/AuditInfo_2'
+      x-examples:
+        Example 1:
+          id: b6839cd3-8fdc-4e25-a2d4-068efe75a644
+          tagType: CustomerTag
+          tagName: Automation-customerTags-1680332737277
+          note: null
+          color: null
+          version: 1
+          tenantId: d1da3eef-1166-4e80-a7e0-10c2903bfe60
+          audit:
+            createdBy:
+              username: Run Scope
+            createdDate: '2023-04-01T06:43:39.000Z'
+            createdDateTime: 1680331419425
+            deletedBy:
+              username: null
+            deletedDate: null
+            deletedDateTime: null
+            lastUpdatedBy:
+              username: Run Scope
+            lastUpdatedDate: '2023-04-01T06:43:39.000Z'
+            lastUpdatedDateTime: 1680331419425
+security:
+  - authorization: []
