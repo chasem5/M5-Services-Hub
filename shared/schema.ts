@@ -614,6 +614,20 @@ export const appSettings = pgTable("app_settings", {
 });
 export type AppSetting = typeof appSettings.$inferSelect;
 
+// AI Feedback (thumbs up/down on AI-generated content)
+export const aiFeedback = pgTable("ai_feedback", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  emailId: integer("email_id"),
+  feedbackType: varchar("feedback_type", { length: 20 }).notNull(), // "thumbs_up" | "thumbs_down"
+  feedbackContext: varchar("feedback_context", { length: 50 }).notNull(), // "summary" | "task" | "connection" | "stage" | "sentiment"
+  contentSnippet: text("content_snippet"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertAiFeedbackSchema = createInsertSchema(aiFeedback).omit({ id: true, createdAt: true });
+export type InsertAiFeedback = z.infer<typeof insertAiFeedbackSchema>;
+export type AiFeedback = typeof aiFeedback.$inferSelect;
+
 // BuildOps Sync Log
 export const buildopsSyncLog = pgTable("buildops_sync_log", {
   id: serial("id").primaryKey(),

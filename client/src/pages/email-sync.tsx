@@ -9,12 +9,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link } from "wouter";
 import {
   Mail, RefreshCw, AlertCircle, Bell, ArrowDownLeft, ArrowUpRight,
   Plus, TrendingUp, MoreVertical, X, UserPlus, Link2, Zap, Building2,
   ChevronRight, Clock, Eye, EyeOff, Search, Users, ChevronDown, ChevronUp, Ban,
+  ThumbsUp, ThumbsDown, Check, ChevronsUpDown,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -165,6 +168,12 @@ export default function EmailSyncPage() {
   const [newContactEmail, setNewContactEmail] = useState("");
   const [newContactClientId, setNewContactClientId] = useState("");
   const [expandedMessages, setExpandedMessages] = useState<Set<number>>(new Set());
+  const [pendingSuggestion, setPendingSuggestion] = useState<{ msgId: number; suggestion: ConnectionSuggestion } | null>(null);
+  const [aiFeedbackGiven, setAiFeedbackGiven] = useState<Record<string, "thumbs_up" | "thumbs_down">>({});
+  // Link dialog combobox open states
+  const [clientComboOpen, setClientComboOpen] = useState(false);
+  const [leadComboOpen, setLeadComboOpen] = useState(false);
+  const [contactComboOpen, setContactComboOpen] = useState(false);
 
   const { data: emails = [], isLoading } = useQuery<EmailMessage[]>({
     queryKey: ["/api/email-messages", showDismissed],
@@ -340,6 +349,18 @@ export default function EmailSyncPage() {
     },
     onError: () => toast({ title: "Failed to create contact", variant: "destructive" }),
   });
+
+  const aiFeedbackMutation = useMutation({
+    mutationFn: ({ emailId, feedbackType, feedbackContext, contentSnippet }: { emailId: number; feedbackType: string; feedbackContext: string; contentSnippet?: string }) =>
+      apiRequest("POST", "/api/ai-feedback", { emailId, feedbackType, feedbackContext, contentSnippet }),
+  });
+
+  const submitFeedback = (emailId: number, context: string, type: "thumbs_up" | "thumbs_down", snippet?: string) => {
+    const key = `${emailId}-${context}`;
+    if (aiFeedbackGiven[key]) return;
+    setAiFeedbackGiven(prev => ({ ...prev, [key]: type }));
+    aiFeedbackMutation.mutate({ emailId, feedbackType: type, feedbackContext: context, contentSnippet: snippet });
+  };
 
   const toggleMessageExpanded = (id: number) => {
     setExpandedMessages(prev => {
@@ -697,31 +718,77 @@ export default function EmailSyncPage() {
                           {/* AI connection suggestions */}
                           {(msg.aiConnectionSuggestions?.length ?? 0) > 0 && !msg.clientId && (
                             <div className="mt-3 mb-3 p-3 rounded-lg border border-amber-200 bg-amber-50">
-                              <p className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-1">
-                                <Zap className="h-3.5 w-3.5" /> Possible Connections
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {msg.aiConnectionSuggestions!.map((s, i) => (
-                                  <button
-                                    key={i}
-                                    onClick={() => {
-                                      const update: any = {};
-                                      if (s.type === "client") update.clientId = s.id;
-                                      else if (s.type === "contact") { update.contactId = s.id; }
-                                      else if (s.type === "lead") update.leadId = s.id;
-                                      linkMutation.mutate({ id: msg.id, ...update });
-                                    }}
-                                    data-testid={`suggestion-${s.type}-${s.id}`}
-                                    className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
-                                      s.confidence === "high" ? "bg-green-50 border-green-200 text-green-700 hover:bg-green-100" :
-                                      s.confidence === "medium" ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" :
-                                      "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
-                                    }`}
-                                  >
-                                    {s.type === "client" ? "🏢" : s.type === "lead" ? "📋" : "👤"} {s.name}
-                                    <span className="text-amber-600 font-normal"> — {s.reason}</span>
-                                  </button>
-                                ))}
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs font-semibold text-amber-800 flex items-center gap-1">
+                                  <Zap className="h-3.5 w-3.5" /> Possible Connections
+                                </p>
+                                <div className="flex items-center gap-0.5">
+                                  {(["thumbs_up", "thumbs_down"] as const).map(type => {
+                                    const fbKey = `${msg.id}-connection`;
+                                    const given = aiFeedbackGiven[fbKey];
+                                    return (
+                                      <button key={type} onClick={e => { e.stopPropagation(); submitFeedback(msg.id, "connection", type); }} disabled={!!given}
+                                        className={`p-0.5 rounded transition-colors ${given === type ? (type === "thumbs_up" ? "text-green-600" : "text-red-500") : "text-amber-400 hover:text-amber-700 disabled:opacity-30"}`}>
+                                        {type === "thumbs_up" ? <ThumbsUp className="h-3 w-3" /> : <ThumbsDown className="h-3 w-3" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-2">
+                                {msg.aiConnectionSuggestions!.map((s, i) => {
+                                  const isPending = pendingSuggestion?.msgId === msg.id && pendingSuggestion?.suggestion.id === s.id && pendingSuggestion?.suggestion.type === s.type;
+                                  return (
+                                    <div key={i} className="flex flex-col gap-1.5">
+                                      <button
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          if (!s.id) return;
+                                          setPendingSuggestion(isPending ? null : { msgId: msg.id, suggestion: s });
+                                        }}
+                                        data-testid={`suggestion-${s.type}-${s.id}`}
+                                        className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors text-left ${
+                                          isPending ? "bg-amber-100 border-amber-400 text-amber-800" :
+                                          s.confidence === "high" ? "bg-green-50 border-green-200 text-green-700 hover:bg-green-100" :
+                                          s.confidence === "medium" ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" :
+                                          "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                                        }`}
+                                      >
+                                        {s.type === "client" ? "🏢" : s.type === "lead" ? "📋" : "👤"} {s.name}
+                                        <span className="text-amber-600 font-normal"> — {s.reason}</span>
+                                      </button>
+                                      {isPending && (
+                                        <div className="flex items-center gap-2 bg-white border border-amber-300 rounded-lg px-3 py-2 shadow-sm" onClick={e => e.stopPropagation()}>
+                                          <p className="text-xs text-gray-700 flex-1">
+                                            Link this email to <strong>{s.name}</strong> ({s.type})?
+                                          </p>
+                                          <button
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              const update: any = {};
+                                              if (s.type === "client") update.clientId = s.id;
+                                              else if (s.type === "contact") update.contactId = s.id;
+                                              else if (s.type === "lead") update.leadId = s.id;
+                                              linkMutation.mutate({ id: msg.id, ...update });
+                                              setPendingSuggestion(null);
+                                            }}
+                                            className="px-2.5 py-1 bg-primary text-white rounded text-xs font-medium hover:bg-primary/90 transition-colors whitespace-nowrap"
+                                            data-testid={`confirm-suggestion-${s.type}-${s.id}`}
+                                          >
+                                            Confirm
+                                          </button>
+                                          <button
+                                            onClick={e => { e.stopPropagation(); setPendingSuggestion(null); }}
+                                            className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200 transition-colors"
+                                            data-testid={`cancel-suggestion-${s.type}-${s.id}`}
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -729,7 +796,21 @@ export default function EmailSyncPage() {
                           {/* AI Summary */}
                           {msg.aiSummary && (
                             <div className="mt-3 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                              <p className="text-xs font-semibold text-gray-500 mb-1">AI Summary</p>
+                              <div className="flex items-center justify-between mb-1">
+                                <p className="text-xs font-semibold text-gray-500">AI Summary</p>
+                                <div className="flex items-center gap-0.5">
+                                  {(["thumbs_up", "thumbs_down"] as const).map(type => {
+                                    const fbKey = `${msg.id}-summary`;
+                                    const given = aiFeedbackGiven[fbKey];
+                                    return (
+                                      <button key={type} onClick={() => submitFeedback(msg.id, "summary", type, msg.aiSummary?.slice(0, 100))} disabled={!!given}
+                                        className={`p-0.5 rounded transition-colors ${given === type ? (type === "thumbs_up" ? "text-green-600" : "text-red-500") : "text-gray-400 hover:text-gray-600 disabled:opacity-30"}`}>
+                                        {type === "thumbs_up" ? <ThumbsUp className="h-3 w-3" /> : <ThumbsDown className="h-3 w-3" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                               <p className="text-sm text-gray-700 leading-relaxed">{msg.aiSummary}</p>
                             </div>
                           )}
@@ -762,16 +843,28 @@ export default function EmailSyncPage() {
                     </Button>
                   )}
                   {primaryEmail.aiStageSuggestion && primaryEmail.leadId && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs gap-1"
-                      onClick={() => applyStageMutation.mutate({ id: primaryEmail.id, leadId: primaryEmail.leadId!, stage: primaryEmail.aiStageSuggestion! })}
-                      disabled={applyStageMutation.isPending}
-                      data-testid="button-update-stage"
-                    >
-                      <TrendingUp className="h-3 w-3" /> Update Stage → {primaryEmail.aiStageSuggestion.replace(/_/g, " ")}
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => applyStageMutation.mutate({ id: primaryEmail.id, leadId: primaryEmail.leadId!, stage: primaryEmail.aiStageSuggestion! })}
+                        disabled={applyStageMutation.isPending}
+                        data-testid="button-update-stage"
+                      >
+                        <TrendingUp className="h-3 w-3" /> Update Stage → {primaryEmail.aiStageSuggestion.replace(/_/g, " ")}
+                      </Button>
+                      {(["thumbs_up", "thumbs_down"] as const).map(type => {
+                        const fbKey = `${primaryEmail.id}-stage`;
+                        const given = aiFeedbackGiven[fbKey];
+                        return (
+                          <button key={type} onClick={() => submitFeedback(primaryEmail.id, "stage", type, primaryEmail.aiStageSuggestion ?? undefined)} disabled={!!given}
+                            className={`p-0.5 rounded transition-colors ${given === type ? (type === "thumbs_up" ? "text-green-600" : "text-red-500") : "text-gray-400 hover:text-gray-600 disabled:opacity-30"}`}>
+                            {type === "thumbs_up" ? <ThumbsUp className="h-3 w-3" /> : <ThumbsDown className="h-3 w-3" />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                   {!primaryEmail.contactId && (
                     <Button
@@ -805,12 +898,24 @@ export default function EmailSyncPage() {
                     onCheckedChange={() => setSelectedTasks(prev => prev.includes(task.title) ? prev.filter(t => t !== task.title) : [...prev, task.title])}
                     data-testid={`checkbox-task-${task.title}`}
                   />
-                  <div>
+                  <div className="flex-1">
                     <label htmlFor={`task-${task.title}`} className="text-sm font-medium cursor-pointer">{task.title}</label>
                     <p className="text-xs text-gray-500 mt-0.5">
                       Priority: {task.priority ?? "medium"}
                       {task.dueInDays ? ` · Due in ${task.dueInDays} day${task.dueInDays !== 1 ? "s" : ""}` : ""}
                     </p>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
+                    {(["thumbs_up", "thumbs_down"] as const).map(type => {
+                      const fbKey = `${primaryEmail.id}-task-${task.title}`;
+                      const given = aiFeedbackGiven[fbKey];
+                      return (
+                        <button key={type} onClick={() => submitFeedback(primaryEmail.id, "task", type, task.title)} disabled={!!given}
+                          className={`p-0.5 rounded transition-colors ${given === type ? (type === "thumbs_up" ? "text-green-600" : "text-red-500") : "text-gray-400 hover:text-gray-600 disabled:opacity-30"}`}>
+                          {type === "thumbs_up" ? <ThumbsUp className="h-3 w-3" /> : <ThumbsDown className="h-3 w-3" />}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -838,44 +943,103 @@ export default function EmailSyncPage() {
           <DialogContent className="max-w-sm">
             <DialogHeader><DialogTitle>Link Records</DialogTitle></DialogHeader>
             <div className="space-y-3 py-2">
+              {/* Client — searchable combobox */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-500">Client</Label>
-                <Select value={linkClientId} onValueChange={v => { setLinkClientId(v); setLinkLeadId(""); }}>
-                  <SelectTrigger className="h-8 text-sm" data-testid="select-link-client">
-                    <SelectValue placeholder="Select client..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No client</SelectItem>
-                    {clients.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Popover open={clientComboOpen} onOpenChange={setClientComboOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full h-8 text-sm justify-between font-normal" data-testid="select-link-client">
+                      {linkClientId && linkClientId !== "none" ? clients.find(c => String(c.id) === linkClientId)?.name : "Select client..."}
+                      <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-1" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[260px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search clients..." className="h-8 text-sm" />
+                      <CommandList>
+                        <CommandEmpty>No clients found</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="none" onSelect={() => { setLinkClientId("none"); setLinkLeadId(""); setClientComboOpen(false); }}>
+                            <Check className={`mr-2 h-3.5 w-3.5 ${!linkClientId || linkClientId === "none" ? "opacity-100" : "opacity-0"}`} />
+                            No client
+                          </CommandItem>
+                          {clients.map(c => (
+                            <CommandItem key={c.id} value={c.name} onSelect={() => { setLinkClientId(String(c.id)); setLinkLeadId(""); setClientComboOpen(false); }}>
+                              <Check className={`mr-2 h-3.5 w-3.5 ${linkClientId === String(c.id) ? "opacity-100" : "opacity-0"}`} />
+                              {c.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
+              {/* Deal — searchable combobox */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-500">Deal (optional)</Label>
-                <Select value={linkLeadId} onValueChange={setLinkLeadId}>
-                  <SelectTrigger className="h-8 text-sm" data-testid="select-link-lead">
-                    <SelectValue placeholder="Select deal..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No deal</SelectItem>
-                    {availableLeads.map(l => <SelectItem key={l.id} value={String(l.id)}>{l.title}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Popover open={leadComboOpen} onOpenChange={setLeadComboOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full h-8 text-sm justify-between font-normal" data-testid="select-link-lead">
+                      {linkLeadId && linkLeadId !== "none" ? availableLeads.find(l => String(l.id) === linkLeadId)?.title : "Select deal..."}
+                      <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-1" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[260px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search deals..." className="h-8 text-sm" />
+                      <CommandList>
+                        <CommandEmpty>No deals found</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="none" onSelect={() => { setLinkLeadId("none"); setLeadComboOpen(false); }}>
+                            <Check className={`mr-2 h-3.5 w-3.5 ${!linkLeadId || linkLeadId === "none" ? "opacity-100" : "opacity-0"}`} />
+                            No deal
+                          </CommandItem>
+                          {availableLeads.map(l => (
+                            <CommandItem key={l.id} value={l.title} onSelect={() => { setLinkLeadId(String(l.id)); setLeadComboOpen(false); }}>
+                              <Check className={`mr-2 h-3.5 w-3.5 ${linkLeadId === String(l.id) ? "opacity-100" : "opacity-0"}`} />
+                              {l.title}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
+              {/* Contact — searchable combobox */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-500">Contact (optional)</Label>
-                <Select value={linkContactId} onValueChange={setLinkContactId}>
-                  <SelectTrigger className="h-8 text-sm" data-testid="select-link-contact">
-                    <SelectValue placeholder="Select contact..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No contact</SelectItem>
-                    {contacts
-                      .filter(c => !linkClientId || c.clientId === parseInt(linkClientId))
-                      .map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)
-                    }
-                  </SelectContent>
-                </Select>
+                <Popover open={contactComboOpen} onOpenChange={setContactComboOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full h-8 text-sm justify-between font-normal" data-testid="select-link-contact">
+                      {linkContactId && linkContactId !== "none" ? contacts.find(c => String(c.id) === linkContactId)?.name : "Select contact..."}
+                      <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-1" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[260px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search contacts..." className="h-8 text-sm" />
+                      <CommandList>
+                        <CommandEmpty>No contacts found</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="none" onSelect={() => { setLinkContactId("none"); setContactComboOpen(false); }}>
+                            <Check className={`mr-2 h-3.5 w-3.5 ${!linkContactId || linkContactId === "none" ? "opacity-100" : "opacity-0"}`} />
+                            No contact
+                          </CommandItem>
+                          {contacts
+                            .filter(c => !linkClientId || linkClientId === "none" || c.clientId === parseInt(linkClientId))
+                            .map(c => (
+                              <CommandItem key={c.id} value={c.name} onSelect={() => { setLinkContactId(String(c.id)); setContactComboOpen(false); }}>
+                                <Check className={`mr-2 h-3.5 w-3.5 ${linkContactId === String(c.id) ? "opacity-100" : "opacity-0"}`} />
+                                {c.name}
+                              </CommandItem>
+                            ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             <DialogFooter>

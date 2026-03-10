@@ -29,6 +29,7 @@ import {
   insertBuildingPortfolioSchema,
   insertPortfolioBuildingSchema,
   insertPortfolioContactSchema,
+  insertAiFeedbackSchema,
 } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
@@ -2629,7 +2630,7 @@ Respond with this JSON:
   "sentiment": "positive|neutral|negative|urgent",
   "stageSuggestion": null or one of: "new_lead|qualified|proposal_sent|won|lost",
   "requiresResponse": true or false (true only if inbound and M5 should reply — false for cc, outbound, automated/notifications/newsletters),
-  "connectionSuggestions": [] or array of {type: "client"|"contact"|"lead", id: number, name: string, confidence: "high"|"medium"|"low", reason: string} — suggest CRM records that seem related to this email based on names/companies mentioned, only if not already matched
+  "connectionSuggestions": [] or array of {type: "client"|"contact"|"lead", id: number, name: string, confidence: "high"|"medium"|"low", reason: string} — CRITICAL: only use IDs that exactly appear in the "Known clients", "Known contacts", or "Active leads" lists above. Do NOT invent records or IDs. If no match exists, return an empty array.
 }`;
 
         const completion = await openai.chat.completions.create({
@@ -2639,8 +2640,20 @@ Respond with this JSON:
           max_completion_tokens: 600,
         });
         const parsed = JSON.parse(completion.choices[0].message.content ?? "{}");
-        const aiSuggestions = Array.isArray(parsed.connectionSuggestions) && !clientId
-          ? [...suggestions, ...parsed.connectionSuggestions.slice(0, 5)].slice(0, 6)
+
+        // Validate AI suggestions: discard any whose id doesn't match a real record
+        const validatedAiSuggestions = Array.isArray(parsed.connectionSuggestions)
+          ? parsed.connectionSuggestions.filter((s: any) => {
+              if (!s || typeof s.id !== "number") return false;
+              if (s.type === "client") return allClients.some(c => c.id === s.id);
+              if (s.type === "contact") return allContacts.some(c => c.id === s.id);
+              if (s.type === "lead") return allLeads.some(l => l.id === s.id);
+              return false;
+            })
+          : [];
+
+        const aiSuggestions = !clientId
+          ? [...suggestions, ...validatedAiSuggestions.slice(0, 5)].slice(0, 6)
           : suggestions;
         aiResult = {
           summary: parsed.summary ?? "",
@@ -2850,6 +2863,14 @@ Respond with this JSON:
     const userId = (req as any).user?.claims?.sub;
     await storage.removeDismissedSender(userId, decodeURIComponent(req.params.emailAddress));
     res.json({ ok: true });
+  });
+
+  // AI Feedback (thumbs up/down on AI-generated content)
+  app.post("/api/ai-feedback", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    const data = insertAiFeedbackSchema.parse({ ...req.body, userId });
+    const row = await storage.createAiFeedback(data);
+    res.json(row);
   });
 
   // My permissions (any authenticated user)

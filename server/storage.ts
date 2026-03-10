@@ -41,7 +41,10 @@ import {
   valueTierSettings,
   appSettings,
   buildopsSyncLog,
+  aiFeedback,
   type BuildopsSyncLog,
+  type AiFeedback,
+  type InsertAiFeedback,
   type DealTag,
   type InsertDealTag,
   type IndustryOption,
@@ -368,6 +371,9 @@ export interface IStorage {
 
   // Activity Summary
   getLeadsActivitySummary(userId?: string): Promise<{ leadId: number; lastActivityAt: Date | null; stageChangedAt: Date | null }[]>;
+
+  // AI Feedback
+  createAiFeedback(data: InsertAiFeedback): Promise<AiFeedback>;
 
   // BuildOps Sync Log
   createBuildopsSyncLog(data: { entityType: string; entityId?: number | null; buildopsId?: string | null; action: string; message?: string | null }): Promise<BuildopsSyncLog>;
@@ -1473,9 +1479,11 @@ export class DatabaseStorage implements IStorage {
       .from(emailMessages)
       .where(eq(emailMessages.gmailMessageId, data.gmailMessageId));
     if (existing.length > 0) {
+      // Preserve isDismissed — never let a sync reset a user-dismissed email
+      const { isDismissed: _preserve, ...updateData } = data as any;
       const [updated] = await db
         .update(emailMessages)
-        .set(data)
+        .set(updateData)
         .where(eq(emailMessages.gmailMessageId, data.gmailMessageId))
         .returning();
       return updated;
@@ -1901,6 +1909,11 @@ export class DatabaseStorage implements IStorage {
       .insert(appSettings)
       .values({ key, value, updatedAt: new Date() })
       .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+  }
+
+  async createAiFeedback(data: InsertAiFeedback): Promise<AiFeedback> {
+    const [row] = await db.insert(aiFeedback).values(data).returning();
+    return row;
   }
 
   async createBuildopsSyncLog(data: { entityType: string; entityId?: number | null; buildopsId?: string | null; action: string; message?: string | null }): Promise<BuildopsSyncLog> {

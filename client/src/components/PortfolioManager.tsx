@@ -347,8 +347,8 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
         ? filterClientId
         : newBuildingClientId !== "none" ? parseInt(newBuildingClientId) : null;
       const res = await apiRequest("POST", "/api/contact-buildings", {
-        name: newBuildingName.trim(),
-        address: newBuildingAddress.trim() || null,
+        name: newBuildingName.trim() || null,
+        address: newBuildingAddress.trim(),
         lat: newBuildingLat ?? null,
         lng: newBuildingLng ?? null,
         clientId: resolvedClientId,
@@ -566,14 +566,6 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
         {showNewBuildingForm && (
           <div className="border rounded-lg p-3 bg-muted/30 space-y-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">New Building</p>
-            <Input
-              placeholder="Building name *"
-              value={newBuildingName}
-              onChange={e => setNewBuildingName(e.target.value)}
-              className="h-8 text-sm"
-              autoFocus
-              data-testid="input-building-name"
-            />
             <AddressAutocomplete
               value={newBuildingAddress}
               onChange={(addr, lat, lng) => {
@@ -581,8 +573,16 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
                 setNewBuildingLat(lat);
                 setNewBuildingLng(lng);
               }}
-              placeholder="Address (optional)"
+              placeholder="Address *"
               className="h-8 text-sm"
+              autoFocus
+            />
+            <Input
+              placeholder="Building name (optional)"
+              value={newBuildingName}
+              onChange={e => setNewBuildingName(e.target.value)}
+              className="h-8 text-sm"
+              data-testid="input-building-name"
             />
             {filterClientId ? (
               <div className="h-8 flex items-center px-3 text-xs bg-muted/50 rounded-md border text-muted-foreground">
@@ -615,7 +615,7 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
                 size="sm"
                 className="h-7 text-xs flex-1"
                 onClick={() => createBuildingMutation.mutate()}
-                disabled={!newBuildingName.trim() || createBuildingMutation.isPending}
+                disabled={!newBuildingAddress.trim() || createBuildingMutation.isPending}
                 data-testid="button-save-building"
               >
                 {createBuildingMutation.isPending ? "Creating…" : "Create Building"}
