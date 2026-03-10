@@ -44,6 +44,13 @@ import {
   Users2,
   Building2,
   DollarSign,
+  Zap,
+  RefreshCw,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -108,6 +115,219 @@ function CopyButton({ text }: { text: string }) {
 
 interface RoleConfig { roleKey: string; displayName: string; }
 interface RolePermission { id: number; roleKey: string; module: string; accessLevel: string; }
+
+function BuildOpsPanel() {
+  const { toast } = useToast();
+  const [apiKey, setApiKey] = useState("");
+  const [tenantId, setTenantId] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [connStatus, setConnStatus] = useState<"idle" | "ok" | "error">("idle");
+  const [connError, setConnError] = useState<string | null>(null);
+
+  const { data: storedApiKey } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsApiKey"] });
+  const { data: storedTenantId } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsTenantId"] });
+  const { data: lastSync } = useQuery<{ createdAt: string; message: string; action: string } | null>({ queryKey: ["/api/buildops/last-sync"] });
+
+  useEffect(() => { if (storedApiKey?.value) setApiKey(storedApiKey.value); }, [storedApiKey]);
+  useEffect(() => { if (storedTenantId?.value) setTenantId(storedTenantId.value); }, [storedTenantId]);
+
+  const saveSettingsMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PUT", "/api/settings/buildopsApiKey", { value: apiKey });
+      await apiRequest("PUT", "/api/settings/buildopsTenantId", { value: tenantId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsApiKey"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsTenantId"] });
+      toast({ title: "Settings saved" });
+    },
+    onError: () => toast({ title: "Failed to save", variant: "destructive" }),
+  });
+
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/test", {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.ok) { setConnStatus("ok"); setConnError(null); }
+      else { setConnStatus("error"); setConnError(data.error ?? "Connection failed"); }
+    },
+    onError: (err: any) => { setConnStatus("error"); setConnError(err.message); },
+  });
+
+  const syncPullMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/sync-pull", {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({ title: "Sync complete", description: `${data.created} imported, ${data.updated} matched of ${data.total} BuildOps customers` });
+    },
+    onError: (err: any) => toast({ title: "Sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  const pushAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/push-all", {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({ title: "Push complete", description: `${data.pushed} pushed, ${data.errors} errors, ${data.skipped} already synced` });
+    },
+    onError: (err: any) => toast({ title: "Push failed", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-none shadow-sm bg-card">
+        <CardHeader className="pb-4 border-b">
+          <div className="flex items-center gap-3">
+            <div className="bg-primary/10 p-2 rounded-full">
+              <Zap className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-base font-heading">BuildOps Integration</CardTitle>
+              <CardDescription className="text-xs">Connect M5 Services CRM to BuildOps for customer sync</CardDescription>
+            </div>
+            {connStatus === "ok" && (
+              <Badge className="ml-auto bg-green-100 text-green-700 border-green-200 gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Connected
+              </Badge>
+            )}
+            {connStatus === "error" && (
+              <Badge className="ml-auto bg-red-100 text-red-700 border-red-200 gap-1" variant="outline">
+                <AlertCircle className="h-3 w-3" /> Error
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="p-6 space-y-5">
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">API Key</label>
+              <div className="relative">
+                <Input
+                  type={showApiKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={e => setApiKey(e.target.value)}
+                  placeholder="Enter BuildOps API key"
+                  className="pr-10"
+                  data-testid="input-buildops-api-key"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Tenant ID</label>
+              <Input
+                value={tenantId}
+                onChange={e => setTenantId(e.target.value)}
+                placeholder="Enter BuildOps Tenant ID"
+                data-testid="input-buildops-tenant-id"
+              />
+            </div>
+            {connError && (
+              <p className="text-xs text-destructive flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" /> {connError}
+              </p>
+            )}
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                onClick={() => saveSettingsMutation.mutate()}
+                disabled={saveSettingsMutation.isPending}
+                size="sm"
+                data-testid="button-save-buildops-settings"
+              >
+                {saveSettingsMutation.isPending ? "Saving..." : "Save Credentials"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => testMutation.mutate()}
+                disabled={testMutation.isPending || !apiKey || !tenantId}
+                data-testid="button-test-buildops"
+              >
+                {testMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />}
+                Test Connection
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-none shadow-sm bg-card">
+        <CardHeader className="pb-4 border-b">
+          <div className="flex items-center gap-3">
+            <div className="bg-primary/10 p-2 rounded-full">
+              <RefreshCw className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-base font-heading">Data Sync</CardTitle>
+              <CardDescription className="text-xs">
+                {lastSync
+                  ? `Last sync: ${new Date(lastSync.createdAt).toLocaleString()} — ${lastSync.message}`
+                  : "No sync history yet"}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="border rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-primary" />
+                Pull from BuildOps
+              </h4>
+              <p className="text-xs text-muted-foreground">Import BuildOps customers into M5 CRM. Matches by BuildOps ID or name/email. Creates new customer records for unmatched entries.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => syncPullMutation.mutate()}
+                disabled={syncPullMutation.isPending}
+                data-testid="button-buildops-sync-pull"
+              >
+                {syncPullMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                {syncPullMutation.isPending ? "Syncing..." : "Sync from BuildOps"}
+              </Button>
+            </div>
+            <div className="border rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Upload className="h-4 w-4 text-primary" />
+                Push to BuildOps
+              </h4>
+              <p className="text-xs text-muted-foreground">Push M5 customers that haven't been synced yet to BuildOps. Creates new customers in BuildOps for each unlinked M5 customer.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => pushAllMutation.mutate()}
+                disabled={pushAllMutation.isPending}
+                data-testid="button-buildops-push-all"
+              >
+                {pushAllMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+                {pushAllMutation.isPending ? "Pushing..." : "Push All to BuildOps"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 export default function AdminPage() {
   const [, setLocation] = useLocation();
@@ -352,6 +572,10 @@ export default function AdminPage() {
           <TabsTrigger value="configuration" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
             <Settings2 className="h-4 w-4" />
             Configuration
+          </TabsTrigger>
+          <TabsTrigger value="buildops" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-buildops">
+            <Zap className="h-4 w-4" />
+            BuildOps
           </TabsTrigger>
         </TabsList>
 
@@ -968,6 +1192,10 @@ export default function AdminPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="buildops" className="pt-4 space-y-6">
+          <BuildOpsPanel />
         </TabsContent>
       </Tabs>
 

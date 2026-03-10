@@ -38,6 +38,8 @@ import {
   industryOptions,
   valueTierSettings,
   appSettings,
+  buildopsSyncLog,
+  type BuildopsSyncLog,
   type DealTag,
   type InsertDealTag,
   type IndustryOption,
@@ -350,6 +352,11 @@ export interface IStorage {
 
   // Activity Summary
   getLeadsActivitySummary(userId?: string): Promise<{ leadId: number; lastActivityAt: Date | null; stageChangedAt: Date | null }[]>;
+
+  // BuildOps Sync Log
+  createBuildopsSyncLog(data: { entityType: string; entityId?: number | null; buildopsId?: string | null; action: string; message?: string | null }): Promise<BuildopsSyncLog>;
+  listBuildopsSyncLogs(limit?: number): Promise<BuildopsSyncLog[]>;
+  getLastBuildopsSync(): Promise<BuildopsSyncLog | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1796,6 +1803,20 @@ export class DatabaseStorage implements IStorage {
       .insert(appSettings)
       .values({ key, value, updatedAt: new Date() })
       .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+  }
+
+  async createBuildopsSyncLog(data: { entityType: string; entityId?: number | null; buildopsId?: string | null; action: string; message?: string | null }): Promise<BuildopsSyncLog> {
+    const [row] = await db.insert(buildopsSyncLog).values(data).returning();
+    return row;
+  }
+
+  async listBuildopsSyncLogs(limit = 50): Promise<BuildopsSyncLog[]> {
+    return db.select().from(buildopsSyncLog).orderBy(desc(buildopsSyncLog.createdAt)).limit(limit);
+  }
+
+  async getLastBuildopsSync(): Promise<BuildopsSyncLog | null> {
+    const [row] = await db.select().from(buildopsSyncLog).orderBy(desc(buildopsSyncLog.createdAt)).limit(1);
+    return row ?? null;
   }
 }
 

@@ -2951,5 +2951,213 @@ Respond with this JSON:
     res.json({ updated: ids.length });
   });
 
+  // ── BuildOps Integration ─────────────────────────────────────────────────
+
+  async function getBuildOpsCreds(): Promise<{ apiKey: string; tenantId: string } | null> {
+    const apiKey = await storage.getAppSetting("buildopsApiKey");
+    const tenantId = await storage.getAppSetting("buildopsTenantId");
+    if (!apiKey || !tenantId) return null;
+    return { apiKey, tenantId };
+  }
+
+  app.post("/api/buildops/test", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.json({ ok: false, error: "API key and tenant ID not configured" });
+      const { testConnection } = await import("./buildops");
+      const result = await testConnection(creds.apiKey, creds.tenantId);
+      res.json(result);
+    } catch (err: any) {
+      res.json({ ok: false, error: err.message });
+    }
+  });
+
+  app.post("/api/buildops/sync-pull", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getCustomers } = await import("./buildops");
+
+      let allCustomers: any[] = [];
+      let page = 0;
+      while (true) {
+        const batch = await getCustomers(creds.apiKey, creds.tenantId, page, 100);
+        allCustomers = allCustomers.concat(batch.items ?? []);
+        if (allCustomers.length >= batch.totalCount || (batch.items ?? []).length === 0) break;
+        page++;
+      }
+
+      const allClients = await storage.listClients();
+      let created = 0;
+      let updated = 0;
+
+      for (const customer of allCustomers) {
+        const existing = allClients.find(c => c.buildopsId === customer.id) ||
+          allClients.find(c =>
+            c.name.toLowerCase().trim() === (customer.name || "").toLowerCase().trim() &&
+            (c.email === customer.email || !customer.email)
+          );
+
+        if (existing) {
+          if (!existing.buildopsId) {
+            await storage.updateClient(existing.id, { buildopsId: customer.id });
+            await storage.createBuildopsSyncLog({ entityType: "client", entityId: existing.id, buildopsId: customer.id, action: "pull", message: `Matched by name: ${existing.name}` });
+            updated++;
+          }
+        } else {
+          const newClient = await storage.createClient({
+            name: customer.name || "Unnamed",
+            email: customer.email || null,
+            phone: customer.phonePrimary || null,
+            buildopsId: customer.id,
+          });
+          await storage.createBuildopsSyncLog({ entityType: "client", entityId: newClient.id, buildopsId: customer.id, action: "pull", message: `Imported from BuildOps` });
+          created++;
+        }
+      }
+
+      res.json({ ok: true, created, updated, total: allCustomers.length });
+    } catch (err: any) {
+      await storage.createBuildopsSyncLog({ entityType: "client", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/buildops/push-client/:id", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+
+      const { createCustomer, updateCustomer, mapClientToCustomer } = await import("./buildops");
+      const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone });
+
+      let buildopsCustomer: any;
+      if (client.buildopsId) {
+        buildopsCustomer = await updateCustomer(creds.apiKey, creds.tenantId, client.buildopsId, payload);
+        await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: client.buildopsId, action: "push", message: "Updated existing BuildOps customer" });
+      } else {
+        buildopsCustomer = await createCustomer(creds.apiKey, creds.tenantId, payload);
+        await storage.updateClient(client.id, { buildopsId: buildopsCustomer.id });
+        await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: buildopsCustomer.id, action: "push", message: "Created new BuildOps customer" });
+      }
+
+      res.json({ ok: true, buildopsId: buildopsCustomer.id });
+    } catch (err: any) {
+      await storage.createBuildopsSyncLog({ entityType: "client", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/buildops/push-all", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+
+      const allClients = await storage.listClients();
+      const withoutId = allClients.filter(c => !c.buildopsId);
+      const { createCustomer, mapClientToCustomer } = await import("./buildops");
+
+      let pushed = 0;
+      let errors = 0;
+      for (const client of withoutId) {
+        try {
+          const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone });
+          const buildopsCustomer = await createCustomer(creds.apiKey, creds.tenantId, payload);
+          await storage.updateClient(client.id, { buildopsId: buildopsCustomer.id });
+          await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: buildopsCustomer.id, action: "push", message: "Bulk push" });
+          pushed++;
+        } catch {
+          errors++;
+        }
+      }
+
+      res.json({ ok: true, pushed, errors, skipped: allClients.length - withoutId.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/buildops/last-sync", isAuthenticated, async (req, res) => {
+    const log = await storage.getLastBuildopsSync();
+    res.json(log);
+  });
+
+  // ── AI Scope & Budget Generator for Estimates ───────────────────────────
+
+  app.post("/api/estimates/:id/ai-generate", isAuthenticated, async (req, res) => {
+    try {
+      const estimateId = parseInt(req.params.id as string);
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) return res.status(404).json({ message: "Estimate not found" });
+
+      const client = estimate.clientId ? await storage.getClient(estimate.clientId) : null;
+      const lead = estimate.leadId ? await storage.getLead(estimate.leadId) : null;
+      const lineItems = await storage.listEstimateLineItems(estimateId);
+
+      const context = [
+        client ? `Customer: ${client.name}${client.industry ? ` (${client.industry})` : ""}` : "",
+        lead ? `Deal: ${lead.title}` : "",
+        lead?.serviceType ? `Service Type: ${lead.serviceType.replace(/_/g, " ")}` : "",
+        lead?.notes ? `Deal Notes: ${lead.notes}` : "",
+        estimate.notes ? `Existing Notes: ${estimate.notes}` : "",
+        lineItems.length > 0 ? `Existing Line Items: ${lineItems.map(l => l.description).join(", ")}` : "",
+      ].filter(Boolean).join("\n");
+
+      const { openai } = await import("./openai");
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        max_completion_tokens: 1500,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert estimator for M5 Services, a facility maintenance company offering building engineering, janitorial, special projects, and property assessments.
+
+Generate a professional scope of work and line items for a job estimate.
+
+Return JSON with this exact structure:
+{
+  "title": "string (concise estimate title)",
+  "scopeOfWork": "string (2-4 sentence professional scope description)",
+  "lineItems": [
+    { "description": "string", "quantity": number, "unitPrice": number, "total": number }
+  ]
+}
+
+Guidelines:
+- 3-8 line items that are realistic for facility maintenance
+- Unit prices in USD, reasonable for the service type
+- Total = quantity × unitPrice
+- Scope should be professional and detailed`,
+          },
+          {
+            role: "user",
+            content: `Generate a scope of work and line items for this estimate:\n\n${context || "General facility maintenance estimate"}`,
+          },
+        ],
+      });
+
+      const raw = completion.choices[0]?.message?.content ?? "{}";
+      const parsed = JSON.parse(raw);
+
+      res.json({
+        title: parsed.title || estimate.title,
+        scopeOfWork: parsed.scopeOfWork || "",
+        lineItems: (parsed.lineItems || []).map((item: any) => ({
+          description: item.description || "Service Item",
+          quantity: String(item.quantity ?? 1),
+          unitPrice: String(item.unitPrice ?? 0),
+          total: String(item.total ?? 0),
+        })),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

@@ -19,6 +19,7 @@ export const clients = pgTable("clients", {
   annualRevenue: decimal("annual_revenue", { precision: 12, scale: 2 }),
   tier: varchar("tier", { length: 10 }),
   logoUrl: varchar("logo_url"),
+  buildopsId: varchar("buildops_id"),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -115,6 +116,7 @@ export const leads = pgTable("leads", {
   recurringFrequency: text("recurring_frequency"), // monthly | quarterly | annual
   contractStartDate: timestamp("contract_start_date"),
   renewalDate: timestamp("renewal_date"),
+  buildopsId: varchar("buildops_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -575,3 +577,15 @@ export const appSettings = pgTable("app_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 export type AppSetting = typeof appSettings.$inferSelect;
+
+// BuildOps Sync Log
+export const buildopsSyncLog = pgTable("buildops_sync_log", {
+  id: serial("id").primaryKey(),
+  entityType: varchar("entity_type").notNull(), // 'client' | 'lead'
+  entityId: integer("entity_id"),
+  buildopsId: varchar("buildops_id"),
+  action: varchar("action").notNull(), // 'pull' | 'push' | 'error'
+  message: text("message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type BuildopsSyncLog = typeof buildopsSyncLog.$inferSelect;

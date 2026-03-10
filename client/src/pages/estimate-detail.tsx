@@ -11,7 +11,10 @@ import {
   Package,
   AlertCircle,
   CheckCircle2,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Sparkles,
+  RefreshCw,
+  Zap,
 } from "lucide-react";
 import { Link } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -157,6 +160,43 @@ export default function EstimateDetail() {
     },
   });
 
+  const aiGenerateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/estimates/${id}/ai-generate`, {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: async (data) => {
+      const updates: any = {};
+      if (data.title) updates.title = data.title;
+      if (data.scopeOfWork) updates.notes = data.scopeOfWork;
+      if (Object.keys(updates).length > 0) {
+        await apiRequest("PUT", `/api/estimates/${id}`, updates);
+        form.setValue("title", data.title || form.getValues("title"));
+        form.setValue("notes", data.scopeOfWork || form.getValues("notes"));
+      }
+      for (const item of data.lineItems ?? []) {
+        await apiRequest("POST", `/api/estimates/${id}/line-items`, {
+          estimateId: id,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          total: item.total,
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id, "line-items"] });
+      toast({ title: "AI scope generated", description: `Added ${data.lineItems?.length ?? 0} line items` });
+    },
+    onError: (err: any) => toast({ title: "AI generation failed", description: err.message, variant: "destructive" }),
+  });
+
+  const pushBuildopsMutation = useMutation({
+    mutationFn: async () => {
+      toast({ title: "BuildOps Quotes API", description: "Coming soon — Quotes API spec pending", variant: "default" });
+    },
+  });
+
   const form = useForm({
     resolver: zodResolver(insertEstimateSchema),
     defaultValues: {
@@ -271,7 +311,29 @@ export default function EstimateDetail() {
             <p className="text-muted-foreground">Estimate #{estimate.id} • {currentClient?.name}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => aiGenerateMutation.mutate()}
+            disabled={aiGenerateMutation.isPending}
+            data-testid="button-ai-generate-scope"
+            className="gap-1.5"
+          >
+            {aiGenerateMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {aiGenerateMutation.isPending ? "Generating..." : "AI Generate Scope"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => pushBuildopsMutation.mutate()}
+            disabled={pushBuildopsMutation.isPending}
+            data-testid="button-push-buildops-estimate"
+            className="gap-1.5"
+          >
+            <Zap className="h-4 w-4" />
+            Push to BuildOps
+          </Button>
           {estimate.status === "draft" && (
             <Button 
               variant="outline"

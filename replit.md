@@ -54,6 +54,18 @@ Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `co
 - `portfolio_buildings` — junction: portfolioId + buildingId (cascade delete)
 - `portfolio_contacts` — junction: portfolioId + contactId + role (cascade delete)
 
+## BuildOps Integration
+
+- `server/buildops.ts` — BuildOps API service layer; base URL `https://public-api.live.buildops.com`; Bearer token auth + tenantId query param
+- Functions: `testConnection`, `getCustomers` (paginated), `getCustomerById`, `createCustomer`, `updateCustomer`, `mapClientToCustomer`
+- Credentials stored in `app_settings` table as `buildopsApiKey` + `buildopsTenantId`; retrieved at request time via `getBuildOpsCreds()`
+- Routes: `POST /api/buildops/test`, `POST /api/buildops/sync-pull`, `POST /api/buildops/push-client/:id`, `POST /api/buildops/push-all`, `GET /api/buildops/last-sync`
+- `clients.buildopsId` — stores BuildOps customer UUID; `leads.buildopsId` — reserved for future quote reference
+- `buildops_sync_log` table — audit trail of all pull/push operations
+- Admin → BuildOps tab: API key + tenant ID config, test connection, pull from BuildOps, push all
+- Client detail: "Push to BuildOps" / "Sync to BuildOps" button; "BuildOps Linked" badge when synced
+- Estimate detail: "AI Generate Scope" button — calls GPT-4o to generate scope of work + line items; "Push to BuildOps" stub (Quotes API pending)
+
 ## Branding
 
 - Primary: #BE1916 (red), Accent: #F93262 (hot pink)

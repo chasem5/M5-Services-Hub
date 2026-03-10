@@ -368,6 +368,36 @@ function LinkedInSyncButton({
   return null;
 }
 
+function BuildOpsPushButton({ clientId, buildopsId }: { clientId: number; buildopsId?: string | null }) {
+  const { toast } = useToast();
+  const pushMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/buildops/push-client/${clientId}`, {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
+      toast({ title: buildopsId ? "Synced to BuildOps" : "Pushed to BuildOps", description: "Customer updated in BuildOps" });
+    },
+    onError: (err: any) => toast({ title: "BuildOps sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-6 text-xs gap-1 px-2"
+      onClick={() => pushMutation.mutate()}
+      disabled={pushMutation.isPending}
+      data-testid="button-buildops-push-client"
+    >
+      <Zap className="h-3 w-3" />
+      {pushMutation.isPending ? "Syncing..." : buildopsId ? "Sync to BuildOps" : "Push to BuildOps"}
+    </Button>
+  );
+}
+
 function BuildingActivityRow({
   building,
   isExpanded,
@@ -1396,8 +1426,16 @@ export default function ClientDetail() {
             <h1 className="text-3xl font-heading font-bold" data-testid="text-client-name">{client.name}</h1>
             <Badge variant="outline" className="h-6">Customer ID: {client.id}</Badge>
             {(client as any).tier && <TierBadge tier={(client as any).tier} />}
+            {(client as any).buildopsId && (
+              <Badge className="h-6 bg-blue-100 text-blue-700 border-blue-200 gap-1" data-testid="badge-buildops-synced">
+                <Zap className="h-3 w-3" /> BuildOps Linked
+              </Badge>
+            )}
           </div>
-          <p className="text-muted-foreground">{client.industry || "No industry specified"}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-muted-foreground">{client.industry || "No industry specified"}</p>
+            <BuildOpsPushButton clientId={clientId} buildopsId={(client as any).buildopsId} />
+          </div>
         </div>
       </div>
 
