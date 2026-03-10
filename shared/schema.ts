@@ -79,7 +79,7 @@ export const contactBuildings = pgTable("contact_buildings", {
   id: serial("id").primaryKey(),
   contactId: integer("contact_id").references(() => clientContacts.id),
   clientId: integer("client_id").references(() => clients.id),
-  name: varchar("name").notNull(),
+  name: varchar("name"),
   address: text("address"),
   lat: decimal("lat", { precision: 10, scale: 7 }),
   lng: decimal("lng", { precision: 10, scale: 7 }),
@@ -284,6 +284,7 @@ export const emailMessages = pgTable("email_messages", {
   fromEmail: varchar("from_email").notNull(),
   fromName: varchar("from_name"),
   toEmails: text("to_emails").array().default([]),
+  ccEmails: text("cc_emails").array().default([]),
   subject: varchar("subject"),
   bodySnippet: varchar("body_snippet"),
   fullBody: text("full_body"),
@@ -443,6 +444,8 @@ export const insertContactBuildingSchema = createInsertSchema(contactBuildings).
   lng: z.coerce.string().optional().nullable(),
   contactId: z.number().optional().nullable(),
   clientId: z.number().optional().nullable(),
+  name: z.string().optional().nullable(),
+  address: z.string().min(1, "Address is required"),
 });
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   buildingId: z.number().optional().nullable(),

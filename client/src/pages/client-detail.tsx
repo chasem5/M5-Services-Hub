@@ -894,11 +894,11 @@ export default function ClientDetail() {
       });
       if (!portRes.ok) throw new Error("Failed to create portfolio");
       const portfolio = await portRes.json();
-      for (const row of data.buildings.filter(b => b.name.trim())) {
+      for (const row of data.buildings.filter(b => b.address?.trim())) {
         try {
           const buildingRes = await apiRequest("POST", "/api/contact-buildings", {
-            name: row.name.trim(),
-            address: row.address.trim() || null,
+            name: row.name.trim() || null,
+            address: row.address.trim(),
             lat: row.lat ?? null,
             lng: row.lng ?? null,
             contactId: null,
@@ -2647,19 +2647,19 @@ export default function ClientDetail() {
                       {newPortfolioBuildings.map((row, i) => (
                         <div key={i} className="flex gap-2 items-start">
                           <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                            <AddressAutocomplete
+                              value={row.address}
+                              onChange={(addr, lat, lng) => setNewPortfolioBuildings(prev => prev.map((r, idx) => idx === i ? { ...r, address: addr, lat, lng } : r))}
+                              placeholder="Address *"
+                              className="h-8 text-sm"
+                              data-testid={`input-portfolio-building-address-${i}`}
+                            />
                             <Input
-                              placeholder="Building name *"
+                              placeholder="Building name (optional)"
                               value={row.name}
                               onChange={e => setNewPortfolioBuildings(prev => prev.map((r, idx) => idx === i ? { ...r, name: e.target.value } : r))}
                               className="h-8 text-sm"
                               data-testid={`input-portfolio-building-name-${i}`}
-                            />
-                            <AddressAutocomplete
-                              value={row.address}
-                              onChange={(addr, lat, lng) => setNewPortfolioBuildings(prev => prev.map((r, idx) => idx === i ? { ...r, address: addr, lat, lng } : r))}
-                              placeholder="Address (optional)"
-                              className="h-8 text-sm"
-                              data-testid={`input-portfolio-building-address-${i}`}
                             />
                           </div>
                           <button
@@ -2907,8 +2907,8 @@ export default function ClientDetail() {
                                       <div key={b.id} className="flex items-start gap-2 text-xs">
                                         <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
                                         <div>
-                                          <p className="font-medium">{b.name}</p>
-                                          {b.address && <p className="text-[10px] text-muted-foreground truncate">{b.address}</p>}
+                                          <p className="font-medium">{b.name || b.address || "Unnamed Building"}</p>
+                                          {b.name && b.address && <p className="text-[10px] text-muted-foreground truncate">{b.address}</p>}
                                         </div>
                                       </div>
                                     ))}
@@ -2974,7 +2974,7 @@ export default function ClientDetail() {
                         }
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="font-medium truncate">{b.name}</p>
+                            <p className="font-medium truncate">{b.name || b.address || "Unnamed Building"}</p>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${b.type === "office" ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"}`}>
                               {b.type === "office" ? "Office" : "Building"}
                             </span>

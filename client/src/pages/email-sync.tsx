@@ -4,7 +4,6 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,7 +14,7 @@ import { Link } from "wouter";
 import {
   Mail, RefreshCw, AlertCircle, Bell, ArrowDownLeft, ArrowUpRight,
   Plus, TrendingUp, MoreVertical, X, UserPlus, Link2, Zap, Building2,
-  ChevronRight, Clock, Eye, EyeOff,
+  ChevronRight, Clock, Eye, EyeOff, Search, Users, ChevronDown, ChevronUp, Ban,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -36,6 +35,7 @@ interface EmailMessage {
   fromEmail: string;
   fromName: string | null;
   toEmails: string[];
+  ccEmails: string[];
   subject: string | null;
   bodySnippet: string | null;
   fullBody: string | null;
@@ -55,26 +55,104 @@ interface EmailMessage {
   autoLinked: boolean;
 }
 
+interface DismissedSender {
+  id: number;
+  userId: string;
+  emailAddress: string;
+  createdAt: string;
+}
+
+interface EmailThread {
+  threadId: string;
+  messages: EmailMessage[];
+  latestMessage: EmailMessage;
+  senderNames: string;
+  requiresResponse: boolean;
+  hasCC: boolean;
+}
+
 interface Client { id: number; name: string; }
 interface Lead { id: number; title: string; clientId: number | null; }
 interface Contact { id: number; name: string; email: string | null; clientId: number | null; }
+
+function groupIntoThreads(emails: EmailMessage[]): EmailThread[] {
+  const map = new Map<string, EmailMessage[]>();
+  for (const e of emails) {
+    if (!map.has(e.gmailThreadId)) map.set(e.gmailThreadId, []);
+    map.get(e.gmailThreadId)!.push(e);
+  }
+  const threads: EmailThread[] = [];
+  for (const [threadId, messages] of map) {
+    const sorted = [...messages].sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+    const latestMessage = sorted[0];
+    const uniqueSenders = [...new Set(messages.map(m => m.fromName?.split(" ")[0] || m.fromEmail.split("@")[0]))];
+    const senderNames = uniqueSenders.slice(0, 3).join(", ") + (uniqueSenders.length > 3 ? "..." : "");
+    threads.push({
+      threadId,
+      messages: sorted,
+      latestMessage,
+      senderNames,
+      requiresResponse: messages.some(m => m.requiresResponse && !m.followUpReminderCreated),
+      hasCC: messages.some(m => m.direction === "cc"),
+    });
+  }
+  return threads.sort((a, b) => new Date(b.latestMessage.receivedAt).getTime() - new Date(a.latestMessage.receivedAt).getTime());
+}
 
 function sentimentBadge(sentiment: string | null) {
   switch (sentiment) {
     case "urgent": return <Badge className="bg-red-100 text-red-700 border-red-200 text-xs px-1.5 py-0">Urgent</Badge>;
     case "negative": return <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs px-1.5 py-0">Negative</Badge>;
     case "positive": return <Badge className="bg-green-100 text-green-700 border-green-200 text-xs px-1.5 py-0">Positive</Badge>;
-    default: return <Badge className="bg-gray-100 text-gray-500 border-gray-200 text-xs px-1.5 py-0">Neutral</Badge>;
+    default: return null;
   }
 }
 
-type FilterType = "all" | "inbound" | "outbound" | "needs_response";
+function directionBadge(direction: string) {
+  if (direction === "inbound") return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+      <ArrowDownLeft className="h-3 w-3" /> Inbound
+    </span>
+  );
+  if (direction === "cc") return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+      <Users className="h-3 w-3" /> CC'd
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5">
+      <ArrowUpRight className="h-3 w-3" /> Outbound
+    </span>
+  );
+}
+
+function EmailBodyRenderer({ body }: { body: string }) {
+  const paragraphs = body.split(/\n\n+/);
+  return (
+    <div className="text-sm leading-relaxed text-gray-700 space-y-3">
+      {paragraphs.map((para, i) => (
+        <p key={i}>
+          {para.split("\n").map((line, j) => (
+            <span key={j}>
+              {line}
+              {j < para.split("\n").length - 1 && <br />}
+            </span>
+          ))}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+type FilterType = "all" | "inbound" | "outbound" | "cc" | "needs_response";
 
 export default function EmailSyncPage() {
   const { toast } = useToast();
   const [filter, setFilter] = useState<FilterType>("all");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [showDismissed, setShowDismissed] = useState(false);
+  const [showBlockedSenders, setShowBlockedSenders] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [addContactDialogOpen, setAddContactDialogOpen] = useState(false);
@@ -86,10 +164,16 @@ export default function EmailSyncPage() {
   const [newContactLastName, setNewContactLastName] = useState("");
   const [newContactEmail, setNewContactEmail] = useState("");
   const [newContactClientId, setNewContactClientId] = useState("");
+  const [expandedMessages, setExpandedMessages] = useState<Set<number>>(new Set());
 
   const { data: emails = [], isLoading } = useQuery<EmailMessage[]>({
     queryKey: ["/api/email-messages", showDismissed],
     queryFn: () => fetch(`/api/email-messages${showDismissed ? "?includeDismissed=true" : ""}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  const { data: dismissedSenders = [] } = useQuery<DismissedSender[]>({
+    queryKey: ["/api/dismissed-senders"],
+    queryFn: () => fetch("/api/dismissed-senders", { credentials: "include" }).then(r => r.json()),
   });
 
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
@@ -100,25 +184,67 @@ export default function EmailSyncPage() {
     refetchInterval: 60000,
   });
 
-  const selectedEmail = emails.find(e => e.id === selectedId) ?? null;
+  // Apply filter + search to emails
+  const filteredEmails = emails.filter(e => {
+    // Dismissed view
+    if (showDismissed) return e.isDismissed;
+    if (e.isDismissed) return false;
 
-  useEffect(() => {
-    if (!selectedId && emails.length > 0) setSelectedId(emails[0].id);
-  }, [emails]);
+    // Direction filter
+    if (filter === "inbound" && e.direction !== "inbound") return false;
+    if (filter === "outbound" && e.direction !== "outbound") return false;
+    if (filter === "cc" && e.direction !== "cc") return false;
+    if (filter === "needs_response" && !(e.requiresResponse && !e.followUpReminderCreated)) return false;
 
+    // Search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const haystack = [e.subject, e.fromName, e.fromEmail, e.bodySnippet, e.aiSummary].join(" ").toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+
+    return true;
+  });
+
+  const threads = groupIntoThreads(filteredEmails);
+  const selectedThread = threads.find(t => t.threadId === selectedThreadId) ?? null;
+  const primaryEmail = selectedThread?.latestMessage ?? null;
+
+  // Auto-select first thread
   useEffect(() => {
-    if (selectedEmail) {
-      const tasks = selectedEmail.aiSuggestedTasks ?? [];
-      setSelectedTasks(tasks.map(t => t.title));
-      const parts = selectedEmail.fromName?.split(" ") ?? [];
+    if (!selectedThreadId && threads.length > 0) {
+      setSelectedThreadId(threads[0].threadId);
+    }
+  }, [threads.length]);
+
+  // When thread changes, auto-expand most recent message
+  useEffect(() => {
+    if (selectedThread) {
+      setExpandedMessages(new Set([selectedThread.latestMessage.id]));
+      const e = selectedThread.latestMessage;
+      setSelectedTasks(e.aiSuggestedTasks?.map(t => t.title) ?? []);
+      const parts = e.fromName?.split(" ") ?? [];
       setNewContactFirstName(parts[0] ?? "");
       setNewContactLastName(parts.slice(1).join(" ") ?? "");
-      setNewContactEmail(selectedEmail.fromEmail ?? "");
-      setLinkClientId(selectedEmail.clientId ? String(selectedEmail.clientId) : "");
-      setLinkLeadId(selectedEmail.leadId ? String(selectedEmail.leadId) : "");
-      setLinkContactId(selectedEmail.contactId ? String(selectedEmail.contactId) : "");
+      setNewContactEmail(e.fromEmail ?? "");
+      setLinkClientId(e.clientId ? String(e.clientId) : "");
+      setLinkLeadId(e.leadId ? String(e.leadId) : "");
+      setLinkContactId(e.contactId ? String(e.contactId) : "");
     }
-  }, [selectedId]);
+  }, [selectedThreadId]);
+
+  const needsResponseCount = emails.filter(e => e.requiresResponse && !e.followUpReminderCreated && !e.isDismissed).length;
+  const ccCount = emails.filter(e => e.direction === "cc" && !e.isDismissed).length;
+  const dismissedCount = emails.filter(e => e.isDismissed).length;
+
+  const matchedClient = primaryEmail?.clientId ? clients.find(c => c.id === primaryEmail.clientId) : null;
+  const matchedLead = primaryEmail?.leadId ? leads.find(l => l.id === primaryEmail.leadId) : null;
+  const matchedContact = primaryEmail?.contactId ? contacts.find(c => c.id === primaryEmail.contactId) : null;
+  const availableLeads = linkClientId ? leads.filter(l => l.clientId === parseInt(linkClientId)) : leads;
+
+  const lastSyncedText = syncStatus?.lastSynced
+    ? `Last synced ${formatDistanceToNow(new Date(syncStatus.lastSynced), { addSuffix: true })}`
+    : "Never synced";
 
   const syncMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/email/sync", {}),
@@ -137,17 +263,28 @@ export default function EmailSyncPage() {
     mutationFn: (id: number) => apiRequest("PATCH", `/api/email-messages/${id}/dismiss`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] });
-      setSelectedId(null);
+      setSelectedThreadId(null);
       toast({ title: "Email dismissed" });
     },
   });
 
   const dismissSenderMutation = useMutation({
     mutationFn: (emailAddress: string) => apiRequest("POST", "/api/dismissed-senders", { emailAddress }),
-    onSuccess: () => {
+    onSuccess: (_, emailAddress) => {
       queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] });
-      setSelectedId(null);
-      toast({ title: "Sender dismissed — all emails from this address hidden" });
+      queryClient.invalidateQueries({ queryKey: ["/api/dismissed-senders"] });
+      setSelectedThreadId(null);
+      const isDomain = emailAddress.startsWith("@");
+      toast({ title: isDomain ? `All emails from ${emailAddress} blocked` : `${emailAddress} blocked` });
+    },
+  });
+
+  const removeDismissedSenderMutation = useMutation({
+    mutationFn: (emailAddress: string) => apiRequest("DELETE", `/api/dismissed-senders/${encodeURIComponent(emailAddress)}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dismissed-senders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] });
+      toast({ title: "Sender unblocked" });
     },
   });
 
@@ -195,8 +332,8 @@ export default function EmailSyncPage() {
       }),
     onSuccess: (newContact: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
-      if (selectedEmail) {
-        linkMutation.mutate({ id: selectedEmail.id, contactId: newContact.id, clientId: newContact.clientId });
+      if (primaryEmail) {
+        linkMutation.mutate({ id: primaryEmail.id, contactId: newContact.id, clientId: newContact.clientId });
       }
       setAddContactDialogOpen(false);
       toast({ title: "Contact created and linked" });
@@ -204,25 +341,14 @@ export default function EmailSyncPage() {
     onError: () => toast({ title: "Failed to create contact", variant: "destructive" }),
   });
 
-  const filtered = emails.filter(e => {
-    if (showDismissed) return e.isDismissed;
-    if (filter === "inbound") return e.direction === "inbound" && !e.isDismissed;
-    if (filter === "outbound") return e.direction === "outbound" && !e.isDismissed;
-    if (filter === "needs_response") return e.requiresResponse && !e.followUpReminderCreated && !e.isDismissed;
-    return !e.isDismissed;
-  });
-
-  const needsResponseCount = emails.filter(e => e.requiresResponse && !e.followUpReminderCreated && !e.isDismissed).length;
-  const dismissedCount = emails.filter(e => e.isDismissed).length;
-
-  const matchedClient = selectedEmail?.clientId ? clients.find(c => c.id === selectedEmail.clientId) : null;
-  const matchedLead = selectedEmail?.leadId ? leads.find(l => l.id === selectedEmail.leadId) : null;
-  const matchedContact = selectedEmail?.contactId ? contacts.find(c => c.id === selectedEmail.contactId) : null;
-  const availableLeads = linkClientId ? leads.filter(l => l.clientId === parseInt(linkClientId)) : leads;
-
-  const lastSyncedText = syncStatus?.lastSynced
-    ? `Last synced ${formatDistanceToNow(new Date(syncStatus.lastSynced), { addSuffix: true })}`
-    : "Never synced";
+  const toggleMessageExpanded = (id: number) => {
+    setExpandedMessages(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -253,302 +379,425 @@ export default function EmailSyncPage() {
         </Button>
       </div>
 
-      {/* Filter bar */}
+      {/* Filter bar + search */}
       <div className="px-5 py-2 border-b border-gray-100 bg-white shrink-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {(["all", "inbound", "outbound", "needs_response"] as FilterType[]).map(key => (
-            <button
-              key={key}
-              onClick={() => { setFilter(key); setShowDismissed(false); }}
-              data-testid={`filter-${key}`}
-              className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors ${
-                !showDismissed && filter === key ? "bg-primary text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              {key === "all" && "All"}
-              {key === "inbound" && "Inbound"}
-              {key === "outbound" && "Outbound"}
-              {key === "needs_response" && `Needs Response${needsResponseCount > 0 ? ` (${needsResponseCount})` : ""}`}
-            </button>
-          ))}
-          {dismissedCount > 0 && (
-            <button
-              onClick={() => setShowDismissed(!showDismissed)}
-              data-testid="filter-dismissed"
-              className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors flex items-center gap-1 ${
-                showDismissed ? "bg-gray-500 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-              }`}
-            >
-              {showDismissed ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-              Dismissed ({dismissedCount})
-            </button>
-          )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap flex-1">
+            {(["all", "inbound", "outbound", "cc", "needs_response"] as FilterType[]).map(key => (
+              <button
+                key={key}
+                onClick={() => { setFilter(key); setShowDismissed(false); }}
+                data-testid={`filter-${key}`}
+                className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors ${
+                  !showDismissed && filter === key ? "bg-primary text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {key === "all" && "All"}
+                {key === "inbound" && "Inbound"}
+                {key === "outbound" && "Outbound"}
+                {key === "cc" && `CC'd${ccCount > 0 ? ` (${ccCount})` : ""}`}
+                {key === "needs_response" && `Needs Response${needsResponseCount > 0 ? ` (${needsResponseCount})` : ""}`}
+              </button>
+            ))}
+            {dismissedCount > 0 && (
+              <button
+                onClick={() => setShowDismissed(!showDismissed)}
+                data-testid="filter-dismissed"
+                className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors flex items-center gap-1 ${
+                  showDismissed ? "bg-gray-500 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                }`}
+              >
+                {showDismissed ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                Dismissed ({dismissedCount})
+              </button>
+            )}
+          </div>
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search emails..."
+              className="h-7 pl-8 pr-7 text-xs w-44 bg-gray-50 border-gray-200"
+              data-testid="input-email-search"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
+        {searchQuery && (
+          <p className="text-xs text-gray-400 mt-1.5">{threads.length} thread{threads.length !== 1 ? "s" : ""} found</p>
+        )}
       </div>
 
       {/* Two-panel body */}
       <div className="flex-1 flex overflow-hidden">
-        {/* LEFT: Email list */}
-        <div className="w-80 shrink-0 border-r border-gray-200 bg-white overflow-y-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-32 text-gray-400">
-              <RefreshCw className="h-4 w-4 animate-spin mr-2" /> Loading...
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 text-center px-4">
-              <Mail className="h-8 w-8 text-gray-300 mb-3" />
-              {emails.filter(e => !e.isDismissed).length === 0 ? (
-                <>
-                  <p className="text-sm font-semibold text-gray-600">No emails synced yet</p>
-                  <p className="text-xs text-gray-400 mt-1">Click Sync Now to pull your Gmail</p>
-                </>
-              ) : (
-                <p className="text-sm text-gray-500">No emails match this filter</p>
+        {/* LEFT: Thread list */}
+        <div className="w-80 shrink-0 border-r border-gray-200 bg-white overflow-y-auto flex flex-col">
+          <div className="flex-1">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-32 text-gray-400">
+                <RefreshCw className="h-4 w-4 animate-spin mr-2" /> Loading...
+              </div>
+            ) : threads.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-48 text-center px-4">
+                <Mail className="h-8 w-8 text-gray-300 mb-3" />
+                {emails.filter(e => !e.isDismissed).length === 0 ? (
+                  <>
+                    <p className="text-sm font-semibold text-gray-600">No emails synced yet</p>
+                    <p className="text-xs text-gray-400 mt-1">Click Sync Now to pull your Gmail</p>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-500">No emails match this filter</p>
+                )}
+              </div>
+            ) : (
+              threads.map(thread => {
+                const isSelected = thread.threadId === selectedThreadId;
+                const latest = thread.latestMessage;
+                const client = latest.clientId ? clients.find(c => c.id === latest.clientId) : null;
+                const hasSuggestions = (latest.aiConnectionSuggestions?.length ?? 0) > 0 && !latest.clientId;
+                const isCC = thread.messages.every(m => m.direction === "cc");
+                return (
+                  <div
+                    key={thread.threadId}
+                    onClick={() => setSelectedThreadId(thread.threadId)}
+                    data-testid={`thread-row-${thread.threadId}`}
+                    className={`px-3 py-2.5 border-b border-gray-100 cursor-pointer transition-colors ${
+                      isSelected ? "bg-primary/5 border-l-2 border-l-primary" : "hover:bg-gray-50 border-l-2 border-l-transparent"
+                    } ${isCC ? "opacity-70" : ""}`}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-0.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {latest.direction === "inbound"
+                          ? <ArrowDownLeft className="h-3 w-3 text-blue-500 shrink-0" />
+                          : latest.direction === "cc"
+                          ? <Users className="h-3 w-3 text-gray-400 shrink-0" />
+                          : <ArrowUpRight className="h-3 w-3 text-gray-400 shrink-0" />
+                        }
+                        <p className="text-xs font-semibold text-gray-800 truncate">{thread.senderNames}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {thread.messages.length > 1 && (
+                          <span className="text-[10px] bg-gray-100 text-gray-500 rounded-full px-1.5 py-0">{thread.messages.length}</span>
+                        )}
+                        <span className="text-xs text-gray-400">{format(new Date(latest.receivedAt), "MMM d")}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-600 truncate font-medium">{latest.subject ?? "(no subject)"}</p>
+                    <p className="text-xs text-gray-400 truncate mt-0.5">{latest.bodySnippet}</p>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      {thread.requiresResponse && (
+                        <span className="inline-flex items-center gap-0.5 text-xs text-amber-600 bg-amber-50 rounded px-1 py-0">
+                          <AlertCircle className="h-2.5 w-2.5" /> Reply
+                        </span>
+                      )}
+                      {isCC && (
+                        <span className="inline-flex items-center gap-0.5 text-xs text-gray-500 bg-gray-100 rounded px-1 py-0">
+                          <Users className="h-2.5 w-2.5" /> CC
+                        </span>
+                      )}
+                      {hasSuggestions && (
+                        <span className="inline-flex items-center gap-0.5 text-xs text-purple-600 bg-purple-50 rounded px-1 py-0">
+                          <Zap className="h-2.5 w-2.5" /> Suggestion
+                        </span>
+                      )}
+                      {client && (
+                        <span className="text-xs text-primary font-medium truncate">{client.name}</span>
+                      )}
+                      {latest.isDismissed && (
+                        <span className="text-xs text-gray-400 italic">dismissed</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Blocked Senders Panel */}
+          {dismissedSenders.length > 0 && (
+            <div className="border-t border-gray-200 shrink-0">
+              <button
+                onClick={() => setShowBlockedSenders(!showBlockedSenders)}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-500 hover:bg-gray-50 transition-colors"
+                data-testid="button-toggle-blocked-senders"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Ban className="h-3 w-3" />
+                  Blocked Senders ({dismissedSenders.length})
+                </span>
+                {showBlockedSenders ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </button>
+              {showBlockedSenders && (
+                <div className="px-3 pb-2 space-y-1 max-h-40 overflow-y-auto">
+                  {dismissedSenders.map(ds => (
+                    <div key={ds.id} className="flex items-center justify-between text-xs py-0.5">
+                      <span className={`truncate ${ds.emailAddress.startsWith("@") ? "text-orange-600 font-medium" : "text-gray-600"}`}>
+                        {ds.emailAddress.startsWith("@") ? `All from ${ds.emailAddress}` : ds.emailAddress}
+                      </span>
+                      <button
+                        onClick={() => removeDismissedSenderMutation.mutate(ds.emailAddress)}
+                        className="ml-2 shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                        data-testid={`button-unblock-sender-${ds.id}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          ) : (
-            filtered.map(email => {
-              const isSelected = email.id === selectedId;
-              const client = email.clientId ? clients.find(c => c.id === email.clientId) : null;
-              const hasSuggestions = (email.aiConnectionSuggestions?.length ?? 0) > 0 && !email.clientId;
-              return (
-                <div
-                  key={email.id}
-                  onClick={() => setSelectedId(email.id)}
-                  data-testid={`email-row-${email.id}`}
-                  className={`px-3 py-2.5 border-b border-gray-100 cursor-pointer transition-colors ${
-                    isSelected ? "bg-primary/5 border-l-2 border-l-primary" : "hover:bg-gray-50 border-l-2 border-l-transparent"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2 mb-0.5">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {email.direction === "inbound"
-                        ? <ArrowDownLeft className="h-3 w-3 text-blue-500 shrink-0" />
-                        : <ArrowUpRight className="h-3 w-3 text-gray-400 shrink-0" />
-                      }
-                      <p className="text-xs font-semibold text-gray-800 truncate">
-                        {email.direction === "inbound" ? (email.fromName ?? email.fromEmail) : (email.toEmails?.[0] ?? "—")}
-                      </p>
-                    </div>
-                    <span className="text-xs text-gray-400 shrink-0">{format(new Date(email.receivedAt), "MMM d")}</span>
-                  </div>
-                  <p className="text-xs text-gray-600 truncate font-medium">{email.subject ?? "(no subject)"}</p>
-                  <p className="text-xs text-gray-400 truncate mt-0.5">{email.bodySnippet}</p>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    {email.requiresResponse && !email.followUpReminderCreated && (
-                      <span className="inline-flex items-center gap-0.5 text-xs text-amber-600 bg-amber-50 rounded px-1 py-0">
-                        <AlertCircle className="h-2.5 w-2.5" /> Reply
-                      </span>
-                    )}
-                    {hasSuggestions && (
-                      <span className="inline-flex items-center gap-0.5 text-xs text-purple-600 bg-purple-50 rounded px-1 py-0">
-                        <Zap className="h-2.5 w-2.5" /> Suggestion
-                      </span>
-                    )}
-                    {client && (
-                      <span className="text-xs text-primary font-medium truncate">{client.name}</span>
-                    )}
-                    {email.isDismissed && (
-                      <span className="text-xs text-gray-400 italic">dismissed</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })
           )}
         </div>
 
-        {/* RIGHT: Email detail */}
+        {/* RIGHT: Thread detail */}
         <div className="flex-1 overflow-y-auto">
-          {!selectedEmail ? (
+          {!selectedThread ? (
             <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
               <Mail className="h-10 w-10 mb-3 text-gray-300" />
-              <p className="text-sm">Select an email to view details</p>
+              <p className="text-sm">Select a thread to view details</p>
             </div>
           ) : (
             <div className="p-5 max-w-3xl">
-              {/* Detail header */}
+              {/* Thread header */}
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                    {selectedEmail.direction === "inbound"
-                      ? <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5"><ArrowDownLeft className="h-3 w-3" /> Inbound</span>
-                      : <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5"><ArrowUpRight className="h-3 w-3" /> Outbound</span>
-                    }
-                    {sentimentBadge(selectedEmail.aiSentiment)}
-                    {selectedEmail.requiresResponse && !selectedEmail.followUpReminderCreated && (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                        <AlertCircle className="h-3 w-3" /> Needs Response
+                  <h2 className="text-base font-bold text-gray-900 mb-1">{primaryEmail?.subject ?? "(no subject)"}</h2>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {selectedThread.messages.length > 1 && (
+                      <span className="text-xs text-gray-500">{selectedThread.messages.length} messages</span>
+                    )}
+                    {matchedClient && (
+                      <Link href={`/customers/${matchedClient.id}`}>
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-primary bg-primary/5 border border-primary/20 rounded-full px-2 py-0.5 hover:bg-primary/10 cursor-pointer">
+                          <Building2 className="h-3 w-3" /> {matchedClient.name}
+                        </span>
+                      </Link>
+                    )}
+                    {matchedLead && (
+                      <Link href={`/leads/${matchedLead.id}`}>
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 hover:bg-indigo-100 cursor-pointer">
+                          <ChevronRight className="h-3 w-3" /> {matchedLead.title}
+                        </span>
+                      </Link>
+                    )}
+                    {matchedContact && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">
+                        {matchedContact.name}
                       </span>
                     )}
-                    {selectedEmail.followUpReminderCreated && (
-                      <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5">
-                        <Bell className="h-3 w-3" /> Reminder sent
-                      </span>
-                    )}
-                    {selectedEmail.autoLinked && selectedEmail.clientId && (
-                      <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
-                        <Zap className="h-3 w-3" /> Auto-linked
-                      </span>
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs gap-1 rounded-full"
+                      onClick={() => setLinkDialogOpen(true)}
+                      data-testid={`button-link-thread`}
+                    >
+                      <Link2 className="h-3 w-3" /> {matchedClient ? "Edit Links" : "Link Records"}
+                    </Button>
                   </div>
-                  <h2 className="text-base font-bold text-gray-900">{selectedEmail.subject ?? "(no subject)"}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {selectedEmail.direction === "inbound"
-                      ? `From: ${selectedEmail.fromName ? `${selectedEmail.fromName} <${selectedEmail.fromEmail}>` : selectedEmail.fromEmail}`
-                      : `To: ${selectedEmail.toEmails?.join(", ") ?? "—"}`
-                    }
-                    {" · "}{format(new Date(selectedEmail.receivedAt), "MMM d, yyyy h:mm a")}
-                  </p>
                 </div>
                 {/* Actions menu */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 ml-3 shrink-0" data-testid={`button-more-${selectedEmail.id}`}>
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
-                    <DropdownMenuItem onClick={() => dismissEmailMutation.mutate(selectedEmail.id)} data-testid={`menu-dismiss-email-${selectedEmail.id}`}>
-                      <X className="h-3.5 w-3.5 mr-2 text-gray-500" /> Dismiss this email
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => dismissSenderMutation.mutate(selectedEmail.fromEmail)}
-                      className="text-red-600"
-                      data-testid={`menu-dismiss-sender-${selectedEmail.id}`}
-                    >
-                      <EyeOff className="h-3.5 w-3.5 mr-2" /> Dismiss all from {selectedEmail.fromEmail.split("@")[1]}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              {/* Linked records */}
-              <div className="flex items-center gap-2 flex-wrap mb-4">
-                {matchedClient && (
-                  <Link href={`/customers/${matchedClient.id}`}>
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-primary bg-primary/5 border border-primary/20 rounded-full px-2 py-0.5 hover:bg-primary/10 cursor-pointer">
-                      <Building2 className="h-3 w-3" /> {matchedClient.name}
-                    </span>
-                  </Link>
-                )}
-                {matchedLead && (
-                  <Link href={`/leads/${matchedLead.id}`}>
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 hover:bg-indigo-100 cursor-pointer">
-                      <ChevronRight className="h-3 w-3" /> {matchedLead.title}
-                    </span>
-                  </Link>
-                )}
-                {matchedContact && (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">
-                    {matchedContact.name}
-                  </span>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-6 text-xs gap-1 rounded-full"
-                  onClick={() => setLinkDialogOpen(true)}
-                  data-testid={`button-link-${selectedEmail.id}`}
-                >
-                  <Link2 className="h-3 w-3" /> {matchedClient ? "Edit Links" : "Link Records"}
-                </Button>
-              </div>
-
-              {/* AI connection suggestions */}
-              {(selectedEmail.aiConnectionSuggestions?.length ?? 0) > 0 && !selectedEmail.clientId && (
-                <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50">
-                  <p className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-1">
-                    <Zap className="h-3.5 w-3.5" /> Possible Connections
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedEmail.aiConnectionSuggestions!.map((s, i) => (
-                      <button
-                        key={i}
-                        onClick={() => {
-                          const update: any = {};
-                          if (s.type === "client") update.clientId = s.id;
-                          else if (s.type === "contact") update.contactId = s.id;
-                          else if (s.type === "lead") update.leadId = s.id;
-                          linkMutation.mutate({ id: selectedEmail.id, ...update });
-                        }}
-                        data-testid={`suggestion-link-${i}`}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-amber-900 bg-amber-100 border border-amber-300 rounded-full px-2 py-0.5 hover:bg-amber-200 transition-colors"
+                {primaryEmail && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 ml-3 shrink-0" data-testid="button-thread-more">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-60">
+                      <DropdownMenuItem
+                        onClick={() => dismissEmailMutation.mutate(primaryEmail.id)}
+                        data-testid="menu-dismiss-email"
                       >
-                        <Plus className="h-3 w-3" />
-                        {s.type === "client" ? <Building2 className="h-3 w-3" /> : null}
-                        {s.name}
-                        <span className="text-amber-600 font-normal">— {s.reason}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* AI Summary */}
-              {selectedEmail.aiSummary && (
-                <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <p className="text-xs font-semibold text-gray-500 mb-1">AI Summary</p>
-                  <p className="text-sm text-gray-700 leading-relaxed">{selectedEmail.aiSummary}</p>
-                </div>
-              )}
-
-              {/* Email body */}
-              {selectedEmail.fullBody && (
-                <div className="mb-4 bg-white rounded-lg border border-gray-200 max-h-72 overflow-y-auto p-4">
-                  <pre className="text-xs text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">{selectedEmail.fullBody}</pre>
-                </div>
-              )}
-
-              {/* Action buttons */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {(selectedEmail.aiSuggestedTasks?.length ?? 0) > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs gap-1"
-                    onClick={() => setTaskDialogOpen(true)}
-                    data-testid={`button-create-tasks-${selectedEmail.id}`}
-                  >
-                    <Plus className="h-3 w-3" /> Create Tasks ({selectedEmail.aiSuggestedTasks!.length})
-                  </Button>
-                )}
-                {selectedEmail.aiStageSuggestion && selectedEmail.leadId && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs gap-1"
-                    onClick={() => applyStageMutation.mutate({ id: selectedEmail.id, leadId: selectedEmail.leadId!, stage: selectedEmail.aiStageSuggestion! })}
-                    disabled={applyStageMutation.isPending}
-                    data-testid={`button-update-stage-${selectedEmail.id}`}
-                  >
-                    <TrendingUp className="h-3 w-3" /> Update Stage → {selectedEmail.aiStageSuggestion.replace(/_/g, " ")}
-                  </Button>
-                )}
-                {!selectedEmail.contactId && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs gap-1"
-                    onClick={() => setAddContactDialogOpen(true)}
-                    data-testid={`button-add-contact-${selectedEmail.id}`}
-                  >
-                    <UserPlus className="h-3 w-3" /> Add as Contact
-                  </Button>
+                        <X className="h-3.5 w-3.5 mr-2 text-gray-500" /> Dismiss this email
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => dismissSenderMutation.mutate(primaryEmail.fromEmail)}
+                        data-testid="menu-dismiss-sender"
+                      >
+                        <EyeOff className="h-3.5 w-3.5 mr-2 text-gray-500" />
+                        Block {primaryEmail.fromEmail}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => dismissSenderMutation.mutate("@" + primaryEmail.fromEmail.split("@")[1])}
+                        className="text-orange-600"
+                        data-testid="menu-dismiss-domain"
+                      >
+                        <Ban className="h-3.5 w-3.5 mr-2" />
+                        Block all from @{primaryEmail.fromEmail.split("@")[1]}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
+
+              {/* Thread messages */}
+              <div className="space-y-3 mb-4">
+                {selectedThread.messages.map((msg, idx) => {
+                  const isExpanded = expandedMessages.has(msg.id);
+                  const isLatest = idx === 0;
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`rounded-lg border bg-white ${isLatest ? "border-gray-300 shadow-sm" : "border-gray-200"}`}
+                      data-testid={`message-${msg.id}`}
+                    >
+                      {/* Message header — always visible, clickable to toggle */}
+                      <button
+                        onClick={() => toggleMessageExpanded(msg.id)}
+                        className="w-full flex items-start justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                      >
+                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                          {directionBadge(msg.direction)}
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-800">
+                              {msg.fromName ? `${msg.fromName} <${msg.fromEmail}>` : msg.fromEmail}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {format(new Date(msg.receivedAt), "MMM d, yyyy h:mm a")}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {sentimentBadge(msg.aiSentiment)}
+                            {msg.requiresResponse && !msg.followUpReminderCreated && (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                <AlertCircle className="h-3 w-3" /> Respond
+                              </span>
+                            )}
+                            {msg.followUpReminderCreated && (
+                              <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5">
+                                <Bell className="h-3 w-3" /> Reminded
+                              </span>
+                            )}
+                            {msg.autoLinked && msg.clientId && (
+                              <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
+                                <Zap className="h-3 w-3" /> Linked
+                              </span>
+                            )}
+                          </div>
+                          {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                        </div>
+                      </button>
+
+                      {/* Message body — only when expanded */}
+                      {isExpanded && (
+                        <div className="px-4 pb-4 border-t border-gray-100">
+                          {/* AI connection suggestions */}
+                          {(msg.aiConnectionSuggestions?.length ?? 0) > 0 && !msg.clientId && (
+                            <div className="mt-3 mb-3 p-3 rounded-lg border border-amber-200 bg-amber-50">
+                              <p className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-1">
+                                <Zap className="h-3.5 w-3.5" /> Possible Connections
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {msg.aiConnectionSuggestions!.map((s, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() => {
+                                      const update: any = {};
+                                      if (s.type === "client") update.clientId = s.id;
+                                      else if (s.type === "contact") { update.contactId = s.id; }
+                                      else if (s.type === "lead") update.leadId = s.id;
+                                      linkMutation.mutate({ id: msg.id, ...update });
+                                    }}
+                                    data-testid={`suggestion-${s.type}-${s.id}`}
+                                    className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                                      s.confidence === "high" ? "bg-green-50 border-green-200 text-green-700 hover:bg-green-100" :
+                                      s.confidence === "medium" ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" :
+                                      "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                                    }`}
+                                  >
+                                    {s.type === "client" ? "🏢" : s.type === "lead" ? "📋" : "👤"} {s.name}
+                                    <span className="text-amber-600 font-normal"> — {s.reason}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* AI Summary */}
+                          {msg.aiSummary && (
+                            <div className="mt-3 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                              <p className="text-xs font-semibold text-gray-500 mb-1">AI Summary</p>
+                              <p className="text-sm text-gray-700 leading-relaxed">{msg.aiSummary}</p>
+                            </div>
+                          )}
+
+                          {/* Email body */}
+                          {msg.fullBody && (
+                            <div className="mt-3 bg-white rounded-lg border border-gray-200 max-h-72 overflow-y-auto p-4">
+                              <EmailBodyRenderer body={msg.fullBody} />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Action buttons — driven by the latest email's AI suggestions */}
+              {primaryEmail && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(primaryEmail.aiSuggestedTasks?.length ?? 0) > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setTaskDialogOpen(true)}
+                      data-testid="button-create-tasks"
+                    >
+                      <Plus className="h-3 w-3" /> Create Tasks ({primaryEmail.aiSuggestedTasks!.length})
+                    </Button>
+                  )}
+                  {primaryEmail.aiStageSuggestion && primaryEmail.leadId && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => applyStageMutation.mutate({ id: primaryEmail.id, leadId: primaryEmail.leadId!, stage: primaryEmail.aiStageSuggestion! })}
+                      disabled={applyStageMutation.isPending}
+                      data-testid="button-update-stage"
+                    >
+                      <TrendingUp className="h-3 w-3" /> Update Stage → {primaryEmail.aiStageSuggestion.replace(/_/g, " ")}
+                    </Button>
+                  )}
+                  {!primaryEmail.contactId && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setAddContactDialogOpen(true)}
+                      data-testid="button-add-contact"
+                    >
+                      <UserPlus className="h-3 w-3" /> Add as Contact
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
       {/* Task Dialog */}
-      {selectedEmail && (
+      {primaryEmail && (
         <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader><DialogTitle>Create Tasks from AI Suggestions</DialogTitle></DialogHeader>
             <div className="space-y-2 py-2">
-              {(selectedEmail.aiSuggestedTasks ?? []).map(task => (
+              {(primaryEmail.aiSuggestedTasks ?? []).map(task => (
                 <div key={task.title} className="flex items-start gap-3 p-2.5 rounded border border-gray-200 bg-gray-50">
                   <Checkbox
                     id={`task-${task.title}`}
@@ -570,8 +819,8 @@ export default function EmailSyncPage() {
               <Button variant="outline" onClick={() => setTaskDialogOpen(false)}>Cancel</Button>
               <Button
                 onClick={() => {
-                  const toCreate = (selectedEmail.aiSuggestedTasks ?? []).filter(t => selectedTasks.includes(t.title));
-                  if (toCreate.length > 0) createTasksMutation.mutate({ id: selectedEmail.id, tasks: toCreate });
+                  const toCreate = (primaryEmail.aiSuggestedTasks ?? []).filter(t => selectedTasks.includes(t.title));
+                  if (toCreate.length > 0) createTasksMutation.mutate({ id: primaryEmail.id, tasks: toCreate });
                 }}
                 disabled={selectedTasks.length === 0 || createTasksMutation.isPending}
                 data-testid="button-confirm-create-tasks"
@@ -584,7 +833,7 @@ export default function EmailSyncPage() {
       )}
 
       {/* Link Records Dialog */}
-      {selectedEmail && (
+      {primaryEmail && (
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
           <DialogContent className="max-w-sm">
             <DialogHeader><DialogTitle>Link Records</DialogTitle></DialogHeader>
@@ -633,7 +882,7 @@ export default function EmailSyncPage() {
               <Button variant="outline" onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
               <Button
                 onClick={() => linkMutation.mutate({
-                  id: selectedEmail.id,
+                  id: primaryEmail.id,
                   clientId: linkClientId && linkClientId !== "none" ? parseInt(linkClientId) : null,
                   leadId: linkLeadId && linkLeadId !== "none" ? parseInt(linkLeadId) : null,
                   contactId: linkContactId && linkContactId !== "none" ? parseInt(linkContactId) : null,
@@ -649,7 +898,7 @@ export default function EmailSyncPage() {
       )}
 
       {/* Add Contact Dialog */}
-      {selectedEmail && (
+      {primaryEmail && (
         <Dialog open={addContactDialogOpen} onOpenChange={setAddContactDialogOpen}>
           <DialogContent className="max-w-sm">
             <DialogHeader><DialogTitle>Add as New Contact</DialogTitle></DialogHeader>

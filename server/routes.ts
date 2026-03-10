@@ -2517,6 +2517,7 @@ Return only valid JSON, no markdown.`;
     ]);
 
     const dismissedAddresses = new Set(dismissedList.map(d => d.emailAddress.toLowerCase()));
+    const dismissedDomains = new Set(dismissedList.filter(d => d.emailAddress.startsWith("@")).map(d => d.emailAddress.toLowerCase()));
 
     const allClients = await storage.listClients();
     const allContacts = await storage.listAllClientContacts();
@@ -2549,10 +2550,14 @@ Return only valid JSON, no markdown.`;
     for (const raw of rawEmails) {
       const fromLower = raw.fromEmail.toLowerCase();
 
-      // Skip dismissed senders
-      if (dismissedAddresses.has(fromLower)) continue;
+      // Skip dismissed senders (individual address or domain)
+      const fromDomainKey = fromLower.includes("@") ? "@" + fromLower.split("@")[1] : "";
+      if (dismissedAddresses.has(fromLower) || dismissedDomains.has(fromDomainKey)) continue;
 
-      const direction = fromLower === myAddress.toLowerCase() ? "outbound" : "inbound";
+      const myLower = myAddress.toLowerCase();
+      const ccLower = (raw.ccEmails ?? []).map((e: string) => e.toLowerCase());
+      const toLower2 = raw.toEmails.map((e: string) => e.toLowerCase());
+      const direction = fromLower === myLower ? "outbound" : (ccLower.includes(myLower) && !toLower2.includes(myLower)) ? "cc" : "inbound";
 
       let clientId: number | null = null;
       let contactId: number | null = null;
@@ -2597,9 +2602,14 @@ Return only valid JSON, no markdown.`;
       const leadId = clientId ? (allLeads.find(l => l.clientId === clientId)?.id ?? null) : null;
 
       // 3. AI analysis + connection suggestions for unmatched emails
+      const userName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(" ") || currentUser.email || "the M5 employee";
+      const userEmail = currentUser.gmailEmail || currentUser.email || "";
+
       let aiResult = { summary: "", suggestedTasks: [] as any[], sentiment: "neutral", stageSuggestion: null as string | null, requiresResponse: false, connectionSuggestions: suggestions };
       try {
         const prompt = `You are an assistant for M5 Services, a facility maintenance company. Analyze this email and respond with ONLY valid JSON.
+
+IMPORTANT: The M5 employee reviewing this email is ${userName} (${userEmail}). This is their OWN Gmail account. Do NOT suggest tasks directed at ${userName} (e.g. "Follow up with ${userName}", "Ask ${userName}...") — ${userName} IS the person who will be doing the tasks. Only suggest external actions they need to take (calling clients, following up with prospects, sending quotes, scheduling visits, etc.).
 
 Email:
 From: ${raw.fromName} <${raw.fromEmail}>
@@ -2609,7 +2619,7 @@ Body: ${raw.fullBody.slice(0, 2000)}
 Known clients: ${JSON.stringify(clientContext.slice(0, 15))}
 Known contacts: ${JSON.stringify(contactContext.slice(0, 15))}
 Active leads: ${JSON.stringify(leadContext.slice(0, 10))}
-Direction: ${direction} (${direction === "inbound" ? "client emailed M5" : "M5 emailed client"})
+Direction: ${direction} (${direction === "inbound" ? "client emailed M5" : direction === "cc" ? "M5 employee was CC'd for monitoring" : "M5 emailed client"})
 Already matched clientId: ${clientId ?? "none"}
 
 Respond with this JSON:
@@ -2618,7 +2628,7 @@ Respond with this JSON:
   "suggestedTasks": [{"title": "task title", "priority": "high|medium|low", "dueInDays": 1}],
   "sentiment": "positive|neutral|negative|urgent",
   "stageSuggestion": null or one of: "new_lead|qualified|proposal_sent|won|lost",
-  "requiresResponse": true or false (true only if inbound and M5 should reply — exclude automated/notifications/newsletters),
+  "requiresResponse": true or false (true only if inbound and M5 should reply — false for cc, outbound, automated/notifications/newsletters),
   "connectionSuggestions": [] or array of {type: "client"|"contact"|"lead", id: number, name: string, confidence: "high"|"medium"|"low", reason: string} — suggest CRM records that seem related to this email based on names/companies mentioned, only if not already matched
 }`;
 
@@ -2637,7 +2647,7 @@ Respond with this JSON:
           suggestedTasks: Array.isArray(parsed.suggestedTasks) ? parsed.suggestedTasks.slice(0, 5) : [],
           sentiment: parsed.sentiment ?? "neutral",
           stageSuggestion: parsed.stageSuggestion ?? null,
-          requiresResponse: direction === "inbound" ? (parsed.requiresResponse ?? false) : false,
+          requiresResponse: direction === "inbound" ? (parsed.requiresResponse ?? false) : false, // CC and outbound never require response
           connectionSuggestions: aiSuggestions,
         };
       } catch {
@@ -2656,6 +2666,7 @@ Respond with this JSON:
         fromEmail: raw.fromEmail,
         fromName: raw.fromName ?? null,
         toEmails: raw.toEmails,
+        ccEmails: raw.ccEmails ?? [],
         subject: raw.subject,
         bodySnippet: raw.bodySnippet,
         fullBody: raw.fullBody,

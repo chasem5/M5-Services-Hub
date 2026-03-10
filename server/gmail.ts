@@ -106,8 +106,12 @@ function stripHtml(html: string): string {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<\/tr>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
@@ -115,6 +119,59 @@ function stripHtml(html: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&#x200B;/g, "")
+    .replace(/\u200B/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function cleanEmailBody(text: string): string {
+  const lines = text.split("\n");
+  const cleaned: string[] = [];
+  let inSignature = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Detect signature delimiter lines (-- or ___ or ===) and stop
+    if (/^[-_=]{2,}\s*$/.test(trimmed)) {
+      inSignature = true;
+      break;
+    }
+
+    // Skip if we're in signature territory
+    if (inSignature) continue;
+
+    // Skip lines that are purely a URL
+    if (/^https?:\/\/\S+$/.test(trimmed)) continue;
+
+    // Skip quoted reply lines
+    if (trimmed.startsWith(">")) continue;
+
+    // Skip "On [date], [Name] <email> wrote:" attribution lines (multiline pattern)
+    if (/^On .{5,}, .+ wrote:?\s*$/.test(trimmed)) continue;
+    if (/^On .{5,}$/.test(trimmed) && i + 1 < lines.length && lines[i + 1]?.trim().endsWith("wrote:")) {
+      i++; // skip the next line too
+      continue;
+    }
+
+    // Skip lines that are mostly special characters (tracking pixels, code artifacts)
+    const specialCharRatio = (trimmed.match(/[^a-zA-Z0-9\s.,!?'"@#$%&*()-]/g) ?? []).length / Math.max(trimmed.length, 1);
+    if (trimmed.length > 10 && specialCharRatio > 0.5) continue;
+
+    // Skip lines that look like HTML artifacts leftover
+    if (/^(={10,}|-{10,}|\*{10,})/.test(trimmed)) continue;
+
+    // Skip cid: image references
+    if (/^\[cid:/i.test(trimmed) || /^cid:/i.test(trimmed)) continue;
+
+    cleaned.push(line);
+  }
+
+  // Collapse 3+ consecutive blank lines to 2
+  return cleaned
+    .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -163,12 +220,21 @@ function parseFromHeader(from: string): { email: string; name: string } {
   return { name: from, email: from };
 }
 
+function parseEmailList(raw: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((t) => parseFromHeader(t.trim()).email.toLowerCase())
+    .filter(Boolean);
+}
+
 export interface ParsedEmail {
   gmailMessageId: string;
   gmailThreadId: string;
   fromEmail: string;
   fromName: string;
   toEmails: string[];
+  ccEmails: string[];
   subject: string;
   bodySnippet: string;
   fullBody: string;
@@ -201,16 +267,16 @@ export async function getGmailMessages(user: User, maxResults = 50): Promise<Par
       const fromRaw = parseHeader(headers, "from");
       const { email: fromEmail, name: fromName } = parseFromHeader(fromRaw);
       const toRaw = parseHeader(headers, "to");
-      const toEmails = toRaw
-        .split(",")
-        .map((t) => parseFromHeader(t.trim()).email)
-        .filter(Boolean);
+      const toEmails = parseEmailList(toRaw);
+      const ccRaw = parseHeader(headers, "cc");
+      const ccEmails = parseEmailList(ccRaw);
 
       const subject = parseHeader(headers, "subject") || "(no subject)";
       const dateHeader = parseHeader(headers, "date");
       const receivedAt = dateHeader ? new Date(dateHeader) : new Date(Number(msg.internalDate));
 
-      const fullBody = parseEmailBody(msg.payload);
+      const rawBody = parseEmailBody(msg.payload);
+      const fullBody = cleanEmailBody(rawBody);
       const bodySnippet = (msg.snippet ?? fullBody.slice(0, 200)).replace(/\s+/g, " ").trim();
 
       results.push({
@@ -219,6 +285,7 @@ export async function getGmailMessages(user: User, maxResults = 50): Promise<Par
         fromEmail,
         fromName,
         toEmails,
+        ccEmails,
         subject,
         bodySnippet,
         fullBody: fullBody.slice(0, 8000),

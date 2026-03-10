@@ -1532,10 +1532,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async addDismissedSender(userId: string, emailAddress: string): Promise<DismissedSender> {
-    const existing = await db.select().from(dismissedSenders).where(and(eq(dismissedSenders.userId, userId), eq(dismissedSenders.emailAddress, emailAddress.toLowerCase())));
+    const lower = emailAddress.toLowerCase().trim();
+    const existing = await db.select().from(dismissedSenders).where(and(eq(dismissedSenders.userId, userId), eq(dismissedSenders.emailAddress, lower)));
     if (existing.length > 0) return existing[0];
-    const [created] = await db.insert(dismissedSenders).values({ userId, emailAddress: emailAddress.toLowerCase() }).returning();
-    await db.update(emailMessages).set({ isDismissed: true }).where(and(eq(emailMessages.userId, userId), eq(emailMessages.fromEmail, emailAddress.toLowerCase())));
+    const [created] = await db.insert(dismissedSenders).values({ userId, emailAddress: lower }).returning();
+
+    if (lower.startsWith("@")) {
+      // Domain-level: dismiss all existing emails from this domain
+      const domain = lower.slice(1);
+      const allUserEmails = await db.select().from(emailMessages).where(eq(emailMessages.userId, userId));
+      const toUpdate = allUserEmails.filter(e => e.fromEmail.toLowerCase().endsWith(`@${domain}`)).map(e => e.id);
+      if (toUpdate.length > 0) {
+        await db.update(emailMessages).set({ isDismissed: true }).where(and(eq(emailMessages.userId, userId), inArray(emailMessages.id, toUpdate)));
+      }
+    } else {
+      // Individual sender: dismiss all emails from this address
+      await db.update(emailMessages).set({ isDismissed: true }).where(and(eq(emailMessages.userId, userId), eq(emailMessages.fromEmail, lower)));
+    }
+
     return created;
   }
 
@@ -1544,8 +1558,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async isDismissedSender(userId: string, emailAddress: string): Promise<boolean> {
-    const rows = await db.select().from(dismissedSenders).where(and(eq(dismissedSenders.userId, userId), eq(dismissedSenders.emailAddress, emailAddress.toLowerCase())));
-    return rows.length > 0;
+    const lower = emailAddress.toLowerCase();
+    const domain = lower.includes("@") ? "@" + lower.split("@")[1] : "";
+    const checks = [lower, domain].filter(Boolean);
+    for (const check of checks) {
+      const rows = await db.select().from(dismissedSenders).where(and(eq(dismissedSenders.userId, userId), eq(dismissedSenders.emailAddress, check)));
+      if (rows.length > 0) return true;
+    }
+    return false;
   }
 
   // Lead Notes

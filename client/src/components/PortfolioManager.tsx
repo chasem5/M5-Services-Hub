@@ -148,10 +148,10 @@ function BuildingCard({
               </div>
             ) : (
               <div className="flex items-center gap-1.5">
-                <p className="text-sm font-medium truncate">{building.name}</p>
+                <p className="text-sm font-medium truncate">{building.name || building.address || "Unnamed Building"}</p>
                 <button
                   className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-                  onClick={() => { setEditingBuildingId(building.id); setEditBuildingName(building.name); }}
+                  onClick={() => { setEditingBuildingId(building.id); setEditBuildingName(building.name ?? ""); }}
                   data-testid={`button-edit-building-${building.id}`}
                 >
                   <Pencil className="h-3 w-3" />
@@ -502,7 +502,7 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
     const contact = allContacts.find(c => c.id === b.contactId);
     const company = clients.find(cl => cl.id === (b.clientId ?? contact?.clientId));
     return (
-      b.name.toLowerCase().includes(q) ||
+      (b.name ?? "").toLowerCase().includes(q) ||
       (b.address ?? "").toLowerCase().includes(q) ||
       (company?.name ?? "").toLowerCase().includes(q)
     );
@@ -943,8 +943,8 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
                             {portfolioBuildings.map(b => (
                               <div key={b.id} className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-muted/40 group/row" data-testid={`row-portfolio-building-${b.id}`}>
                                 <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
-                                <span className="flex-1 truncate">{b.name}</span>
-                                {b.address && <span className="text-muted-foreground truncate max-w-[120px] hidden sm:inline">{b.address}</span>}
+                                <span className="flex-1 truncate">{b.name || b.address || "Unnamed Building"}</span>
+                                {b.name && b.address && <span className="text-muted-foreground truncate max-w-[120px] hidden sm:inline">{b.address}</span>}
                                 <button
                                   className="opacity-0 group-hover/row:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
                                   onClick={() => removeBuildingFromPortfolioMutation.mutate({ portfolioId: portfolio.id, buildingId: b.id })}
