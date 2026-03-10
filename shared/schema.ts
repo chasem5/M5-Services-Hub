@@ -77,7 +77,8 @@ export const bdSpendEntries = pgTable("bd_spend_entries", {
 
 export const contactBuildings = pgTable("contact_buildings", {
   id: serial("id").primaryKey(),
-  contactId: integer("contact_id").references(() => clientContacts.id).notNull(),
+  contactId: integer("contact_id").references(() => clientContacts.id),
+  clientId: integer("client_id").references(() => clients.id),
   name: varchar("name").notNull(),
   address: text("address"),
   lat: decimal("lat", { precision: 10, scale: 7 }),
@@ -248,6 +249,7 @@ export const meetings = pgTable("meetings", {
   leadId: integer("lead_id").references(() => leads.id),
   clientId: integer("client_id").references(() => clients.id),
   attendeeContactIds: integer("attendee_contact_ids").array().default([]).notNull(),
+  attendeeUserIds: varchar("attendee_user_ids").array().default([]).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -425,6 +427,8 @@ export const insertClientContactSchema = createInsertSchema(clientContacts).omit
 export const insertContactBuildingSchema = createInsertSchema(contactBuildings).omit({ id: true, createdAt: true }).extend({
   lat: z.coerce.string().optional().nullable(),
   lng: z.coerce.string().optional().nullable(),
+  contactId: z.number().optional().nullable(),
+  clientId: z.number().optional().nullable(),
 });
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   buildingId: z.number().optional().nullable(),
@@ -498,6 +502,7 @@ export const insertMeetingSchema = createInsertSchema(meetings).omit({ id: true,
   leadId: z.number().optional().nullable(),
   clientId: z.number().optional().nullable(),
   attendeeContactIds: z.array(z.number()).optional().default([]),
+  attendeeUserIds: z.array(z.string()).optional().default([]),
 });
 export const insertMeetingActionSchema = createInsertSchema(meetingActions).omit({ id: true, appliedAt: true });
 

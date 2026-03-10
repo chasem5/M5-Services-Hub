@@ -74,6 +74,7 @@ type Meeting = {
   leadId: number | null;
   clientId: number | null;
   attendeeContactIds: number[];
+  attendeeUserIds: string[];
   actions: MeetingAction[];
 };
 
@@ -235,6 +236,10 @@ export default function MeetingDetailPage() {
 
   const { data: allContacts = [] } = useQuery<ClientContact[]>({
     queryKey: ["/api/client-contacts"],
+  });
+
+  const { data: allUsers = [] } = useQuery<{ id: string; email: string; firstName: string | null; lastName: string | null }[]>({
+    queryKey: ["/api/users"],
   });
 
   const { data: meeting, isLoading } = useQuery<Meeting>({
@@ -628,11 +633,14 @@ export default function MeetingDetailPage() {
 
       {/* Attendees strip */}
       {(() => {
-        const attendeeIds = meeting.attendeeContactIds ?? [];
-        const attendees = allContacts.filter(c => attendeeIds.includes(c.id));
-        const companyContacts = meeting.clientId
-          ? allContacts.filter(c => c.clientId === meeting.clientId)
-          : [];
+        const attendeeContactIds = meeting.attendeeContactIds ?? [];
+        const attendeeUserIds = meeting.attendeeUserIds ?? [];
+        const attendeeContacts = allContacts.filter(c => attendeeContactIds.includes(c.id));
+        const attendeeUsers = allUsers.filter(u => attendeeUserIds.includes(u.id));
+        const totalAttendees = attendeeContacts.length + attendeeUsers.length;
+
+        const getUserName = (u: { firstName: string | null; lastName: string | null; email: string }) =>
+          u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email;
 
         return (
           <div className="px-6 py-2 border-b bg-muted/20 flex items-center gap-3 flex-wrap min-h-[40px]">
@@ -640,17 +648,29 @@ export default function MeetingDetailPage() {
               <Users className="h-3.5 w-3.5" />
               <span className="font-medium">Attendees</span>
             </div>
-            {attendees.length === 0 ? (
+            {totalAttendees === 0 ? (
               <span className="text-xs text-muted-foreground italic">None</span>
             ) : (
               <div className="flex items-center gap-1.5 flex-wrap flex-1">
-                {attendees.map(c => (
+                {attendeeUsers.map(u => (
                   <div
-                    key={c.id}
+                    key={`user-${u.id}`}
+                    className="inline-flex items-center gap-1 bg-primary/10 border border-primary/20 rounded-full px-2.5 py-0.5"
+                    data-testid={`chip-attendee-user-${u.id}`}
+                  >
+                    <div className="h-4 w-4 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
+                      {getUserName(u).split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                    </div>
+                    <span className="text-xs font-medium text-primary">{getUserName(u)}</span>
+                  </div>
+                ))}
+                {attendeeContacts.map(c => (
+                  <div
+                    key={`contact-${c.id}`}
                     className="inline-flex items-center gap-1 bg-background border border-border rounded-full px-2.5 py-0.5"
                     data-testid={`chip-attendee-${c.id}`}
                   >
-                    <div className="h-4 w-4 rounded-full bg-primary/15 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
+                    <div className="h-4 w-4 rounded-full bg-muted flex items-center justify-center text-[9px] font-bold text-muted-foreground shrink-0">
                       {c.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
                     </div>
                     <span className="text-xs font-medium">{c.name}</span>
@@ -659,62 +679,84 @@ export default function MeetingDetailPage() {
                 ))}
               </div>
             )}
-            {(companyContacts.length > 0 || meeting.clientId == null) && (
-              <Popover open={isEditingAttendees} onOpenChange={setIsEditingAttendees}>
-                <PopoverTrigger asChild>
-                  <button
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto shrink-0"
-                    data-testid="button-edit-attendees"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    Edit
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-72 p-0">
-                  <div className="px-3 py-2.5 border-b">
-                    <p className="text-sm font-semibold">Edit Attendees</p>
-                    {!meeting.clientId && (
-                      <p className="text-xs text-muted-foreground mt-0.5">Link a company to the meeting to see contacts here.</p>
-                    )}
-                  </div>
-                  {companyContacts.length === 0 && meeting.clientId && (
-                    <p className="text-xs text-muted-foreground p-3 text-center">No contacts for this company yet.</p>
+            <Popover open={isEditingAttendees} onOpenChange={setIsEditingAttendees}>
+              <PopoverTrigger asChild>
+                <button
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto shrink-0"
+                  data-testid="button-edit-attendees"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 p-0">
+                <div className="px-3 py-2.5 border-b">
+                  <p className="text-sm font-semibold">Edit Attendees</p>
+                </div>
+                {/* Internal M5 team */}
+                <div className="px-3 py-1.5 border-b bg-muted/30">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">M5 Team</p>
+                </div>
+                <div className="max-h-36 overflow-y-auto divide-y">
+                  {allUsers.map(u => {
+                    const isChecked = attendeeUserIds.includes(u.id);
+                    return (
+                      <div key={u.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted/40 transition-colors">
+                        <Checkbox
+                          id={`detail-user-${u.id}`}
+                          checked={isChecked}
+                          onCheckedChange={(checked) => {
+                            const current = meeting.attendeeUserIds ?? [];
+                            const updated = checked ? [...current, u.id] : current.filter(id => id !== u.id);
+                            updateMutation.mutate({ attendeeUserIds: updated });
+                          }}
+                          data-testid={`checkbox-detail-user-${u.id}`}
+                        />
+                        <label htmlFor={`detail-user-${u.id}`} className="flex flex-col cursor-pointer flex-1 min-w-0">
+                          <span className="text-sm font-medium truncate">{getUserName(u)}</span>
+                          <span className="text-[11px] text-muted-foreground truncate">{u.email}</span>
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* External contacts */}
+                <div className="px-3 py-1.5 border-y bg-muted/30">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">External Contacts</p>
+                </div>
+                <div className="max-h-36 overflow-y-auto divide-y">
+                  {allContacts.length === 0 && (
+                    <p className="text-xs text-muted-foreground p-3 text-center">No contacts yet.</p>
                   )}
-                  {companyContacts.length > 0 && (
-                    <div className="max-h-64 overflow-y-auto divide-y">
-                      {companyContacts.map(c => {
-                        const isChecked = (meeting.attendeeContactIds ?? []).includes(c.id);
-                        return (
-                          <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors">
-                            <Checkbox
-                              id={`detail-attendee-${c.id}`}
-                              checked={isChecked}
-                              onCheckedChange={(checked) => {
-                                const current = meeting.attendeeContactIds ?? [];
-                                const updated = checked
-                                  ? [...current, c.id]
-                                  : current.filter(id => id !== c.id);
-                                updateMutation.mutate({ attendeeContactIds: updated });
-                              }}
-                              data-testid={`checkbox-detail-attendee-${c.id}`}
-                            />
-                            <label htmlFor={`detail-attendee-${c.id}`} className="flex flex-col cursor-pointer flex-1 min-w-0">
-                              <span className="text-sm font-medium truncate">{c.name}</span>
-                              {c.title && <span className="text-[11px] text-muted-foreground truncate">{c.title}</span>}
-                            </label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <div className="px-3 py-2 border-t">
-                    <Button size="sm" className="w-full h-7 text-xs" onClick={() => setIsEditingAttendees(false)}>
-                      Done
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            )}
+                  {allContacts.map(c => {
+                    const isChecked = attendeeContactIds.includes(c.id);
+                    return (
+                      <div key={c.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted/40 transition-colors">
+                        <Checkbox
+                          id={`detail-attendee-${c.id}`}
+                          checked={isChecked}
+                          onCheckedChange={(checked) => {
+                            const current = meeting.attendeeContactIds ?? [];
+                            const updated = checked ? [...current, c.id] : current.filter(id => id !== c.id);
+                            updateMutation.mutate({ attendeeContactIds: updated });
+                          }}
+                          data-testid={`checkbox-detail-attendee-${c.id}`}
+                        />
+                        <label htmlFor={`detail-attendee-${c.id}`} className="flex flex-col cursor-pointer flex-1 min-w-0">
+                          <span className="text-sm font-medium truncate">{c.name}</span>
+                          {c.title && <span className="text-[11px] text-muted-foreground truncate">{c.title}</span>}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="px-3 py-2 border-t">
+                  <Button size="sm" className="w-full h-7 text-xs" onClick={() => setIsEditingAttendees(false)}>
+                    Done
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         );
       })()}

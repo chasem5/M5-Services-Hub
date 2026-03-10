@@ -32,7 +32,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { Lead, Client, ClientContact } from "@shared/schema";
+import type { Lead, Client, ClientContact, User } from "@shared/schema";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface CalendarEvent {
   id: string;
@@ -101,6 +102,8 @@ export default function MeetingsPage() {
   const [selectedLeadId, setSelectedLeadId] = useState<string>("");
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedAttendeeIds, setSelectedAttendeeIds] = useState<number[]>([]);
+  const [selectedAttendeeUserIds, setSelectedAttendeeUserIds] = useState<string[]>([]);
+  const [attendeeTab, setAttendeeTab] = useState<"internal" | "external">("internal");
   const [deleteTarget, setDeleteTarget] = useState<MeetingWithCounts | null>(null);
   const [eventsExpanded, setEventsExpanded] = useState(true);
 
@@ -126,12 +129,16 @@ export default function MeetingsPage() {
     queryKey: ["/api/client-contacts"],
   });
 
+  const { data: allUsers = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
   const companyContacts = selectedClientId
     ? allContacts.filter(c => c.clientId === parseInt(selectedClientId))
-    : [];
+    : allContacts;
 
   const createMutation = useMutation({
-    mutationFn: async (data: { title: string; leadId?: number; clientId?: number; attendeeContactIds?: number[] }) => {
+    mutationFn: async (data: { title: string; leadId?: number; clientId?: number; attendeeContactIds?: number[]; attendeeUserIds?: string[] }) => {
       const res = await apiRequest("POST", "/api/meetings", data);
       return res.json();
     },
@@ -142,6 +149,7 @@ export default function MeetingsPage() {
       setSelectedLeadId("");
       setSelectedClientId("");
       setSelectedAttendeeIds([]);
+      setSelectedAttendeeUserIds([]);
       navigate(`/meetings/${meeting.id}`);
     },
     onError: () => toast({ title: "Failed to create meeting", variant: "destructive" }),
@@ -166,6 +174,7 @@ export default function MeetingsPage() {
         leadId: selectedLeadId ? parseInt(selectedLeadId) : undefined,
         clientId: selectedClientId ? parseInt(selectedClientId) : undefined,
         attendeeContactIds: selectedAttendeeIds.length > 0 ? selectedAttendeeIds : undefined,
+        attendeeUserIds: selectedAttendeeUserIds.length > 0 ? selectedAttendeeUserIds : undefined,
       });
     }
   };
@@ -365,19 +374,119 @@ export default function MeetingsPage() {
               />
             </div>
 
+            {/* Attendees — tabbed: Internal (M5 Users) / External (Contacts) */}
+            <div className="space-y-2">
+              <Label>Attendees</Label>
+              <div className="border rounded-lg overflow-hidden">
+                <div className="flex border-b bg-muted/40">
+                  <button
+                    type="button"
+                    onClick={() => setAttendeeTab("internal")}
+                    className={cn("flex-1 px-3 py-2 text-xs font-medium transition-colors", attendeeTab === "internal" ? "bg-background text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground")}
+                    data-testid="tab-internal-attendees"
+                  >
+                    M5 Team {selectedAttendeeUserIds.length > 0 && <span className="ml-1 bg-primary/15 text-primary rounded-full px-1.5 py-0.5 text-[10px]">{selectedAttendeeUserIds.length}</span>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttendeeTab("external")}
+                    className={cn("flex-1 px-3 py-2 text-xs font-medium transition-colors", attendeeTab === "external" ? "bg-background text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground")}
+                    data-testid="tab-external-attendees"
+                  >
+                    External {selectedAttendeeIds.length > 0 && <span className="ml-1 bg-primary/15 text-primary rounded-full px-1.5 py-0.5 text-[10px]">{selectedAttendeeIds.length}</span>}
+                  </button>
+                </div>
+
+                {attendeeTab === "internal" && (
+                  <div className="max-h-40 overflow-y-auto divide-y">
+                    {allUsers.length === 0 && (
+                      <p className="text-xs text-muted-foreground p-3 text-center">No team members found.</p>
+                    )}
+                    {allUsers.map(u => (
+                      <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                        <Checkbox
+                          id={`user-attendee-${u.id}`}
+                          checked={selectedAttendeeUserIds.includes(u.id)}
+                          onCheckedChange={(checked) => {
+                            setSelectedAttendeeUserIds(prev =>
+                              checked ? [...prev, u.id] : prev.filter(id => id !== u.id)
+                            );
+                          }}
+                          data-testid={`checkbox-user-attendee-${u.id}`}
+                        />
+                        <label htmlFor={`user-attendee-${u.id}`} className="flex flex-col cursor-pointer flex-1 min-w-0">
+                          <span className="text-sm font-medium truncate">
+                            {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground truncate">{u.email}</span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {attendeeTab === "external" && (
+                  <div>
+                    <div className="px-3 pt-2.5 pb-1.5 border-b bg-muted/20">
+                      <p className="text-[11px] text-muted-foreground mb-2">Filter by company (optional)</p>
+                      <SearchableSelect
+                        options={[{ value: "", label: "All contacts" }, ...clients.map(c => ({ value: c.id.toString(), label: c.name }))]}
+                        value={selectedClientId}
+                        onChange={(val) => {
+                          setSelectedClientId(val);
+                          setSelectedAttendeeIds([]);
+                        }}
+                        placeholder="Filter by company..."
+                        data-testid="select-related-client"
+                      />
+                    </div>
+                    <div className="max-h-40 overflow-y-auto divide-y">
+                      {companyContacts.length === 0 && (
+                        <p className="text-xs text-muted-foreground p-3 text-center">No contacts found.</p>
+                      )}
+                      {companyContacts.map(contact => (
+                        <div key={contact.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                          <Checkbox
+                            id={`attendee-${contact.id}`}
+                            checked={selectedAttendeeIds.includes(contact.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedAttendeeIds(prev =>
+                                checked ? [...prev, contact.id] : prev.filter(id => id !== contact.id)
+                              );
+                            }}
+                            data-testid={`checkbox-attendee-${contact.id}`}
+                          />
+                          <label htmlFor={`attendee-${contact.id}`} className="flex flex-col cursor-pointer flex-1 min-w-0">
+                            <span className="text-sm font-medium truncate">{contact.name}</span>
+                            {contact.title && <span className="text-[11px] text-muted-foreground truncate">{contact.title}</span>}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {(selectedAttendeeUserIds.length + selectedAttendeeIds.length) > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {selectedAttendeeUserIds.length + selectedAttendeeIds.length} attendee{(selectedAttendeeUserIds.length + selectedAttendeeIds.length) !== 1 ? "s" : ""} selected
+                </p>
+              )}
+            </div>
+
+            {/* Optional link to deal */}
             <div className="space-y-2">
               <Label>Related Deal (Optional)</Label>
               <SearchableSelect
-                options={leads.map(l => ({
+                options={[{ value: "", label: "None" }, ...leads.map(l => ({
                   value: l.id.toString(),
                   label: l.title,
                   sublabel: clients.find(c => c.id === l.clientId)?.name
-                }))}
+                }))]}
                 value={selectedLeadId}
                 onChange={(val) => {
                   setSelectedLeadId(val);
                   const lead = leads.find(l => l.id.toString() === val);
-                  if (lead?.clientId) {
+                  if (lead?.clientId && attendeeTab === "external") {
                     setSelectedClientId(lead.clientId.toString());
                   }
                 }}
@@ -385,52 +494,6 @@ export default function MeetingsPage() {
                 data-testid="select-related-deal"
               />
             </div>
-
-            <div className="space-y-2">
-              <Label>Related Company (Optional)</Label>
-              <SearchableSelect
-                options={clients.map(c => ({
-                  value: c.id.toString(),
-                  label: c.name
-                }))}
-                value={selectedClientId}
-                onChange={(val) => {
-                  setSelectedClientId(val);
-                  setSelectedAttendeeIds([]);
-                }}
-                placeholder="Select a company..."
-                data-testid="select-related-client"
-              />
-            </div>
-
-            {companyContacts.length > 0 && (
-              <div className="space-y-2">
-                <Label>Attendees</Label>
-                <div className="border rounded-lg max-h-44 overflow-y-auto divide-y">
-                  {companyContacts.map(contact => (
-                    <div key={contact.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors">
-                      <Checkbox
-                        id={`attendee-${contact.id}`}
-                        checked={selectedAttendeeIds.includes(contact.id)}
-                        onCheckedChange={(checked) => {
-                          setSelectedAttendeeIds(prev =>
-                            checked ? [...prev, contact.id] : prev.filter(id => id !== contact.id)
-                          );
-                        }}
-                        data-testid={`checkbox-attendee-${contact.id}`}
-                      />
-                      <label htmlFor={`attendee-${contact.id}`} className="flex flex-col cursor-pointer flex-1 min-w-0">
-                        <span className="text-sm font-medium truncate">{contact.name}</span>
-                        {contact.title && <span className="text-[11px] text-muted-foreground truncate">{contact.title}</span>}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-                {selectedAttendeeIds.length > 0 && (
-                  <p className="text-xs text-muted-foreground">{selectedAttendeeIds.length} attendee{selectedAttendeeIds.length !== 1 ? "s" : ""} selected</p>
-                )}
-              </div>
-            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsNewOpen(false)}>Cancel</Button>

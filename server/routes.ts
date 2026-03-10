@@ -742,6 +742,43 @@ export async function registerRoutes(
     res.json(buildings);
   });
 
+  // Standalone building CRUD (no contact required)
+  app.get("/api/contact-buildings", isAuthenticated, async (_req, res) => {
+    const buildings = await storage.listAllContactBuildings();
+    res.json(buildings);
+  });
+
+  app.post("/api/contact-buildings", isAuthenticated, async (req, res) => {
+    const body = { ...req.body };
+    if (body.lat != null) body.lat = String(body.lat);
+    if (body.lng != null) body.lng = String(body.lng);
+    if (body.contactId === null || body.contactId === undefined) delete body.contactId;
+    if (body.clientId === null || body.clientId === undefined) delete body.clientId;
+    try {
+      const data = insertContactBuildingSchema.parse(body);
+      const building = await storage.createContactBuilding(data);
+      res.json(building);
+    } catch (err: any) {
+      console.error("Create building error:", err);
+      res.status(400).json({ message: err.message || "Failed to create building" });
+    }
+  });
+
+  app.put("/api/contact-buildings/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const body = { ...req.body };
+    if (body.lat != null) body.lat = String(body.lat);
+    if (body.lng != null) body.lng = String(body.lng);
+    const building = await storage.updateContactBuilding(id, body);
+    res.json(building);
+  });
+
+  app.delete("/api/contact-buildings/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    await storage.deleteContactBuilding(id);
+    res.sendStatus(204);
+  });
+
   // All offices across all clients (for map and buildings list)
   app.get("/api/all-offices", isAuthenticated, async (_req, res) => {
     const offices = await storage.listAllClientOffices();
@@ -1957,13 +1994,14 @@ Respond ONLY with JSON — no markdown:
 
   app.post("/api/meetings", isAuthenticated, async (req, res) => {
     const userId = (req as any).user.claims.sub;
-    const { title, clientId, leadId, attendeeContactIds } = z.object({
+    const { title, clientId, leadId, attendeeContactIds, attendeeUserIds } = z.object({
       title: z.string().min(1),
       clientId: z.number().int().optional(),
       leadId: z.number().int().optional(),
       attendeeContactIds: z.array(z.number()).optional(),
+      attendeeUserIds: z.array(z.string()).optional(),
     }).parse(req.body);
-    const meeting = await storage.createMeeting({ title, createdBy: userId, status: "recording", clientId: clientId ?? null, leadId: leadId ?? null, attendeeContactIds: attendeeContactIds ?? [] });
+    const meeting = await storage.createMeeting({ title, createdBy: userId, status: "recording", clientId: clientId ?? null, leadId: leadId ?? null, attendeeContactIds: attendeeContactIds ?? [], attendeeUserIds: attendeeUserIds ?? [] });
     res.json(meeting);
   });
 
@@ -1983,6 +2021,7 @@ Respond ONLY with JSON — no markdown:
       rawTranscript: z.string().optional(),
       summary: z.string().optional(),
       attendeeContactIds: z.array(z.number()).optional(),
+      attendeeUserIds: z.array(z.string()).optional(),
     }).parse(req.body);
     const meeting = await storage.updateMeeting(id, data);
     res.json(meeting);
