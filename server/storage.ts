@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, sql, lt, or } from "drizzle-orm";
+import { eq, and, desc, sql, lt, or, inArray } from "drizzle-orm";
 import {
   users,
   clients,
@@ -1602,11 +1602,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Building Portfolios
-  async listPortfolios(clientId?: number): Promise<BuildingPortfolio[]> {
-    if (clientId !== undefined) {
-      return await db.select().from(buildingPortfolios).where(eq(buildingPortfolios.clientId, clientId)).orderBy(buildingPortfolios.name);
-    }
-    return await db.select().from(buildingPortfolios).orderBy(buildingPortfolios.name);
+  async listPortfolios(clientId?: number): Promise<(BuildingPortfolio & { buildings: PortfolioBuilding[]; contacts: PortfolioContact[] })[]> {
+    const portfolioRows = clientId !== undefined
+      ? await db.select().from(buildingPortfolios).where(eq(buildingPortfolios.clientId, clientId)).orderBy(buildingPortfolios.name)
+      : await db.select().from(buildingPortfolios).orderBy(buildingPortfolios.name);
+
+    if (portfolioRows.length === 0) return [];
+
+    const ids = portfolioRows.map(p => p.id);
+    const allBuildingRows = await db.select().from(portfolioBuildings).where(inArray(portfolioBuildings.portfolioId, ids));
+    const allContactRows = await db.select().from(portfolioContacts).where(inArray(portfolioContacts.portfolioId, ids));
+
+    return portfolioRows.map(p => ({
+      ...p,
+      buildings: allBuildingRows.filter(b => b.portfolioId === p.id),
+      contacts: allContactRows.filter(c => c.portfolioId === p.id),
+    }));
   }
 
   async getPortfolio(id: number): Promise<(BuildingPortfolio & { buildings: PortfolioBuilding[]; contacts: PortfolioContact[] }) | undefined> {
