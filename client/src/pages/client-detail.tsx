@@ -44,6 +44,7 @@ import {
   Activity,
   Copy,
   MoreHorizontal,
+  Folders,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import { BuildOpsIcon } from "@/components/BuildOpsIcon";
@@ -1046,6 +1047,10 @@ export default function ClientDetail() {
   const [orgChartEditId, setOrgChartEditId] = useState<number | null>(null);
   const [isOfficeDialogOpen, setIsOfficeDialogOpen] = useState(false);
   const [isEditOfficeDialogOpen, setIsEditOfficeDialogOpen] = useState(false);
+  const [isNewPortfolioDialogOpen, setIsNewPortfolioDialogOpen] = useState(false);
+  const [newPortfolioName, setNewPortfolioName] = useState("");
+  const [newPortfolioDesc, setNewPortfolioDesc] = useState("");
+  const [newPortfolioBuildings, setNewPortfolioBuildings] = useState<{ name: string; address: string; lat?: number; lng?: number }[]>([]);
   const [editingOffice, setEditingOffice] = useState<ClientOffice | null>(null);
   const [officeLat, setOfficeLat] = useState<number | null>(null);
   const [officeLng, setOfficeLng] = useState<number | null>(null);
@@ -1137,6 +1142,45 @@ export default function ClientDetail() {
     const last = u.lastName?.[0] ?? "";
     return (first + last).toUpperCase() || (u.email?.[0]?.toUpperCase() ?? "?");
   };
+
+  const createPortfolioWithBuildingsMutation = useMutation({
+    mutationFn: async (data: { name: string; description: string; buildings: { name: string; address: string; lat?: number; lng?: number }[] }) => {
+      const portRes = await apiRequest("POST", "/api/portfolios", {
+        name: data.name,
+        clientId: clientId ? Number(clientId) : null,
+        description: data.description || null,
+      });
+      if (!portRes.ok) throw new Error("Failed to create portfolio");
+      const portfolio = await portRes.json();
+      for (const row of data.buildings.filter(b => b.name.trim())) {
+        try {
+          const buildingRes = await apiRequest("POST", "/api/contact-buildings", {
+            name: row.name.trim(),
+            address: row.address.trim() || null,
+            lat: row.lat ?? null,
+            lng: row.lng ?? null,
+            contactId: null,
+          });
+          const building = await buildingRes.json();
+          await apiRequest("POST", `/api/portfolios/${portfolio.id}/buildings`, { buildingId: building.id });
+        } catch {
+          // skip failed rows
+        }
+      }
+      return portfolio;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/portfolios", { clientId }] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contact-buildings"] });
+      setIsNewPortfolioDialogOpen(false);
+      setNewPortfolioName("");
+      setNewPortfolioDesc("");
+      setNewPortfolioBuildings([]);
+      toast({ title: "Portfolio created" });
+    },
+    onError: () => toast({ title: "Failed to create portfolio", variant: "destructive" }),
+  });
 
   const { data: allContacts = [] } = useQuery<ClientContact[]>({
     queryKey: ["/api/client-contacts"],
@@ -2156,6 +2200,15 @@ export default function ClientDetail() {
                 <Button
                   variant="outline"
                   className="h-10 px-4"
+                  onClick={() => setIsNewPortfolioDialogOpen(true)}
+                  data-testid="button-new-portfolio"
+                >
+                  <Folders className="mr-2 h-4 w-4" />
+                  New Portfolio
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-10 px-4"
                   onClick={() => setIsOfficeDialogOpen(true)}
                   data-testid="button-add-office"
                 >
@@ -2802,6 +2855,94 @@ export default function ClientDetail() {
                     </Button>
                   </DialogFooter>
                 </form>
+              </DialogContent>
+            </Dialog>
+
+            {/* New Portfolio Dialog */}
+            <Dialog open={isNewPortfolioDialogOpen} onOpenChange={(open) => { setIsNewPortfolioDialogOpen(open); if (!open) { setNewPortfolioName(""); setNewPortfolioDesc(""); setNewPortfolioBuildings([]); } }}>
+              <DialogContent className="sm:max-w-[480px]">
+                <DialogHeader>
+                  <DialogTitle>New Portfolio</DialogTitle>
+                  <DialogDescription>Create a building portfolio linked to this company.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Portfolio Name <span className="text-destructive">*</span></label>
+                    <Input
+                      placeholder="e.g. Downtown Campus, West Side Properties"
+                      value={newPortfolioName}
+                      onChange={e => setNewPortfolioName(e.target.value)}
+                      data-testid="input-new-portfolio-name"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Description</label>
+                    <Textarea
+                      placeholder="Optional notes about this portfolio..."
+                      value={newPortfolioDesc}
+                      onChange={e => setNewPortfolioDesc(e.target.value)}
+                      className="min-h-[60px] resize-none"
+                      data-testid="textarea-new-portfolio-desc"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium">Buildings</label>
+                      <button
+                        type="button"
+                        onClick={() => setNewPortfolioBuildings(prev => [...prev, { name: "", address: "" }])}
+                        className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+                        data-testid="button-add-portfolio-building"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add Building
+                      </button>
+                    </div>
+                    {newPortfolioBuildings.length === 0 && (
+                      <p className="text-xs text-muted-foreground italic">No buildings yet — click "Add Building" above to include addresses.</p>
+                    )}
+                    <div className="space-y-3">
+                      {newPortfolioBuildings.map((row, i) => (
+                        <div key={i} className="flex gap-2 items-start">
+                          <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                            <Input
+                              placeholder="Building name *"
+                              value={row.name}
+                              onChange={e => setNewPortfolioBuildings(prev => prev.map((r, idx) => idx === i ? { ...r, name: e.target.value } : r))}
+                              className="h-8 text-sm"
+                              data-testid={`input-portfolio-building-name-${i}`}
+                            />
+                            <AddressAutocomplete
+                              value={row.address}
+                              onChange={(addr, lat, lng) => setNewPortfolioBuildings(prev => prev.map((r, idx) => idx === i ? { ...r, address: addr, lat, lng } : r))}
+                              placeholder="Address (optional)"
+                              className="h-8 text-sm"
+                              data-testid={`input-portfolio-building-address-${i}`}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setNewPortfolioBuildings(prev => prev.filter((_, idx) => idx !== i))}
+                            className="mt-1.5 h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                            data-testid={`button-remove-portfolio-building-${i}`}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsNewPortfolioDialogOpen(false)}>Cancel</Button>
+                  <Button
+                    disabled={!newPortfolioName.trim() || createPortfolioWithBuildingsMutation.isPending}
+                    onClick={() => createPortfolioWithBuildingsMutation.mutate({ name: newPortfolioName, description: newPortfolioDesc, buildings: newPortfolioBuildings })}
+                    data-testid="button-create-new-portfolio"
+                  >
+                    {createPortfolioWithBuildingsMutation.isPending ? "Creating…" : "Create Portfolio"}
+                  </Button>
+                </DialogFooter>
               </DialogContent>
             </Dialog>
           </TabsContent>

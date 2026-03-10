@@ -31,7 +31,8 @@ import { Mic, Plus, Trash2, ChevronRight, CheckCircle2, Clock, AlertCircle, Radi
 import { useAuth } from "@/hooks/use-auth";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { Label } from "@/components/ui/label";
-import type { Lead, Client } from "@shared/schema";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { Lead, Client, ClientContact } from "@shared/schema";
 
 interface CalendarEvent {
   id: string;
@@ -94,6 +95,7 @@ export default function MeetingsPage() {
   const [newTitle, setNewTitle] = useState("");
   const [selectedLeadId, setSelectedLeadId] = useState<string>("");
   const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [selectedAttendeeIds, setSelectedAttendeeIds] = useState<number[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<MeetingWithCounts | null>(null);
   const [eventsExpanded, setEventsExpanded] = useState(true);
 
@@ -115,8 +117,16 @@ export default function MeetingsPage() {
     queryKey: ["/api/clients"],
   });
 
+  const { data: allContacts = [] } = useQuery<ClientContact[]>({
+    queryKey: ["/api/client-contacts"],
+  });
+
+  const companyContacts = selectedClientId
+    ? allContacts.filter(c => c.clientId === parseInt(selectedClientId))
+    : [];
+
   const createMutation = useMutation({
-    mutationFn: async (data: { title: string; leadId?: number; clientId?: number }) => {
+    mutationFn: async (data: { title: string; leadId?: number; clientId?: number; attendeeContactIds?: number[] }) => {
       const res = await apiRequest("POST", "/api/meetings", data);
       return res.json();
     },
@@ -126,6 +136,7 @@ export default function MeetingsPage() {
       setNewTitle("");
       setSelectedLeadId("");
       setSelectedClientId("");
+      setSelectedAttendeeIds([]);
       navigate(`/meetings/${meeting.id}`);
     },
     onError: () => toast({ title: "Failed to create meeting", variant: "destructive" }),
@@ -149,6 +160,7 @@ export default function MeetingsPage() {
         title: newTitle.trim(),
         leadId: selectedLeadId ? parseInt(selectedLeadId) : undefined,
         clientId: selectedClientId ? parseInt(selectedClientId) : undefined,
+        attendeeContactIds: selectedAttendeeIds.length > 0 ? selectedAttendeeIds : undefined,
       });
     }
   };
@@ -377,11 +389,43 @@ export default function MeetingsPage() {
                   label: c.name
                 }))}
                 value={selectedClientId}
-                onChange={setSelectedClientId}
+                onChange={(val) => {
+                  setSelectedClientId(val);
+                  setSelectedAttendeeIds([]);
+                }}
                 placeholder="Select a company..."
                 data-testid="select-related-client"
               />
             </div>
+
+            {companyContacts.length > 0 && (
+              <div className="space-y-2">
+                <Label>Attendees</Label>
+                <div className="border rounded-lg max-h-44 overflow-y-auto divide-y">
+                  {companyContacts.map(contact => (
+                    <div key={contact.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                      <Checkbox
+                        id={`attendee-${contact.id}`}
+                        checked={selectedAttendeeIds.includes(contact.id)}
+                        onCheckedChange={(checked) => {
+                          setSelectedAttendeeIds(prev =>
+                            checked ? [...prev, contact.id] : prev.filter(id => id !== contact.id)
+                          );
+                        }}
+                        data-testid={`checkbox-attendee-${contact.id}`}
+                      />
+                      <label htmlFor={`attendee-${contact.id}`} className="flex flex-col cursor-pointer flex-1 min-w-0">
+                        <span className="text-sm font-medium truncate">{contact.name}</span>
+                        {contact.title && <span className="text-[11px] text-muted-foreground truncate">{contact.title}</span>}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                {selectedAttendeeIds.length > 0 && (
+                  <p className="text-xs text-muted-foreground">{selectedAttendeeIds.length} attendee{selectedAttendeeIds.length !== 1 ? "s" : ""} selected</p>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsNewOpen(false)}>Cancel</Button>

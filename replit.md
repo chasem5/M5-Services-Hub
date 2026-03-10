@@ -43,7 +43,7 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 
 ## Database Schema
 
-Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`, `role_configs`, `role_permissions`, `invites`, `building_portfolios`, `portfolio_buildings`, `portfolio_contacts`, `value_tier_settings`
+Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`, `role_configs`, `role_permissions`, `invites`, `building_portfolios`, `portfolio_buildings`, `portfolio_contacts`, `value_tier_settings`, `meetings`, `meeting_actions`
 
 - `value_tier_settings` — stores estimated dollar values for deal tiers (`$`, `$$`, `$$$`, `$$$$`); seeded with defaults ($25k, $75k, $200k, $500k); admin-configurable via Admin → Configuration tab; used in pipeline value calculations and Kanban card sorting
 - `users.dashboard_filter` — persists the user's selected dashboard scope (`all`, `mine`, or a specific userId)
@@ -53,6 +53,8 @@ Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `co
 - `building_portfolios` — named groups of buildings; optional `clientId` FK to clients
 - `portfolio_buildings` — junction: portfolioId + buildingId (cascade delete)
 - `portfolio_contacts` — junction: portfolioId + contactId + role (cascade delete)
+- `meetings` — meeting records with `attendeeContactIds integer[]` (array of contact IDs), `clientId`, `leadId`, `status`, `transcript`, `summary`, AI-generated meeting actions
+- `meeting_actions` — follow-up action items generated from meeting AI summary; FK to meetingId
 
 ## BuildOps Integration
 

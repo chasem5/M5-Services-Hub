@@ -59,7 +59,7 @@ interface MyPermissions {
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const { setOpenMobile, isMobile } = useSidebar();
 
   const { data: myPerms } = useQuery<MyPermissions>({

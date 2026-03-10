@@ -30,7 +30,15 @@ import {
   ChevronUp,
   CalendarDays,
   ExternalLink,
+  Pencil,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { ClientContact } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { AttachmentsPanel } from "@/components/AttachmentsPanel";
 import { 
@@ -65,6 +73,7 @@ type Meeting = {
   calendarEventLink: string | null;
   leadId: number | null;
   clientId: number | null;
+  attendeeContactIds: number[];
   actions: MeetingAction[];
 };
 
@@ -220,6 +229,11 @@ export default function MeetingDetailPage() {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   const [showFollowUpPrompt, setShowFollowUpPrompt] = useState(false);
+  const [isEditingAttendees, setIsEditingAttendees] = useState(false);
+
+  const { data: allContacts = [] } = useQuery<ClientContact[]>({
+    queryKey: ["/api/client-contacts"],
+  });
 
   const { data: meeting, isLoading } = useQuery<Meeting>({
     queryKey: ["/api/meetings", meetingId],
@@ -241,7 +255,7 @@ export default function MeetingDetailPage() {
   }, [liveTranscript]);
 
   const updateMutation = useMutation({
-    mutationFn: async (data: { title?: string; status?: string; rawTranscript?: string }) => {
+    mutationFn: async (data: { title?: string; status?: string; rawTranscript?: string; attendeeContactIds?: number[] }) => {
       const res = await apiRequest("PUT", `/api/meetings/${meetingId}`, data);
       return res.json();
     },
@@ -583,6 +597,99 @@ export default function MeetingDetailPage() {
           )}
         </div>
       </header>
+
+      {/* Attendees strip */}
+      {(() => {
+        const attendeeIds = meeting.attendeeContactIds ?? [];
+        const attendees = allContacts.filter(c => attendeeIds.includes(c.id));
+        const companyContacts = meeting.clientId
+          ? allContacts.filter(c => c.clientId === meeting.clientId)
+          : [];
+
+        return (
+          <div className="px-6 py-2 border-b bg-muted/20 flex items-center gap-3 flex-wrap min-h-[40px]">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+              <Users className="h-3.5 w-3.5" />
+              <span className="font-medium">Attendees</span>
+            </div>
+            {attendees.length === 0 ? (
+              <span className="text-xs text-muted-foreground italic">None</span>
+            ) : (
+              <div className="flex items-center gap-1.5 flex-wrap flex-1">
+                {attendees.map(c => (
+                  <div
+                    key={c.id}
+                    className="inline-flex items-center gap-1 bg-background border border-border rounded-full px-2.5 py-0.5"
+                    data-testid={`chip-attendee-${c.id}`}
+                  >
+                    <div className="h-4 w-4 rounded-full bg-primary/15 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
+                      {c.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                    </div>
+                    <span className="text-xs font-medium">{c.name}</span>
+                    {c.title && <span className="text-[10px] text-muted-foreground hidden sm:inline">· {c.title}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {(companyContacts.length > 0 || meeting.clientId == null) && (
+              <Popover open={isEditingAttendees} onOpenChange={setIsEditingAttendees}>
+                <PopoverTrigger asChild>
+                  <button
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto shrink-0"
+                    data-testid="button-edit-attendees"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Edit
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 p-0">
+                  <div className="px-3 py-2.5 border-b">
+                    <p className="text-sm font-semibold">Edit Attendees</p>
+                    {!meeting.clientId && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Link a company to the meeting to see contacts here.</p>
+                    )}
+                  </div>
+                  {companyContacts.length === 0 && meeting.clientId && (
+                    <p className="text-xs text-muted-foreground p-3 text-center">No contacts for this company yet.</p>
+                  )}
+                  {companyContacts.length > 0 && (
+                    <div className="max-h-64 overflow-y-auto divide-y">
+                      {companyContacts.map(c => {
+                        const isChecked = (meeting.attendeeContactIds ?? []).includes(c.id);
+                        return (
+                          <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                            <Checkbox
+                              id={`detail-attendee-${c.id}`}
+                              checked={isChecked}
+                              onCheckedChange={(checked) => {
+                                const current = meeting.attendeeContactIds ?? [];
+                                const updated = checked
+                                  ? [...current, c.id]
+                                  : current.filter(id => id !== c.id);
+                                updateMutation.mutate({ attendeeContactIds: updated });
+                              }}
+                              data-testid={`checkbox-detail-attendee-${c.id}`}
+                            />
+                            <label htmlFor={`detail-attendee-${c.id}`} className="flex flex-col cursor-pointer flex-1 min-w-0">
+                              <span className="text-sm font-medium truncate">{c.name}</span>
+                              {c.title && <span className="text-[11px] text-muted-foreground truncate">{c.title}</span>}
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="px-3 py-2 border-t">
+                    <Button size="sm" className="w-full h-7 text-xs" onClick={() => setIsEditingAttendees(false)}>
+                      Done
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Follow-up task prompt */}
       {showFollowUpPrompt && (

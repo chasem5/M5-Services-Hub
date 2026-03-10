@@ -247,6 +247,7 @@ export const meetings = pgTable("meetings", {
   calendarEventLink: varchar("calendar_event_link"),
   leadId: integer("lead_id").references(() => leads.id),
   clientId: integer("client_id").references(() => clients.id),
+  attendeeContactIds: integer("attendee_contact_ids").array().default([]).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -496,6 +497,7 @@ export const insertMeetingSchema = createInsertSchema(meetings).omit({ id: true,
   date: z.coerce.date().optional(),
   leadId: z.number().optional().nullable(),
   clientId: z.number().optional().nullable(),
+  attendeeContactIds: z.array(z.number()).optional().default([]),
 });
 export const insertMeetingActionSchema = createInsertSchema(meetingActions).omit({ id: true, appliedAt: true });
 

@@ -1957,12 +1957,13 @@ Respond ONLY with JSON — no markdown:
 
   app.post("/api/meetings", isAuthenticated, async (req, res) => {
     const userId = (req as any).user.claims.sub;
-    const { title, clientId, leadId } = z.object({
+    const { title, clientId, leadId, attendeeContactIds } = z.object({
       title: z.string().min(1),
       clientId: z.number().int().optional(),
       leadId: z.number().int().optional(),
+      attendeeContactIds: z.array(z.number()).optional(),
     }).parse(req.body);
-    const meeting = await storage.createMeeting({ title, createdBy: userId, status: "recording", clientId: clientId ?? null, leadId: leadId ?? null });
+    const meeting = await storage.createMeeting({ title, createdBy: userId, status: "recording", clientId: clientId ?? null, leadId: leadId ?? null, attendeeContactIds: attendeeContactIds ?? [] });
     res.json(meeting);
   });
 
@@ -1981,6 +1982,7 @@ Respond ONLY with JSON — no markdown:
       status: z.string().optional(),
       rawTranscript: z.string().optional(),
       summary: z.string().optional(),
+      attendeeContactIds: z.array(z.number()).optional(),
     }).parse(req.body);
     const meeting = await storage.updateMeeting(id, data);
     res.json(meeting);

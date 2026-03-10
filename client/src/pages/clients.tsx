@@ -3235,6 +3235,25 @@ export default function Customers() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Owner</label>
+              <Select onValueChange={(val) => {
+                bulkUpdateContactsMutation.mutate({ ids: selectedContacts, data: { ownerId: val === "none" ? null : val } });
+                setIsBulkContactEditOpen(false);
+              }}>
+                <SelectTrigger className="h-9" data-testid="select-bulk-owner">
+                  <SelectValue placeholder="Assign owner..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Unassigned</SelectItem>
+                  {users.map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsBulkContactEditOpen(false)}>Close</Button>

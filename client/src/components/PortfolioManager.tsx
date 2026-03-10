@@ -12,6 +12,7 @@ import {
   Check,
   MapPin,
   Search,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import type { BuildingPortfolio, PortfolioBuilding, PortfolioContact, ContactBuilding, ClientContact, Client } from "@shared/schema";
 
 type PortfolioWithDetails = BuildingPortfolio & {
@@ -57,6 +59,13 @@ interface PortfolioManagerProps {
   filterClientId?: number;
 }
 
+interface BuildingRow {
+  name: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+}
+
 export function PortfolioManager({ allBuildings, allContacts, clients, filterClientId }: PortfolioManagerProps) {
   const { toast } = useToast();
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(null);
@@ -64,6 +73,7 @@ export function PortfolioManager({ allBuildings, allContacts, clients, filterCli
   const [newName, setNewName] = useState("");
   const [newClientId, setNewClientId] = useState<string>(filterClientId ? String(filterClientId) : "none");
   const [newDescription, setNewDescription] = useState("");
+  const [createFormBuildings, setCreateFormBuildings] = useState<BuildingRow[]>([]);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const [editingName, setEditingName] = useState(false);
@@ -72,6 +82,14 @@ export function PortfolioManager({ allBuildings, allContacts, clients, filterCli
   const [buildingSearch, setBuildingSearch] = useState("");
   const [contactSearch, setContactSearch] = useState("");
   const [newRole, setNewRole] = useState("");
+
+  const [showNewBuildingForm, setShowNewBuildingForm] = useState(false);
+  const [newBuildingName, setNewBuildingName] = useState("");
+  const [newBuildingAddress, setNewBuildingAddress] = useState("");
+  const [newBuildingLat, setNewBuildingLat] = useState<number | undefined>();
+  const [newBuildingLng, setNewBuildingLng] = useState<number | undefined>();
+  const [newBuildingNotes, setNewBuildingNotes] = useState("");
+  const [buildingJustAdded, setBuildingJustAdded] = useState(false);
 
   const portfolioQueryKey = filterClientId
     ? ["/api/portfolios", { clientId: filterClientId }]
@@ -96,12 +114,37 @@ export function PortfolioManager({ allBuildings, allContacts, clients, filterCli
   const createMutation = useMutation({
     mutationFn: (data: { name: string; clientId?: number | null; description?: string | null; createdBy?: string | null }) =>
       apiRequest("POST", "/api/portfolios", data),
-    onSuccess: () => {
+    onSuccess: async (res) => {
+      const portfolio = await res.json();
       queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
+
+      const nonEmptyBuildings = createFormBuildings.filter(b => b.name.trim() || b.address.trim());
+      for (const row of nonEmptyBuildings) {
+        if (!row.name.trim()) continue;
+        try {
+          const buildingRes = await apiRequest("POST", "/api/contact-buildings", {
+            name: row.name.trim(),
+            address: row.address.trim() || null,
+            lat: row.lat ?? null,
+            lng: row.lng ?? null,
+            contactId: null,
+          });
+          const building = await buildingRes.json();
+          await apiRequest("POST", `/api/portfolios/${portfolio.id}/buildings`, { buildingId: building.id });
+        } catch {
+          // skip failed rows
+        }
+      }
+
+      if (nonEmptyBuildings.length > 0) {
+        queryClient.invalidateQueries({ queryKey: ["/api/portfolios", portfolio.id] });
+      }
+
       setShowCreateForm(false);
       setNewName("");
       setNewClientId(filterClientId ? String(filterClientId) : "none");
       setNewDescription("");
+      setCreateFormBuildings([]);
       toast({ title: "Portfolio created" });
     },
     onError: () => toast({ title: "Failed to create portfolio", variant: "destructive" }),
@@ -163,6 +206,37 @@ export function PortfolioManager({ allBuildings, allContacts, clients, filterCli
     onError: () => toast({ title: "Failed to remove contact", variant: "destructive" }),
   });
 
+  const createAndLinkBuildingMutation = useMutation({
+    mutationFn: async ({ portfolioId, name, address, lat, lng, notes }: {
+      portfolioId: number; name: string; address: string; lat?: number; lng?: number; notes?: string;
+    }) => {
+      const buildingRes = await apiRequest("POST", "/api/contact-buildings", {
+        name,
+        address: address || null,
+        lat: lat ?? null,
+        lng: lng ?? null,
+        notes: notes || null,
+        contactId: null,
+      });
+      if (!buildingRes.ok) throw new Error("Failed to create building");
+      const building = await buildingRes.json();
+      await apiRequest("POST", `/api/portfolios/${portfolioId}/buildings`, { buildingId: building.id });
+      return building;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/portfolios", selectedPortfolioId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contact-buildings"] });
+      setNewBuildingName("");
+      setNewBuildingAddress("");
+      setNewBuildingLat(undefined);
+      setNewBuildingLng(undefined);
+      setNewBuildingNotes("");
+      setBuildingJustAdded(true);
+      setTimeout(() => setBuildingJustAdded(false), 4000);
+    },
+    onError: () => toast({ title: "Failed to create building", variant: "destructive" }),
+  });
+
   function handleCreate() {
     if (!newName.trim()) return;
     createMutation.mutate({
@@ -176,6 +250,18 @@ export function PortfolioManager({ allBuildings, allContacts, clients, filterCli
     if (!editNameValue.trim() || !selectedPortfolioId) return;
     updateMutation.mutate({ id: selectedPortfolioId, data: { name: editNameValue.trim() } });
     setEditingName(false);
+  }
+
+  function addCreateFormBuildingRow() {
+    setCreateFormBuildings(prev => [...prev, { name: "", address: "" }]);
+  }
+
+  function updateCreateFormBuilding(index: number, field: keyof BuildingRow, value: string | number | undefined) {
+    setCreateFormBuildings(prev => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
+  }
+
+  function removeCreateFormBuildingRow(index: number) {
+    setCreateFormBuildings(prev => prev.filter((_, i) => i !== index));
   }
 
   const assignedBuildingIds = new Set(detailPortfolio?.buildings.map(b => b.buildingId) ?? []);
@@ -258,10 +344,61 @@ export function PortfolioManager({ allBuildings, allContacts, clients, filterCli
             className="text-sm min-h-[56px] resize-none"
             data-testid="textarea-portfolio-description"
           />
+
+          {/* Building address rows */}
+          {createFormBuildings.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                <Building2 className="h-3 w-3" /> Buildings
+              </p>
+              {createFormBuildings.map((row, i) => (
+                <div key={i} className="flex gap-1.5 items-start">
+                  <div className="flex flex-col gap-1 flex-1 min-w-0">
+                    <Input
+                      placeholder="Building name *"
+                      value={row.name}
+                      onChange={e => updateCreateFormBuilding(i, "name", e.target.value)}
+                      className="h-7 text-xs"
+                      data-testid={`input-create-building-name-${i}`}
+                    />
+                    <AddressAutocomplete
+                      value={row.address}
+                      onChange={(addr, lat, lng) => {
+                        updateCreateFormBuilding(i, "address", addr);
+                        if (lat !== undefined) updateCreateFormBuilding(i, "lat", lat);
+                        if (lng !== undefined) updateCreateFormBuilding(i, "lng", lng);
+                      }}
+                      placeholder="Address (optional)"
+                      className="h-7 text-xs"
+                      data-testid={`input-create-building-address-${i}`}
+                    />
+                  </div>
+                  <button
+                    onClick={() => removeCreateFormBuildingRow(i)}
+                    className="mt-1.5 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                    data-testid={`button-remove-building-row-${i}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={addCreateFormBuildingRow}
+            className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+            data-testid="button-add-building-row"
+          >
+            <Plus className="h-3 w-3" />
+            Add Building Address
+          </button>
+
           <div className="flex gap-2 justify-end">
-            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowCreateForm(false)}>Cancel</Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setShowCreateForm(false); setCreateFormBuildings([]); }}>Cancel</Button>
             <Button size="sm" className="h-7 text-xs" onClick={handleCreate} disabled={!newName.trim() || createMutation.isPending} data-testid="button-create-portfolio">
-              Create
+              {createMutation.isPending ? "Creating…" : "Create"}
             </Button>
           </div>
         </div>
@@ -303,7 +440,7 @@ export function PortfolioManager({ allBuildings, allContacts, clients, filterCli
       )}
 
       {/* Detail Sheet */}
-      <Sheet open={selectedPortfolioId !== null} onOpenChange={open => { if (!open) setSelectedPortfolioId(null); }}>
+      <Sheet open={selectedPortfolioId !== null} onOpenChange={open => { if (!open) { setSelectedPortfolioId(null); setShowNewBuildingForm(false); setBuildingJustAdded(false); } }}>
         <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
           {isLoadingDetail || !detailPortfolio ? (
             <div className="space-y-3 pt-4">
@@ -402,12 +539,12 @@ export function PortfolioManager({ allBuildings, allContacts, clients, filterCli
                   </div>
                 )}
 
-                {/* Add building */}
+                {/* Search existing buildings */}
                 <div className="space-y-1">
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
-                      placeholder="Search buildings to add..."
+                      placeholder="Search existing buildings to add..."
                       value={buildingSearch}
                       onChange={e => setBuildingSearch(e.target.value)}
                       className="h-8 pl-8 text-xs"
@@ -435,6 +572,85 @@ export function PortfolioManager({ allBuildings, allContacts, clients, filterCli
                           );
                         })
                       )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Create new building form */}
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowNewBuildingForm(v => !v); setBuildingJustAdded(false); }}
+                    className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors w-full text-left py-1"
+                    data-testid="button-toggle-new-building-form"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Create new building
+                    <ChevronDown className={`h-3 w-3 ml-auto transition-transform ${showNewBuildingForm ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {showNewBuildingForm && (
+                    <div className="mt-2 border rounded-lg p-3 bg-muted/20 space-y-2">
+                      {buildingJustAdded && (
+                        <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-2.5 py-1.5">
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                          Building added — add another?
+                        </div>
+                      )}
+                      <Input
+                        placeholder="Building name *"
+                        value={newBuildingName}
+                        onChange={e => setNewBuildingName(e.target.value)}
+                        className="h-8 text-xs"
+                        data-testid="input-new-building-name"
+                      />
+                      <AddressAutocomplete
+                        value={newBuildingAddress}
+                        onChange={(addr, lat, lng) => {
+                          setNewBuildingAddress(addr);
+                          setNewBuildingLat(lat);
+                          setNewBuildingLng(lng);
+                        }}
+                        placeholder="Address (optional)"
+                        className="h-8 text-xs"
+                        data-testid="input-new-building-address"
+                      />
+                      <Input
+                        placeholder="Notes (optional)"
+                        value={newBuildingNotes}
+                        onChange={e => setNewBuildingNotes(e.target.value)}
+                        className="h-8 text-xs"
+                        data-testid="input-new-building-notes"
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => { setShowNewBuildingForm(false); setNewBuildingName(""); setNewBuildingAddress(""); setNewBuildingNotes(""); }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={!newBuildingName.trim() || createAndLinkBuildingMutation.isPending}
+                          onClick={() => {
+                            if (!newBuildingName.trim() || !selectedPortfolioId) return;
+                            createAndLinkBuildingMutation.mutate({
+                              portfolioId: selectedPortfolioId,
+                              name: newBuildingName.trim(),
+                              address: newBuildingAddress,
+                              lat: newBuildingLat,
+                              lng: newBuildingLng,
+                              notes: newBuildingNotes || undefined,
+                            });
+                          }}
+                          data-testid="button-save-new-building"
+                        >
+                          {createAndLinkBuildingMutation.isPending ? "Adding…" : "Add Building"}
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
