@@ -7,6 +7,7 @@ interface SpendEmailData {
   description?: string | null;
   loggedByName: string;
   clientName?: string | null;
+  receiptUrl?: string | null;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -51,6 +52,9 @@ export async function sendSpendReceiptEmail(
   const categoryLabel = CATEGORY_LABELS[entry.category] ?? entry.category;
   const subject = `BD Spend Receipt — ${formatCurrency(entry.amount)} · ${categoryLabel}`;
 
+  const isImage = entry.receiptUrl && !entry.receiptUrl.toLowerCase().endsWith(".pdf");
+  const isPdf = entry.receiptUrl && entry.receiptUrl.toLowerCase().endsWith(".pdf");
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -68,6 +72,10 @@ export async function sendSpendReceiptEmail(
     .row:last-child { border-bottom: none; }
     .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; width: 130px; flex-shrink: 0; }
     .value { font-size: 14px; color: #222; font-weight: 500; }
+    .receipt-section { padding: 20px 28px; border-top: 1px solid #eee; }
+    .receipt-section h3 { margin: 0 0 12px; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .receipt-img { width: 100%; max-width: 460px; border-radius: 6px; border: 1px solid #eee; display: block; }
+    .receipt-link { display: inline-block; padding: 10px 20px; background: #BE1916; color: #fff; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 600; }
     .footer { background: #fafafa; border-top: 1px solid #eee; padding: 16px 28px; text-align: center; font-size: 11px; color: #aaa; }
   </style>
 </head>
@@ -102,6 +110,12 @@ export async function sendSpendReceiptEmail(
         <span class="value">${entry.loggedByName}</span>
       </div>
     </div>
+    ${entry.receiptUrl ? `
+    <div class="receipt-section">
+      <h3>Attached Receipt</h3>
+      ${isImage ? `<img src="${entry.receiptUrl}" alt="Receipt" class="receipt-img" />` : ""}
+      ${isPdf ? `<a href="${entry.receiptUrl}" class="receipt-link" target="_blank">View PDF Receipt</a>` : ""}
+    </div>` : ""}
     <div class="footer">Sent automatically from M5 Services CRM</div>
   </div>
 </body>

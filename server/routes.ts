@@ -1690,6 +1690,7 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
             description: entry.description,
             loggedByName: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : (user?.email ?? "Unknown"),
             clientName: client?.name ?? null,
+            receiptUrl: entry.receiptUrl ?? null,
           });
         }
       } catch (err) {
@@ -1697,6 +1698,27 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
       }
     })();
     res.status(201).json(entry);
+  });
+
+  app.post("/api/spend/upload-receipt", isAuthenticated, upload.single("receipt"), async (req, res) => {
+    const r = req as any;
+    if (!r.file) return res.status(400).json({ message: "No file uploaded" });
+    try {
+      const mimeType = r.file.mimetype;
+      const ext = mimeType === "application/pdf" ? "pdf" : (mimeType.split("/")[1]?.replace("jpeg", "jpg") || "jpg");
+      const entityDir = objectStorageService.getPrivateObjectDir();
+      const timestamp = Date.now();
+      const fullPath = `${entityDir}/receipts/${timestamp}.${ext}`;
+      const { bucketName, objectName } = parseStoragePath(fullPath);
+      const bucket = (await import("./replit_integrations/object_storage/objectStorage")).objectStorageClient.bucket(bucketName);
+      const gcsFile = bucket.file(objectName);
+      await gcsFile.save(r.file.buffer, { contentType: mimeType });
+      try { await gcsFile.makePublic(); } catch (_) {}
+      const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
+      res.json({ url: publicUrl });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
 
   app.post("/api/spend", isAuthenticated, async (req, res) => {
@@ -1720,6 +1742,7 @@ Write a concise, factual summary paragraph (no bullet points, no headers).`;
             description: entry.description,
             loggedByName: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : (user?.email ?? "Unknown"),
             clientName,
+            receiptUrl: entry.receiptUrl ?? null,
           });
         }
       } catch (err) {

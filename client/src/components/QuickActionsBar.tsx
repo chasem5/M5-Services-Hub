@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Target, Users, Building2, CheckSquare, CreditCard, Phone, Calendar as CalendarIcon, AlertTriangle, Receipt } from "lucide-react";
+import { Plus, Target, Users, Building2, CheckSquare, CreditCard, Phone, Calendar as CalendarIcon, AlertTriangle, Receipt, Camera, Upload, X, FileText as FilePdf, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -849,10 +849,57 @@ function LogSpendDialog({
   const [description, setDescription] = useState("");
   const [clientId, setClientId] = useState("");
   const [contactId, setContactId] = useState("");
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
+  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setAmount(""); setCategory("meals_entertainment"); setDate(today);
     setDescription(""); setClientId(""); setContactId("");
+    setReceiptPreview(null); setReceiptFileName(null); setReceiptUrl(null);
+    setIsUploadingReceipt(false);
+  };
+
+  const handleReceiptFile = async (file: File) => {
+    setReceiptFileName(file.name);
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (e) => setReceiptPreview(e.target?.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setReceiptPreview(null);
+    }
+    setIsUploadingReceipt(true);
+    try {
+      const formData = new FormData();
+      formData.append("receipt", file);
+      const res = await fetch("/api/spend/upload-receipt", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (data.url) {
+        setReceiptUrl(data.url);
+      } else {
+        throw new Error("No URL returned");
+      }
+    } catch {
+      toast({ title: "Failed to upload receipt", variant: "destructive" });
+      setReceiptPreview(null); setReceiptFileName(null);
+    } finally {
+      setIsUploadingReceipt(false);
+    }
+  };
+
+  const clearReceipt = () => {
+    setReceiptPreview(null); setReceiptFileName(null); setReceiptUrl(null);
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const clientOptions = clients.map(c => ({ value: String(c.id), label: c.name }));
@@ -870,17 +917,20 @@ function LogSpendDialog({
         description: description.trim() || null,
         clientId: clientId ? parseInt(clientId) : undefined,
         contactId: contactId ? parseInt(contactId) : null,
+        receiptUrl: receiptUrl || null,
       });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      toast({ title: "Spend logged", description: "Receipt email will be sent if configured." });
+      toast({ title: "Spend logged", description: receiptUrl ? "Receipt saved and email will be sent." : "Receipt email will be sent if configured." });
       reset();
       onClose();
     },
     onError: () => toast({ title: "Failed to log spend", variant: "destructive" }),
   });
+
+  const isPdf = receiptFileName?.toLowerCase().endsWith(".pdf");
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { reset(); onClose(); } }}>
@@ -968,12 +1018,87 @@ function LogSpendDialog({
               data-testid="textarea-spend-description"
             />
           </div>
+
+          {/* Receipt Upload */}
+          <div>
+            <Label className="text-sm font-medium">Receipt <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={e => e.target.files?.[0] && handleReceiptFile(e.target.files[0])}
+              data-testid="input-receipt-camera"
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={e => e.target.files?.[0] && handleReceiptFile(e.target.files[0])}
+              data-testid="input-receipt-file"
+            />
+
+            {receiptFileName ? (
+              <div className="mt-1.5 rounded-lg border border-border bg-muted/40 p-2 flex items-start gap-2">
+                {isUploadingReceipt ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground w-full">
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    Uploading receipt...
+                  </div>
+                ) : receiptPreview && !isPdf ? (
+                  <img src={receiptPreview} alt="Receipt" className="h-16 w-16 object-cover rounded-md shrink-0 border" />
+                ) : (
+                  <div className="h-16 w-16 rounded-md border bg-muted flex items-center justify-center shrink-0">
+                    <FilePdf className="h-7 w-7 text-muted-foreground" />
+                  </div>
+                )}
+                {!isUploadingReceipt && (
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{receiptFileName}</p>
+                    <p className="text-[11px] text-green-600 font-medium mt-0.5">Uploaded ✓</p>
+                  </div>
+                )}
+                {!isUploadingReceipt && (
+                  <button onClick={clearReceipt} className="shrink-0 text-muted-foreground hover:text-destructive transition-colors" data-testid="button-clear-receipt">
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="mt-1.5 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-10 border-dashed"
+                  onClick={() => cameraInputRef.current?.click()}
+                  data-testid="button-receipt-camera"
+                >
+                  <Camera className="mr-2 h-4 w-4" />
+                  Take Photo
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-10 border-dashed"
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="button-receipt-upload"
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload File
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => { reset(); onClose(); }}>Cancel</Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={!amount || parseFloat(amount) <= 0 || !clientId || mutation.isPending}
+            disabled={!amount || parseFloat(amount) <= 0 || !clientId || mutation.isPending || isUploadingReceipt}
             data-testid="button-spend-submit"
           >
             {mutation.isPending ? "Logging..." : "Log Spend"}

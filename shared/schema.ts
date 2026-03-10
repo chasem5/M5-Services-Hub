@@ -69,6 +69,7 @@ export const bdSpendEntries = pgTable("bd_spend_entries", {
   category: varchar("category").notNull().default("other"), // meals_entertainment | gifts | travel | events | other
   date: timestamp("date").notNull(),
   description: text("description"),
+  receiptUrl: text("receipt_url"),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
