@@ -2606,6 +2606,24 @@ Return only valid JSON, no markdown.`;
       const userName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(" ") || currentUser.email || "the M5 employee";
       const userEmail = currentUser.gmailEmail || currentUser.email || "";
 
+      // Collect all unique external participants from the entire thread
+      const m5Domain = "@m5svcs.com";
+      const threadParticipantMap = new Map<string, string>(); // email → display name
+      const addThreadParticipant = (email: string, name?: string | null) => {
+        const lower = email.toLowerCase();
+        if (lower === myAddress.toLowerCase()) return;
+        if (lower.endsWith(m5Domain)) return;
+        if (!threadParticipantMap.has(lower)) threadParticipantMap.set(lower, name || lower);
+      };
+      for (const msg of rawEmails.filter(m => m.gmailThreadId === raw.gmailThreadId)) {
+        addThreadParticipant(msg.fromEmail, msg.fromName);
+        for (const e of msg.toEmails ?? []) addThreadParticipant(e);
+        for (const e of msg.ccEmails ?? []) addThreadParticipant(e);
+      }
+      const threadParticipantList = Array.from(threadParticipantMap.entries())
+        .map(([email, name]) => name !== email ? `${name} <${email}>` : email)
+        .join(", ");
+
       let aiResult = { summary: "", suggestedTasks: [] as any[], sentiment: "neutral", stageSuggestion: null as string | null, requiresResponse: false, connectionSuggestions: suggestions, createSuggestions: [] as any[] };
       try {
         const prompt = `You are an assistant for M5 Services, a facility maintenance company. Analyze this email and respond with ONLY valid JSON.
@@ -2615,7 +2633,7 @@ IMPORTANT: The M5 employee reviewing this email is ${userName} (${userEmail}). T
 Email:
 From: ${raw.fromName} <${raw.fromEmail}>
 Subject: ${raw.subject}
-Body: ${raw.fullBody.slice(0, 2000)}
+Body: ${raw.fullBody.slice(0, 2000)}${threadParticipantList ? `\n\nAll people in this email thread (all from/to/cc across the entire chain — evaluate ALL of these for CRM suggestions, not just the sender): ${threadParticipantList}` : ""}
 
 Known clients: ${JSON.stringify(clientContext.slice(0, 15))}
 Known contacts: ${JSON.stringify(contactContext.slice(0, 15))}
@@ -2784,6 +2802,30 @@ Respond with this JSON:
   app.patch("/api/email-messages/:id/dismiss", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
     const updated = await storage.updateEmailMessage(id, { isDismissed: true });
+    res.json(updated);
+  });
+
+  app.patch("/api/email-messages/:id/remove-connection-suggestion", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { type, suggestionId } = z.object({ type: z.string(), suggestionId: z.number() }).parse(req.body);
+    const email = await storage.getEmailMessage(id);
+    if (!email) return res.status(404).json({ message: "Not found" });
+    const filtered = Array.isArray(email.aiConnectionSuggestions)
+      ? (email.aiConnectionSuggestions as any[]).filter((s: any) => !(s.type === type && s.id === suggestionId))
+      : [];
+    const updated = await storage.updateEmailMessage(id, { aiConnectionSuggestions: filtered.length > 0 ? filtered : null } as any);
+    res.json(updated);
+  });
+
+  app.patch("/api/email-messages/:id/remove-create-suggestion", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { name } = z.object({ name: z.string() }).parse(req.body);
+    const email = await storage.getEmailMessage(id);
+    if (!email) return res.status(404).json({ message: "Not found" });
+    const filtered = Array.isArray(email.aiCreateSuggestions)
+      ? (email.aiCreateSuggestions as any[]).filter((s: any) => s.name !== name)
+      : [];
+    const updated = await storage.updateEmailMessage(id, { aiCreateSuggestions: filtered.length > 0 ? filtered : null } as any);
     res.json(updated);
   });
 
