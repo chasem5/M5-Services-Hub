@@ -283,6 +283,7 @@ export interface IStorage {
   upsertRolePermission(roleKey: string, module: string, accessLevel: string): Promise<RolePermission>;
   seedDefaultPermissions(): Promise<void>;
   seedInitialAdmin(email: string): Promise<void>;
+  migrateAdminToSuperAdmin(): Promise<void>;
 
   // Gmail Tokens
   updateGmailTokens(userId: string, data: { gmailAccessToken: string; gmailRefreshToken: string | null; gmailTokenExpiry: Date | null; gmailEmail: string | null; gmailConnected: boolean }): Promise<User>;
@@ -1325,17 +1326,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async seedDefaultPermissions(): Promise<void> {
+    const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals", "email_sync", "announcements"];
     const defaults: { roleKey: string; module: string; accessLevel: string }[] = [
-      { roleKey: "manager", module: "dashboard", accessLevel: "full" },
-      { roleKey: "manager", module: "leads", accessLevel: "full" },
-      { roleKey: "manager", module: "customers", accessLevel: "full" },
-      { roleKey: "manager", module: "tasks", accessLevel: "full" },
-      { roleKey: "manager", module: "meetings", accessLevel: "full" },
-      { roleKey: "manager", module: "estimates", accessLevel: "full" },
-      { roleKey: "manager", module: "service_catalog", accessLevel: "full" },
-      { roleKey: "manager", module: "proposals", accessLevel: "full" },
-      { roleKey: "manager", module: "email_sync", accessLevel: "full" },
-      { roleKey: "manager", module: "announcements", accessLevel: "full" },
+      // admin: full CRM access, no system settings (those are super_admin only)
+      ...MODULES.map(m => ({ roleKey: "admin", module: m, accessLevel: "full" })),
+      // manager: full CRM access
+      ...MODULES.map(m => ({ roleKey: "manager", module: m, accessLevel: "full" })),
+      // member: limited access
       { roleKey: "member", module: "dashboard", accessLevel: "view_all" },
       { roleKey: "member", module: "leads", accessLevel: "own_only" },
       { roleKey: "member", module: "customers", accessLevel: "own_only" },
@@ -1355,6 +1352,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     const roleConfigDefaults = [
+      { roleKey: "super_admin", displayName: "Super Admin" },
       { roleKey: "admin", displayName: "Admin" },
       { roleKey: "manager", displayName: "Manager" },
       { roleKey: "member", displayName: "Member" },
@@ -1368,7 +1366,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async seedInitialAdmin(email: string): Promise<void> {
-    await db.update(users).set({ role: "admin" }).where(eq(users.email, email));
+    await db.update(users).set({ role: "super_admin" }).where(eq(users.email, email));
+  }
+
+  async migrateAdminToSuperAdmin(): Promise<void> {
+    const existing = await db.select().from(users).where(eq(users.role, "super_admin"));
+    if (existing.length === 0) {
+      await db.update(users).set({ role: "super_admin" }).where(eq(users.role, "admin"));
+    }
   }
 
   // Gmail Tokens

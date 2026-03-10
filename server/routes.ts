@@ -44,13 +44,15 @@ function parseStoragePath(fullPath: string): { bucketName: string; objectName: s
   return { bucketName: parts[0], objectName: parts.slice(1).join("/") };
 }
 
+const SUPER_ROLES = ["super_admin", "admin"];
+
 // Helper to get role-scoped userId for list queries based on dynamic permissions
 async function getScopedUserId(req: any, module: string): Promise<string | undefined> {
   const userId = req.user?.claims?.sub;
   if (!userId) return undefined;
   const user = await storage.getUser(userId);
   if (!user) return undefined;
-  if (user.role === "admin") return undefined;
+  if (SUPER_ROLES.includes(user.role)) return undefined;
   const perm = await storage.getRolePermission(user.role, module);
   const level = perm?.accessLevel ?? "own_only";
   if (level === "own_only") return userId;
@@ -63,19 +65,19 @@ async function hasModuleAccess(req: any, module: string): Promise<boolean> {
   if (!userId) return false;
   const user = await storage.getUser(userId);
   if (!user) return false;
-  if (user.role === "admin") return true;
+  if (SUPER_ROLES.includes(user.role)) return true;
   const perm = await storage.getRolePermission(user.role, module);
   return (perm?.accessLevel ?? "own_only") !== "none";
 }
 
-// Middleware: allow if user is admin OR has 'full' access to a module
+// Middleware: allow if user is super_admin/admin OR has 'full' access to a module
 function requireModuleFullAccess(module: string) {
   return async (req: any, res: any, next: any) => {
     const userId = req.user?.claims?.sub;
     if (!userId) return res.status(401).json({ message: "Not authenticated" });
     const user = await storage.getUser(userId);
     if (!user) return res.status(401).json({ message: "Not authenticated" });
-    if (user.role === "admin") return next();
+    if (SUPER_ROLES.includes(user.role)) return next();
     const perm = await storage.getRolePermission(user.role, module);
     if (perm?.accessLevel === "full") return next();
     return res.status(403).json({ message: "Forbidden" });
@@ -156,6 +158,8 @@ export async function registerRoutes(
   await storage.seedDefaultTaskColumns();
   // Seed default role permissions and configs on startup
   await storage.seedDefaultPermissions();
+  // One-time migration: promote existing admin users to super_admin
+  await storage.migrateAdminToSuperAdmin();
   // Promote initial admin on startup if env var is set
   if (process.env.INITIAL_ADMIN_EMAIL) {
     await storage.seedInitialAdmin(process.env.INITIAL_ADMIN_EMAIL);
@@ -344,13 +348,13 @@ export async function registerRoutes(
     res.json(stats);
   });
 
-  // Users (Admin only)
-  app.get("/api/users", isAuthenticated, requireRole(["admin"]), async (_req, res) => {
+  // Users (Super Admin only)
+  app.get("/api/users", isAuthenticated, requireRole(["super_admin", "admin"]), async (_req, res) => {
     const users = await storage.listUsers();
     res.json(users);
   });
 
-  app.put("/api/users/:id/role", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.put("/api/users/:id/role", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const id = req.params.id as string;
     const { role } = z.object({ role: z.string().min(1) }).parse(req.body);
     const configs = await storage.listRoleConfigs();
@@ -361,19 +365,19 @@ export async function registerRoutes(
     res.json(user);
   });
 
-  app.delete("/api/users/:id", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.delete("/api/users/:id", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const id = req.params.id as string;
     await storage.deleteUser(id);
     res.sendStatus(204);
   });
 
-  // Invites
-  app.get("/api/invites", isAuthenticated, requireRole(["admin"]), async (_req, res) => {
+  // Invites (Super Admin only)
+  app.get("/api/invites", isAuthenticated, requireRole(["super_admin"]), async (_req, res) => {
     const all = await storage.listInvites();
     res.json(all);
   });
 
-  app.post("/api/invites", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.post("/api/invites", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const userId = (req as any).user.claims.sub;
     const { email, role } = z.object({
       email: z.string().email(),
@@ -389,7 +393,7 @@ export async function registerRoutes(
     res.json(invite);
   });
 
-  app.delete("/api/invites/:id", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.delete("/api/invites/:id", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const id = parseInt(req.params.id as string);
     await storage.deleteInvite(id);
     res.sendStatus(204);
@@ -1250,6 +1254,7 @@ DEAL DATA:
 - Tags: ${lead.tags?.join(", ") || "None"}
 - Open tasks: ${openTaskCount}${overdueTaskCount > 0 ? ` (${overdueTaskCount} OVERDUE)` : ""}
 - Internal Notes: ${lead.notes?.trim() || "None"}
+- Most recent logged activity: ${leadNotesList.length ? (() => { const n = leadNotesList[0]; const d = Math.floor((now - new Date(n.createdAt).getTime()) / 86400000); const typeLabel = n.activityType ? n.activityType.charAt(0).toUpperCase() + n.activityType.slice(1) : "Note"; return `[${typeLabel}] "${String(n.content).slice(0, 100)}" (${d === 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`})`; })() : "None"}
 
 Activity Log (user-logged interactions, newest first):
 ${activityLogSection}
@@ -1270,10 +1275,11 @@ Respond ONLY with a JSON object in this exact shape — no markdown, no explanat
 
 Rules:
 - healthLabel must be exactly one of: Strong, On Track, Stalled, At Risk
-- Strong = high confidence, active engagement, clear path forward
-- On Track = progressing normally, no red flags
-- Stalled = low recent activity, stuck in stage too long, or low confidence for stage
-- At Risk = overdue tasks, very long inactivity, confidence/stage mismatch, or other warning signs
+- STRONG: High confidence (70%+) AND a Call, Meeting, or Site Visit logged within the last 7 days. Clear forward momentum.
+- ON TRACK: Active engagement ongoing. USE THIS when overdue tasks exist but a Call, Meeting, Email, or Site Visit was logged within the last 14 days. Normal deal progression.
+- STALLED: 14–30 days since last user-logged contact, or stuck in same stage 30+ days with no progress. Overdue tasks ALONE (without real inactivity) = Stalled at most, never At Risk.
+- AT RISK: No meaningful user-logged contact in 30+ days AND a confidence/stage mismatch, OR a renewal deadline is imminent with no action taken. Overdue admin tasks by themselves do NOT make a deal At Risk.
+- CRITICAL RULE: If the most recent logged activity is a Call, Meeting, or Site Visit within the last 14 days, the health label MUST be On Track or Strong — regardless of overdue tasks.
 - nextStep should sound like meeting prep advice — something practical a BD rep would think before walking into a conversation
 - Use company names, dollar amounts, and stage names in your text where helpful
 - Do NOT just restate the data fields — interpret and synthesize`;
@@ -1298,6 +1304,78 @@ Rules:
     } catch (err: any) {
       console.error("AI summary error:", err);
       res.status(500).json({ message: "AI summary failed", error: err.message });
+    }
+  });
+
+  // AI: Suggest next task after completing a task on a deal
+  app.post("/api/leads/:id/suggest-next-task", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const lead = await storage.getLead(id);
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+    const { completedTaskTitle } = z.object({ completedTaskTitle: z.string().min(1) }).parse(req.body);
+
+    const [leadNotesList, leadTasks, company] = await Promise.all([
+      storage.listLeadNotes(id).then(n => n.slice(0, 10)),
+      storage.listTasks().then(t => t.filter(t => t.relatedLeadId === id && t.status !== "done").slice(0, 5)),
+      lead.clientId ? storage.getClient(lead.clientId) : Promise.resolve(undefined),
+    ]);
+
+    const activityContext = leadNotesList.length
+      ? leadNotesList.slice(0, 5).map(n => {
+          const typeLabel = n.activityType ? n.activityType.charAt(0).toUpperCase() + n.activityType.slice(1) : "Note";
+          return `- [${typeLabel}] "${String(n.content).slice(0, 80)}"`;
+        }).join("\n")
+      : "No activity logged.";
+
+    const openTasksContext = leadTasks.length
+      ? leadTasks.map(t => `- "${t.title}" (${t.priority} priority)`).join("\n")
+      : "No open tasks.";
+
+    const prompt = `You are a senior BD manager at M5 Services, a commercial facility maintenance company. A BD rep just completed a task on a deal and needs a smart next action recommendation.
+
+DEAL: "${lead.title}"
+COMPANY: ${company?.name ?? "Unknown"}
+STAGE: ${lead.stage.replace(/_/g, " ")}
+VALUE: $${Number(lead.value).toLocaleString()}
+
+TASK JUST COMPLETED: "${completedTaskTitle}"
+
+RECENT ACTIVITY (newest first):
+${activityContext}
+
+REMAINING OPEN TASKS:
+${openTasksContext}
+
+Based on this context, suggest the single most valuable next action the BD rep should take. Think about logical deal progression.
+
+Respond ONLY with JSON — no markdown:
+{
+  "title": "Short action-oriented task title (max 60 chars)",
+  "description": "One sentence explaining why this is the right next step",
+  "priority": "low" | "medium" | "high",
+  "dueInDays": number (1-14, how many days from today this should be due)
+}`;
+
+    try {
+      const { openai } = await import("./openai");
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        max_completion_tokens: 150,
+        response_format: { type: "json_object" },
+      });
+      const raw = completion.choices[0]?.message?.content ?? "{}";
+      const parsed = JSON.parse(raw);
+      res.json({
+        title: parsed.title ?? "Follow up on deal",
+        description: parsed.description ?? "",
+        priority: (["low", "medium", "high"].includes(parsed.priority) ? parsed.priority : "medium") as string,
+        dueInDays: typeof parsed.dueInDays === "number" ? Math.min(Math.max(parsed.dueInDays, 1), 14) : 3,
+      });
+    } catch (err: any) {
+      console.error("Suggest next task error:", err);
+      res.status(500).json({ message: "Suggestion failed", error: err.message });
     }
   });
 
@@ -1855,7 +1933,7 @@ Rules:
     res.json({ key, value });
   });
 
-  app.put("/api/settings/:key", isAuthenticated, requireRole("admin", "manager"), async (req, res) => {
+  app.put("/api/settings/:key", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const key = req.params.key as string;
     const { value } = z.object({ value: z.string() }).parse(req.body);
     await storage.setAppSetting(key, value);
@@ -2120,12 +2198,12 @@ Return only valid JSON, no markdown.`;
   });
 
   // Role Configs (admin only)
-  app.get("/api/role-configs", isAuthenticated, requireRole(["admin"]), async (_req, res) => {
+  app.get("/api/role-configs", isAuthenticated, requireRole(["super_admin"]), async (_req, res) => {
     const configs = await storage.listRoleConfigs();
-    res.json(configs);
+    res.json(configs.filter(c => c.roleKey !== "super_admin"));
   });
 
-  app.post("/api/role-configs", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.post("/api/role-configs", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const { displayName } = z.object({ displayName: z.string().min(1).max(50) }).parse(req.body);
     const roleKey = displayName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
     const configs = await storage.listRoleConfigs();
@@ -2140,34 +2218,34 @@ Return only valid JSON, no markdown.`;
     res.json(config);
   });
 
-  app.patch("/api/role-configs/:roleKey", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.patch("/api/role-configs/:roleKey", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const roleKey = req.params.roleKey as string;
-    if (roleKey === "admin") return res.status(400).json({ message: "Cannot rename the admin role" });
+    if (roleKey === "super_admin" || roleKey === "admin") return res.status(400).json({ message: "Cannot rename system roles" });
     const { displayName } = z.object({ displayName: z.string().min(1).max(50) }).parse(req.body);
     const config = await storage.updateRoleConfig(roleKey, displayName);
     res.json(config);
   });
 
-  app.delete("/api/role-configs/:roleKey", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.delete("/api/role-configs/:roleKey", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const roleKey = req.params.roleKey as string;
-    if (roleKey === "admin") return res.status(400).json({ message: "Cannot delete the admin role" });
+    if (roleKey === "super_admin" || roleKey === "admin") return res.status(400).json({ message: "Cannot delete system roles" });
     await storage.deleteRoleConfig(roleKey);
     res.sendStatus(204);
   });
 
-  // Role Permissions (admin only)
-  app.get("/api/permissions", isAuthenticated, requireRole(["admin"]), async (_req, res) => {
+  // Role Permissions (super_admin only)
+  app.get("/api/permissions", isAuthenticated, requireRole(["super_admin"]), async (_req, res) => {
     const perms = await storage.listRolePermissions();
     res.json(perms);
   });
 
-  app.patch("/api/permissions", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.patch("/api/permissions", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const { roleKey, module, accessLevel } = z.object({
       roleKey: z.string().min(1),
       module: z.string(),
       accessLevel: z.enum(["full", "view_all", "own_only", "none"]),
     }).parse(req.body);
-    if (roleKey === "admin") return res.status(400).json({ message: "Cannot modify admin permissions" });
+    if (roleKey === "super_admin" || roleKey === "admin") return res.status(400).json({ message: "Cannot modify system role permissions" });
     const configs = await storage.listRoleConfigs();
     if (!configs.find(c => c.roleKey === roleKey)) {
       return res.status(400).json({ message: "Invalid role" });
@@ -2608,7 +2686,7 @@ Respond with this JSON:
     const MODULES = ["dashboard", "leads", "customers", "tasks", "meetings", "estimates", "service_catalog", "proposals", "email_sync", "announcements"];
 
     let permissions: Record<string, string>;
-    if (user.role === "admin") {
+    if (user.role === "super_admin" || user.role === "admin") {
       permissions = Object.fromEntries(MODULES.map(m => [m, "full"]));
     } else {
       const perms = await storage.listRolePermissions();
@@ -2622,8 +2700,9 @@ Respond with this JSON:
     const configs = await storage.listRoleConfigs();
     const roleConfig = configs.find(c => c.roleKey === user.role);
     const displayName = roleConfig?.displayName ?? user.role;
+    const isSuperAdmin = user.role === "super_admin";
 
-    res.json({ role: user.role, displayName, permissions });
+    res.json({ role: user.role, displayName, permissions, isSuperAdmin });
   });
 
   // ── Building Portfolios ──────────────────────────────────────────────────
@@ -2701,7 +2780,7 @@ Respond with this JSON:
     }
   });
 
-  app.delete("/api/deal-tags/:id", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.delete("/api/deal-tags/:id", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     await storage.deleteDealTag(Number(req.params.id));
     res.status(204).end();
   });
@@ -2712,14 +2791,14 @@ Respond with this JSON:
     res.json(options);
   });
 
-  app.post("/api/industry-options", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.post("/api/industry-options", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const { label } = req.body;
     if (!label?.trim()) return res.status(400).json({ message: "Label required" });
     const option = await storage.createIndustryOption({ label: label.trim(), sortOrder: 999 });
     res.status(201).json(option);
   });
 
-  app.delete("/api/industry-options/:id", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.delete("/api/industry-options/:id", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     await storage.deleteIndustryOption(Number(req.params.id));
     res.status(204).end();
   });
@@ -2739,7 +2818,7 @@ Respond with this JSON:
     res.json(tiers);
   });
 
-  app.patch("/api/value-tier-settings/:tier", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.patch("/api/value-tier-settings/:tier", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const tier = decodeURIComponent(req.params.tier);
     const { estimatedValue } = z.object({ estimatedValue: z.coerce.number().min(0) }).parse(req.body);
     const updated = await storage.updateValueTierSetting(tier, estimatedValue);
@@ -2934,7 +3013,7 @@ Respond with this JSON:
   });
 
   // Bulk Delete / Update — Clients
-  app.post("/api/clients/bulk-delete", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.post("/api/clients/bulk-delete", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ message: "ids required" });
     await storage.deleteBulkClients(ids.map(Number));
@@ -2949,7 +3028,7 @@ Respond with this JSON:
   });
 
   // Bulk Delete / Update — Contacts
-  app.post("/api/contacts/bulk-delete", isAuthenticated, requireRole(["admin"]), async (req, res) => {
+  app.post("/api/contacts/bulk-delete", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ message: "ids required" });
     await storage.deleteBulkClientContacts(ids.map(Number));

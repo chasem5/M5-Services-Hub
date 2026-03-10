@@ -71,8 +71,9 @@ interface Invite {
   createdAt: string;
 }
 
-const ROLE_LABELS: Record<string, string> = { admin: "Admin", manager: "Manager", member: "Member" };
+const ROLE_LABELS: Record<string, string> = { super_admin: "Super Admin", admin: "Admin", manager: "Manager", member: "Member" };
 const ROLE_COLORS: Record<string, string> = {
+  super_admin: "bg-primary/10 text-primary border-primary/20",
   admin: "bg-red-100 text-red-700 border-red-200",
   manager: "bg-blue-100 text-blue-700 border-blue-200",
   member: "bg-slate-100 text-slate-600 border-slate-200",
@@ -387,21 +388,29 @@ export default function AdminPage() {
   const [newIndustryLabel, setNewIndustryLabel] = useState("");
   const { register, handleSubmit, reset, setValue, watch } = useForm({ defaultValues: { email: "", role: "member" } });
 
-  if (currentUser && currentUser.role !== "admin") {
+  const { data: myPerms } = useQuery<{ role: string; isSuperAdmin: boolean; permissions: Record<string, string> }>({
+    queryKey: ["/api/my-permissions"],
+  });
+  const isSuperAdmin = myPerms?.isSuperAdmin ?? false;
+
+  if (currentUser && currentUser.role !== "admin" && currentUser.role !== "super_admin") {
     setLocation("/");
     return null;
   }
 
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
+    enabled: isSuperAdmin,
   });
 
   const { data: invites = [], isLoading: invitesLoading } = useQuery<Invite[]>({
     queryKey: ["/api/invites"],
+    enabled: isSuperAdmin,
   });
 
   const { data: roleConfigs = [] } = useQuery<RoleConfig[]>({
     queryKey: ["/api/role-configs"],
+    enabled: isSuperAdmin,
   });
 
   useEffect(() => {
@@ -415,6 +424,7 @@ export default function AdminPage() {
 
   const { data: permissions = [] } = useQuery<RolePermission[]>({
     queryKey: ["/api/permissions"],
+    enabled: isSuperAdmin,
   });
 
   const updateLabelMutation = useMutation({
@@ -475,7 +485,7 @@ export default function AdminPage() {
     return roleConfigs.find(c => c.roleKey === roleKey)?.displayName ?? roleKey;
   };
 
-  const nonAdminRoles = roleConfigs.filter(c => c.roleKey !== "admin");
+  const nonAdminRoles = roleConfigs.filter(c => c.roleKey !== "admin" && c.roleKey !== "super_admin");
 
   const updateRoleMutation = useMutation({
     mutationFn: ({ id, role }: { id: string; role: string }) =>
@@ -598,32 +608,50 @@ export default function AdminPage() {
           <TabsTrigger value="members" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
             <Users className="h-4 w-4" />
             Team Members
-            <Badge variant="secondary" className="ml-1 h-5 px-1.5">{users.length}</Badge>
+            {isSuperAdmin && <Badge variant="secondary" className="ml-1 h-5 px-1.5">{users.length}</Badge>}
           </TabsTrigger>
-          <TabsTrigger value="invites" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
-            <Mail className="h-4 w-4" />
-            Invitations
-            {pendingInvites.length > 0 && (
-              <Badge className="ml-1 h-5 px-1.5 bg-primary text-primary-foreground">{pendingInvites.length}</Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="permissions" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
-            <Settings2 className="h-4 w-4" />
-            Permissions
-          </TabsTrigger>
-          <TabsTrigger value="configuration" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
-            <Settings2 className="h-4 w-4" />
-            Configuration
-          </TabsTrigger>
-          <TabsTrigger value="buildops" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-buildops">
-            <Zap className="h-4 w-4" />
-            BuildOps
-          </TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger value="invites" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
+              <Mail className="h-4 w-4" />
+              Invitations
+              {pendingInvites.length > 0 && (
+                <Badge className="ml-1 h-5 px-1.5 bg-primary text-primary-foreground">{pendingInvites.length}</Badge>
+              )}
+            </TabsTrigger>
+          )}
+          {isSuperAdmin && (
+            <TabsTrigger value="permissions" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
+              <Settings2 className="h-4 w-4" />
+              Permissions
+            </TabsTrigger>
+          )}
+          {isSuperAdmin && (
+            <TabsTrigger value="configuration" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
+              <Settings2 className="h-4 w-4" />
+              Configuration
+            </TabsTrigger>
+          )}
+          {isSuperAdmin && (
+            <TabsTrigger value="buildops" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-buildops">
+              <Zap className="h-4 w-4" />
+              BuildOps
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="members" className="pt-4 space-y-3">
-          {usersLoading ? (
+          {!isSuperAdmin && (
+            <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground flex items-center gap-2 mb-2">
+              <Lock className="h-4 w-4 shrink-0" />
+              You can view the team roster. Contact your Super Admin to manage roles or invitations.
+            </div>
+          )}
+          {usersLoading && isSuperAdmin ? (
             <p className="text-muted-foreground text-sm">Loading...</p>
+          ) : !isSuperAdmin ? (
+            <div className="text-sm text-muted-foreground py-4">
+              Team member list is visible to Super Admins only.
+            </div>
           ) : users.length === 0 ? (
             <p className="text-muted-foreground text-sm">No team members yet.</p>
           ) : (
@@ -642,6 +670,9 @@ export default function AdminPage() {
                       {u.id === currentUser?.id && (
                         <span className="ml-2 text-xs text-muted-foreground font-normal">(you)</span>
                       )}
+                      {u.role === "super_admin" && (
+                        <Badge className="ml-2 text-[10px] px-1.5 py-0 h-4 bg-primary/10 text-primary border border-primary/20" variant="outline">Super Admin</Badge>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground truncate">{u.email}</p>
                   </div>
@@ -655,7 +686,7 @@ export default function AdminPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {roleConfigs.map(cfg => (
+                        {[{ roleKey: "super_admin", displayName: "Super Admin" }, ...roleConfigs].map(cfg => (
                           <SelectItem key={cfg.roleKey} value={cfg.roleKey}>{cfg.displayName}</SelectItem>
                         ))}
                       </SelectContent>
@@ -703,6 +734,9 @@ export default function AdminPage() {
                     <SelectValue placeholder="Role" />
                   </SelectTrigger>
                   <SelectContent>
+                    {isSuperAdmin && (
+                      <SelectItem value="super_admin">Super Admin</SelectItem>
+                    )}
                     {roleConfigs.map(cfg => (
                       <SelectItem key={cfg.roleKey} value={cfg.roleKey}>{cfg.displayName}</SelectItem>
                     ))}

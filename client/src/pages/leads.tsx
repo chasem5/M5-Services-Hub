@@ -861,6 +861,11 @@ export default function Leads() {
   const autoOpenedRef = useRef(false);
   const [localScore, setLocalScore] = useState(50);
   useEffect(() => { setLocalScore(selectedLead?.confidenceScore ?? 50); }, [selectedLead?.id, selectedLead?.confidenceScore]);
+  useEffect(() => {
+    setIsEditingInternalNotes(false);
+    setSuggestedTask(null);
+    setSuggestedTaskLoading(false);
+  }, [selectedLead?.id]);
 
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
@@ -882,6 +887,9 @@ export default function Leads() {
   const [formServiceTypes, setFormServiceTypes] = useState<string[]>([]);
   const [editFormServiceTypes, setEditFormServiceTypes] = useState<string[]>([]);
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
+  const [pendingTaskId, setPendingTaskId] = useState<number | null>(null);
+  const [suggestedTask, setSuggestedTask] = useState<{ title: string; description: string; priority: string; dueInDays: number } | null>(null);
+  const [suggestedTaskLoading, setSuggestedTaskLoading] = useState(false);
   const [selectedClientIdForBuilding, setSelectedClientIdForBuilding] = useState<number | null>(null);
   const [selectedClientIdForBuildingEdit, setSelectedClientIdForBuildingEdit] = useState<number | null>(null);
   // Pipeline views
@@ -1159,6 +1167,40 @@ export default function Leads() {
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
+  });
+
+  const completeTaskMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string; title?: string; completing?: boolean }) => {
+      const res = await apiRequest("PUT", `/api/tasks/${id}`, { status });
+      return res.json();
+    },
+    onMutate: ({ id }) => setPendingTaskId(id),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setPendingTaskId(null);
+      if (vars.completing && vars.title && selectedLead) {
+        setSuggestedTaskLoading(true);
+        setSuggestedTask(null);
+        apiRequest("POST", `/api/leads/${selectedLead.id}/suggest-next-task`, { completedTaskTitle: vars.title })
+          .then(r => r.json())
+          .then(data => { setSuggestedTask(data); setSuggestedTaskLoading(false); })
+          .catch(() => setSuggestedTaskLoading(false));
+      }
+    },
+    onError: () => { setPendingTaskId(null); toast({ title: "Error updating task", variant: "destructive" }); },
+  });
+
+  const acceptSuggestedTaskMutation = useMutation({
+    mutationFn: async (data: InsertTask) => {
+      const res = await apiRequest("POST", "/api/tasks", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setSuggestedTask(null);
+      toast({ title: "Task added", description: "AI-suggested task added to this deal." });
+    },
+    onError: () => toast({ title: "Error adding task", variant: "destructive" }),
   });
 
   const createViewMutation = useMutation({
@@ -3378,6 +3420,73 @@ export default function Leads() {
                     </Card>
                   )}
 
+                  {/* AI Suggested Task Banner */}
+                  {suggestedTaskLoading && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2 animate-pulse">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                        <div className="h-3.5 w-40 bg-primary/20 rounded" />
+                      </div>
+                      <div className="h-3 w-full bg-muted rounded" />
+                      <div className="h-3 w-2/3 bg-muted rounded" />
+                    </div>
+                  )}
+                  {suggestedTask && !suggestedTaskLoading && (
+                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2" data-testid="card-ai-suggested-task">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                        <span className="text-xs font-semibold text-primary uppercase tracking-wide">AI Suggested Next Step</span>
+                      </div>
+                      <p className="text-sm font-medium">{suggestedTask.title}</p>
+                      {suggestedTask.description && (
+                        <p className="text-xs text-muted-foreground">{suggestedTask.description}</p>
+                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 capitalize ${priorityColors[suggestedTask.priority as keyof typeof priorityColors] ?? ""}`}>
+                          {suggestedTask.priority}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground">
+                          Due in {suggestedTask.dueInDays} day{suggestedTask.dueInDays !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs px-3"
+                          disabled={acceptSuggestedTaskMutation.isPending}
+                          data-testid="button-accept-suggested-task"
+                          onClick={() => {
+                            if (!selectedLead) return;
+                            const dueDate = new Date();
+                            dueDate.setDate(dueDate.getDate() + suggestedTask.dueInDays);
+                            acceptSuggestedTaskMutation.mutate({
+                              title: suggestedTask.title,
+                              description: suggestedTask.description,
+                              priority: suggestedTask.priority as "low" | "medium" | "high",
+                              status: "todo",
+                              dueDate: dueDate.toISOString().split("T")[0],
+                              relatedLeadId: selectedLead.id,
+                              relatedClientId: selectedLead.clientId ?? null,
+                              assignedTo: null,
+                            } as InsertTask);
+                          }}
+                        >
+                          {acceptSuggestedTaskMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                          Add Task
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs px-3"
+                          data-testid="button-dismiss-suggested-task"
+                          onClick={() => setSuggestedTask(null)}
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
                   {detailLeadTasks.length === 0 && !isAddTaskOpen ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
@@ -3386,20 +3495,37 @@ export default function Leads() {
                     </div>
                   ) : (
                     detailLeadTasks.map((task) => {
-                      const StatusIcon = statusIcons[task.status] ?? Circle;
+                      const isDone = task.status === "done";
+                      const isPending = pendingTaskId === task.id;
                       return (
                         <Card key={task.id} className={`border-l-4 ${
-                          task.status === "done" ? "border-l-green-400 opacity-70" :
+                          isDone ? "border-l-green-400 opacity-70" :
                           task.priority === "high" ? "border-l-red-400" :
                           task.priority === "medium" ? "border-l-yellow-400" : "border-l-blue-400"
                         }`} data-testid={`card-lead-task-${task.id}`}>
                           <CardContent className="p-3 flex items-start gap-3">
-                            <StatusIcon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
-                              task.status === "done" ? "text-green-500" :
-                              task.status === "in_progress" ? "text-blue-500" : "text-muted-foreground"
-                            }`} />
+                            <button
+                              className={`h-4 w-4 mt-0.5 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                isDone ? "bg-green-500 border-green-500 text-white" : "border-muted-foreground/40 hover:border-green-500"
+                              }`}
+                              onClick={() => completeTaskMutation.mutate({
+                                id: task.id,
+                                status: isDone ? "todo" : "done",
+                                title: task.title,
+                                completing: !isDone,
+                              })}
+                              disabled={isPending}
+                              data-testid={`button-toggle-task-${task.id}`}
+                              title={isDone ? "Mark as todo" : "Mark as done"}
+                            >
+                              {isPending ? (
+                                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                              ) : isDone ? (
+                                <Check className="h-2.5 w-2.5" />
+                              ) : null}
+                            </button>
                             <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-medium ${task.status === "done" ? "line-through text-muted-foreground" : ""}`}>
+                              <p className={`text-sm font-medium ${isDone ? "line-through text-muted-foreground" : ""}`}>
                                 {task.title}
                               </p>
                               {task.description && (
