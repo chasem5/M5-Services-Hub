@@ -34,6 +34,7 @@ import {
   buildingPortfolios,
   portfolioBuildings,
   portfolioContacts,
+  buildingContacts,
   dealTags,
   industryOptions,
   valueTierSettings,
@@ -49,6 +50,7 @@ import {
   type InsertBuildingPortfolio,
   type PortfolioBuilding,
   type PortfolioContact,
+  type BuildingContact,
   type User,
   type UpsertUser,
   type Client,
@@ -335,6 +337,11 @@ export interface IStorage {
   removeBuildingFromPortfolio(portfolioId: number, buildingId: number): Promise<void>;
   addContactToPortfolio(portfolioId: number, contactId: number, role?: string | null): Promise<PortfolioContact>;
   removeContactFromPortfolio(portfolioId: number, contactId: number): Promise<void>;
+
+  // Building Contacts (multiple contacts per building)
+  getBuildingContacts(buildingId: number): Promise<BuildingContact[]>;
+  addContactToBuilding(buildingId: number, contactId: number): Promise<BuildingContact>;
+  removeContactFromBuilding(buildingId: number, contactId: number): Promise<void>;
 
   // Deal Tags
   listDealTags(): Promise<DealTag[]>;
@@ -1673,6 +1680,24 @@ export class DatabaseStorage implements IStorage {
   async removeContactFromPortfolio(portfolioId: number, contactId: number): Promise<void> {
     await db.delete(portfolioContacts)
       .where(and(eq(portfolioContacts.portfolioId, portfolioId), eq(portfolioContacts.contactId, contactId)));
+  }
+
+  // Building Contacts (multiple contacts per building)
+  async getBuildingContacts(buildingId: number): Promise<BuildingContact[]> {
+    return await db.select().from(buildingContacts).where(eq(buildingContacts.buildingId, buildingId));
+  }
+
+  async addContactToBuilding(buildingId: number, contactId: number): Promise<BuildingContact> {
+    const existing = await db.select().from(buildingContacts)
+      .where(and(eq(buildingContacts.buildingId, buildingId), eq(buildingContacts.contactId, contactId)));
+    if (existing.length > 0) return existing[0];
+    const [row] = await db.insert(buildingContacts).values({ buildingId, contactId }).returning();
+    return row;
+  }
+
+  async removeContactFromBuilding(buildingId: number, contactId: number): Promise<void> {
+    await db.delete(buildingContacts)
+      .where(and(eq(buildingContacts.buildingId, buildingId), eq(buildingContacts.contactId, contactId)));
   }
 
   // Deal Tags

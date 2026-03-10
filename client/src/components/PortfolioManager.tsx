@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   Link2,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +41,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { cn } from "@/lib/utils";
-import type { BuildingPortfolio, PortfolioBuilding, PortfolioContact, ContactBuilding, ClientContact, Client } from "@shared/schema";
+import type { BuildingPortfolio, PortfolioBuilding, PortfolioContact, ContactBuilding, ClientContact, Client, BuildingContact } from "@shared/schema";
 
 type PortfolioWithDetails = BuildingPortfolio & {
   buildings: PortfolioBuilding[];
@@ -52,6 +53,238 @@ interface PortfolioManagerProps {
   clients: Client[];
   filterClientId?: number;
   allBuildings?: ContactBuilding[];
+}
+
+function BuildingCard({
+  building,
+  contact,
+  company,
+  inPortfolios,
+  isEditing,
+  editBuildingName,
+  setEditBuildingName,
+  setEditingBuildingId,
+  updateBuildingMutation,
+  setDeleteBuildingId,
+  portfolios,
+  addBuildingToPortfolioMutation,
+  draggingBuildingId,
+  setDraggingBuildingId,
+  filterClientId,
+  companyContacts,
+  isContactsExpanded,
+  onToggleContacts,
+  addContactToBuildingMutation,
+  removeContactFromBuildingMutation,
+}: {
+  building: ContactBuilding;
+  contact?: ClientContact;
+  company?: Client;
+  inPortfolios: PortfolioWithDetails[];
+  isEditing: boolean;
+  editBuildingName: string;
+  setEditBuildingName: (v: string) => void;
+  setEditingBuildingId: (id: number | null) => void;
+  updateBuildingMutation: any;
+  setDeleteBuildingId: (id: number | null) => void;
+  portfolios: PortfolioWithDetails[];
+  addBuildingToPortfolioMutation: any;
+  draggingBuildingId: number | null;
+  setDraggingBuildingId: (id: number | null) => void;
+  filterClientId?: number;
+  companyContacts: ClientContact[];
+  isContactsExpanded: boolean;
+  onToggleContacts: () => void;
+  addContactToBuildingMutation: any;
+  removeContactFromBuildingMutation: any;
+}) {
+  const { data: buildingContactLinks = [] } = useQuery<BuildingContact[]>({
+    queryKey: ["/api/contact-buildings", building.id, "contacts"],
+    queryFn: async () => {
+      const res = await fetch(`/api/contact-buildings/${building.id}/contacts`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: isContactsExpanded || filterClientId !== undefined,
+  });
+
+  const assignedContacts = companyContacts.filter(c =>
+    buildingContactLinks.some(bc => bc.contactId === c.id)
+  );
+
+  return (
+    <div
+      draggable
+      onDragStart={() => setDraggingBuildingId(building.id)}
+      onDragEnd={() => setDraggingBuildingId(null)}
+      className={cn(
+        "border rounded-lg bg-background hover:bg-muted/30 transition-colors cursor-grab active:cursor-grabbing group",
+        draggingBuildingId === building.id && "opacity-50 ring-2 ring-primary"
+      )}
+      data-testid={`card-building-${building.id}`}
+    >
+      <div className="p-3">
+        <div className="flex items-start gap-2">
+          <GripVertical className="h-4 w-4 text-muted-foreground/40 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            {isEditing ? (
+              <div className="flex gap-1.5">
+                <Input
+                  autoFocus
+                  value={editBuildingName}
+                  onChange={e => setEditBuildingName(e.target.value)}
+                  className="h-7 text-xs"
+                  onKeyDown={e => {
+                    if (e.key === "Enter") updateBuildingMutation.mutate({ id: building.id, name: editBuildingName });
+                    if (e.key === "Escape") setEditingBuildingId(null);
+                  }}
+                />
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateBuildingMutation.mutate({ id: building.id, name: editBuildingName })}>
+                  <Check className="h-3.5 w-3.5" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingBuildingId(null)}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-medium truncate">{building.name}</p>
+                <button
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                  onClick={() => { setEditingBuildingId(building.id); setEditBuildingName(building.name); }}
+                  data-testid={`button-edit-building-${building.id}`}
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+            {building.address && (
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
+                <MapPin className="h-2.5 w-2.5 shrink-0" />
+                {building.address}
+              </p>
+            )}
+            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+              {company && (
+                <Badge variant="outline" className="h-4 text-[10px] px-1.5 font-normal">
+                  {company.name}
+                </Badge>
+              )}
+              {contact && (
+                <Badge variant="secondary" className="h-4 text-[10px] px-1.5 font-normal">
+                  <Users className="h-2.5 w-2.5 mr-0.5" />
+                  {contact.name}
+                </Badge>
+              )}
+              {assignedContacts.filter(c => c.id !== contact?.id).map(c => (
+                <Badge key={c.id} variant="secondary" className="h-4 text-[10px] px-1.5 font-normal">
+                  <Users className="h-2.5 w-2.5 mr-0.5" />
+                  {c.name}
+                </Badge>
+              ))}
+              {inPortfolios.map(p => (
+                <Badge key={p.id} className="h-4 text-[10px] px-1.5 font-normal bg-primary/10 text-primary border-primary/20">
+                  <Folders className="h-2.5 w-2.5 mr-0.5" />
+                  {p.name}
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            {filterClientId && (
+              <button
+                className={cn(
+                  "p-1 rounded transition-colors",
+                  isContactsExpanded ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={onToggleContacts}
+                title="Manage contacts for this building"
+                data-testid={`button-building-contacts-${building.id}`}
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <button
+              className="text-muted-foreground hover:text-destructive p-1 rounded"
+              onClick={() => setDeleteBuildingId(building.id)}
+              data-testid={`button-delete-building-${building.id}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Quick-assign to portfolio */}
+        {portfolios.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-border/50 flex flex-wrap gap-1">
+            {portfolios.filter(p => !p.buildings?.some(pb => pb.buildingId === building.id)).map(p => (
+              <button
+                key={p.id}
+                className="text-[10px] text-muted-foreground hover:text-primary border border-dashed border-border hover:border-primary/50 rounded px-1.5 py-0.5 transition-colors flex items-center gap-1"
+                onClick={() => addBuildingToPortfolioMutation.mutate({ portfolioId: p.id, buildingId: building.id })}
+                data-testid={`button-assign-${building.id}-to-${p.id}`}
+              >
+                <Link2 className="h-2.5 w-2.5" />
+                Add to {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Building Contacts Checklist */}
+      {isContactsExpanded && filterClientId && (
+        <div className="border-t border-border/50 px-3 py-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
+            <Users className="h-3 w-3" />
+            Contacts for this Building
+          </p>
+          <div className="border rounded-lg overflow-hidden">
+            {companyContacts.length === 0 ? (
+              <p className="text-xs text-muted-foreground p-3 text-center italic">No contacts for this company yet.</p>
+            ) : (
+              <div className="divide-y max-h-40 overflow-y-auto">
+                {companyContacts.map(c => {
+                  const isLinked = buildingContactLinks.some(bc => bc.contactId === c.id);
+                  return (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted/40 transition-colors"
+                      data-testid={`row-building-contact-${c.id}`}
+                    >
+                      <button
+                        className={cn(
+                          "h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                          isLinked
+                            ? "bg-primary border-primary text-white"
+                            : "border-border hover:border-primary/50"
+                        )}
+                        onClick={() => {
+                          if (isLinked) {
+                            removeContactFromBuildingMutation.mutate({ buildingId: building.id, contactId: c.id });
+                          } else {
+                            addContactToBuildingMutation.mutate({ buildingId: building.id, contactId: c.id });
+                          }
+                        }}
+                        data-testid={`checkbox-building-contact-${c.id}-${building.id}`}
+                      >
+                        {isLinked && <Check className="h-2.5 w-2.5" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{c.name}</p>
+                        {c.title && <p className="text-[10px] text-muted-foreground truncate">{c.title}</p>}
+                      </div>
+                      {isLinked && <span className="text-[10px] text-primary font-medium shrink-0">Assigned</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function PortfolioManager({ allContacts, clients, filterClientId }: PortfolioManagerProps) {
@@ -86,6 +319,7 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
   const [editPortfolioName, setEditPortfolioName] = useState("");
 
   const [contactSearch, setContactSearch] = useState<Record<number, string>>({});
+  const [expandedBuildingContactIds, setExpandedBuildingContactIds] = useState<Set<number>>(new Set());
 
   const { data: allBuildings = [], isLoading: buildingsLoading } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/contact-buildings"],
@@ -224,6 +458,24 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
       apiRequest("DELETE", `/api/portfolios/${portfolioId}/contacts/${contactId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: portfolioQueryKey }),
     onError: () => toast({ title: "Failed to remove contact", variant: "destructive" }),
+  });
+
+  const addContactToBuildingMutation = useMutation({
+    mutationFn: ({ buildingId, contactId }: { buildingId: number; contactId: number }) =>
+      apiRequest("POST", `/api/contact-buildings/${buildingId}/contacts`, { contactId }),
+    onSuccess: (_data, { buildingId }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contact-buildings", buildingId, "contacts"] });
+    },
+    onError: () => toast({ title: "Failed to add contact to building", variant: "destructive" }),
+  });
+
+  const removeContactFromBuildingMutation = useMutation({
+    mutationFn: ({ buildingId, contactId }: { buildingId: number; contactId: number }) =>
+      apiRequest("DELETE", `/api/contact-buildings/${buildingId}/contacts/${contactId}`),
+    onSuccess: (_data, { buildingId }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contact-buildings", buildingId, "contacts"] });
+    },
+    onError: () => toast({ title: "Failed to remove contact from building", variant: "destructive" }),
   });
 
   const updatePortfolioMutation = useMutation({
@@ -412,106 +664,37 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
                 p.buildings?.some(pb => pb.buildingId === building.id)
               );
               const isEditing = editingBuildingId === building.id;
+              const isContactsExpanded = expandedBuildingContactIds.has(building.id);
 
               return (
-                <div
+                <BuildingCard
                   key={building.id}
-                  draggable
-                  onDragStart={() => setDraggingBuildingId(building.id)}
-                  onDragEnd={() => setDraggingBuildingId(null)}
-                  className={cn(
-                    "border rounded-lg p-3 bg-background hover:bg-muted/30 transition-colors cursor-grab active:cursor-grabbing group",
-                    draggingBuildingId === building.id && "opacity-50 ring-2 ring-primary"
-                  )}
-                  data-testid={`card-building-${building.id}`}
-                >
-                  <div className="flex items-start gap-2">
-                    <GripVertical className="h-4 w-4 text-muted-foreground/40 mt-0.5 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      {isEditing ? (
-                        <div className="flex gap-1.5">
-                          <Input
-                            autoFocus
-                            value={editBuildingName}
-                            onChange={e => setEditBuildingName(e.target.value)}
-                            className="h-7 text-xs"
-                            onKeyDown={e => {
-                              if (e.key === "Enter") updateBuildingMutation.mutate({ id: building.id, name: editBuildingName });
-                              if (e.key === "Escape") setEditingBuildingId(null);
-                            }}
-                          />
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateBuildingMutation.mutate({ id: building.id, name: editBuildingName })}>
-                            <Check className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingBuildingId(null)}>
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-medium truncate">{building.name}</p>
-                          <button
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-                            onClick={() => { setEditingBuildingId(building.id); setEditBuildingName(building.name); }}
-                            data-testid={`button-edit-building-${building.id}`}
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </button>
-                        </div>
-                      )}
-                      {building.address && (
-                        <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
-                          <MapPin className="h-2.5 w-2.5 shrink-0" />
-                          {building.address}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-                        {company && (
-                          <Badge variant="outline" className="h-4 text-[10px] px-1.5 font-normal">
-                            {company.name}
-                          </Badge>
-                        )}
-                        {contact && (
-                          <Badge variant="secondary" className="h-4 text-[10px] px-1.5 font-normal">
-                            <Users className="h-2.5 w-2.5 mr-0.5" />
-                            {contact.name}
-                          </Badge>
-                        )}
-                        {inPortfolios.map(p => (
-                          <Badge key={p.id} className="h-4 text-[10px] px-1.5 font-normal bg-primary/10 text-primary border-primary/20">
-                            <Folders className="h-2.5 w-2.5 mr-0.5" />
-                            {p.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                      <button
-                        className="text-muted-foreground hover:text-destructive p-1 rounded"
-                        onClick={() => setDeleteBuildingId(building.id)}
-                        data-testid={`button-delete-building-${building.id}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  {/* Quick-assign to portfolio */}
-                  {portfolios.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-border/50 flex flex-wrap gap-1">
-                      {portfolios.filter(p => !p.buildings?.some(pb => pb.buildingId === building.id)).map(p => (
-                        <button
-                          key={p.id}
-                          className="text-[10px] text-muted-foreground hover:text-primary border border-dashed border-border hover:border-primary/50 rounded px-1.5 py-0.5 transition-colors flex items-center gap-1"
-                          onClick={() => addBuildingToPortfolioMutation.mutate({ portfolioId: p.id, buildingId: building.id })}
-                          data-testid={`button-assign-${building.id}-to-${p.id}`}
-                        >
-                          <Link2 className="h-2.5 w-2.5" />
-                          Add to {p.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  building={building}
+                  contact={contact}
+                  company={company}
+                  inPortfolios={inPortfolios}
+                  isEditing={isEditing}
+                  editBuildingName={editBuildingName}
+                  setEditBuildingName={setEditBuildingName}
+                  setEditingBuildingId={setEditingBuildingId}
+                  updateBuildingMutation={updateBuildingMutation}
+                  setDeleteBuildingId={setDeleteBuildingId}
+                  portfolios={portfolios}
+                  addBuildingToPortfolioMutation={addBuildingToPortfolioMutation}
+                  draggingBuildingId={draggingBuildingId}
+                  setDraggingBuildingId={setDraggingBuildingId}
+                  filterClientId={filterClientId}
+                  companyContacts={companyContacts}
+                  isContactsExpanded={isContactsExpanded}
+                  onToggleContacts={() => setExpandedBuildingContactIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(building.id)) next.delete(building.id);
+                    else next.add(building.id);
+                    return next;
+                  })}
+                  addContactToBuildingMutation={addContactToBuildingMutation}
+                  removeContactFromBuildingMutation={removeContactFromBuildingMutation}
+                />
               );
             })}
           </div>
@@ -696,12 +879,30 @@ export function PortfolioManager({ allContacts, clients, filterClientId }: Portf
                           {company && <Badge variant="outline" className="h-4 text-[10px] px-1.5 font-normal">{company.name}</Badge>}
                           <span className="text-[11px] text-muted-foreground">
                             {portfolioBuildings.length} building{portfolioBuildings.length !== 1 ? "s" : ""}
-                            {portfolioContactList.length > 0 && ` · ${portfolioContactList.length} contact${portfolioContactList.length !== 1 ? "s" : ""}`}
                           </span>
                           {isDragOver && (
                             <span className="text-[11px] text-primary font-medium animate-pulse">Drop to add building</span>
                           )}
                         </div>
+                        {portfolioContactList.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1 flex-wrap">
+                            {portfolioContactList.slice(0, 3).map(pc => {
+                              const c = allContacts.find(x => x.id === pc.contactId);
+                              if (!c) return null;
+                              return (
+                                <span key={pc.contactId} className="inline-flex items-center gap-0.5 bg-muted rounded-full px-2 py-0.5 text-[10px] text-muted-foreground">
+                                  <Users className="h-2.5 w-2.5" />
+                                  {c.name}
+                                </span>
+                              );
+                            })}
+                            {portfolioContactList.length > 3 && (
+                              <span className="inline-flex items-center bg-muted rounded-full px-2 py-0.5 text-[10px] text-muted-foreground">
+                                +{portfolioContactList.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <button

@@ -805,6 +805,7 @@ export default function ClientDetail() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
   const [dragContactId, setDragContactId] = useState<number | null>(null);
   const [dragOverOfficeId, setDragOverOfficeId] = useState<number | "unassigned" | null>(null);
+  const [orgChartView, setOrgChartView] = useState<"people" | "portfolio">("people");
 
   // Queries
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
@@ -2789,51 +2790,157 @@ export default function ClientDetail() {
             <Card className="border-none shadow-sm bg-card">
               <CardHeader className="flex flex-row items-start justify-between pb-4">
                 <div>
-                  <CardTitle>Organization Chart</CardTitle>
+                  <CardTitle>{orgChartView === "people" ? "Organization Chart" : "Portfolio View"}</CardTitle>
                   <CardDescription>
-                    Visual hierarchy of contacts. Click any node to view details or change reporting relationships.
+                    {orgChartView === "people"
+                      ? "Visual hierarchy of contacts. Click any node to view details or change reporting relationships."
+                      : "Portfolios and their associated buildings and contacts."}
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => verifyEmploymentMutation.mutate()}
-                    disabled={verifyEmploymentMutation.isPending}
-                    data-testid="button-verify-employment"
-                  >
-                    <RefreshCw className={`mr-2 h-4 w-4 ${verifyEmploymentMutation.isPending ? "animate-spin" : ""}`} />
-                    {verifyEmploymentMutation.isPending ? "Verifying..." : "Verify via LinkedIn"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsContactDialogOpen(true)}
-                    data-testid="button-add-contact-org"
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Contact
-                  </Button>
+                  {/* View toggle */}
+                  <div className="flex rounded-md border border-border overflow-hidden">
+                    <button
+                      className={cn(
+                        "px-3 py-1.5 text-xs font-medium transition-colors",
+                        orgChartView === "people"
+                          ? "bg-primary text-white"
+                          : "bg-background text-muted-foreground hover:text-foreground"
+                      )}
+                      onClick={() => setOrgChartView("people")}
+                      data-testid="button-org-view-people"
+                    >
+                      People
+                    </button>
+                    <button
+                      className={cn(
+                        "px-3 py-1.5 text-xs font-medium border-l border-border transition-colors",
+                        orgChartView === "portfolio"
+                          ? "bg-primary text-white"
+                          : "bg-background text-muted-foreground hover:text-foreground"
+                      )}
+                      onClick={() => setOrgChartView("portfolio")}
+                      data-testid="button-org-view-portfolio"
+                    >
+                      Portfolio
+                    </button>
+                  </div>
+                  {orgChartView === "people" && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => verifyEmploymentMutation.mutate()}
+                        disabled={verifyEmploymentMutation.isPending}
+                        data-testid="button-verify-employment"
+                      >
+                        <RefreshCw className={`mr-2 h-4 w-4 ${verifyEmploymentMutation.isPending ? "animate-spin" : ""}`} />
+                        {verifyEmploymentMutation.isPending ? "Verifying..." : "Verify via LinkedIn"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsContactDialogOpen(true)}
+                        data-testid="button-add-contact-org"
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Contact
+                      </Button>
+                    </>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
-                {isLoadingContacts ? (
-                  <div className="flex items-center justify-center h-64">
-                    <div className="text-muted-foreground text-sm">Loading org chart...</div>
-                  </div>
+                {orgChartView === "people" ? (
+                  isLoadingContacts ? (
+                    <div className="flex items-center justify-center h-64">
+                      <div className="text-muted-foreground text-sm">Loading org chart...</div>
+                    </div>
+                  ) : (
+                    <OrgChart
+                      contacts={contacts || []}
+                      offices={offices || []}
+                      onUpdateReportsTo={(contactId, reportsTo) => {
+                        updateContactMutation.mutate({
+                          contactId,
+                          data: { reportsTo: reportsTo },
+                        });
+                      }}
+                      onEditContact={openEditContact}
+                      isUpdating={updateContactMutation.isPending}
+                    />
+                  )
                 ) : (
-                  <OrgChart
-                    contacts={contacts || []}
-                    offices={offices || []}
-                    onUpdateReportsTo={(contactId, reportsTo) => {
-                      updateContactMutation.mutate({
-                        contactId,
-                        data: { reportsTo: reportsTo },
-                      });
-                    }}
-                    onEditContact={openEditContact}
-                    isUpdating={updateContactMutation.isPending}
-                  />
+                  /* Portfolio View */
+                  clientPortfolios.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2">
+                      <Folders className="h-10 w-10 opacity-20" />
+                      <p className="text-sm">No portfolios yet — create one in the Portfolio tab.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {clientPortfolios.map((portfolio: any) => {
+                        const portfolioBuildings = (portfolio.buildings ?? []).map((pb: any) =>
+                          allBuildings.find((b: any) => b.id === pb.buildingId)
+                        ).filter(Boolean);
+                        const portfolioContacts = (portfolio.contacts ?? []).map((pc: any) =>
+                          (contacts || []).find((c: any) => c.id === pc.contactId)
+                        ).filter(Boolean);
+                        return (
+                          <div key={portfolio.id} className="border rounded-lg bg-card overflow-hidden" data-testid={`card-portfolio-view-${portfolio.id}`}>
+                            <div className="bg-muted/40 px-4 py-2.5 border-b">
+                              <p className="text-sm font-semibold flex items-center gap-2">
+                                <Folders className="h-4 w-4 text-primary" />
+                                {portfolio.name}
+                              </p>
+                            </div>
+                            <div className="p-4 space-y-4">
+                              {/* Buildings */}
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Buildings</p>
+                                {portfolioBuildings.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground italic">No buildings assigned</p>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {portfolioBuildings.map((b: any) => (
+                                      <div key={b.id} className="flex items-start gap-2 text-xs">
+                                        <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                                        <div>
+                                          <p className="font-medium">{b.name}</p>
+                                          {b.address && <p className="text-[10px] text-muted-foreground truncate">{b.address}</p>}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              {/* Contacts */}
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Contacts</p>
+                                {portfolioContacts.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground italic">No contacts assigned</p>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {portfolioContacts.map((c: any) => (
+                                      <div key={c.id} className="flex items-center gap-1.5 bg-muted rounded-full px-2.5 py-1 text-xs">
+                                        <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-semibold text-primary shrink-0">
+                                          {c.name.charAt(0)}
+                                        </div>
+                                        <div>
+                                          <span className="font-medium">{c.name}</span>
+                                          {c.title && <span className="text-muted-foreground ml-1 text-[10px]">· {c.title}</span>}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
                 )}
               </CardContent>
             </Card>

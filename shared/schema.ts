@@ -543,6 +543,16 @@ export const portfolioContacts = pgTable("portfolio_contacts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const buildingContacts = pgTable("building_contacts", {
+  id: serial("id").primaryKey(),
+  buildingId: integer("building_id").references(() => contactBuildings.id, { onDelete: "cascade" }).notNull(),
+  contactId: integer("contact_id").references(() => clientContacts.id, { onDelete: "cascade" }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertBuildingContactSchema = createInsertSchema(buildingContacts).omit({ id: true, createdAt: true });
+export type BuildingContact = typeof buildingContacts.$inferSelect;
+export type InsertBuildingContact = z.infer<typeof insertBuildingContactSchema>;
+
 export const insertBuildingPortfolioSchema = createInsertSchema(buildingPortfolios).omit({ id: true, createdAt: true }).extend({
   clientId: z.number().optional().nullable(),
 });

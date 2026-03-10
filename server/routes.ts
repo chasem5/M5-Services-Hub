@@ -2803,6 +2803,24 @@ Respond with this JSON:
     res.status(204).end();
   });
 
+  // Building Contacts (multiple contacts per building)
+  app.get("/api/contact-buildings/:id/contacts", isAuthenticated, async (req, res) => {
+    const contacts = await storage.getBuildingContacts(Number(req.params.id));
+    res.json(contacts);
+  });
+
+  app.post("/api/contact-buildings/:id/contacts", isAuthenticated, async (req, res) => {
+    const { contactId } = req.body;
+    if (!contactId) return res.status(400).json({ message: "contactId required" });
+    const row = await storage.addContactToBuilding(Number(req.params.id), Number(contactId));
+    res.status(201).json(row);
+  });
+
+  app.delete("/api/contact-buildings/:id/contacts/:contactId", isAuthenticated, async (req, res) => {
+    await storage.removeContactFromBuilding(Number(req.params.id), Number(req.params.contactId));
+    res.status(204).end();
+  });
+
   // Deal Tags
   app.get("/api/deal-tags", isAuthenticated, async (_req, res) => {
     const tags = await storage.listDealTags();
