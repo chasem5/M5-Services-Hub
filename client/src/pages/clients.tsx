@@ -2152,7 +2152,20 @@ export default function Customers() {
                                   <Pencil className="mr-2 h-4 w-4" />
                                   Edit
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => window.open('/api/contacts/' + contact.id + '/vcard', '_blank')}>
+                                <DropdownMenuItem onClick={async () => {
+                                  try {
+                                    const res = await fetch(`/api/contacts/${contact.id}/vcard`);
+                                    const blob = await res.blob();
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = `${(contact.name || "contact").replace(/[^a-zA-Z0-9_\-]/g, "_")}.vcf`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                  } catch { }
+                                }}>
                                   <Smartphone className="mr-2 h-4 w-4" />
                                   Export to Phone
                                 </DropdownMenuItem>
@@ -2837,8 +2850,29 @@ export default function Customers() {
                       </div>
                     )}
                   </div>
-                  {/* Go to full company profile */}
-                  <div className="pt-2 border-t">
+                  {/* Actions */}
+                  <div className="pt-2 border-t space-y-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/contacts/${sc.id}/vcard`);
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `${(sc.name || "contact").replace(/[^a-zA-Z0-9_\-]/g, "_")}.vcf`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        } catch { }
+                      }}
+                      className="w-full h-9 text-sm rounded-md border border-border hover:bg-muted/50 transition-colors flex items-center justify-center gap-2"
+                      data-testid={`button-export-vcard-popup-${sc.id}`}
+                    >
+                      <Smartphone className="h-4 w-4" />
+                      Export to Phone
+                    </button>
                     <Link
                       href={`/customers/${sc.clientId}`}
                       onClick={() => setSelectedContact(null)}

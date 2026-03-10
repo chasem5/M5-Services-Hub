@@ -640,7 +640,20 @@ function ContactCard({
                     Add to Portfolio
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem onClick={() => window.open(`/api/contacts/${contact.id}/vcard`, "_blank")} data-testid={`button-export-vcard-${contact.id}`}>
+                <DropdownMenuItem onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/contacts/${contact.id}/vcard`);
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${(contact.name || "contact").replace(/[^a-zA-Z0-9_\-]/g, "_")}.vcf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  } catch { }
+                }} data-testid={`button-export-vcard-${contact.id}`}>
                   <Smartphone className="h-4 w-4 mr-2" />
                   Export to Phone
                 </DropdownMenuItem>
