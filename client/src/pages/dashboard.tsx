@@ -392,8 +392,8 @@ export default function Dashboard() {
         onExternalOpen={(d) => setQuickAction(d as any)}
       />
 
-      {/* Metric Cards — uniform single row of 8 equal cards */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-8">
+      {/* Metric Cards — 7-col grid, Pipeline Value spans 2, Tasks combined */}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-7">
         <MetricCard
           title="Active Leads"
           value={stats?.activeLeads}
@@ -403,17 +403,11 @@ export default function Dashboard() {
         />
         <MetricCard
           title="Pipeline Value"
-          value={stats ? formatShortCurrency(Number(stats.pipelineValue)) : undefined}
+          value={stats ? formatCurrency(stats.pipelineValue) : undefined}
           icon={DollarSign}
           loading={statsLoading}
           dataTestId="text-pipeline-value"
-        />
-        <MetricCard
-          title="Open Tasks"
-          value={stats?.openTasks}
-          icon={Briefcase}
-          loading={statsLoading}
-          dataTestId="text-open-tasks"
+          className="col-span-1 lg:col-span-2"
         />
         <MetricCard
           title="Estimated MRR"
@@ -422,13 +416,6 @@ export default function Dashboard() {
           loading={statsLoading}
           dataTestId="text-estimated-mrr"
           accentColor="text-blue-600"
-        />
-        <MetricCard
-          title="Due Today"
-          value={stats?.tasksDueToday}
-          icon={Calendar}
-          loading={statsLoading}
-          dataTestId="text-tasks-due-today"
         />
         <MetricCard
           title="Monthly Revenue"
@@ -445,15 +432,36 @@ export default function Dashboard() {
           dataTestId="text-win-rate"
           accentColor={stats?.winRate !== null && stats?.winRate !== undefined ? (stats.winRate >= 50 ? "text-green-600" : "text-orange-500") : undefined}
         />
-        <MetricCard
-          title="Overdue Tasks"
-          value={stats?.overdueTasks}
-          icon={AlertTriangle}
-          loading={statsLoading}
-          dataTestId="text-overdue-tasks"
-          accentColor={stats?.overdueTasks ? "text-destructive" : undefined}
-          iconColor={stats?.overdueTasks ? "text-destructive" : undefined}
-        />
+        {/* Combined Tasks card */}
+        <Card className="shadow-sm border-border/40 bg-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-tight">
+              Tasks
+            </CardTitle>
+            <Briefcase className="h-4 w-4 shrink-0 text-primary" />
+          </CardHeader>
+          <CardContent>
+            {statsLoading ? (
+              <Skeleton className="h-7 w-16" />
+            ) : (
+              <>
+                <div className="font-heading font-bold text-xl leading-tight" data-testid="text-open-tasks">
+                  {stats?.openTasks ?? 0}
+                </div>
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  <span className="text-[11px] text-muted-foreground">{stats?.tasksDueToday ?? 0} due today</span>
+                  <span className="text-muted-foreground/30 text-[10px]">·</span>
+                  <span className={cn(
+                    "text-[11px]",
+                    Number(stats?.overdueTasks) > 0 ? "text-destructive font-medium" : "text-muted-foreground"
+                  )}>
+                    {stats?.overdueTasks ?? 0} overdue
+                  </span>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Action Required + Quotes Pipeline */}
@@ -473,12 +481,12 @@ export default function Dashboard() {
             {/* Tab bar */}
             {!pulseLoading && clientPulse.length > 0 && (() => {
               const tabDefs: { key: "all"|"E"|"A"|"B"|"C"|"D"; label: string; activeClass: string }[] = [
-                { key: "all", label: "All", activeClass: "bg-primary text-white" },
-                { key: "E",   label: "Expiring", activeClass: "bg-red-600 text-white" },
-                { key: "A",   label: "Reply",    activeClass: "bg-amber-500 text-white" },
-                { key: "B",   label: "Price",    activeClass: "bg-blue-600 text-white" },
-                { key: "C",   label: "Draft",    activeClass: "bg-orange-500 text-white" },
-                { key: "D",   label: "Follow-Up",activeClass: "bg-purple-600 text-white" },
+                { key: "all", label: "All",        activeClass: "bg-primary text-white" },
+                { key: "A",   label: "Acknowledge", activeClass: "bg-amber-500 text-white" },
+                { key: "B",   label: "Price",       activeClass: "bg-blue-600 text-white" },
+                { key: "C",   label: "Draft",       activeClass: "bg-orange-500 text-white" },
+                { key: "D",   label: "Follow-Up",   activeClass: "bg-purple-600 text-white" },
+                { key: "E",   label: "Expiring",    activeClass: "bg-red-600 text-white" },
               ];
               return (
                 <div className="flex flex-wrap gap-1 mt-3 pb-1">
@@ -522,12 +530,12 @@ export default function Dashboard() {
                 All caught up — no follow-ups needed
               </div>
             ) : (() => {
-              const sectionMeta: Record<string, { icon: any; label: string; color: string }> = {
-                E: { icon: TriangleAlert, label: "Expiring Soon",       color: "text-red-600" },
-                A: { icon: Mail,         label: "Reply Needed (24h)",   color: "text-amber-600" },
-                B: { icon: FileText,     label: "Price Not Sent",       color: "text-blue-600" },
-                C: { icon: FileText,     label: "Draft Quote Stale",    color: "text-orange-600" },
-                D: { icon: Send,         label: "Follow Up Sent Quote", color: "text-purple-600" },
+              const sectionMeta: Record<string, { icon: any; label: string; color: string; desc: string }> = {
+                E: { icon: TriangleAlert, label: "Expiring Soon",                    color: "text-red-600",    desc: "Sent quote approaching its 30-day window — act before it lapses" },
+                A: { icon: Mail,         label: "Acknowledge Client Request (24h)", color: "text-amber-600",  desc: "Inbound email received — client is waiting on a reply for 24+ hours" },
+                B: { icon: FileText,     label: "Price Not Sent",                   color: "text-blue-600",   desc: "Active deal with no estimate started — client hasn't seen any pricing yet" },
+                C: { icon: FileText,     label: "Draft Quote Stale",                color: "text-orange-600", desc: "Estimate created but never sent — sitting as a draft for 2+ days" },
+                D: { icon: Send,         label: "Follow Up Sent Quote",             color: "text-purple-600", desc: "Quote sent 7+ days ago with no response — time to check back in" },
               };
 
               const PulseRow = ({ item, idx, showCategory }: { item: any; idx: number; showCategory?: boolean }) => {
@@ -563,10 +571,10 @@ export default function Dashboard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-30 hover:!opacity-70 text-muted-foreground"
+                          className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-20 hover:!opacity-40 text-muted-foreground"
                           data-testid={`button-snooze-${item.type}-${item.leadId ?? item.estimateId ?? idx}`}
                         >
-                          <MoreHorizontal className="h-3.5 w-3.5" />
+                          <MoreHorizontal className="h-3 w-3" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="text-xs">
@@ -590,9 +598,12 @@ export default function Dashboard() {
                 const meta = sectionMeta[pulseTab];
                 return (
                   <div className="divide-y divide-border/40">
-                    <div className={`flex items-center gap-1.5 px-4 py-1.5 bg-muted/30 text-xs font-semibold uppercase tracking-wider ${meta.color}`}>
-                      <meta.icon className="h-3 w-3" />
-                      {meta.label}
+                    <div className="px-4 pt-2 pb-2 bg-muted/30">
+                      <div className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider ${meta.color}`}>
+                        <meta.icon className="h-3 w-3" />
+                        {meta.label}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{meta.desc}</p>
                     </div>
                     {items.map((item: any, idx: number) => (
                       <PulseRow key={idx} item={item} idx={idx} />
@@ -609,9 +620,12 @@ export default function Dashboard() {
                     const meta = sectionMeta[type];
                     return (
                       <div key={type}>
-                        <div className={`flex items-center gap-1.5 px-4 py-1.5 bg-muted/30 text-xs font-semibold uppercase tracking-wider ${meta.color}`}>
-                          <meta.icon className="h-3 w-3" />
-                          {meta.label}
+                        <div className="px-4 pt-2 pb-2 bg-muted/30">
+                          <div className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider ${meta.color}`}>
+                            <meta.icon className="h-3 w-3" />
+                            {meta.label}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{meta.desc}</p>
                         </div>
                         {section.map((item: any, idx: number) => (
                           <PulseRow key={idx} item={item} idx={idx} />
