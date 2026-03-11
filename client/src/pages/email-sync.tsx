@@ -335,13 +335,16 @@ export default function EmailSyncPage() {
   const selectedThread = threads.find(t => t.threadId === selectedThreadId) ?? null;
   const primaryEmail = selectedThread?.latestMessage ?? null;
 
-  // Auto-select first thread, or re-home if selection no longer visible
+  // Auto-select first thread, or re-home if selection no longer visible in active tab
   useEffect(() => {
-    if (threads.length === 0) return;
-    if (!selectedThreadId || !threads.find(t => t.threadId === selectedThreadId)) {
-      setSelectedThreadId(threads[0].threadId);
+    if (visibleThreads.length === 0) {
+      setSelectedThreadId(null);
+      return;
     }
-  }, [threads.length, selectedThreadId, needsResponseOnly, showDismissed, searchQuery]);
+    if (!selectedThreadId || !visibleThreads.find(t => t.threadId === selectedThreadId)) {
+      setSelectedThreadId(visibleThreads[0].threadId);
+    }
+  }, [visibleThreads.length, selectedThreadId, viewFilter, needsResponseOnly, showDismissed, searchQuery]);
 
   // When thread changes, auto-expand most recent message
   useEffect(() => {
@@ -699,9 +702,9 @@ export default function EmailSyncPage() {
                 {/* View filter tabs */}
                 <div className="sticky top-0 z-10 flex border-b border-gray-200 bg-white" data-testid="email-view-tabs">
                   {([
+                    { key: "all" as const, label: "All", count: filteredThreads.length, icon: null },
                     { key: "customers" as const, label: "Customers", count: customerThreads.length, icon: <Building2 className="h-3 w-3" /> },
                     { key: "other" as const, label: "Other", count: otherThreads.length, icon: <Mail className="h-3 w-3" /> },
-                    { key: "all" as const, label: "All", count: filteredThreads.length, icon: null },
                   ]).map(tab => (
                     <button
                       key={tab.key}
