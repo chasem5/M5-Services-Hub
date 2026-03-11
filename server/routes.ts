@@ -2644,7 +2644,7 @@ Already matched clientId: ${clientId ?? "none"}
 Respond with this JSON:
 {
   "summary": "1-2 sentence summary of the email",
-  "suggestedTasks": [{"title": "task title", "priority": "high|medium|low", "dueInDays": 1}],
+  "suggestedTasks": [{"title": "task title", "priority": "high|medium|low", "dueInDays": 1}] — IMPORTANT: task titles must ONLY reference companies, people, and topics explicitly named in the email body or thread participants above. Do NOT use names from the Known clients/contacts/leads lists for task content — those are only for connectionSuggestions. If you reference a company in a task title, it must appear in the actual email text.,
   "sentiment": "positive|neutral|negative|urgent",
   "stageSuggestion": null or one of: "new_lead|qualified|proposal_sent|won|lost",
   "requiresResponse": true or false (true only if inbound and M5 should reply — false for cc, outbound, automated/notifications/newsletters),
@@ -2826,6 +2826,18 @@ Respond with this JSON:
       ? (email.aiCreateSuggestions as any[]).filter((s: any) => s.name !== name)
       : [];
     const updated = await storage.updateEmailMessage(id, { aiCreateSuggestions: filtered.length > 0 ? filtered : null } as any);
+    res.json(updated);
+  });
+
+  app.patch("/api/email-messages/:id/remove-task-suggestion", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { title } = z.object({ title: z.string() }).parse(req.body);
+    const email = await storage.getEmailMessage(id);
+    if (!email) return res.status(404).json({ message: "Not found" });
+    const filtered = Array.isArray(email.aiSuggestedTasks)
+      ? (email.aiSuggestedTasks as any[]).filter((t: any) => t.title !== title)
+      : [];
+    const updated = await storage.updateEmailMessage(id, { aiSuggestedTasks: filtered.length > 0 ? filtered : null } as any);
     res.json(updated);
   });
 

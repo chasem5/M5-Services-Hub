@@ -369,7 +369,7 @@ export default function EmailSyncPage() {
 
   const addContactMutation = useMutation({
     mutationFn: ({ firstName, lastName, email, clientId }: { firstName: string; lastName: string; email: string; clientId: number }) =>
-      apiRequest("POST", "/api/client-contacts", {
+      apiRequest("POST", `/api/clients/${clientId}/contacts`, {
         name: `${firstName} ${lastName}`.trim(),
         email,
         clientId,
@@ -418,6 +418,12 @@ export default function EmailSyncPage() {
   const dismissCreateSuggestionMutation = useMutation({
     mutationFn: ({ emailId, name }: { emailId: number; name: string }) =>
       apiRequest("PATCH", `/api/email-messages/${emailId}/remove-create-suggestion`, { name }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] }),
+  });
+
+  const dismissTaskSuggestionMutation = useMutation({
+    mutationFn: ({ emailId, title }: { emailId: number; title: string }) =>
+      apiRequest("PATCH", `/api/email-messages/${emailId}/remove-task-suggestion`, { title }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] }),
   });
 
@@ -1266,6 +1272,14 @@ export default function EmailSyncPage() {
                         </button>
                       );
                     })}
+                    <button
+                      onClick={() => { dismissTaskSuggestionMutation.mutate({ emailId: primaryEmail.id, title: task.title }); setSelectedTasks(prev => prev.filter(t => t !== task.title)); }}
+                      className="p-0.5 text-gray-400 hover:text-red-500 transition-colors ml-0.5"
+                      title="Remove this suggestion"
+                      data-testid={`dismiss-task-${task.title}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
                   </div>
                 </div>
               ))}
