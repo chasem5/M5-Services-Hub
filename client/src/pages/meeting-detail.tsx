@@ -360,28 +360,40 @@ export default function MeetingDetailPage() {
     setLiveChunkStatus("sending");
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
-    try {
-      const res = await fetch(`/api/meetings/${meetingId}/transcribe`, {
-        method: "POST",
-        body: form,
-        credentials: "include",
-      });
-      if (res.ok) {
-        const { text } = await res.json();
-        if (text) {
-          setLiveTranscript((prev) => prev + (prev ? " " : "") + text);
-          setChunkCount((n) => n + 1);
-          setLiveChunkStatus("ok");
-        } else {
-          setLiveChunkStatus("ok");
+
+    const maxAttempts = isFinal ? 3 : 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const res = await fetch(`/api/meetings/${meetingId}/transcribe`, {
+          method: "POST",
+          body: form,
+          credentials: "include",
+        });
+        if (res.ok) {
+          const { text } = await res.json();
+          if (text) {
+            setLiveTranscript((prev) => prev + (prev ? " " : "") + text);
+            setChunkCount((n) => n + 1);
+            setLiveChunkStatus("ok");
+          } else {
+            setLiveChunkStatus("ok");
+          }
+          return true;
         }
-        return true;
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+          continue;
+        }
+        setLiveChunkStatus("error");
+        if (isFinal) toast({ title: "Transcription failed. You can type or paste your notes below.", variant: "destructive" });
+      } catch {
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+          continue;
+        }
+        setLiveChunkStatus("error");
+        if (isFinal) toast({ title: "Transcription failed. Check your connection and try again.", variant: "destructive" });
       }
-      setLiveChunkStatus("error");
-      if (isFinal) toast({ title: "Transcription failed. You can type or paste your notes below.", variant: "destructive" });
-    } catch {
-      setLiveChunkStatus("error");
-      if (isFinal) toast({ title: "Transcription failed. Check your connection and try again.", variant: "destructive" });
     }
     return false;
   }, [meetingId, toast]);
