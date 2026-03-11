@@ -29,7 +29,14 @@ import {
   BellRing,
   TriangleAlert,
   RefreshCw,
+  MoreHorizontal,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useState, useEffect } from "react";
 import { formatDistanceToNow, format, parseISO, differenceInDays } from "date-fns";
 import { Link, useLocation } from "wouter";
@@ -129,6 +136,7 @@ export default function Dashboard() {
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [quickAction, setQuickAction] = useState<"deal" | "contact" | "company" | "task" | "activity" | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>(user?.dashboardFilter ?? "all");
+  const [pulseTab, setPulseTab] = useState<"all" | "E" | "A" | "B" | "C" | "D">("all");
 
   const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -395,7 +403,7 @@ export default function Dashboard() {
         />
         <MetricCard
           title="Pipeline Value"
-          value={stats ? formatCurrency(stats.pipelineValue) : undefined}
+          value={stats ? formatShortCurrency(Number(stats.pipelineValue)) : undefined}
           icon={DollarSign}
           loading={statsLoading}
           dataTestId="text-pipeline-value"
@@ -452,16 +460,58 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2">
         {/* Action Required (Client Pulse) */}
         <Card className="shadow-sm border-border/40 bg-card">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-lg font-heading font-bold flex items-center gap-2">
-                <BellRing className="h-4 w-4 text-primary" />
-                Action Required
-              </CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">Follow-up signals across deals &amp; quotes</p>
+          <CardHeader className="pb-0">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-lg font-heading font-bold flex items-center gap-2">
+                  <BellRing className="h-4 w-4 text-primary" />
+                  Action Required
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">Follow-up signals across deals &amp; quotes</p>
+              </div>
             </div>
+            {/* Tab bar */}
+            {!pulseLoading && clientPulse.length > 0 && (() => {
+              const tabDefs: { key: "all"|"E"|"A"|"B"|"C"|"D"; label: string; activeClass: string }[] = [
+                { key: "all", label: "All", activeClass: "bg-primary text-white" },
+                { key: "E",   label: "Expiring", activeClass: "bg-red-600 text-white" },
+                { key: "A",   label: "Reply",    activeClass: "bg-amber-500 text-white" },
+                { key: "B",   label: "Price",    activeClass: "bg-blue-600 text-white" },
+                { key: "C",   label: "Draft",    activeClass: "bg-orange-500 text-white" },
+                { key: "D",   label: "Follow-Up",activeClass: "bg-purple-600 text-white" },
+              ];
+              return (
+                <div className="flex flex-wrap gap-1 mt-3 pb-1">
+                  {tabDefs.map(({ key, label, activeClass }) => {
+                    const count = key === "all" ? clientPulse.length : clientPulse.filter((p: any) => p.type === key).length;
+                    if (key !== "all" && count === 0) return null;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setPulseTab(key)}
+                        data-testid={`pulse-tab-${key}`}
+                        className={cn(
+                          "text-xs px-2.5 py-1 rounded-full font-medium transition-colors leading-none",
+                          pulseTab === key
+                            ? activeClass
+                            : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        )}
+                      >
+                        {label}
+                        <span className={cn(
+                          "ml-1 text-[10px] font-bold",
+                          pulseTab === key ? "opacity-80" : "opacity-60"
+                        )}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="p-0 mt-2">
             {pulseLoading ? (
               <div className="px-6 pb-4 space-y-2">
                 {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
@@ -471,64 +521,107 @@ export default function Dashboard() {
                 <CheckCircle2 className="h-4 w-4" />
                 All caught up — no follow-ups needed
               </div>
-            ) : (
-              <div className="divide-y divide-border/40">
-                {(["E","A","B","C","D"] as const).map(type => {
-                  const section = clientPulse.filter((p: any) => p.type === type);
-                  if (!section.length) return null;
-                  const labels: Record<string, { icon: any; label: string; color: string }> = {
-                    E: { icon: TriangleAlert, label: "Expiring Soon", color: "text-red-600" },
-                    A: { icon: Mail, label: "Reply Needed (24h)", color: "text-amber-600" },
-                    B: { icon: FileText, label: "Price Not Sent", color: "text-blue-600" },
-                    C: { icon: FileText, label: "Draft Quote Stale", color: "text-orange-600" },
-                    D: { icon: Send, label: "Follow Up Sent Quote", color: "text-purple-600" },
-                  };
-                  const meta = labels[type];
-                  return (
-                    <div key={type}>
-                      <div className={`flex items-center gap-1.5 px-4 py-1.5 bg-muted/30 text-xs font-semibold uppercase tracking-wider ${meta.color}`}>
-                        <meta.icon className="h-3 w-3" />
-                        {meta.label}
-                      </div>
-                      {section.map((item: any, idx: number) => {
-                        const isExpiring = item.type === "E";
-                        const pillColor = item.priority === "high" || item.daysSince >= 3
-                          ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-                          : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
-                        return (
-                          <div
-                            key={idx}
-                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 group"
-                            data-testid={`pulse-item-${item.type}-${item.leadId ?? item.estimateId ?? idx}`}
-                          >
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-sm truncate">{item.clientName}</p>
-                              <p className="text-xs text-muted-foreground truncate">{item.title}</p>
-                            </div>
-                            <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${pillColor}`}>
-                              {isExpiring ? `Exp. in ${item.daysLeft}d` : item.hoursSince != null && item.hoursSince < 48 ? `${item.hoursSince}h` : `${item.daysSince}d`}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
-                              onClick={() => {
-                                if (item.leadId) snoozeLead.mutate(item.leadId);
-                                else if (item.estimateId) snoozeEstimate.mutate(item.estimateId);
-                              }}
-                              title="Snooze 7 days"
-                              data-testid={`button-snooze-${item.type}-${item.leadId ?? item.estimateId ?? idx}`}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        );
-                      })}
+            ) : (() => {
+              const sectionMeta: Record<string, { icon: any; label: string; color: string }> = {
+                E: { icon: TriangleAlert, label: "Expiring Soon",       color: "text-red-600" },
+                A: { icon: Mail,         label: "Reply Needed (24h)",   color: "text-amber-600" },
+                B: { icon: FileText,     label: "Price Not Sent",       color: "text-blue-600" },
+                C: { icon: FileText,     label: "Draft Quote Stale",    color: "text-orange-600" },
+                D: { icon: Send,         label: "Follow Up Sent Quote", color: "text-purple-600" },
+              };
+
+              const PulseRow = ({ item, idx, showCategory }: { item: any; idx: number; showCategory?: boolean }) => {
+                const isExpiring = item.type === "E";
+                const pillColor = isExpiring
+                  ? (item.daysLeft <= 3 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300")
+                  : (item.priority === "high" || item.daysSince >= 3
+                      ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                      : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300");
+                const meta = sectionMeta[item.type];
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 group"
+                    data-testid={`pulse-item-${item.type}-${item.leadId ?? item.estimateId ?? idx}`}
+                  >
+                    {showCategory && (
+                      <meta.icon className={cn("h-3.5 w-3.5 shrink-0", meta.color)} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{item.clientName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{item.title}</p>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${pillColor}`}>
+                      {isExpiring
+                        ? `Exp. in ${item.daysLeft}d`
+                        : item.hoursSince != null && item.hoursSince < 48
+                          ? `${item.hoursSince}h`
+                          : `${item.daysSince}d`}
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-30 hover:!opacity-70 text-muted-foreground"
+                          data-testid={`button-snooze-${item.type}-${item.leadId ?? item.estimateId ?? idx}`}
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="text-xs">
+                        <DropdownMenuItem
+                          className="text-xs cursor-pointer"
+                          onClick={() => {
+                            if (item.leadId) snoozeLead.mutate(item.leadId);
+                            else if (item.estimateId) snoozeEstimate.mutate(item.estimateId);
+                          }}
+                        >
+                          Snooze 7 days
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                );
+              };
+
+              if (pulseTab !== "all") {
+                const items = clientPulse.filter((p: any) => p.type === pulseTab);
+                const meta = sectionMeta[pulseTab];
+                return (
+                  <div className="divide-y divide-border/40">
+                    <div className={`flex items-center gap-1.5 px-4 py-1.5 bg-muted/30 text-xs font-semibold uppercase tracking-wider ${meta.color}`}>
+                      <meta.icon className="h-3 w-3" />
+                      {meta.label}
+                    </div>
+                    {items.map((item: any, idx: number) => (
+                      <PulseRow key={idx} item={item} idx={idx} />
+                    ))}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="divide-y divide-border/40">
+                  {(["E","A","B","C","D"] as const).map(type => {
+                    const section = clientPulse.filter((p: any) => p.type === type);
+                    if (!section.length) return null;
+                    const meta = sectionMeta[type];
+                    return (
+                      <div key={type}>
+                        <div className={`flex items-center gap-1.5 px-4 py-1.5 bg-muted/30 text-xs font-semibold uppercase tracking-wider ${meta.color}`}>
+                          <meta.icon className="h-3 w-3" />
+                          {meta.label}
+                        </div>
+                        {section.map((item: any, idx: number) => (
+                          <PulseRow key={idx} item={item} idx={idx} />
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
 
