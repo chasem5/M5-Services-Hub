@@ -2048,35 +2048,29 @@ Respond ONLY with JSON — no markdown:
     res.sendStatus(204);
   });
 
-  // Transcribe an audio chunk using Whisper
-  app.post("/api/meetings/:id/transcribe", isAuthenticated, async (req, res) => {
+  // Transcribe an audio chunk using Whisper via Replit AI integration
+  app.post("/api/meetings/:id/transcribe", isAuthenticated, upload.single("audio"), async (req, res) => {
     const id = parseInt(req.params.id as string);
     const meeting = await storage.getMeeting(id);
     if (!meeting) return res.status(404).json({ message: "Meeting not found" });
 
     try {
-      const { openaiDirect } = await import("./openai");
-      const { default: formidable } = await import("formidable");
-      const { createReadStream } = await import("fs");
+      if (!req.file || req.file.size < 100) {
+        return res.json({ text: "", fullTranscript: meeting.rawTranscript || "" });
+      }
 
-      const form = formidable({ maxFileSize: 25 * 1024 * 1024 });
-      const [, files] = await form.parse(req);
-      const audioFile = Array.isArray(files.audio) ? files.audio[0] : files.audio;
+      const { speechToText } = await import("./replit_integrations/audio/client");
+      const text = await speechToText(req.file.buffer, "webm");
 
-      if (!audioFile) return res.status(400).json({ message: "No audio file provided" });
-
-      const transcription = await openaiDirect.audio.transcriptions.create({
-        file: createReadStream(audioFile.filepath) as any,
-        model: "whisper-1",
-      });
-
-      const newText = transcription.text;
-      const updatedTranscript = (meeting.rawTranscript || "") + (meeting.rawTranscript ? " " : "") + newText;
-      await storage.updateMeeting(id, { rawTranscript: updatedTranscript });
+      const newText = text.trim();
+      const updatedTranscript = (meeting.rawTranscript || "") + (meeting.rawTranscript && newText ? " " : "") + newText;
+      if (newText) {
+        await storage.updateMeeting(id, { rawTranscript: updatedTranscript });
+      }
 
       res.json({ text: newText, fullTranscript: updatedTranscript });
     } catch (err: any) {
-      console.error("Transcription error:", err);
+      console.error("Transcription error:", err?.message || err);
       res.status(500).json({ message: err.message || "Transcription failed" });
     }
   });
