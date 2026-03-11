@@ -157,13 +157,116 @@ function EmailBodyRenderer({ body }: { body: string }) {
   );
 }
 
-type FilterType = "all" | "inbound" | "outbound" | "cc" | "needs_response";
+function ThreadRow({ thread, clients, isSelected, isChecked, showCheckboxes, onSelect, onToggleCheck }: {
+  thread: EmailThread;
+  clients: Client[];
+  isSelected: boolean;
+  isChecked: boolean;
+  showCheckboxes: boolean;
+  onSelect: () => void;
+  onToggleCheck: (e: React.MouseEvent) => void;
+}) {
+  const latest = thread.latestMessage;
+  const client = thread.messages.find(m => m.clientId)?.clientId
+    ? clients.find(c => c.id === thread.messages.find(m => m.clientId)?.clientId)
+    : null;
+  const hasSuggestions = (latest.aiConnectionSuggestions?.length ?? 0) > 0 && !latest.clientId;
+  const isCC = thread.messages.every(m => m.direction === "cc");
+  const hasInbound = thread.messages.some(m => m.direction === "inbound");
+  const hasOutbound = thread.messages.some(m => m.direction === "outbound");
+
+  return (
+    <div
+      onClick={onSelect}
+      data-testid={`thread-row-${thread.threadId}`}
+      className={`px-3 py-2.5 border-b border-gray-100 cursor-pointer transition-colors group ${
+        isSelected ? "bg-primary/5 border-l-2 border-l-primary" : "hover:bg-gray-50 border-l-2 border-l-transparent"
+      } ${isCC ? "opacity-70" : ""}`}
+    >
+      <div className="flex items-start justify-between gap-2 mb-0.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div
+            onClick={onToggleCheck}
+            className={`shrink-0 transition-opacity ${isChecked || showCheckboxes ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+            data-testid={`checkbox-thread-${thread.threadId}`}
+          >
+            <Checkbox checked={isChecked} onCheckedChange={() => {}} className="h-3.5 w-3.5" />
+          </div>
+          {hasInbound && hasOutbound ? (
+            <div className="flex shrink-0">
+              <ArrowDownLeft className="h-3 w-3 text-blue-500" />
+              <ArrowUpRight className="h-3 w-3 text-gray-400 -ml-1" />
+            </div>
+          ) : hasInbound ? (
+            <ArrowDownLeft className="h-3 w-3 text-blue-500 shrink-0" />
+          ) : isCC ? (
+            <Users className="h-3 w-3 text-gray-400 shrink-0" />
+          ) : (
+            <ArrowUpRight className="h-3 w-3 text-gray-400 shrink-0" />
+          )}
+          <p className="text-xs font-semibold text-gray-800 truncate">{thread.senderNames}</p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {thread.messages.length > 1 && (
+            <span className="text-[10px] bg-gray-100 text-gray-500 rounded-full px-1.5 py-0">
+              {thread.messages.length} msgs
+            </span>
+          )}
+          <span className="text-xs text-gray-400">{format(new Date(latest.receivedAt), "MMM d")}</span>
+        </div>
+      </div>
+      <p className="text-xs text-gray-600 truncate font-medium">{latest.subject ?? "(no subject)"}</p>
+      <p className="text-xs text-gray-400 truncate mt-0.5">{latest.bodySnippet}</p>
+      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+        {thread.requiresResponse && (
+          <span className="inline-flex items-center gap-0.5 text-xs text-amber-600 bg-amber-50 rounded px-1 py-0">
+            <AlertCircle className="h-2.5 w-2.5" /> Reply
+          </span>
+        )}
+        {isCC && (
+          <span className="inline-flex items-center gap-0.5 text-xs text-gray-500 bg-gray-100 rounded px-1 py-0">
+            <Users className="h-2.5 w-2.5" /> CC
+          </span>
+        )}
+        {hasSuggestions && (
+          <span className="inline-flex items-center gap-0.5 text-xs text-purple-600 bg-purple-50 rounded px-1 py-0">
+            <Zap className="h-2.5 w-2.5" /> Suggestion
+          </span>
+        )}
+        {client && (
+          <span className="text-xs text-primary font-medium truncate">{client.name}</span>
+        )}
+        {latest.isDismissed && (
+          <span className="text-xs text-gray-400 italic">dismissed</span>
+        )}
+        {(() => {
+          const hasLead = thread.messages.some(m => m.leadId);
+          if (!hasLead || latest.direction !== "inbound") return null;
+          const lastOutbound = thread.messages.find(m => m.direction === "outbound");
+          const sinceMs = lastOutbound
+            ? Date.now() - new Date(lastOutbound.receivedAt).getTime()
+            : Date.now() - new Date(latest.receivedAt).getTime();
+          const hoursOld = Math.floor(sinceMs / 3600000);
+          if (hoursOld < 24) return null;
+          const isRed = hoursOld >= 48;
+          const label = hoursOld < 48 ? `${hoursOld}h` : `${Math.floor(hoursOld / 24)}d`;
+          return (
+            <span className={`inline-flex items-center gap-0.5 text-xs rounded px-1 py-0 ${isRed ? "text-red-600 bg-red-50" : "text-amber-600 bg-amber-50"}`}>
+              <Clock className="h-2.5 w-2.5" /> {label}
+            </span>
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
 
 export default function EmailSyncPage() {
   const { toast } = useToast();
-  const [filter, setFilter] = useState<FilterType>("all");
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [showDismissed, setShowDismissed] = useState(false);
+  const [showOtherSection, setShowOtherSection] = useState(true);
+  const [needsResponseOnly, setNeedsResponseOnly] = useState(false);
   const [showBlockedSenders, setShowBlockedSenders] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
@@ -209,38 +312,35 @@ export default function EmailSyncPage() {
     refetchInterval: 60000,
   });
 
-  // Apply filter + search to emails
-  const filteredEmails = emails.filter(e => {
-    // Dismissed view
-    if (showDismissed) return e.isDismissed;
-    if (e.isDismissed) return false;
+  const activeEmails = emails.filter(e => showDismissed ? e.isDismissed : !e.isDismissed);
+  const allThreads = groupIntoThreads(activeEmails);
 
-    // Direction filter
-    if (filter === "inbound" && e.direction !== "inbound") return false;
-    if (filter === "outbound" && e.direction !== "outbound") return false;
-    if (filter === "cc" && e.direction !== "cc") return false;
-    if (filter === "needs_response" && !(e.requiresResponse && !e.followUpReminderCreated)) return false;
-
-    // Search
+  const filteredThreads = allThreads.filter(thread => {
+    if (needsResponseOnly && !thread.requiresResponse) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      const haystack = [e.subject, e.fromName, e.fromEmail, e.bodySnippet, e.aiSummary].join(" ").toLowerCase();
-      if (!haystack.includes(q)) return false;
+      return thread.messages.some(m => {
+        const haystack = [m.subject, m.fromName, m.fromEmail, m.bodySnippet, m.aiSummary].join(" ").toLowerCase();
+        return haystack.includes(q);
+      });
     }
-
     return true;
   });
 
-  const threads = groupIntoThreads(filteredEmails);
+  const customerThreads = filteredThreads.filter(t => t.messages.some(m => m.clientId !== null));
+  const otherThreads = filteredThreads.filter(t => !t.messages.some(m => m.clientId !== null));
+
+  const threads = [...customerThreads, ...otherThreads];
   const selectedThread = threads.find(t => t.threadId === selectedThreadId) ?? null;
   const primaryEmail = selectedThread?.latestMessage ?? null;
 
-  // Auto-select first thread
+  // Auto-select first thread, or re-home if selection no longer visible
   useEffect(() => {
-    if (!selectedThreadId && threads.length > 0) {
+    if (threads.length === 0) return;
+    if (!selectedThreadId || !threads.find(t => t.threadId === selectedThreadId)) {
       setSelectedThreadId(threads[0].threadId);
     }
-  }, [threads.length]);
+  }, [threads.length, selectedThreadId, needsResponseOnly, showDismissed, searchQuery]);
 
   // When thread changes, auto-expand most recent message
   useEffect(() => {
@@ -260,7 +360,6 @@ export default function EmailSyncPage() {
   }, [selectedThreadId]);
 
   const needsResponseCount = emails.filter(e => e.requiresResponse && !e.followUpReminderCreated && !e.isDismissed).length;
-  const ccCount = emails.filter(e => e.direction === "cc" && !e.isDismissed).length;
   const dismissedCount = emails.filter(e => e.isDismissed).length;
 
   const matchedClient = primaryEmail?.clientId ? clients.find(c => c.id === primaryEmail.clientId) : null;
@@ -500,22 +599,18 @@ export default function EmailSyncPage() {
       <div className="px-5 py-2 border-b border-gray-100 bg-white shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap flex-1">
-            {(["all", "inbound", "outbound", "cc", "needs_response"] as FilterType[]).map(key => (
+            {needsResponseCount > 0 && (
               <button
-                key={key}
-                onClick={() => { setFilter(key); setShowDismissed(false); }}
-                data-testid={`filter-${key}`}
-                className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors ${
-                  !showDismissed && filter === key ? "bg-primary text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                onClick={() => setNeedsResponseOnly(!needsResponseOnly)}
+                data-testid="filter-needs-response"
+                className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors flex items-center gap-1 ${
+                  needsResponseOnly ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
                 }`}
               >
-                {key === "all" && "All"}
-                {key === "inbound" && "Inbound"}
-                {key === "outbound" && "Outbound"}
-                {key === "cc" && `CC'd${ccCount > 0 ? ` (${ccCount})` : ""}`}
-                {key === "needs_response" && `Needs Response${needsResponseCount > 0 ? ` (${needsResponseCount})` : ""}`}
+                <AlertCircle className="h-3 w-3" />
+                Needs Response ({needsResponseCount})
               </button>
-            ))}
+            )}
             {dismissedCount > 0 && (
               <button
                 onClick={() => setShowDismissed(!showDismissed)}
@@ -550,7 +645,7 @@ export default function EmailSyncPage() {
           </div>
         </div>
         {searchQuery && (
-          <p className="text-xs text-gray-400 mt-1.5">{threads.length} thread{threads.length !== 1 ? "s" : ""} found</p>
+          <p className="text-xs text-gray-400 mt-1.5">{filteredThreads.length} thread{filteredThreads.length !== 1 ? "s" : ""} found</p>
         )}
       </div>
 
@@ -563,7 +658,7 @@ export default function EmailSyncPage() {
               <div className="flex items-center justify-center h-32 text-gray-400">
                 <RefreshCw className="h-4 w-4 animate-spin mr-2" /> Loading...
               </div>
-            ) : threads.length === 0 ? (
+            ) : filteredThreads.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-center px-4">
                 <Mail className="h-8 w-8 text-gray-300 mb-3" />
                 {emails.filter(e => !e.isDismissed).length === 0 ? (
@@ -576,99 +671,82 @@ export default function EmailSyncPage() {
                 )}
               </div>
             ) : (
-              threads.map(thread => {
-                const isSelected = thread.threadId === selectedThreadId;
-                const isChecked = selectedThreadIds.has(thread.threadId);
-                const latest = thread.latestMessage;
-                const client = latest.clientId ? clients.find(c => c.id === latest.clientId) : null;
-                const hasSuggestions = (latest.aiConnectionSuggestions?.length ?? 0) > 0 && !latest.clientId;
-                const isCC = thread.messages.every(m => m.direction === "cc");
-                return (
-                  <div
-                    key={thread.threadId}
-                    onClick={() => setSelectedThreadId(thread.threadId)}
-                    data-testid={`thread-row-${thread.threadId}`}
-                    className={`px-3 py-2.5 border-b border-gray-100 cursor-pointer transition-colors group ${
-                      isSelected ? "bg-primary/5 border-l-2 border-l-primary" : "hover:bg-gray-50 border-l-2 border-l-transparent"
-                    } ${isCC ? "opacity-70" : ""}`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-0.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <div
-                          onClick={e => {
-                            e.stopPropagation();
-                            setSelectedThreadIds(prev => {
-                              const next = new Set(prev);
-                              if (next.has(thread.threadId)) next.delete(thread.threadId);
-                              else next.add(thread.threadId);
-                              return next;
-                            });
-                          }}
-                          className={`shrink-0 transition-opacity ${isChecked || selectedThreadIds.size > 0 ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                          data-testid={`checkbox-thread-${thread.threadId}`}
-                        >
-                          <Checkbox checked={isChecked} onCheckedChange={() => {}} className="h-3.5 w-3.5" />
-                        </div>
-                        {latest.direction === "inbound"
-                          ? <ArrowDownLeft className="h-3 w-3 text-blue-500 shrink-0" />
-                          : latest.direction === "cc"
-                          ? <Users className="h-3 w-3 text-gray-400 shrink-0" />
-                          : <ArrowUpRight className="h-3 w-3 text-gray-400 shrink-0" />
-                        }
-                        <p className="text-xs font-semibold text-gray-800 truncate">{thread.senderNames}</p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {thread.messages.length > 1 && (
-                          <span className="text-[10px] bg-gray-100 text-gray-500 rounded-full px-1.5 py-0">{thread.messages.length}</span>
-                        )}
-                        <span className="text-xs text-gray-400">{format(new Date(latest.receivedAt), "MMM d")}</span>
-                      </div>
+              <>
+                {/* Customers section */}
+                {customerThreads.length > 0 && (
+                  <div>
+                    <div className="sticky top-0 z-10 px-3 py-1.5 bg-primary/5 border-b border-primary/10">
+                      <span className="text-[11px] font-semibold text-primary uppercase tracking-wider flex items-center gap-1.5">
+                        <Building2 className="h-3 w-3" /> Customers ({customerThreads.length})
+                      </span>
                     </div>
-                    <p className="text-xs text-gray-600 truncate font-medium">{latest.subject ?? "(no subject)"}</p>
-                    <p className="text-xs text-gray-400 truncate mt-0.5">{latest.bodySnippet}</p>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      {thread.requiresResponse && (
-                        <span className="inline-flex items-center gap-0.5 text-xs text-amber-600 bg-amber-50 rounded px-1 py-0">
-                          <AlertCircle className="h-2.5 w-2.5" /> Reply
-                        </span>
-                      )}
-                      {isCC && (
-                        <span className="inline-flex items-center gap-0.5 text-xs text-gray-500 bg-gray-100 rounded px-1 py-0">
-                          <Users className="h-2.5 w-2.5" /> CC
-                        </span>
-                      )}
-                      {hasSuggestions && (
-                        <span className="inline-flex items-center gap-0.5 text-xs text-purple-600 bg-purple-50 rounded px-1 py-0">
-                          <Zap className="h-2.5 w-2.5" /> Suggestion
-                        </span>
-                      )}
-                      {client && (
-                        <span className="text-xs text-primary font-medium truncate">{client.name}</span>
-                      )}
-                      {latest.isDismissed && (
-                        <span className="text-xs text-gray-400 italic">dismissed</span>
-                      )}
-                      {(() => {
-                        const hasLead = thread.messages.some(m => m.leadId);
-                        if (!hasLead || latest.direction !== "inbound") return null;
-                        const lastOutbound = thread.messages.find(m => m.direction === "outbound");
-                        const sinceMs = lastOutbound
-                          ? Date.now() - new Date(lastOutbound.receivedAt).getTime()
-                          : Date.now() - new Date(latest.receivedAt).getTime();
-                        const hoursOld = Math.floor(sinceMs / 3600000);
-                        if (hoursOld < 24) return null;
-                        const isRed = hoursOld >= 48;
-                        const label = hoursOld < 48 ? `${hoursOld}h` : `${Math.floor(hoursOld / 24)}d`;
-                        return (
-                          <span className={`inline-flex items-center gap-0.5 text-xs rounded px-1 py-0 ${isRed ? "text-red-600 bg-red-50" : "text-amber-600 bg-amber-50"}`}>
-                            <Clock className="h-2.5 w-2.5" /> {label}
-                          </span>
-                        );
-                      })()}
-                    </div>
+                    {customerThreads.map(thread => (
+                      <ThreadRow
+                        key={thread.threadId}
+                        thread={thread}
+                        clients={clients}
+                        isSelected={thread.threadId === selectedThreadId}
+                        isChecked={selectedThreadIds.has(thread.threadId)}
+                        showCheckboxes={selectedThreadIds.size > 0}
+                        onSelect={() => setSelectedThreadId(thread.threadId)}
+                        onToggleCheck={(e) => {
+                          e.stopPropagation();
+                          setSelectedThreadIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(thread.threadId)) next.delete(thread.threadId);
+                            else next.add(thread.threadId);
+                            return next;
+                          });
+                        }}
+                      />
+                    ))}
                   </div>
-                );
-              })
+                )}
+
+                {/* Other section */}
+                {otherThreads.length > 0 && (
+                  <div>
+                    <button
+                      onClick={() => setShowOtherSection(!showOtherSection)}
+                      className="sticky top-0 z-10 w-full px-3 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                      data-testid="button-toggle-other-section"
+                    >
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <Mail className="h-3 w-3" /> Other ({otherThreads.length})
+                      </span>
+                      {showOtherSection ? <ChevronUp className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400" />}
+                    </button>
+                    {showOtherSection && otherThreads.map(thread => (
+                      <ThreadRow
+                        key={thread.threadId}
+                        thread={thread}
+                        clients={clients}
+                        isSelected={thread.threadId === selectedThreadId}
+                        isChecked={selectedThreadIds.has(thread.threadId)}
+                        showCheckboxes={selectedThreadIds.size > 0}
+                        onSelect={() => setSelectedThreadId(thread.threadId)}
+                        onToggleCheck={(e) => {
+                          e.stopPropagation();
+                          setSelectedThreadIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(thread.threadId)) next.delete(thread.threadId);
+                            else next.add(thread.threadId);
+                            return next;
+                          });
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* If no customers exist but others do (or vice versa during dismissed view) */}
+                {customerThreads.length === 0 && otherThreads.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-48 text-center px-4">
+                    <Mail className="h-8 w-8 text-gray-300 mb-3" />
+                    <p className="text-sm text-gray-500">No emails match this filter</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

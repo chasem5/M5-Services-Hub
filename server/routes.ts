@@ -2560,7 +2560,50 @@ Return only valid JSON, no markdown.`;
     const leadContext = allLeads.slice(0, 30).map(l => ({ id: l.id, title: l.title, stage: l.stage, clientId: l.clientId }));
     const contactContext = allContacts.slice(0, 30).map(ct => ({ id: ct.id, name: ct.name, email: ct.email, clientId: ct.clientId }));
 
+    const noiseLocalParts = new Set([
+      "noreply", "no-reply", "no_reply", "donotreply", "do-not-reply",
+      "mailer-daemon", "postmaster", "notifications", "notification",
+      "alerts", "alert", "bounce", "auto-confirm", "auto-reply",
+      "newsletter", "newsletters", "marketing", "promo", "promotions",
+    ]);
+    const noiseSubjectPatterns = [
+      /\b(unsubscribe|opt.out)\b/i,
+      /\border\s+(confirm|ship|deliver|track)/i,
+      /\binvoice\s+#?\d/i,
+      /\breceipt\s+(for|from)\b/i,
+      /\bcalendar\s+(invit|event|remind|accept|declin|updat)/i,
+      /\bscheduled?\s+(meeting|event)\b.*\b(cancel|updat|accept|declin)/i,
+      /\bpassword\s+reset\b/i,
+      /\bverify\s+your\s+(email|account)\b/i,
+      /\bsign.in\s+alert\b/i,
+      /\bsecurity\s+(alert|notification)\b/i,
+      /\bsubscription\s+(confirm|renew|cancel)/i,
+      /\bpayment\s+(confirm|receiv|process)/i,
+    ];
+    const noiseDomains = new Set([
+      "calendar-notification.google.com", "notifications.google.com",
+      "notify.twitter.com", "facebookmail.com", "email.linkedin.com",
+      "docusign.net", "amazonses.com", "sendgrid.net",
+      "calendly.com", "squareup.com", "square.com",
+      "toast.com", "toasttab.com",
+    ]);
+
+    function isNoiseEmail(from: string, subject: string | null): boolean {
+      const localPart = from.split("@")[0] ?? "";
+      if (noiseLocalParts.has(localPart)) return true;
+      const domain = from.split("@")[1] ?? "";
+      if (noiseDomains.has(domain)) return true;
+      if (subject) {
+        for (const pat of noiseSubjectPatterns) {
+          if (pat.test(subject)) return true;
+        }
+      }
+      return false;
+    }
+
     let newEmails = 0;
+    const existingMessages = await storage.listEmailMessages({ userId, includeDismissed: true });
+    const existingGmailIds = new Set(existingMessages.map(e => e.gmailMessageId));
 
     for (const raw of rawEmails) {
       const fromLower = raw.fromEmail.toLowerCase();
@@ -2568,6 +2611,42 @@ Return only valid JSON, no markdown.`;
       // Skip dismissed senders (individual address or domain)
       const fromDomainKey = fromLower.includes("@") ? "@" + fromLower.split("@")[1] : "";
       if (dismissedAddresses.has(fromLower) || dismissedDomains.has(fromDomainKey)) continue;
+
+      // Skip noise emails (automated notifications, receipts, calendar invites, newsletters)
+      if (isNoiseEmail(fromLower, raw.subject)) {
+        const alreadyExists = existingGmailIds.has(raw.gmailMessageId);
+        if (!alreadyExists) {
+          await storage.upsertEmailMessage({
+            gmailMessageId: raw.gmailMessageId,
+            gmailThreadId: raw.gmailThreadId,
+            userId,
+            direction: "inbound",
+            fromEmail: raw.fromEmail,
+            fromName: raw.fromName ?? null,
+            toEmails: raw.toEmails,
+            ccEmails: raw.ccEmails ?? [],
+            subject: raw.subject,
+            bodySnippet: raw.bodySnippet,
+            fullBody: raw.fullBody,
+            receivedAt: raw.receivedAt,
+            clientId: null,
+            leadId: null,
+            contactId: null,
+            aiSummary: null,
+            aiSuggestedTasks: null,
+            aiConnectionSuggestions: null,
+            aiCreateSuggestions: null,
+            aiSentiment: null,
+            aiStageSuggestion: null,
+            requiresResponse: false,
+            followUpReminderCreated: false,
+            isProcessed: false,
+            isDismissed: true,
+            autoLinked: false,
+          } as any);
+        }
+        continue;
+      }
 
       const myLower = myAddress.toLowerCase();
       const ccLower = (raw.ccEmails ?? []).map((e: string) => e.toLowerCase());
@@ -2716,9 +2795,7 @@ Respond with this JSON:
         aiResult.connectionSuggestions = suggestions;
       }
 
-      const existing = await storage.listEmailMessages({ userId, includeDismissed: true });
-      const alreadyExists = existing.some(e => e.gmailMessageId === raw.gmailMessageId);
-      if (!alreadyExists) newEmails++;
+      if (!existingGmailIds.has(raw.gmailMessageId)) newEmails++;
 
       await storage.upsertEmailMessage({
         gmailMessageId: raw.gmailMessageId,
