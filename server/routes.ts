@@ -2998,7 +2998,7 @@ Respond with this JSON:
       const dueDate = t.dueInDays ? new Date(Date.now() + t.dueInDays * 86400000) : null;
       const task = await storage.createTask({
         title: t.title,
-        priority: (t.priority as any) ?? "medium",
+        priority: (t.priority ?? "medium") as "low" | "medium" | "high",
         status: "todo",
         assignedTo: userId,
         relatedClientId: email.clientId ?? null,
@@ -3007,8 +3007,7 @@ Respond with this JSON:
         description: `Created from email: "${email.subject}"`,
         labels: [],
         checklist: [],
-        columnId: null,
-      } as any);
+      });
       created.push(task);
     }
     res.json(created);

@@ -587,7 +587,10 @@ export default function EmailSyncPage() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => setQuickClientDialogOpen(true)}
+            onClick={() => {
+              if (primaryEmail) setQuickClientEmailForLink(primaryEmail.id);
+              setQuickClientDialogOpen(true);
+            }}
             className="gap-1.5 h-8 text-sm"
             data-testid="button-new-company"
           >
