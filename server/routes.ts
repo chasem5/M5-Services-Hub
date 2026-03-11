@@ -163,6 +163,8 @@ export async function registerRoutes(
   await storage.seedDefaultPermissions();
   // One-time migration: promote existing admin users to super_admin
   await storage.migrateAdminToSuperAdmin();
+  // Seed test email data for demo/workflow testing
+  await storage.seedTestEmails();
   // Promote initial admin on startup if env var is set
   if (process.env.INITIAL_ADMIN_EMAIL) {
     await storage.seedInitialAdmin(process.env.INITIAL_ADMIN_EMAIL);
