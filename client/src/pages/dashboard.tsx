@@ -532,7 +532,7 @@ export default function Dashboard() {
             ) : (() => {
               const sectionMeta: Record<string, { icon: any; label: string; color: string; desc: string }> = {
                 E: { icon: TriangleAlert, label: "Expiring Soon",                    color: "text-red-600",    desc: "Sent quote approaching its 30-day window — act before it lapses" },
-                A: { icon: Mail,         label: "Acknowledge Client Request (24h)", color: "text-amber-600",  desc: "Inbound email received — client is waiting on a reply for 24+ hours" },
+                A: { icon: Mail,         label: "Acknowledge Client Request", color: "text-amber-600",  desc: "Inbound email received — client is waiting on a reply for 24+ hours" },
                 B: { icon: FileText,     label: "Price Not Sent",                   color: "text-blue-600",   desc: "Active deal with no estimate started — client hasn't seen any pricing yet" },
                 C: { icon: FileText,     label: "Draft Quote Stale",                color: "text-orange-600", desc: "Estimate created but never sent — sitting as a draft for 2+ days" },
                 D: { icon: Send,         label: "Follow Up Sent Quote",             color: "text-purple-600", desc: "Quote sent 7+ days ago with no response — time to check back in" },
