@@ -2639,12 +2639,12 @@ Known clients: ${JSON.stringify(clientContext.slice(0, 15))}
 Known contacts: ${JSON.stringify(contactContext.slice(0, 15))}
 Active leads: ${JSON.stringify(leadContext.slice(0, 10))}
 Direction: ${direction} (${direction === "inbound" ? "client emailed M5" : direction === "cc" ? "M5 employee was CC'd for monitoring" : "M5 emailed client"})
-Already matched clientId: ${clientId ?? "none"}
+Already linked to client: ${clientId ? `"${allClients.find(c => c.id === clientId)?.name ?? "unknown"}" (id: ${clientId})` : "none"}
 
 Respond with this JSON:
 {
   "summary": "1-2 sentence summary of the email",
-  "suggestedTasks": [{"title": "task title", "priority": "high|medium|low", "dueInDays": 1}] — IMPORTANT: task titles must ONLY reference companies, people, and topics explicitly named in the email body or thread participants above. Do NOT use names from the Known clients/contacts/leads lists for task content — those are only for connectionSuggestions. If you reference a company in a task title, it must appear in the actual email text.,
+  "suggestedTasks": [{"title": "task title", "priority": "high|medium|low", "dueInDays": 1}] — IMPORTANT: (1) Task titles must ONLY reference companies, people, and topics explicitly named in the email body or thread participants above. Do NOT use names from the Known clients/contacts/leads lists for task content — those are only for connectionSuggestions. (2) When the email is already linked to a client, frame tasks as following up with THAT client by name — other company names in the subject or body (tenants, buildings, vendors, properties) are the TOPIC of discussion, not who to contact. Example: if M5 is emailing PJMB Commercial about their tenant ABM, the task is "Follow up with PJMB Commercial regarding ABM plumbing survey" — not "Contact ABM".,
   "sentiment": "positive|neutral|negative|urgent",
   "stageSuggestion": null or one of: "new_lead|qualified|proposal_sent|won|lost",
   "requiresResponse": true or false (true only if inbound and M5 should reply — false for cc, outbound, automated/notifications/newsletters),
