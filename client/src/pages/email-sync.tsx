@@ -265,7 +265,7 @@ export default function EmailSyncPage() {
   const { toast } = useToast();
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [showDismissed, setShowDismissed] = useState(false);
-  const [showOtherSection, setShowOtherSection] = useState(false);
+  const [viewFilter, setViewFilter] = useState<"all" | "customers" | "other">("customers");
   const [needsResponseOnly, setNeedsResponseOnly] = useState(false);
   const [showBlockedSenders, setShowBlockedSenders] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -330,6 +330,7 @@ export default function EmailSyncPage() {
   const customerThreads = filteredThreads.filter(t => t.messages.some(m => m.clientId !== null));
   const otherThreads = filteredThreads.filter(t => !t.messages.some(m => m.clientId !== null));
 
+  const visibleThreads = viewFilter === "all" ? filteredThreads : viewFilter === "customers" ? customerThreads : otherThreads;
   const threads = [...customerThreads, ...otherThreads];
   const selectedThread = threads.find(t => t.threadId === selectedThreadId) ?? null;
   const primaryEmail = selectedThread?.latestMessage ?? null;
@@ -695,75 +696,54 @@ export default function EmailSyncPage() {
               </div>
             ) : (
               <>
-                {/* Customers section */}
-                {customerThreads.length > 0 && (
-                  <div>
-                    <div className="sticky top-0 z-10 px-3 py-1.5 bg-primary/5 border-b border-primary/10">
-                      <span className="text-[11px] font-semibold text-primary uppercase tracking-wider flex items-center gap-1.5">
-                        <Building2 className="h-3 w-3" /> Customers ({customerThreads.length})
-                      </span>
-                    </div>
-                    {customerThreads.map(thread => (
-                      <ThreadRow
-                        key={thread.threadId}
-                        thread={thread}
-                        clients={clients}
-                        isSelected={thread.threadId === selectedThreadId}
-                        isChecked={selectedThreadIds.has(thread.threadId)}
-                        showCheckboxes={selectedThreadIds.size > 0}
-                        onSelect={() => setSelectedThreadId(thread.threadId)}
-                        onToggleCheck={(e) => {
-                          e.stopPropagation();
-                          setSelectedThreadIds(prev => {
-                            const next = new Set(prev);
-                            if (next.has(thread.threadId)) next.delete(thread.threadId);
-                            else next.add(thread.threadId);
-                            return next;
-                          });
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Other section */}
-                {otherThreads.length > 0 && (
-                  <div>
+                {/* View filter tabs */}
+                <div className="sticky top-0 z-10 flex border-b border-gray-200 bg-white" data-testid="email-view-tabs">
+                  {([
+                    { key: "customers" as const, label: "Customers", count: customerThreads.length, icon: <Building2 className="h-3 w-3" /> },
+                    { key: "other" as const, label: "Other", count: otherThreads.length, icon: <Mail className="h-3 w-3" /> },
+                    { key: "all" as const, label: "All", count: filteredThreads.length, icon: null },
+                  ]).map(tab => (
                     <button
-                      onClick={() => setShowOtherSection(!showOtherSection)}
-                      className="sticky top-0 z-10 w-full px-3 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between hover:bg-gray-100 transition-colors"
-                      data-testid="button-toggle-other-section"
+                      key={tab.key}
+                      onClick={() => setViewFilter(tab.key)}
+                      data-testid={`tab-${tab.key}`}
+                      className={`flex-1 px-2 py-2 text-[11px] font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
+                        viewFilter === tab.key
+                          ? "border-primary text-primary bg-primary/5"
+                          : "border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                      }`}
                     >
-                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
-                        <Mail className="h-3 w-3" /> Other ({otherThreads.length})
+                      {tab.icon}
+                      {tab.label}
+                      <span className={`ml-0.5 text-[10px] px-1.5 py-0.5 rounded-full ${
+                        viewFilter === tab.key ? "bg-primary/10 text-primary" : "bg-gray-100 text-gray-400"
+                      }`}>
+                        {tab.count}
                       </span>
-                      {showOtherSection ? <ChevronUp className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400" />}
                     </button>
-                    {showOtherSection && otherThreads.map(thread => (
-                      <ThreadRow
-                        key={thread.threadId}
-                        thread={thread}
-                        clients={clients}
-                        isSelected={thread.threadId === selectedThreadId}
-                        isChecked={selectedThreadIds.has(thread.threadId)}
-                        showCheckboxes={selectedThreadIds.size > 0}
-                        onSelect={() => setSelectedThreadId(thread.threadId)}
-                        onToggleCheck={(e) => {
-                          e.stopPropagation();
-                          setSelectedThreadIds(prev => {
-                            const next = new Set(prev);
-                            if (next.has(thread.threadId)) next.delete(thread.threadId);
-                            else next.add(thread.threadId);
-                            return next;
-                          });
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
+                  ))}
+                </div>
 
-                {/* If no customers exist but others do (or vice versa during dismissed view) */}
-                {customerThreads.length === 0 && otherThreads.length === 0 && (
+                {visibleThreads.length > 0 ? visibleThreads.map(thread => (
+                  <ThreadRow
+                    key={thread.threadId}
+                    thread={thread}
+                    clients={clients}
+                    isSelected={thread.threadId === selectedThreadId}
+                    isChecked={selectedThreadIds.has(thread.threadId)}
+                    showCheckboxes={selectedThreadIds.size > 0}
+                    onSelect={() => setSelectedThreadId(thread.threadId)}
+                    onToggleCheck={(e) => {
+                      e.stopPropagation();
+                      setSelectedThreadIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(thread.threadId)) next.delete(thread.threadId);
+                        else next.add(thread.threadId);
+                        return next;
+                      });
+                    }}
+                  />
+                )) : (
                   <div className="flex flex-col items-center justify-center h-48 text-center px-4">
                     <Mail className="h-8 w-8 text-gray-300 mb-3" />
                     <p className="text-sm text-gray-500">No emails match this filter</p>
