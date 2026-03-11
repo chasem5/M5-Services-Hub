@@ -5,6 +5,7 @@ export const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-export const openaiDirect = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+// Direct client for audio transcription (Whisper) — uses the real OPENAI_API_KEY
+export const openaiAudio = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });

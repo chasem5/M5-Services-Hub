@@ -2059,8 +2059,14 @@ Respond ONLY with JSON — no markdown:
         return res.json({ text: "", fullTranscript: meeting.rawTranscript || "" });
       }
 
-      const { speechToText } = await import("./replit_integrations/audio/client");
-      const text = await speechToText(req.file.buffer, "webm");
+      const { openaiAudio } = await import("./openai");
+      const { toFile } = await import("openai");
+      const audioFile = await toFile(req.file.buffer, "chunk.webm", { type: "audio/webm" });
+      const result = await openaiAudio.audio.transcriptions.create({
+        file: audioFile,
+        model: "whisper-1",
+      });
+      const text = result.text;
 
       const newText = text.trim();
       const updatedTranscript = (meeting.rawTranscript || "") + (meeting.rawTranscript && newText ? " " : "") + newText;
