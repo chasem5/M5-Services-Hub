@@ -431,6 +431,54 @@ function LeadActivityTab({ leadId }: { leadId: number }) {
   );
 }
 
+function LeadTimelineWithEmails({ leadId }: { leadId: number }) {
+  const { data: emails = [] } = useQuery<any[]>({
+    queryKey: ["/api/leads", leadId, "emails"],
+    queryFn: () => fetch(`/api/leads/${leadId}/emails`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  return (
+    <div className="space-y-4 overflow-auto h-full pr-1">
+      {emails.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+            <Mail className="h-3.5 w-3.5" />
+            Linked Emails ({emails.length})
+          </h4>
+          <div className="space-y-1.5">
+            {emails.map((e: any) => (
+              <div key={e.id} className="rounded-md border border-border bg-card p-2.5 space-y-0.5" data-testid={`email-timeline-${e.id}`}>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    e.direction === "inbound"
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
+                      : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+                  }`}>
+                    {e.direction === "inbound" ? "IN" : "OUT"}
+                  </span>
+                  <span className="text-sm font-medium truncate flex-1">{e.subject ?? "(no subject)"}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{e.fromName ?? e.fromEmail}</span>
+                  <span>·</span>
+                  <span>{formatDistanceToNow(new Date(e.receivedAt), { addSuffix: true })}</span>
+                </div>
+                {e.aiSummary && (
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{e.aiSummary}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div>
+        <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">System Activity</h4>
+        <ActivityTimeline entityType="lead" entityId={leadId} />
+      </div>
+    </div>
+  );
+}
+
 function KanbanColumn({ 
   stage, 
   sc, 
@@ -3657,7 +3705,7 @@ export default function Leads() {
                 </TabsContent>
 
                 <TabsContent value="activity" className="py-4 h-[500px]">
-                  <ActivityTimeline entityType="lead" entityId={selectedLead.id} />
+                  <LeadTimelineWithEmails leadId={selectedLead.id} />
                 </TabsContent>
               </Tabs>
             </>

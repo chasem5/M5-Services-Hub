@@ -584,15 +584,35 @@ export default function EmailSyncPage() {
             </span>
           </div>
         </div>
-        <Button
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          className="gap-2 bg-primary hover:bg-primary/90 text-white h-8 text-sm"
-          data-testid="button-sync-now"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-          {syncMutation.isPending ? "Syncing..." : "Sync Now"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setQuickClientDialogOpen(true)}
+            className="gap-1.5 h-8 text-sm"
+            data-testid="button-new-company"
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            New Company
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setAddContactDialogOpen(true)}
+            className="gap-1.5 h-8 text-sm"
+            data-testid="button-new-contact"
+          >
+            <UserPlus className="h-3.5 w-3.5" />
+            New Contact
+          </Button>
+          <Button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="gap-2 bg-primary hover:bg-primary/90 text-white h-8 text-sm"
+            data-testid="button-sync-now"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+            {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+          </Button>
+        </div>
       </div>
 
       {/* Filter bar + search */}
@@ -1398,10 +1418,9 @@ export default function EmailSyncPage() {
 
 
       {/* Add Contact Dialog */}
-      {primaryEmail && (
         <Dialog open={addContactDialogOpen} onOpenChange={setAddContactDialogOpen}>
           <DialogContent className="max-w-sm">
-            <DialogHeader><DialogTitle>Add as New Contact</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Add New Contact</DialogTitle></DialogHeader>
             <div className="space-y-3 py-2">
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
@@ -1459,12 +1478,11 @@ export default function EmailSyncPage() {
                 disabled={addContactMutation.isPending || !newContactClientId}
                 data-testid="button-confirm-add-contact"
               >
-                {addContactMutation.isPending ? "Creating..." : "Create & Link"}
+                {addContactMutation.isPending ? "Creating..." : "Create Contact"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      )}
 
       {/* Quick-create company dialog (from AI create suggestion) */}
       <Dialog open={quickClientDialogOpen} onOpenChange={v => { setQuickClientDialogOpen(v); if (!v) { setQuickClientName(""); setQuickClientIndustry(""); setQuickClientEmailForLink(null); } }}>

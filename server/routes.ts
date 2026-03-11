@@ -1212,18 +1212,27 @@ Do not include any other text, just the JSON.`,
     }
   });
 
+  app.get("/api/leads/:id/emails", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const lead = await storage.getLead(id);
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+    const emails = await storage.listEmailMessages({ leadId: id });
+    res.json(emails);
+  });
+
   // AI Summary for a lead
   app.post("/api/leads/:id/ai-summary", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     const lead = await storage.getLead(id);
     if (!lead) return res.status(404).json({ message: "Lead not found" });
 
-    const [leadTasks, activityLogs, company, contact, leadNotesList] = await Promise.all([
+    const [leadTasks, activityLogs, company, contact, leadNotesList, linkedEmails] = await Promise.all([
       storage.listTasks().then(t => t.filter(t => t.relatedLeadId === id).slice(0, 15)),
       storage.listActivityLogs("lead", id).then(a => a.slice(0, 15)),
       lead.clientId ? storage.getClient(lead.clientId) : Promise.resolve(undefined),
       lead.contactId ? storage.getClientContact(lead.contactId) : Promise.resolve(undefined),
       storage.listLeadNotes(id).then(n => n.slice(0, 20)),
+      storage.listEmailMessages({ leadId: id }).then(e => e.slice(0, 10)),
     ]);
 
     // Derived signals
@@ -1274,6 +1283,15 @@ Do not include any other text, just the JSON.`,
         }).join("\n")
       : "No activity logged yet.";
 
+    const emailConversationSection = linkedEmails.length
+      ? linkedEmails.slice(0, 5).map(e => {
+          const date = new Date(e.receivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          const dir = e.direction === "inbound" ? "← IN" : e.direction === "outbound" ? "→ OUT" : "CC";
+          const summary = e.aiSummary ? ` | Summary: "${String(e.aiSummary).slice(0, 120)}"` : "";
+          return `- [${dir}] "${e.subject ?? "(no subject)"}" from ${e.fromName ?? e.fromEmail} (${date})${summary}`;
+        }).join("\n")
+      : "No linked email conversations.";
+
     const stageGuide = `Stage reference (M5 pipeline):
 - new_lead: Just entered, not yet qualified
 - qualified: Needs confirmed, initial contact made
@@ -1311,6 +1329,9 @@ ${activitySummary}
 
 Open/Active Tasks:
 ${tasksSummary}
+
+Linked Email Conversations (newest first):
+${emailConversationSection}
 
 Respond ONLY with a JSON object in this exact shape — no markdown, no explanation:
 {
@@ -2980,8 +3001,8 @@ Respond with this JSON:
         priority: (t.priority as any) ?? "medium",
         status: "todo",
         assignedTo: userId,
-        clientId: email.clientId ?? null,
-        leadId: email.leadId ?? null,
+        relatedClientId: email.clientId ?? null,
+        relatedLeadId: email.leadId ?? null,
         dueDate,
         description: `Created from email: "${email.subject}"`,
         labels: [],
