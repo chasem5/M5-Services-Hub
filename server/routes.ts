@@ -2055,7 +2055,7 @@ Respond ONLY with JSON — no markdown:
     if (!meeting) return res.status(404).json({ message: "Meeting not found" });
 
     try {
-      const { openai } = await import("./openai");
+      const { openaiDirect } = await import("./openai");
       const { default: formidable } = await import("formidable");
       const { createReadStream } = await import("fs");
 
@@ -2065,7 +2065,7 @@ Respond ONLY with JSON — no markdown:
 
       if (!audioFile) return res.status(400).json({ message: "No audio file provided" });
 
-      const transcription = await openai.audio.transcriptions.create({
+      const transcription = await openaiDirect.audio.transcriptions.create({
         file: createReadStream(audioFile.filepath) as any,
         model: "whisper-1",
       });

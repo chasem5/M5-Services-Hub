@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "KpjC4GhyCsHx9AFaNZWi5"
+uri = "file://.local/tasks/mobile-app-prompt.md"
+type = "text"
+title = "Mobile App Prompt"
