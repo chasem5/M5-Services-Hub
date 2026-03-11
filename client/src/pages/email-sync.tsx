@@ -265,7 +265,7 @@ export default function EmailSyncPage() {
   const { toast } = useToast();
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [showDismissed, setShowDismissed] = useState(false);
-  const [showOtherSection, setShowOtherSection] = useState(true);
+  const [showOtherSection, setShowOtherSection] = useState(false);
   const [needsResponseOnly, setNeedsResponseOnly] = useState(false);
   const [showBlockedSenders, setShowBlockedSenders] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
