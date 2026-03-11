@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useParams, useLocation } from "wouter";
@@ -222,13 +222,10 @@ export default function MeetingDetailPage() {
   const [editTitleValue, setEditTitleValue] = useState("");
   const [actioningIds, setActioningIds] = useState<Record<number, "approve" | "decline">>({});
 
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [chunkCount, setChunkCount] = useState(0);
-  const [liveChunkStatus, setLiveChunkStatus] = useState<"idle" | "sending" | "ok" | "error">("idle");
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const chunkFlushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [wordCount, setWordCount] = useState(0);
+  const speechRecognitionRef = useRef<any>(null);
+  const finalTranscriptRef = useRef<string>("");
+  const isRecordingRef = useRef<boolean>(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   const [showFollowUpPrompt, setShowFollowUpPrompt] = useState(false);
@@ -352,120 +349,75 @@ export default function MeetingDetailPage() {
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
-  const sendChunk = useCallback(async (blob: Blob, isFinal = false): Promise<boolean> => {
-    if (blob.size < 100) {
-      if (isFinal) toast({ title: "No audio detected. Try speaking closer to the mic.", variant: "destructive" });
-      return false;
-    }
-    setLiveChunkStatus("sending");
-    const form = new FormData();
-    form.append("audio", blob, "chunk.webm");
-
-    const maxAttempts = isFinal ? 3 : 2;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const res = await fetch(`/api/meetings/${meetingId}/transcribe`, {
-          method: "POST",
-          body: form,
-          credentials: "include",
-        });
-        if (res.ok) {
-          const { text } = await res.json();
-          if (text) {
-            setLiveTranscript((prev) => prev + (prev ? " " : "") + text);
-            setChunkCount((n) => n + 1);
-            setLiveChunkStatus("ok");
-          } else {
-            setLiveChunkStatus("ok");
-          }
-          return true;
-        }
-        if (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, 1500 * attempt));
-          continue;
-        }
-        setLiveChunkStatus("error");
-        if (isFinal) toast({ title: "Transcription failed. You can type or paste your notes below.", variant: "destructive" });
-      } catch {
-        if (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, 1500 * attempt));
-          continue;
-        }
-        setLiveChunkStatus("error");
-        if (isFinal) toast({ title: "Transcription failed. Check your connection and try again.", variant: "destructive" });
-      }
-    }
-    return false;
-  }, [meetingId, toast]);
-
   const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "";
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      mediaRecorderRef.current = recorder;
-      chunksRef.current = [];
-      setChunkCount(0);
-      setLiveChunkStatus("idle");
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast({ title: "Speech recognition requires Chrome or Edge browser.", variant: "destructive" });
+      return;
+    }
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
+    finalTranscriptRef.current = liveTranscript ? liveTranscript.trimEnd() + " " : "";
+    isRecordingRef.current = true;
 
-      recorder.start();
-      setIsRecording(true);
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    speechRecognitionRef.current = recognition;
 
-      chunkIntervalRef.current = setInterval(() => {
-        if (recorder.state === "recording") {
-          recorder.requestData();
-          const t = setTimeout(() => {
-            const currentChunks = [...chunksRef.current];
-            chunksRef.current = [];
-            if (currentChunks.length > 0) {
-              const blob = new Blob(currentChunks, { type: mimeType || "audio/webm" });
-              sendChunk(blob);
-            }
-          }, 800);
-          chunkFlushTimeoutRef.current = t;
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscriptRef.current += event.results[i][0].transcript + " ";
+        } else {
+          interim += event.results[i][0].transcript;
         }
-      }, 20000);
+      }
+      const combined = finalTranscriptRef.current + interim;
+      setLiveTranscript(combined);
+      setWordCount(combined.trim().split(/\s+/).filter(Boolean).length);
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === "no-speech" || event.error === "aborted") return;
+      toast({ title: `Mic error: ${event.error}. Try refreshing.`, variant: "destructive" });
+    };
+
+    recognition.onend = () => {
+      if (speechRecognitionRef.current === recognition && isRecordingRef.current) {
+        try { recognition.start(); } catch {}
+      }
+    };
+
+    try {
+      recognition.start();
+      setIsRecording(true);
+      await apiRequest("PUT", `/api/meetings/${meetingId}`, { status: "recording" });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] });
     } catch {
+      isRecordingRef.current = false;
+      speechRecognitionRef.current = null;
       toast({ title: "Microphone access denied. Please allow microphone permissions.", variant: "destructive" });
     }
   };
 
-  const stopRecording = () => {
-    if (chunkIntervalRef.current) clearInterval(chunkIntervalRef.current);
-    if (chunkFlushTimeoutRef.current) clearTimeout(chunkFlushTimeoutRef.current);
-    chunkFlushTimeoutRef.current = null;
-
-    const recorder = mediaRecorderRef.current;
-    if (!recorder) return;
+  const stopRecording = async () => {
+    isRecordingRef.current = false;
+    const recognition = speechRecognitionRef.current;
+    speechRecognitionRef.current = null;
+    if (recognition) recognition.stop();
 
     setIsRecording(false);
-    setIsTranscribing(true);
 
-    recorder.onstop = async () => {
-      const currentChunks = [...chunksRef.current];
-      chunksRef.current = [];
-      const mimeType = recorder.mimeType || "audio/webm";
-      if (currentChunks.length > 0) {
-        const blob = new Blob(currentChunks, { type: mimeType });
-        await sendChunk(blob, true);
-      }
-      recorder.stream.getTracks().forEach((t) => t.stop());
-      setIsTranscribing(false);
-      setLiveChunkStatus("idle");
-      await apiRequest("PUT", `/api/meetings/${meetingId}`, { status: "stopped" });
-      queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
-      toast({ title: "Recording saved. Review your transcript then click Finish & Analyze." });
-    };
-    recorder.stop();
+    const transcript = finalTranscriptRef.current.trim();
+    await apiRequest("PUT", `/api/meetings/${meetingId}`, {
+      rawTranscript: transcript || undefined,
+      status: "stopped",
+    });
+    queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+    toast({ title: "Recording saved. Review transcript then click Finish & Analyze." });
   };
 
   const createTaskMutation = useMutation({
@@ -619,7 +571,7 @@ export default function MeetingDetailPage() {
           {!showReview && !isProcessing && (
             <Button
               onClick={analyzeMutation.mutate}
-              disabled={!transcript.trim() || analyzeMutation.isPending || isRecording || isTranscribing}
+              disabled={!transcript.trim() || analyzeMutation.isPending || isRecording}
               data-testid="button-analyze"
             >
               {analyzeMutation.isPending ? (
@@ -835,12 +787,7 @@ export default function MeetingDetailPage() {
               {inputMode === "record" && (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-3">
-                    {isTranscribing ? (
-                      <Button disabled className="gap-2" data-testid="button-transcribing">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Saving final chunk…
-                      </Button>
-                    ) : !isRecording ? (
+                    {!isRecording ? (
                       <Button onClick={startRecording} className="gap-2" data-testid="button-start-recording">
                         <Mic className="h-4 w-4" />
                         Start Recording
@@ -852,10 +799,8 @@ export default function MeetingDetailPage() {
                       </Button>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      {isTranscribing
-                        ? "Saving your final audio chunk, please wait…"
-                        : isRecording
-                        ? "Recording live — audio is transcribed every 20 seconds."
+                      {isRecording
+                        ? "Listening — transcript appears in real time below."
                         : isStopped
                         ? "Recording stopped. Review transcript below, then click Finish & Analyze."
                         : "Click to start capturing your meeting audio via microphone."}
@@ -867,18 +812,10 @@ export default function MeetingDetailPage() {
                         <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
                         <span className="text-xs font-medium text-red-600">LIVE</span>
                       </div>
-                      {liveChunkStatus === "sending" && (
-                        <span className="flex items-center gap-1 text-xs text-blue-600">
-                          <Loader2 className="h-3 w-3 animate-spin" /> Transcribing chunk…
-                        </span>
-                      )}
-                      {liveChunkStatus === "ok" && chunkCount > 0 && (
+                      {wordCount > 0 && (
                         <span className="flex items-center gap-1 text-xs text-green-600">
-                          <Check className="h-3 w-3" /> {chunkCount} chunk{chunkCount !== 1 ? "s" : ""} transcribed
+                          <Check className="h-3 w-3" /> {wordCount} word{wordCount !== 1 ? "s" : ""} captured
                         </span>
-                      )}
-                      {liveChunkStatus === "error" && (
-                        <span className="text-xs text-red-500 font-medium">Chunk failed — check connection</span>
                       )}
                     </div>
                   )}
