@@ -74,6 +74,10 @@ export interface BuildOpsQuote {
   status?: string;
   totalAmount?: number;
   scopeOfWork?: string;
+  billingCustomerId?: string;
+  customerId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface BuildOpsServiceAgreement {
@@ -219,6 +223,44 @@ export async function getDepartments(
 }
 
 // ── Quotes ────────────────────────────────────────────────────────────────────
+
+export async function getQuotes(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  page = 0,
+  pageSize = 100
+): Promise<{ items: BuildOpsQuote[]; totalCount: number }> {
+  const token = await getToken(clientId, clientSecret);
+  const res = await fetch(
+    `${BASE_URL}/v1/quotes?page=${page}&page_size=${pageSize}`,
+    { headers: buildOpsHeaders(token, tenantId) }
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return { items: data.items ?? data ?? [], totalCount: data.totalCount ?? (data.items ?? data ?? []).length };
+}
+
+export async function getQuoteById(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  quoteId: string
+): Promise<BuildOpsQuote> {
+  const token = await getToken(clientId, clientSecret);
+  const res = await fetch(
+    `${BASE_URL}/v1/quotes/${quoteId}`,
+    { headers: buildOpsHeaders(token, tenantId) }
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
 export interface QuoteLineItem {
   description: string;

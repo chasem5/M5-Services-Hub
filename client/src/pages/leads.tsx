@@ -894,6 +894,7 @@ export default function Leads() {
   const [selectedClientIdForBuildingEdit, setSelectedClientIdForBuildingEdit] = useState<number | null>(null);
   // Pipeline views
   const [activeViewId, setActiveViewId] = useState<number | null>(null);
+  const [buildopsView, setBuildopsView] = useState(false);
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [activeDragId, setActiveDragId] = useState<number | null>(null);
   const [isManageViewsOpen, setIsManageViewsOpen] = useState(false);
@@ -1041,6 +1042,17 @@ export default function Leads() {
     if (!contactId) return null;
     return allContacts.find(c => c.id === contactId)?.name ?? null;
   };
+
+  const syncBuildopsQuotesMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/buildops/sync-quotes", {}).then(r => r.json()),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({ title: "BuildOps sync complete", description: `${data.created} created, ${data.updated} updated (${data.total} total)` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
 
   const createLeadMutation = useMutation({
     mutationFn: async (data: InsertLead) => {
@@ -1601,8 +1613,8 @@ export default function Leads() {
         {/* Pipeline View switcher — desktop only */}
         <div className="hidden md:flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => setActiveViewId(null)}
-            className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${!activeViewId ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+            onClick={() => { setActiveViewId(null); setBuildopsView(false); }}
+            className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${!activeViewId && !buildopsView ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
             data-testid="button-view-all"
           >
             All Deals
@@ -1610,13 +1622,20 @@ export default function Leads() {
           {pipelineViews.map(v => (
             <button
               key={v.id}
-              onClick={() => setActiveViewId(v.id)}
-              className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${activeViewId === v.id ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+              onClick={() => { setActiveViewId(v.id); setBuildopsView(false); }}
+              className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${activeViewId === v.id && !buildopsView ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
               data-testid={`button-view-${v.id}`}
             >
               {v.name}
             </button>
           ))}
+          <button
+            onClick={() => { setBuildopsView(true); setActiveViewId(null); }}
+            className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium flex items-center gap-1.5 ${buildopsView ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+            data-testid="button-view-buildops"
+          >
+            BuildOps Quotes
+          </button>
           <Button size="sm" variant="outline" className="h-7 rounded-full text-xs gap-1.5" onClick={() => {
             setEditingView(null);
             setNewViewName("");
@@ -1701,6 +1720,88 @@ export default function Leads() {
                 <Skeleton className="h-32 w-full" />
               </div>
             ))}
+          </div>
+        ) : buildopsView ? (
+          <div className="p-4 md:p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-heading font-bold">BuildOps Quotes</h2>
+                <p className="text-sm text-muted-foreground">Quotes synced from BuildOps — tracked as deals</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => syncBuildopsQuotesMutation.mutate()}
+                disabled={syncBuildopsQuotesMutation.isPending}
+                data-testid="button-sync-buildops-quotes"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${syncBuildopsQuotesMutation.isPending ? "animate-spin" : ""}`} />
+                Sync BuildOps Quotes
+              </Button>
+            </div>
+            {(() => {
+              const buildopsLeads = (leads ?? []).filter((l: any) => l.buildopsQuoteId);
+              const boCols = [
+                { key: "draft", label: "Quote Needed", statuses: ["draft", null, undefined], color: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300" },
+                { key: "sent", label: "Quote Sent", statuses: ["sent", "submitted", "pending"], color: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300" },
+                { key: "approved", label: "Approved / Won", statuses: ["approved", "won", "accepted"], color: "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300" },
+                { key: "rejected", label: "Rejected / Expired", statuses: ["rejected", "expired", "lost"], color: "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300" },
+              ];
+              const formatCurrencyLocal = (v: any) =>
+                v != null ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v)) : "—";
+              return (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  {boCols.map(col => {
+                    const colLeads = buildopsLeads.filter((l: any) =>
+                      col.statuses.includes((l as any).buildopsQuoteStatus) ||
+                      (col.key === "draft" && !(l as any).buildopsQuoteStatus)
+                    );
+                    return (
+                      <div key={col.key}>
+                        <div className={`rounded-t-lg border-b-0 border px-3 py-2 flex items-center justify-between ${col.color}`}>
+                          <span className="text-xs font-semibold uppercase tracking-wider">{col.label}</span>
+                          <span className="text-xs font-bold">{colLeads.length}</span>
+                        </div>
+                        <div className="border border-t-0 rounded-b-lg min-h-[80px] divide-y divide-border/40 bg-card">
+                          {colLeads.length === 0 ? (
+                            <p className="px-3 py-4 text-xs text-muted-foreground italic text-center">None</p>
+                          ) : (
+                            colLeads.map((l: any) => {
+                              const daysOld = Math.floor((Date.now() - new Date(l.updatedAt).getTime()) / 86400000);
+                              return (
+                                <div
+                                  key={l.id}
+                                  className="px-3 py-2.5 hover:bg-muted/20 cursor-pointer"
+                                  onClick={() => openLeadDetail(l)}
+                                  data-testid={`buildops-card-${l.id}`}
+                                >
+                                  <div className="flex items-start justify-between gap-1.5">
+                                    <div className="min-w-0">
+                                      <p className="font-semibold text-xs truncate">{getClientName(l.clientId)}</p>
+                                      <p className="text-[11px] text-muted-foreground truncate">{l.title}</p>
+                                      {l.buildopsQuoteNumber && (
+                                        <p className="text-[10px] text-blue-600 dark:text-blue-400">#{l.buildopsQuoteNumber}</p>
+                                      )}
+                                    </div>
+                                    <div className="shrink-0 text-right">
+                                      <p className="text-xs font-semibold tabular-nums">{formatCurrencyLocal(l.buildopsQuoteTotal ?? l.value)}</p>
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${daysOld >= 7 ? "bg-red-100 text-red-700" : daysOld >= 3 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}>
+                                        {daysOld}d
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         ) : view === "kanban" ? (
           <DndContext 

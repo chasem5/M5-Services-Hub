@@ -648,6 +648,23 @@ export default function EmailSyncPage() {
                       {latest.isDismissed && (
                         <span className="text-xs text-gray-400 italic">dismissed</span>
                       )}
+                      {(() => {
+                        const hasLead = thread.messages.some(m => m.leadId);
+                        if (!hasLead || latest.direction !== "inbound") return null;
+                        const lastOutbound = thread.messages.find(m => m.direction === "outbound");
+                        const sinceMs = lastOutbound
+                          ? Date.now() - new Date(lastOutbound.receivedAt).getTime()
+                          : Date.now() - new Date(latest.receivedAt).getTime();
+                        const hoursOld = Math.floor(sinceMs / 3600000);
+                        if (hoursOld < 24) return null;
+                        const isRed = hoursOld >= 48;
+                        const label = hoursOld < 48 ? `${hoursOld}h` : `${Math.floor(hoursOld / 24)}d`;
+                        return (
+                          <span className={`inline-flex items-center gap-0.5 text-xs rounded px-1 py-0 ${isRed ? "text-red-600 bg-red-50" : "text-amber-600 bg-amber-50"}`}>
+                            <Clock className="h-2.5 w-2.5" /> {label}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 );

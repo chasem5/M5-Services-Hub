@@ -11,8 +11,8 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 
 ## Features
 
-- **Dashboard** — Key metrics (active leads, pipeline value, open tasks, monthly revenue), activity feed, upcoming tasks; filter by All Team / My Data / specific team member (persisted per user); pipeline value includes tier-based leads using DB-configured estimates
-- **Lead/Pipeline Management** — Kanban board by stage (New Lead → Won/Lost), list view, drag-free stage transitions, lead detail sheet with activity timeline; Kanban cards auto-sorted by estimated value (high → low) within each column
+- **Dashboard** — Key metrics (active leads, pipeline value, open tasks, monthly revenue), activity feed, upcoming tasks; filter by All Team / My Data / specific team member (persisted per user); pipeline value includes tier-based leads using DB-configured estimates; **Action Required card** with 5 alert sections (Email Reply Needed 24h / Price Not Sent 2d / Draft Quote Stale / Follow Up Sent Quote 7d / Expiring Soon 23d) — each item dismissible with 7-day snooze; **Quotes Pipeline card** showing all draft/sent estimates in two columns
+- **Lead/Pipeline Management** — Kanban board by stage (New Lead → Won/Lost), list view, drag-free stage transitions, lead detail sheet with activity timeline; Kanban cards auto-sorted by estimated value (high → low) within each column; **BuildOps Quotes view** — preset filter showing all leads with `buildopsQuoteId` in 4 columns (Quote Needed / Quote Sent / Approved / Rejected); "Sync BuildOps Quotes" button to pull latest from BuildOps API
 - **Client Database** — Company profiles, contacts, tabbed detail view (Overview, Contacts, Leads, Estimates, Org Chart, Activity); contacts support `reportsTo` for hierarchy; contacts have custom stages (with color coding, inline picker, and manage stages dialog)
 - **Task Management** — Priority + status filtering, due date tracking, assignments, detail sheet editing
 - **Reminders** — Bell notification dropdown in header, create/dismiss reminders linked to leads/clients/tasks

@@ -1170,6 +1170,13 @@ Do not include any other text, just the JSON.`,
     res.sendStatus(204);
   });
 
+  app.patch("/api/leads/:id/snooze-follow-up", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const lead = await storage.updateLead(id, { followUpSnoozedUntil: snoozedUntil } as any);
+    res.json(lead);
+  });
+
   // Lead Notes
   app.get("/api/leads/:id/notes", isAuthenticated, async (req, res) => {
     try {
@@ -1729,6 +1736,13 @@ Respond ONLY with JSON — no markdown:
     const id = parseInt(req.params.id as string);
     await storage.deleteEstimate(id);
     res.sendStatus(204);
+  });
+
+  app.patch("/api/estimates/:id/snooze-follow-up", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const estimate = await storage.updateEstimate(id, { followUpSnoozedUntil: snoozedUntil } as any);
+    res.json(estimate);
   });
 
   // Estimate Line Items
@@ -3531,6 +3545,324 @@ Respond with this JSON:
   app.get("/api/buildops/last-sync", isAuthenticated, async (req, res) => {
     const log = await storage.getLastBuildopsSync();
     res.json(log);
+  });
+
+  app.post("/api/buildops/sync-quotes", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getQuotes } = await import("./buildops");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { leads: leadsTable } = await import("@shared/schema");
+
+      let allQuotes: any[] = [];
+      let page = 0;
+      while (true) {
+        const batch = await getQuotes(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
+        allQuotes = allQuotes.concat(batch.items);
+        if (allQuotes.length >= batch.totalCount || batch.items.length === 0) break;
+        page++;
+      }
+
+      const allClients = await storage.listClients();
+      const allLeads = await db.select().from(leadsTable);
+      let created = 0;
+      let updated = 0;
+
+      for (const quote of allQuotes) {
+        const customerId = quote.billingCustomerId ?? quote.customerId;
+        const matchedClient = customerId ? allClients.find(c => c.buildopsId === customerId) : null;
+        const quoteTitle = quote.name ?? (quote.quoteNumber ? `Quote #${quote.quoteNumber}` : `BuildOps Quote ${quote.id}`);
+
+        const existingLead = allLeads.find((l: any) => l.buildopsQuoteId === quote.id);
+
+        if (existingLead) {
+          await db.update(leadsTable).set({
+            buildopsQuoteStatus: quote.status ?? null,
+            buildopsQuoteNumber: quote.quoteNumber ? String(quote.quoteNumber) : null,
+            buildopsQuoteTotal: quote.totalAmount != null ? String(quote.totalAmount) : null,
+            title: quoteTitle,
+            value: quote.totalAmount != null ? String(quote.totalAmount) : existingLead.value,
+            updatedAt: new Date(),
+          }).where(eq(leadsTable.id, existingLead.id));
+          updated++;
+        } else {
+          const [newLead] = await db.insert(leadsTable).values({
+            title: quoteTitle,
+            clientId: matchedClient?.id ?? null,
+            stage: "proposal_sent",
+            buildopsQuoteId: quote.id,
+            buildopsQuoteStatus: quote.status ?? null,
+            buildopsQuoteNumber: quote.quoteNumber ? String(quote.quoteNumber) : null,
+            buildopsQuoteTotal: quote.totalAmount != null ? String(quote.totalAmount) : null,
+            value: quote.totalAmount != null ? String(quote.totalAmount) : "0",
+            contractType: "one_time",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }).returning();
+          await storage.createBuildopsSyncLog({ entityType: "lead", entityId: newLead.id, buildopsId: quote.id, action: "pull", message: `Imported BuildOps quote #${quote.quoteNumber ?? quote.id}` });
+          created++;
+        }
+      }
+
+      res.json({ ok: true, created, updated, total: allQuotes.length });
+    } catch (err: any) {
+      await storage.createBuildopsSyncLog({ entityType: "lead", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Client Pulse ─────────────────────────────────────────────────────────
+
+  app.get("/api/client-pulse", isAuthenticated, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { desc } = await import("drizzle-orm");
+      const { leads: leadsTable, estimates: estimatesTable, emailMessages: emailMessagesTable } = await import("@shared/schema");
+      const now = new Date();
+      const h24 = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const d2 = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const d23 = new Date(now.getTime() - 23 * 24 * 60 * 60 * 1000);
+
+      const allClients = await storage.listClients();
+      const clientMap = new Map(allClients.map(c => [c.id, c.name]));
+
+      const allLeads = await db.select().from(leadsTable);
+      const allEstimates = await db.select().from(estimatesTable);
+      const allEmails = await db.select().from(emailMessagesTable).orderBy(desc(emailMessagesTable.receivedAt)) as any[];
+
+      const activeLeads = allLeads.filter((l: any) => l.stage !== "won" && l.stage !== "lost");
+
+      const results: any[] = [];
+
+      // ── Section A: Email replies needed (24h threshold) ────────────────────
+      const threads = new Map<string, any[]>();
+      for (const msg of allEmails) {
+        if (!msg.gmailThreadId) continue;
+        if (!threads.has(msg.gmailThreadId)) threads.set(msg.gmailThreadId, []);
+        threads.get(msg.gmailThreadId)!.push(msg);
+      }
+
+      for (const [, msgs] of threads) {
+        const sorted = msgs.sort((a: any, b: any) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+        const latest = sorted[0];
+        if (latest.direction !== "inbound") continue;
+        if (latest.isDismissed) continue;
+
+        const clientId = latest.clientId ?? latest.leadId ? activeLeads.find((l: any) => l.id === latest.leadId)?.clientId : null;
+        if (!clientId) continue;
+
+        const hasActiveLead = activeLeads.some((l: any) => l.clientId === clientId);
+        if (!hasActiveLead) continue;
+
+        const lastOutbound = sorted.find((m: any) => m.direction === "outbound");
+        const noReplyIn24h = !lastOutbound || new Date(lastOutbound.receivedAt) < h24;
+        if (!noReplyIn24h) continue;
+
+        const lead = activeLeads.find((l: any) => l.id === latest.leadId || l.clientId === clientId);
+        const snoozed = lead?.followUpSnoozedUntil && new Date(lead.followUpSnoozedUntil) > now;
+        if (snoozed) continue;
+
+        const daysSince = lastOutbound
+          ? Math.floor((now.getTime() - new Date(lastOutbound.receivedAt).getTime()) / 86400000)
+          : Math.floor((now.getTime() - new Date(latest.receivedAt).getTime()) / 86400000);
+
+        results.push({
+          type: "A",
+          leadId: lead?.id ?? null,
+          clientId,
+          clientName: clientMap.get(clientId) ?? "Unknown",
+          title: latest.subject ?? "Email thread",
+          daysSince,
+          hoursSince: Math.floor((now.getTime() - new Date(latest.receivedAt).getTime()) / 3600000),
+          priority: daysSince >= 2 ? "high" : "medium",
+          threadId: latest.gmailThreadId,
+        });
+      }
+
+      // ── Section B: Deals needing a quote (2-day threshold) ─────────────────
+      const earlyStages = ["new_lead", "contacted", "qualified"];
+      const leadsWithEstimates = new Set(allEstimates.map((e: any) => e.leadId).filter(Boolean));
+
+      for (const lead of activeLeads) {
+        if (!earlyStages.includes(lead.stage)) continue;
+        if (leadsWithEstimates.has(lead.id)) continue;
+        if (!lead.clientId) continue;
+        if (lead.buildopsQuoteId) continue;
+
+        const snoozed = lead.followUpSnoozedUntil && new Date(lead.followUpSnoozedUntil) > now;
+        if (snoozed) continue;
+
+        const lastOutbound = allEmails.find((m: any) => m.clientId === lead.clientId && m.direction === "outbound");
+        const noOutboundIn2d = !lastOutbound || new Date(lastOutbound.receivedAt) < d2;
+        if (!noOutboundIn2d) continue;
+
+        const daysSince = lastOutbound
+          ? Math.floor((now.getTime() - new Date(lastOutbound.receivedAt).getTime()) / 86400000)
+          : Math.floor((now.getTime() - new Date(lead.createdAt).getTime()) / 86400000);
+
+        results.push({
+          type: "B",
+          leadId: lead.id,
+          clientId: lead.clientId,
+          clientName: clientMap.get(lead.clientId) ?? "Unknown",
+          title: lead.title,
+          daysSince,
+          priority: "medium",
+        });
+      }
+
+      // ── Section C: Draft quotes stale (2-day threshold) ───────────────────
+      for (const est of allEstimates) {
+        if ((est as any).status !== "draft") continue;
+        if (!(est as any).clientId) continue;
+
+        const snoozed = (est as any).followUpSnoozedUntil && new Date((est as any).followUpSnoozedUntil) > now;
+        if (snoozed) continue;
+
+        const lastOutbound = allEmails.find((m: any) => m.clientId === (est as any).clientId && m.direction === "outbound");
+        const noOutboundIn2d = !lastOutbound || new Date(lastOutbound.receivedAt) < d2;
+        if (!noOutboundIn2d) continue;
+
+        const daysSince = Math.floor((now.getTime() - new Date((est as any).updatedAt).getTime()) / 86400000);
+
+        results.push({
+          type: "C",
+          estimateId: (est as any).id,
+          clientId: (est as any).clientId,
+          clientName: clientMap.get((est as any).clientId) ?? "Unknown",
+          title: (est as any).title,
+          daysSince,
+          priority: "medium",
+        });
+      }
+
+      // Also check BuildOps-linked leads with draft status
+      for (const lead of activeLeads) {
+        if (lead.buildopsQuoteStatus !== "draft") continue;
+        if (!lead.clientId) continue;
+
+        const snoozed = lead.followUpSnoozedUntil && new Date(lead.followUpSnoozedUntil) > now;
+        if (snoozed) continue;
+
+        const lastOutbound = allEmails.find((m: any) => m.clientId === lead.clientId && m.direction === "outbound");
+        const noOutboundIn2d = !lastOutbound || new Date(lastOutbound.receivedAt) < d2;
+        if (!noOutboundIn2d) continue;
+
+        const alreadyInC = results.some(r => r.type === "C" && r.clientId === lead.clientId);
+        if (alreadyInC) continue;
+
+        results.push({
+          type: "C",
+          leadId: lead.id,
+          clientId: lead.clientId,
+          clientName: clientMap.get(lead.clientId) ?? "Unknown",
+          title: lead.title,
+          daysSince: Math.floor((now.getTime() - new Date(lead.updatedAt).getTime()) / 86400000),
+          priority: "medium",
+          isBuildOps: true,
+        });
+      }
+
+      // ── Section E: Expiring soon (23+ days since sent) ─── checked before D
+      for (const est of allEstimates) {
+        if ((est as any).status !== "sent") continue;
+        if (!(est as any).clientId) continue;
+
+        const snoozed = (est as any).followUpSnoozedUntil && new Date((est as any).followUpSnoozedUntil) > now;
+        if (snoozed) continue;
+
+        const sentAt = new Date((est as any).updatedAt);
+        if (sentAt > d23) continue;
+
+        const daysOld = Math.floor((now.getTime() - sentAt.getTime()) / 86400000);
+        const daysLeft = 30 - daysOld;
+
+        results.push({
+          type: "E",
+          estimateId: (est as any).id,
+          clientId: (est as any).clientId,
+          clientName: clientMap.get((est as any).clientId) ?? "Unknown",
+          title: (est as any).title,
+          daysSince: daysOld,
+          daysLeft: Math.max(0, daysLeft),
+          priority: "high",
+        });
+      }
+
+      // ── Section D: Sent quote follow-up (7-day threshold) ─────────────────
+      for (const est of allEstimates) {
+        if ((est as any).status !== "sent") continue;
+        if (!(est as any).clientId) continue;
+        const alreadyE = results.some(r => r.type === "E" && r.estimateId === (est as any).id);
+        if (alreadyE) continue;
+
+        const snoozed = (est as any).followUpSnoozedUntil && new Date((est as any).followUpSnoozedUntil) > now;
+        if (snoozed) continue;
+
+        const sentAt = new Date((est as any).updatedAt);
+        const lastOutbound = allEmails.find((m: any) => m.clientId === (est as any).clientId && m.direction === "outbound" && new Date(m.receivedAt) >= sentAt);
+        const noOutboundSinceSent = !lastOutbound || new Date(lastOutbound.receivedAt) < d7;
+        if (!noOutboundSinceSent) continue;
+
+        const daysSince = Math.floor((now.getTime() - sentAt.getTime()) / 86400000);
+        if (daysSince < 7) continue;
+
+        results.push({
+          type: "D",
+          estimateId: (est as any).id,
+          clientId: (est as any).clientId,
+          clientName: clientMap.get((est as any).clientId) ?? "Unknown",
+          title: (est as any).title,
+          daysSince,
+          priority: "medium",
+        });
+      }
+
+      // Sort: E first, then A, then others
+      const typeOrder: Record<string, number> = { E: 0, A: 1, B: 2, C: 3, D: 4 };
+      results.sort((a, b) => (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9));
+
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Quotes Pipeline ───────────────────────────────────────────────────────
+
+  app.get("/api/quotes-pipeline", isAuthenticated, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { desc } = await import("drizzle-orm");
+      const { estimates: estimatesTable } = await import("@shared/schema");
+
+      const allEstimates = await db.select().from(estimatesTable).orderBy(desc(estimatesTable.updatedAt)) as any[];
+      const allClients = await storage.listClients();
+      const clientMap = new Map(allClients.map(c => [c.id, c.name]));
+
+      const pipeline = allEstimates
+        .filter((e: any) => e.status === "draft" || e.status === "sent")
+        .map((e: any) => ({
+          id: e.id,
+          title: e.title,
+          status: e.status,
+          total: e.total,
+          clientId: e.clientId,
+          clientName: clientMap.get(e.clientId) ?? "Unknown",
+          leadId: e.leadId,
+          buildopsQuoteId: e.buildopsQuoteId,
+          updatedAt: e.updatedAt,
+          createdAt: e.createdAt,
+          daysOld: Math.floor((Date.now() - new Date(e.updatedAt).getTime()) / 86400000),
+        }));
+
+      res.json(pipeline);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   // ── AI Scope & Budget Generator for Estimates ───────────────────────────

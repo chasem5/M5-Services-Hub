@@ -23,6 +23,12 @@ import {
   Phone,
   Building2,
   Filter,
+  Mail,
+  FileText,
+  Send,
+  BellRing,
+  TriangleAlert,
+  RefreshCw,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { formatDistanceToNow, format, parseISO, differenceInDays } from "date-fns";
@@ -171,6 +177,24 @@ export default function Dashboard() {
   const { data: teamStats, isLoading: teamLoading } = useQuery<TeamPerformanceStat[]>({
     queryKey: ["/api/dashboard/team-performance"],
     enabled: isAdminOrManager,
+  });
+
+  const { data: clientPulse = [], isLoading: pulseLoading, refetch: refetchPulse } = useQuery<any[]>({
+    queryKey: ["/api/client-pulse"],
+  });
+
+  const { data: quotesPipeline = [], isLoading: pipelineLoading } = useQuery<any[]>({
+    queryKey: ["/api/quotes-pipeline"],
+  });
+
+  const snoozeLead = useMutation({
+    mutationFn: (id: number) => apiRequest("PATCH", `/api/leads/${id}/snooze-follow-up`, {}).then(r => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/client-pulse"] }),
+  });
+
+  const snoozeEstimate = useMutation({
+    mutationFn: (id: number) => apiRequest("PATCH", `/api/estimates/${id}/snooze-follow-up`, {}).then(r => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/client-pulse"] }),
   });
 
   // Onboarding logic
@@ -422,6 +446,155 @@ export default function Dashboard() {
           accentColor={stats?.overdueTasks ? "text-destructive" : undefined}
           iconColor={stats?.overdueTasks ? "text-destructive" : undefined}
         />
+      </div>
+
+      {/* Action Required + Quotes Pipeline */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Action Required (Client Pulse) */}
+        <Card className="shadow-sm border-border/40 bg-card">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg font-heading font-bold flex items-center gap-2">
+                <BellRing className="h-4 w-4 text-primary" />
+                Action Required
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Follow-up signals across deals &amp; quotes</p>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {pulseLoading ? (
+              <div className="px-6 pb-4 space-y-2">
+                {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+              </div>
+            ) : clientPulse.length === 0 ? (
+              <div className="px-6 pb-6 flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                <CheckCircle2 className="h-4 w-4" />
+                All caught up — no follow-ups needed
+              </div>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {(["E","A","B","C","D"] as const).map(type => {
+                  const section = clientPulse.filter((p: any) => p.type === type);
+                  if (!section.length) return null;
+                  const labels: Record<string, { icon: any; label: string; color: string }> = {
+                    E: { icon: TriangleAlert, label: "Expiring Soon", color: "text-red-600" },
+                    A: { icon: Mail, label: "Reply Needed (24h)", color: "text-amber-600" },
+                    B: { icon: FileText, label: "Price Not Sent", color: "text-blue-600" },
+                    C: { icon: FileText, label: "Draft Quote Stale", color: "text-orange-600" },
+                    D: { icon: Send, label: "Follow Up Sent Quote", color: "text-purple-600" },
+                  };
+                  const meta = labels[type];
+                  return (
+                    <div key={type}>
+                      <div className={`flex items-center gap-1.5 px-4 py-1.5 bg-muted/30 text-xs font-semibold uppercase tracking-wider ${meta.color}`}>
+                        <meta.icon className="h-3 w-3" />
+                        {meta.label}
+                      </div>
+                      {section.map((item: any, idx: number) => {
+                        const isExpiring = item.type === "E";
+                        const pillColor = item.priority === "high" || item.daysSince >= 3
+                          ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                          : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
+                        return (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 group"
+                            data-testid={`pulse-item-${item.type}-${item.leadId ?? item.estimateId ?? idx}`}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm truncate">{item.clientName}</p>
+                              <p className="text-xs text-muted-foreground truncate">{item.title}</p>
+                            </div>
+                            <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${pillColor}`}>
+                              {isExpiring ? `Exp. in ${item.daysLeft}d` : item.hoursSince != null && item.hoursSince < 48 ? `${item.hoursSince}h` : `${item.daysSince}d`}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
+                              onClick={() => {
+                                if (item.leadId) snoozeLead.mutate(item.leadId);
+                                else if (item.estimateId) snoozeEstimate.mutate(item.estimateId);
+                              }}
+                              title="Snooze 7 days"
+                              data-testid={`button-snooze-${item.type}-${item.leadId ?? item.estimateId ?? idx}`}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Quotes Pipeline */}
+        <Card className="shadow-sm border-border/40 bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-heading font-bold flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              Quotes Pipeline
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">All active estimates — draft &amp; sent</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            {pipelineLoading ? (
+              <div className="px-6 pb-4 space-y-2">
+                {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 divide-x divide-border/40">
+                {(["draft","sent"] as const).map(status => {
+                  const items = quotesPipeline.filter((q: any) => q.status === status);
+                  return (
+                    <div key={status}>
+                      <div className="px-4 py-2 bg-muted/30 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        {status === "draft" ? <FileText className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+                        {status === "draft" ? "Draft" : "Sent"} ({items.length})
+                      </div>
+                      {items.length === 0 ? (
+                        <p className="px-4 py-4 text-xs text-muted-foreground italic">None</p>
+                      ) : (
+                        <div className="divide-y divide-border/40">
+                          {items.map((q: any) => (
+                            <Link key={q.id} href={`/estimates/${q.id}`}>
+                              <div
+                                className="px-4 py-2.5 hover:bg-muted/20 cursor-pointer group"
+                                data-testid={`quote-tile-${q.id}`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-sm truncate">{q.clientName}</p>
+                                    <p className="text-xs text-muted-foreground truncate">{q.title}</p>
+                                  </div>
+                                  <div className="shrink-0 text-right">
+                                    <p className="text-sm font-semibold tabular-nums">{formatCurrency(q.total)}</p>
+                                    <div className="flex items-center gap-1 justify-end">
+                                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${q.daysOld >= 7 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : q.daysOld >= 3 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}>
+                                        {q.daysOld}d
+                                      </span>
+                                      {q.buildopsQuoteId && (
+                                        <span className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full font-medium">BO</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Row 2: Revenue Trend + Upcoming Tasks */}
