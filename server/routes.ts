@@ -6,6 +6,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { storage } from "./storage";
 import { isAuthenticated, requireRole } from "./replit_integrations/auth/replitAuth";
+import { openai, openaiAudio } from "./openai";
+import { toFile } from "openai";
 import { 
   insertClientSchema, 
   insertClientOfficeSchema,
@@ -2059,8 +2061,6 @@ Respond ONLY with JSON — no markdown:
         return res.json({ text: "", fullTranscript: meeting.rawTranscript || "" });
       }
 
-      const { openaiAudio } = await import("./openai");
-      const { toFile } = await import("openai");
       const audioFile = await toFile(req.file.buffer, "chunk.webm", { type: "audio/webm" });
       const result = await openaiAudio.audio.transcriptions.create({
         file: audioFile,

@@ -6,6 +6,7 @@ export const openai = new OpenAI({
 });
 
 // Direct client for audio transcription (Whisper) — uses the real OPENAI_API_KEY
+// Falls back to a placeholder so the server starts even without the key (will fail at call time)
 export const openaiAudio = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY || "not-configured",
 });
