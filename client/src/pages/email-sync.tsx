@@ -267,6 +267,8 @@ export default function EmailSyncPage() {
   const [showDismissed, setShowDismissed] = useState(false);
   const [viewFilter, setViewFilter] = useState<"all" | "customers" | "other">("customers");
   const [needsResponseOnly, setNeedsResponseOnly] = useState(false);
+  const [hasTasksOnly, setHasTasksOnly] = useState(false);
+  const [unlinkedOnly, setUnlinkedOnly] = useState(false);
   const [showBlockedSenders, setShowBlockedSenders] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
@@ -317,6 +319,8 @@ export default function EmailSyncPage() {
 
   const filteredThreads = allThreads.filter(thread => {
     if (needsResponseOnly && !thread.requiresResponse) return false;
+    if (hasTasksOnly && !thread.messages.some(m => m.aiSuggestedTasks && m.aiSuggestedTasks.length > 0)) return false;
+    if (unlinkedOnly && thread.messages.some(m => m.clientId !== null || m.leadId !== null)) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       return thread.messages.some(m => {
@@ -344,7 +348,7 @@ export default function EmailSyncPage() {
     if (!selectedThreadId || !visibleThreads.find(t => t.threadId === selectedThreadId)) {
       setSelectedThreadId(visibleThreads[0].threadId);
     }
-  }, [visibleThreads.length, selectedThreadId, viewFilter, needsResponseOnly, showDismissed, searchQuery]);
+  }, [visibleThreads.length, selectedThreadId, viewFilter, needsResponseOnly, hasTasksOnly, unlinkedOnly, showDismissed, searchQuery]);
 
   // When thread changes, auto-expand most recent message
   useEffect(() => {
@@ -364,6 +368,8 @@ export default function EmailSyncPage() {
   }, [selectedThreadId]);
 
   const needsResponseCount = emails.filter(e => e.requiresResponse && !e.followUpReminderCreated && !e.isDismissed).length;
+  const hasTasksCount = allThreads.filter(t => t.messages.some(m => m.aiSuggestedTasks && m.aiSuggestedTasks.length > 0)).length;
+  const unlinkedCount = allThreads.filter(t => !t.messages.some(m => m.clientId !== null || m.leadId !== null)).length;
   const dismissedCount = emails.filter(e => e.isDismissed).length;
 
   const matchedClient = primaryEmail?.clientId ? clients.find(c => c.id === primaryEmail.clientId) : null;
@@ -638,6 +644,30 @@ export default function EmailSyncPage() {
                 Needs Response ({needsResponseCount})
               </button>
             )}
+            {hasTasksCount > 0 && (
+              <button
+                onClick={() => setHasTasksOnly(!hasTasksOnly)}
+                data-testid="filter-has-tasks"
+                className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors flex items-center gap-1 ${
+                  hasTasksOnly ? "bg-indigo-500 text-white" : "bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                }`}
+              >
+                <Check className="h-3 w-3" />
+                Has Tasks ({hasTasksCount})
+              </button>
+            )}
+            {unlinkedCount > 0 && (
+              <button
+                onClick={() => setUnlinkedOnly(!unlinkedOnly)}
+                data-testid="filter-unlinked"
+                className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors flex items-center gap-1 ${
+                  unlinkedOnly ? "bg-gray-600 text-white" : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                }`}
+              >
+                <UserPlus className="h-3 w-3" />
+                Unlinked ({unlinkedCount})
+              </button>
+            )}
             {dismissedCount > 0 && (
               <button
                 onClick={() => setShowDismissed(!showDismissed)}
@@ -710,7 +740,7 @@ export default function EmailSyncPage() {
                       key={tab.key}
                       onClick={() => setViewFilter(tab.key)}
                       data-testid={`tab-${tab.key}`}
-                      className={`flex-1 px-2 py-2 text-[11px] font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
+                      className={`flex-1 px-3 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
                         viewFilter === tab.key
                           ? "border-primary text-primary bg-primary/5"
                           : "border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-50"
