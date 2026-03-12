@@ -709,8 +709,39 @@ export default function EmailSyncPage() {
       {/* Three-column body */}
       <div className="flex-1 flex overflow-hidden">
         {/* LEFT: Thread list */}
-        <div className="w-72 shrink-0 border-r border-gray-200 bg-white overflow-y-auto flex flex-col">
-          <div className="flex-1">
+        <div className="w-72 shrink-0 border-r border-gray-200 bg-white flex flex-col">
+          {/* View filter tabs — always at top, never scrolls */}
+          {!isLoading && filteredThreads.length > 0 && (
+            <div className="shrink-0 flex border-b border-gray-200 bg-white" data-testid="email-view-tabs">
+              {([
+                { key: "all" as const, label: "All", count: filteredThreads.length, icon: null },
+                { key: "customers" as const, label: "Customers", count: customerThreads.length, icon: <Building2 className="h-3 w-3" /> },
+                { key: "other" as const, label: "Other", count: otherThreads.length, icon: <Mail className="h-3 w-3" /> },
+              ]).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setViewFilter(tab.key)}
+                  data-testid={`tab-${tab.key}`}
+                  className={`flex-1 px-3 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
+                    viewFilter === tab.key
+                      ? "border-primary text-primary bg-primary/5"
+                      : "border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {tab.icon}
+                  {tab.label}
+                  <span className={`ml-0.5 text-[10px] px-1.5 py-0.5 rounded-full ${
+                    viewFilter === tab.key ? "bg-primary/10 text-primary" : "bg-gray-100 text-gray-400"
+                  }`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Scrollable thread list */}
+          <div className="flex-1 overflow-y-auto">
             {isLoading ? (
               <div className="flex items-center justify-center h-32 text-gray-400">
                 <RefreshCw className="h-4 w-4 animate-spin mr-2" /> Loading...
@@ -729,34 +760,6 @@ export default function EmailSyncPage() {
               </div>
             ) : (
               <>
-                {/* View filter tabs */}
-                <div className="sticky top-0 z-10 flex border-b border-gray-200 bg-white" data-testid="email-view-tabs">
-                  {([
-                    { key: "all" as const, label: "All", count: filteredThreads.length, icon: null },
-                    { key: "customers" as const, label: "Customers", count: customerThreads.length, icon: <Building2 className="h-3 w-3" /> },
-                    { key: "other" as const, label: "Other", count: otherThreads.length, icon: <Mail className="h-3 w-3" /> },
-                  ]).map(tab => (
-                    <button
-                      key={tab.key}
-                      onClick={() => setViewFilter(tab.key)}
-                      data-testid={`tab-${tab.key}`}
-                      className={`flex-1 px-3 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border-b-2 ${
-                        viewFilter === tab.key
-                          ? "border-primary text-primary bg-primary/5"
-                          : "border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-50"
-                      }`}
-                    >
-                      {tab.icon}
-                      {tab.label}
-                      <span className={`ml-0.5 text-[10px] px-1.5 py-0.5 rounded-full ${
-                        viewFilter === tab.key ? "bg-primary/10 text-primary" : "bg-gray-100 text-gray-400"
-                      }`}>
-                        {tab.count}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-
                 {visibleThreads.length > 0 ? visibleThreads.map(thread => (
                   <ThreadRow
                     key={thread.threadId}
