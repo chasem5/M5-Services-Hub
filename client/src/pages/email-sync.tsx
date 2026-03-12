@@ -709,7 +709,7 @@ export default function EmailSyncPage() {
       {/* Three-column body */}
       <div className="flex-1 flex overflow-hidden">
         {/* LEFT: Thread list */}
-        <div className="w-72 shrink-0 border-r border-gray-200 bg-white flex flex-col">
+        <div className="w-72 shrink-0 border-r border-gray-200 bg-white flex flex-col overflow-hidden">
           {/* View filter tabs — always at top, never scrolls */}
           {!isLoading && allThreads.length > 0 && (
             <div className="shrink-0 flex border-b border-gray-200 bg-white" data-testid="email-view-tabs">
