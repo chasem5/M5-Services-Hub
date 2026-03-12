@@ -711,7 +711,7 @@ export default function EmailSyncPage() {
         {/* LEFT: Thread list */}
         <div className="w-72 shrink-0 border-r border-gray-200 bg-white flex flex-col">
           {/* View filter tabs — always at top, never scrolls */}
-          {!isLoading && filteredThreads.length > 0 && (
+          {!isLoading && allThreads.length > 0 && (
             <div className="shrink-0 flex border-b border-gray-200 bg-white" data-testid="email-view-tabs">
               {([
                 { key: "all" as const, label: "All", count: filteredThreads.length, icon: null },
