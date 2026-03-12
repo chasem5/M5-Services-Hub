@@ -367,7 +367,7 @@ export default function EmailSyncPage() {
     }
   }, [selectedThreadId]);
 
-  const needsResponseCount = emails.filter(e => e.requiresResponse && !e.followUpReminderCreated && !e.isDismissed).length;
+  const needsResponseCount = allThreads.filter(t => t.requiresResponse).length;
   const hasTasksCount = allThreads.filter(t => t.messages.some(m => m.aiSuggestedTasks && m.aiSuggestedTasks.length > 0)).length;
   const unlinkedCount = allThreads.filter(t => !t.messages.some(m => m.clientId !== null || m.leadId !== null)).length;
   const dismissedCount = emails.filter(e => e.isDismissed).length;
