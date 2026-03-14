@@ -35,12 +35,15 @@ async function getToken(clientId: string, clientSecret: string): Promise<string>
 }
 
 function buildOpsHeaders(token: string, tenantId: string): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
-    "tenant-id": tenantId,
     "Content-Type": "application/json",
     Accept: "application/json",
   };
+  if (tenantId) {
+    headers["tenantId"] = tenantId;
+  }
+  return headers;
 }
 
 // ── Shared types ──────────────────────────────────────────────────────────────
@@ -110,7 +113,7 @@ export async function testConnection(
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const token = await getToken(clientId, clientSecret);
-    const res = await fetch(`${BASE_URL}/v1/customers?page=0&page_size=1`, {
+    const res = await fetch(`${BASE_URL}/v1/customers?page=1&limit=1`, {
       headers: buildOpsHeaders(token, tenantId),
     });
     if (res.ok) return { ok: true };
@@ -132,12 +135,12 @@ export async function getCustomers(
   clientId: string,
   clientSecret: string,
   tenantId: string,
-  page = 0,
+  page = 1,
   pageSize = 100
 ): Promise<BuildOpsListResponse<BuildOpsCustomer>> {
   const token = await getToken(clientId, clientSecret);
   const res = await fetch(
-    `${BASE_URL}/v1/customers?page=${page}&page_size=${pageSize}`,
+    `${BASE_URL}/v1/customers?page=${page}&limit=${pageSize}`,
     { headers: buildOpsHeaders(token, tenantId) }
   );
   if (!res.ok) {
@@ -223,7 +226,7 @@ export async function getDepartments(
   tenantId: string
 ): Promise<BuildOpsDepartment[]> {
   const token = await getToken(clientId, clientSecret);
-  const res = await fetch(`${BASE_URL}/v1/departments?page=0&page_size=100`, {
+  const res = await fetch(`${BASE_URL}/v1/departments?page=1&limit=100`, {
     headers: buildOpsHeaders(token, tenantId),
   });
   if (!res.ok) {
@@ -240,12 +243,12 @@ export async function getQuotes(
   clientId: string,
   clientSecret: string,
   tenantId: string,
-  page = 0,
+  page = 1,
   pageSize = 100
 ): Promise<{ items: BuildOpsQuote[]; totalCount: number }> {
   const token = await getToken(clientId, clientSecret);
   const res = await fetch(
-    `${BASE_URL}/v1/quotes?page=${page}&page_size=${pageSize}`,
+    `${BASE_URL}/v1/quotes?page=${page}&limit=${pageSize}`,
     { headers: buildOpsHeaders(token, tenantId) }
   );
   if (!res.ok) {
@@ -319,7 +322,7 @@ export async function getServiceAgreements(
 ): Promise<BuildOpsServiceAgreement[]> {
   const token = await getToken(clientId, clientSecret);
   const res = await fetch(
-    `${BASE_URL}/v1/service-agreements?customer_id=${encodeURIComponent(customerId)}&page=0&page_size=50`,
+    `${BASE_URL}/v1/service-agreements?customer_id=${encodeURIComponent(customerId)}&page=1&limit=50`,
     { headers: buildOpsHeaders(token, tenantId) }
   );
   if (!res.ok) {

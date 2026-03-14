@@ -3483,7 +3483,7 @@ Respond with this JSON:
       const { getCustomers } = await import("./buildops");
 
       let allCustomers: any[] = [];
-      let page = 0;
+      let page = 1;
       while (true) {
         const batch = await getCustomers(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
         allCustomers = allCustomers.concat(batch.items ?? []);
@@ -3656,7 +3656,7 @@ Respond with this JSON:
       const { leads: leadsTable } = await import("@shared/schema");
 
       let allQuotes: any[] = [];
-      let page = 0;
+      let page = 1;
       while (true) {
         const batch = await getQuotes(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
         allQuotes = allQuotes.concat(batch.items);
