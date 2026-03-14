@@ -145,8 +145,10 @@ export default function Estimates() {
     },
   });
 
+  const clientFormSchema = insertEstimateSchema.omit({ createdBy: true });
+
   const form = useForm({
-    resolver: zodResolver(insertEstimateSchema),
+    resolver: zodResolver(clientFormSchema),
     defaultValues: {
       title: "",
       leadId: undefined as any,
@@ -159,6 +161,12 @@ export default function Estimates() {
       notes: "",
     },
   });
+
+  const selectedClientId = form.watch("clientId");
+
+  const filteredLeads = leads?.filter(
+    (lead) => !selectedClientId || lead.clientId === selectedClientId
+  );
 
   const getClientName = (clientId: number) => {
     return clients?.find(c => c.id === clientId)?.name || "Unknown Client";
@@ -317,7 +325,7 @@ export default function Estimates() {
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="none">None</SelectItem>
-                          {leads?.map((lead) => (
+                          {filteredLeads?.map((lead) => (
                             <SelectItem key={lead.id} value={lead.id.toString()}>
                               {lead.title}
                             </SelectItem>

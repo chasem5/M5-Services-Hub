@@ -4,8 +4,6 @@ import {
   Users, 
   CheckSquare, 
   FileText, 
-  BookOpen, 
-  ClipboardList, 
   Mic,
   ShieldCheck,
   Mail,
@@ -38,8 +36,6 @@ const ALL_NAV_ITEMS = [
   { title: "Tasks", icon: CheckSquare, url: "/tasks", module: "tasks" },
   { title: "Meetings", icon: Mic, url: "/meetings", module: "meetings" },
   { title: "Estimates", icon: FileText, url: "/estimates", module: "estimates" },
-  { title: "Service Catalog", icon: BookOpen, url: "/service-catalog", module: "service_catalog" },
-  { title: "Proposals", icon: ClipboardList, url: "/proposals", module: "proposals" },
   { title: "Email Sync", icon: Mail, url: "/email", module: "email_sync" },
   { title: "Announcements", icon: Megaphone, url: "/announcements", module: "announcements" },
 ];
@@ -96,7 +92,8 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {visibleNavItems.map((item) => {
-                const isActive = location === item.url;
+                const isActive = location === item.url || 
+                  (item.url === "/estimates" && (location === "/service-catalog" || location === "/proposals"));
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton 

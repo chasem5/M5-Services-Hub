@@ -10,10 +10,8 @@ import Leads from "@/pages/leads";
 import Customers from "@/pages/clients";
 import CustomerDetail from "@/pages/client-detail";
 import Tasks from "@/pages/tasks";
-import Estimates from "@/pages/estimates";
+import EstimatesHub from "@/pages/estimates-hub";
 import EstimateDetail from "@/pages/estimate-detail";
-import ServiceCatalog from "@/pages/service-catalog";
-import Proposals from "@/pages/proposals";
 import Settings from "@/pages/settings";
 import Meetings from "@/pages/meetings";
 import MeetingDetail from "@/pages/meeting-detail";
@@ -35,10 +33,10 @@ function ProtectedRouter() {
           <Route path="/tasks" component={Tasks} />
           <Route path="/meetings" component={Meetings} />
           <Route path="/meetings/:id" component={MeetingDetail} />
-          <Route path="/estimates" component={Estimates} />
+          <Route path="/estimates" component={EstimatesHub} />
           <Route path="/estimates/:id" component={EstimateDetail} />
-          <Route path="/service-catalog" component={ServiceCatalog} />
-          <Route path="/proposals" component={Proposals} />
+          <Route path="/service-catalog" component={EstimatesHub} />
+          <Route path="/proposals" component={EstimatesHub} />
           <Route path="/settings" component={Settings} />
           <Route path="/admin" component={AdminPage} />
           <Route path="/email" component={EmailSync} />
