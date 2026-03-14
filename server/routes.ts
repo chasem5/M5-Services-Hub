@@ -3452,7 +3452,7 @@ Respond with this JSON:
     return { clientId, clientSecret, tenantId };
   }
 
-  app.post("/api/buildops/test", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.post("/api/buildops/test", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.json({ ok: false, error: "Client ID, Client Secret, and Tenant ID not configured" });
@@ -3464,7 +3464,7 @@ Respond with this JSON:
     }
   });
 
-  app.get("/api/buildops/departments", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.get("/api/buildops/departments", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
@@ -3476,7 +3476,7 @@ Respond with this JSON:
     }
   });
 
-  app.post("/api/buildops/sync-pull", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.post("/api/buildops/sync-pull", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
@@ -3556,7 +3556,7 @@ Respond with this JSON:
     }
   });
 
-  app.post("/api/buildops/push-all", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.post("/api/buildops/push-all", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
@@ -3646,7 +3646,7 @@ Respond with this JSON:
     res.json(log);
   });
 
-  app.post("/api/buildops/sync-quotes", isAuthenticated, requireRole(["admin", "manager"]), async (req, res) => {
+  app.post("/api/buildops/sync-quotes", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
