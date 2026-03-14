@@ -18,12 +18,17 @@ async function getToken(clientId: string, clientSecret: string): Promise<string>
     body: JSON.stringify({ clientId, clientSecret }),
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? `Auth failed: HTTP ${res.status}`);
+    const rawText = await res.text().catch(() => "");
+    let parsed: any = {};
+    try { parsed = JSON.parse(rawText); } catch {}
+    const msg = parsed?.message ?? parsed?.error ?? rawText || `HTTP ${res.status}`;
+    throw new Error(`Auth failed (${res.status}): ${msg}`);
   }
   const data = await res.json();
   const token = data.access_token ?? data.token ?? data.accessToken;
-  if (!token) throw new Error("No token in BuildOps auth response");
+  if (!token) {
+    throw new Error(`No token in BuildOps auth response. Keys: ${Object.keys(data).join(", ")}`);
+  }
 
   tokenCache.set(cacheKey, { token, expiresAt: Date.now() + 55 * 60 * 1000 });
   return token;
@@ -109,10 +114,17 @@ export async function testConnection(
       headers: buildOpsHeaders(token, tenantId),
     });
     if (res.ok) return { ok: true };
-    const body = await res.json().catch(() => ({}));
-    return { ok: false, error: body.message ?? `HTTP ${res.status}` };
+    const rawText = await res.text().catch(() => "");
+    let parsed: any = {};
+    try { parsed = JSON.parse(rawText); } catch {}
+    const msg = parsed?.message ?? parsed?.error ?? rawText || `HTTP ${res.status}`;
+    const detail = `Customers call failed (${res.status}): ${msg}`;
+    console.error("[BuildOps]", detail, "| raw:", rawText.slice(0, 300));
+    return { ok: false, error: detail };
   } catch (err: any) {
-    return { ok: false, error: err.message ?? "Network error" };
+    const detail = err.message ?? "Network error";
+    console.error("[BuildOps] testConnection error:", detail);
+    return { ok: false, error: detail };
   }
 }
 
