@@ -37,7 +37,7 @@ async function getToken(clientId: string, clientSecret: string): Promise<string>
 function buildOpsHeaders(token: string, tenantId: string): Record<string, string> {
   return {
     Authorization: `Bearer ${token}`,
-    tenantId,
+    "tenant-id": tenantId,
     "Content-Type": "application/json",
     Accept: "application/json",
   };
