@@ -21,7 +21,7 @@ async function getToken(clientId: string, clientSecret: string): Promise<string>
     const rawText = await res.text().catch(() => "");
     let parsed: any = {};
     try { parsed = JSON.parse(rawText); } catch {}
-    const msg = parsed?.message ?? parsed?.error ?? rawText || `HTTP ${res.status}`;
+    const msg = parsed?.message ?? parsed?.error ?? (rawText || `HTTP ${res.status}`);
     throw new Error(`Auth failed (${res.status}): ${msg}`);
   }
   const data = await res.json();
@@ -117,7 +117,7 @@ export async function testConnection(
     const rawText = await res.text().catch(() => "");
     let parsed: any = {};
     try { parsed = JSON.parse(rawText); } catch {}
-    const msg = parsed?.message ?? parsed?.error ?? rawText || `HTTP ${res.status}`;
+    const msg = parsed?.message ?? parsed?.error ?? (rawText || `HTTP ${res.status}`);
     const detail = `Customers call failed (${res.status}): ${msg}`;
     console.error("[BuildOps]", detail, "| raw:", rawText.slice(0, 300));
     return { ok: false, error: detail };
