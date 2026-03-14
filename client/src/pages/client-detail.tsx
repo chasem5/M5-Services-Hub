@@ -372,6 +372,9 @@ function LinkedInSyncButton({
 
 function BuildOpsPushButton({ clientId, buildopsId }: { clientId: number; buildopsId?: string | null }) {
   const { toast } = useToast();
+  const { data: connVerified } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
+  const isVerified = connVerified?.value === "true";
+
   const pushMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/buildops/push-client/${clientId}`, {});
@@ -391,7 +394,8 @@ function BuildOpsPushButton({ clientId, buildopsId }: { clientId: number; buildo
       size="sm"
       className="h-6 text-xs gap-1 px-2"
       onClick={() => pushMutation.mutate()}
-      disabled={pushMutation.isPending}
+      disabled={pushMutation.isPending || !isVerified}
+      title={!isVerified ? "Verify BuildOps connection in Admin → BuildOps before syncing" : undefined}
       data-testid="button-buildops-push-client"
     >
       <Zap className="h-3 w-3" />

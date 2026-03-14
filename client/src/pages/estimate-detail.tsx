@@ -122,6 +122,9 @@ export default function EstimateDetail() {
     queryKey: ["/api/clients"],
   });
 
+  const { data: connVerified } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
+  const isBuildopsVerified = connVerified?.value === "true";
+
   const clientIdForBuilding = selectedClientIdForBuilding ?? estimate?.clientId ?? null;
   const { data: buildingsForClient = [] } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/clients", clientIdForBuilding, "all-buildings"],
@@ -348,7 +351,8 @@ export default function EstimateDetail() {
             variant="outline"
             size="sm"
             onClick={() => pushBuildopsMutation.mutate()}
-            disabled={pushBuildopsMutation.isPending}
+            disabled={pushBuildopsMutation.isPending || !isBuildopsVerified}
+            title={!isBuildopsVerified ? "Verify BuildOps connection in Admin → BuildOps before syncing" : undefined}
             data-testid="button-push-buildops-estimate"
             className="gap-1.5"
           >

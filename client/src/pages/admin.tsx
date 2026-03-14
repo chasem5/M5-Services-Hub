@@ -130,6 +130,7 @@ function BuildOpsPanel() {
   const { data: storedClientId } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsClientId"] });
   const { data: storedTenantId } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsTenantId"] });
   const { data: storedDeptId } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsDefaultDepartmentId"] });
+  const { data: storedVerified } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
   const { data: lastSync } = useQuery<{ createdAt: string; message: string; action: string } | null>({ queryKey: ["/api/buildops/last-sync"] });
   const { data: departments } = useQuery<{ id: string; name: string }[]>({
     queryKey: ["/api/buildops/departments"],
@@ -139,6 +140,7 @@ function BuildOpsPanel() {
   useEffect(() => { if (storedClientId?.value) setClientId(storedClientId.value); }, [storedClientId]);
   useEffect(() => { if (storedTenantId?.value) setTenantId(storedTenantId.value); }, [storedTenantId]);
   useEffect(() => { if (storedDeptId?.value) setSelectedDeptId(storedDeptId.value); }, [storedDeptId]);
+  useEffect(() => { if (storedVerified?.value === "true") setConnStatus("ok"); }, [storedVerified]);
 
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
@@ -146,12 +148,16 @@ function BuildOpsPanel() {
       if (clientSecret) await apiRequest("PUT", "/api/settings/buildopsClientSecret", { value: clientSecret });
       await apiRequest("PUT", "/api/settings/buildopsTenantId", { value: tenantId });
       if (selectedDeptId) await apiRequest("PUT", "/api/settings/buildopsDefaultDepartmentId", { value: selectedDeptId });
+      await apiRequest("PUT", "/api/settings/buildopsConnectionVerified", { value: "false" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsClientId"] });
       queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsTenantId"] });
       queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsDefaultDepartmentId"] });
-      toast({ title: "Settings saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
+      setConnStatus("idle");
+      setConnError(null);
+      toast({ title: "Settings saved", description: "Run Test Connection to re-verify before syncing." });
     },
     onError: () => toast({ title: "Failed to save", variant: "destructive" }),
   });
@@ -161,17 +167,26 @@ function BuildOpsPanel() {
       const res = await apiRequest("POST", "/api/buildops/test", {});
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.ok) {
         setConnStatus("ok");
         setConnError(null);
+        await apiRequest("PUT", "/api/settings/buildopsConnectionVerified", { value: "true" });
+        queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
         queryClient.invalidateQueries({ queryKey: ["/api/buildops/departments"] });
       } else {
         setConnStatus("error");
         setConnError(data.error ?? "Connection failed");
+        await apiRequest("PUT", "/api/settings/buildopsConnectionVerified", { value: "false" });
+        queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
       }
     },
-    onError: (err: any) => { setConnStatus("error"); setConnError(err.message); },
+    onError: async (err: any) => {
+      setConnStatus("error");
+      setConnError(err.message);
+      await apiRequest("PUT", "/api/settings/buildopsConnectionVerified", { value: "false" });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
+    },
   });
 
   const syncPullMutation = useMutation({
@@ -328,6 +343,12 @@ function BuildOpsPanel() {
           </div>
         </CardHeader>
         <CardContent className="p-6 space-y-4">
+          {connStatus !== "ok" && (
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              Sync is locked until the connection is verified. Save credentials and click "Test Connection" above.
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="border rounded-lg p-4 space-y-2">
               <h4 className="text-sm font-medium flex items-center gap-2">
@@ -340,7 +361,7 @@ function BuildOpsPanel() {
                 size="sm"
                 className="w-full mt-2"
                 onClick={() => syncPullMutation.mutate()}
-                disabled={syncPullMutation.isPending}
+                disabled={syncPullMutation.isPending || connStatus !== "ok"}
                 data-testid="button-buildops-sync-pull"
               >
                 {syncPullMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
@@ -358,7 +379,7 @@ function BuildOpsPanel() {
                 size="sm"
                 className="w-full mt-2"
                 onClick={() => pushAllMutation.mutate()}
-                disabled={pushAllMutation.isPending}
+                disabled={pushAllMutation.isPending || connStatus !== "ok"}
                 data-testid="button-buildops-push-all"
               >
                 {pushAllMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
