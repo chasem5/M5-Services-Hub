@@ -217,6 +217,19 @@ function BuildOpsPanel() {
     onError: (err: any) => toast({ title: "Push failed", description: err.message, variant: "destructive" }),
   });
 
+  const syncPropertiesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/sync-properties", {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
+      toast({ title: "Properties synced", description: `${data.total} properties: ${data.created} created, ${data.updated} updated` });
+    },
+    onError: (err: any) => toast({ title: "Property sync failed", description: err.message, variant: "destructive" }),
+  });
+
   return (
     <div className="space-y-6">
       <Card className="border-none shadow-sm bg-card">
@@ -349,13 +362,13 @@ function BuildOpsPanel() {
               Sync is locked until the connection is verified. Save credentials and click "Test Connection" above.
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="border rounded-lg p-4 space-y-2">
               <h4 className="text-sm font-medium flex items-center gap-2">
                 <RefreshCw className="h-4 w-4 text-primary" />
-                Pull from BuildOps
+                Pull Customers
               </h4>
-              <p className="text-xs text-muted-foreground">Import BuildOps customers into M5 CRM. Matches by BuildOps ID or name/email. Creates new customer records for unmatched entries.</p>
+              <p className="text-xs text-muted-foreground">Import BuildOps customers into M5 CRM. Matches by BuildOps ID or name/email.</p>
               <Button
                 variant="outline"
                 size="sm"
@@ -365,7 +378,25 @@ function BuildOpsPanel() {
                 data-testid="button-buildops-sync-pull"
               >
                 {syncPullMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-                {syncPullMutation.isPending ? "Syncing..." : "Sync from BuildOps"}
+                {syncPullMutation.isPending ? "Syncing..." : "Sync Customers"}
+              </Button>
+            </div>
+            <div className="border rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" />
+                Sync Properties
+              </h4>
+              <p className="text-xs text-muted-foreground">Pull BuildOps properties into CRM buildings. Links each property to its customer for quote matching.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => syncPropertiesMutation.mutate()}
+                disabled={syncPropertiesMutation.isPending || connStatus !== "ok"}
+                data-testid="button-buildops-sync-properties"
+              >
+                {syncPropertiesMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Building2 className="h-3.5 w-3.5 mr-1.5" />}
+                {syncPropertiesMutation.isPending ? "Syncing..." : "Sync Properties"}
               </Button>
             </div>
             <div className="border rounded-lg p-4 space-y-2">
@@ -373,7 +404,7 @@ function BuildOpsPanel() {
                 <Upload className="h-4 w-4 text-primary" />
                 Push to BuildOps
               </h4>
-              <p className="text-xs text-muted-foreground">Push M5 customers that haven't been synced yet to BuildOps. Creates new customers in BuildOps for each unlinked M5 customer.</p>
+              <p className="text-xs text-muted-foreground">Push M5 customers that haven't been synced yet to BuildOps as new records.</p>
               <Button
                 variant="outline"
                 size="sm"
@@ -383,7 +414,7 @@ function BuildOpsPanel() {
                 data-testid="button-buildops-push-all"
               >
                 {pushAllMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
-                {pushAllMutation.isPending ? "Pushing..." : "Push All to BuildOps"}
+                {pushAllMutation.isPending ? "Pushing..." : "Push Customers"}
               </Button>
             </div>
           </div>
@@ -901,7 +932,7 @@ const QUOTE_FIELD_MAP: Record<string, FieldMapping> = {
   scopeOfWork:               { crmField: "", status: "unmapped" },
   issueDescription:          { crmField: "", status: "unmapped" },
   description:               { crmField: "", status: "unmapped" },
-  propertyId:                { crmField: "", status: "unmapped", note: "Could map to building" },
+  propertyId:                { crmField: "leads.buildopsPropertyId → contactBuildings", status: "mapped", note: "Property match tier" },
   dueDate:                   { crmField: "", status: "unmapped" },
   expirationDate:            { crmField: "", status: "unmapped" },
   expirationLength:          { crmField: "", status: "unmapped" },

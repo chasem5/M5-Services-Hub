@@ -65,11 +65,14 @@ Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `co
 
 - `server/buildops.ts` — BuildOps API service layer; base URL `https://public-api.live.buildops.com`
 - **Auth**: Client credentials flow — POST `/v1/auth/token` with `clientId` + `clientSecret`; token cached 55min in-memory; `tenantId` sent as request header
-- Functions: `testConnection`, `getCustomers`, `getCustomerById`, `createCustomer`, `updateCustomer`, `mapClientToCustomer`, `getDepartments`, `createQuote`, `getServiceAgreements`
+- Functions: `testConnection`, `getCustomers`, `getCustomerById`, `createCustomer`, `updateCustomer`, `mapClientToCustomer`, `getDepartments`, `createQuote`, `getProperties`, `getServiceAgreements`
 - Credentials stored in `app_settings` as `buildopsClientId` + `buildopsClientSecret` + `buildopsTenantId` + `buildopsDefaultDepartmentId`
-- Routes: `POST /api/buildops/test`, `GET /api/buildops/departments`, `POST /api/buildops/sync-pull`, `POST /api/buildops/push-client/:id`, `POST /api/buildops/push-all`, `POST /api/buildops/push-estimate/:estimateId`, `GET /api/clients/:id/buildops-agreements`, `GET /api/buildops/last-sync`
+- Routes: `POST /api/buildops/test`, `GET /api/buildops/departments`, `POST /api/buildops/sync-pull`, `POST /api/buildops/sync-properties`, `POST /api/buildops/sync-quotes`, `POST /api/buildops/push-client/:id`, `POST /api/buildops/push-all`, `POST /api/buildops/push-estimate/:estimateId`, `GET /api/clients/:id/buildops-agreements`, `GET /api/buildops/last-sync`, `GET /api/buildops/audit-data`
 - `clients.buildopsId` — BuildOps customer UUID; `estimates.buildopsQuoteId` — BuildOps quote UUID (set after push)
-- `buildops_sync_log` table — audit trail of all pull/push operations (`entityType` can be `client` or `estimate`)
+- `contact_buildings.buildopsId` — BuildOps property/location UUID; used for property→client matching in quote sync
+- `leads.buildopsPropertyId` — BuildOps property UUID; set when a quote's client was resolved via property→client lookup
+- `buildops_sync_log` table — audit trail of all pull/push operations (`entityType` can be `client`, `estimate`, `property`, or `lead`)
+- **Quote sync matching tiers** (in order): 1) `billingCustomerId` UUID → `clients.buildopsId`, 2) `billTo` text → fuzzy client name match, 3) `propertyId` → `contact_buildings.buildopsId` → `contact_buildings.clientId` (zero API calls, DB lookup only)
 - **Auto-trigger**: When pushing an estimate to BuildOps, if the client has no `buildopsId`, the system auto-creates a BuildOps customer first, then pushes the quote. Any associated leads in the relationship track are auto-advanced to `proposal_sent` (deal track).
 - Admin → BuildOps tab: Client ID + Client Secret (masked) + Tenant ID; Test Connection; Default Department dropdown (loads after successful test); pull/push sync controls
 - Client detail: BuildOpsIcon tooltip badge when synced; "BuildOps Linked" badge (replaced manual push button); BuildOps Service Agreements section on overview tab (loads when client has `buildopsId`)

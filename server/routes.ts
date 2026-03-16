@@ -4048,6 +4048,78 @@ Respond with this JSON:
     }
   });
 
+  // ── Sync Properties (Locations) from BuildOps → CRM buildings ────────────
+  app.post("/api/buildops/sync-properties", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getProperties } = await import("./buildops");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { contactBuildings } = await import("@shared/schema");
+
+      let allProperties: any[] = [];
+      let page = 1;
+      while (true) {
+        const batch = await getProperties(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
+        allProperties = allProperties.concat(batch.items);
+        if (allProperties.length >= batch.totalCount || batch.items.length === 0) break;
+        page++;
+      }
+
+      const allClients = await storage.listClients();
+      const existingBuildings = await db.select().from(contactBuildings);
+
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      for (const prop of allProperties) {
+        if (!prop.id) { skipped++; continue; }
+
+        const matchedClient = prop.customerId
+          ? allClients.find(c => c.buildopsId === prop.customerId) ?? null
+          : null;
+
+        const addressParts = [prop.street1, prop.street2, prop.city, prop.state, prop.zipCode].filter(Boolean);
+        const address = addressParts.length > 0 ? addressParts.join(", ") : null;
+        const name = prop.name || address || `Property ${prop.id.slice(0, 8)}`;
+
+        const existing = existingBuildings.find(b => b.buildopsId === prop.id);
+
+        if (existing) {
+          await db.update(contactBuildings).set({
+            clientId: matchedClient?.id ?? existing.clientId,
+            name,
+            address: address ?? existing.address,
+          }).where(eq(contactBuildings.id, existing.id));
+          updated++;
+        } else {
+          await db.insert(contactBuildings).values({
+            buildopsId: prop.id,
+            clientId: matchedClient?.id ?? null,
+            name,
+            address,
+          });
+          created++;
+        }
+      }
+
+      await storage.createBuildopsSyncLog({
+        entityType: "property",
+        action: "pull",
+        message: `Synced ${allProperties.length} properties: ${created} created, ${updated} updated, ${skipped} skipped`,
+      });
+
+      console.log(`[BuildOps sync-properties] Done: ${created} created, ${updated} updated, ${skipped} skipped out of ${allProperties.length}`);
+      res.json({ ok: true, created, updated, skipped, total: allProperties.length });
+    } catch (err: any) {
+      console.error("[BuildOps sync-properties] Error:", err.message);
+      await storage.createBuildopsSyncLog({ entityType: "property", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/buildops/sync-quotes", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
@@ -4055,7 +4127,7 @@ Respond with this JSON:
       const { getQuotes } = await import("./buildops");
       const { db } = await import("./db");
       const { eq } = await import("drizzle-orm");
-      const { leads: leadsTable } = await import("@shared/schema");
+      const { leads: leadsTable, contactBuildings } = await import("@shared/schema");
 
       let allQuotes: any[] = [];
       let page = 1;
@@ -4066,36 +4138,27 @@ Respond with this JSON:
         page++;
       }
 
-      // Log raw field names from first quote to help diagnose field mapping issues
-      if (allQuotes.length > 0) {
-        console.log("[BuildOps sync-quotes] First quote raw keys:", Object.keys(allQuotes[0]));
-        console.log("[BuildOps sync-quotes] First quote sample:", JSON.stringify(allQuotes[0]).slice(0, 500));
-      }
-
-      // Helper: extract total from quote — BuildOps may use different field names
       const extractTotal = (q: any): string | null => {
         const raw = q.totalAmount ?? q.total ?? q.amount ?? q.grandTotal ?? q.quoteTotal ?? q.priceTotal ?? q.subtotal;
         return raw != null && raw !== "" ? String(raw) : null;
       };
 
-      // Helper: normalize status to lowercase
       const normalizeStatus = (s: any): string | null =>
         s != null ? String(s).toLowerCase().replace(/\s+/g, "") : null;
 
       const allClients = await storage.listClients();
       const allLeads = await db.select().from(leadsTable);
+      const allBuildings = await db.select().from(contactBuildings);
       let created = 0;
       let updated = 0;
+      let matchedViaProperty = 0;
 
-      // Helper: normalize name for fuzzy match
       const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
       for (const quote of allQuotes) {
         const customerId = quote.billingCustomerId ?? quote.customerId ?? (quote as any).customer?.id;
         let matchedClient = customerId ? allClients.find(c => c.buildopsId === customerId) : null;
 
-        // Fallback: if no UUID match, try to match by company name from billTo text field
-        // billTo format: "Company Name,\nAddress line 1, ..."
         if (!matchedClient) {
           const billToRaw: string | undefined = (quote as any).billTo;
           if (billToRaw) {
@@ -4109,24 +4172,23 @@ Respond with this JSON:
             }
           }
         }
+
+        let resolvedPropertyId: string | null = null;
+        if (!matchedClient && quote.propertyId) {
+          const building = allBuildings.find(b => b.buildopsId === quote.propertyId);
+          if (building?.clientId) {
+            matchedClient = allClients.find(c => c.id === building.clientId) ?? null;
+            if (matchedClient) {
+              resolvedPropertyId = quote.propertyId;
+              matchedViaProperty++;
+              console.log(`[BuildOps sync-quotes] Property match: quote #${quote.quoteNumber} → property ${quote.propertyId} → client ${matchedClient.id} (${matchedClient.name})`);
+            }
+          }
+        }
+
         const quoteTitle = quote.name ?? (quote.quoteNumber ? `Quote #${quote.quoteNumber}` : `BuildOps Quote ${quote.id}`);
         const total = extractTotal(quote);
         const status = normalizeStatus(quote.status);
-
-        // Targeted debug: log customer fields for quote 2074 (Enterprise Mobility)
-        if (quote.quoteNumber === 2074 || quote.id === "d3792341-d208-4a81-991f-1212d4aa06fd") {
-          const debugPayload = {
-            billingCustomerId: (quote as any).billingCustomerId,
-            customerId: (quote as any).customerId,
-            customerNested: (quote as any).customer,
-            allKeys: Object.keys(quote),
-            resolvedId: customerId,
-            matchedClient: matchedClient ? { id: matchedClient.id, name: matchedClient.name } : null,
-          };
-          console.log("[BuildOps sync-quotes] Quote 2074 customer fields:", debugPayload);
-          const fs = await import("fs");
-          fs.writeFileSync("/tmp/buildops_quote_2074_debug.json", JSON.stringify({ quote, debugPayload }, null, 2));
-        }
 
         const existingLead = allLeads.find((l: any) => l.buildopsQuoteId === quote.id);
 
@@ -4139,10 +4201,12 @@ Respond with this JSON:
             value: total ?? existingLead.value,
             updatedAt: new Date(),
           };
-          // Re-match client if not yet linked but we now have a match
           if (!existingLead.clientId && matchedClient) {
             updateFields.clientId = matchedClient.id;
             console.log(`[BuildOps sync-quotes] Re-linked lead ${existingLead.id} (quote #${quote.quoteNumber}) → client ${matchedClient.id} (${matchedClient.name})`);
+          }
+          if (resolvedPropertyId) {
+            updateFields.buildopsPropertyId = resolvedPropertyId;
           }
           await db.update(leadsTable).set(updateFields).where(eq(leadsTable.id, existingLead.id));
           updated++;
@@ -4155,6 +4219,7 @@ Respond with this JSON:
             buildopsQuoteStatus: status,
             buildopsQuoteNumber: quote.quoteNumber ? String(quote.quoteNumber) : null,
             buildopsQuoteTotal: total,
+            buildopsPropertyId: resolvedPropertyId,
             value: total ?? "0",
             contractType: "one_time",
             createdAt: new Date(),
@@ -4165,7 +4230,7 @@ Respond with this JSON:
         }
       }
 
-      res.json({ ok: true, created, updated, total: allQuotes.length });
+      res.json({ ok: true, created, updated, matchedViaProperty, total: allQuotes.length });
     } catch (err: any) {
       await storage.createBuildopsSyncLog({ entityType: "lead", action: "error", message: err.message });
       res.status(500).json({ message: err.message });

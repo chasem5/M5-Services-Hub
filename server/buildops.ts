@@ -313,6 +313,40 @@ export async function createQuote(
   return res.json();
 }
 
+// ── Properties / Locations ───────────────────────────────────────────────────
+
+export interface BuildOpsProperty {
+  id: string;
+  name?: string;
+  customerId?: string;
+  street1?: string;
+  street2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
+}
+
+export async function getProperties(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  page = 1,
+  pageSize = 100
+): Promise<{ items: BuildOpsProperty[]; totalCount: number }> {
+  const token = await getToken(clientId, clientSecret);
+  const res = await fetch(
+    `${BASE_URL}/v1/locations?page=${page}&limit=${pageSize}`,
+    { headers: buildOpsHeaders(token, tenantId) }
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return { items: data.items ?? data ?? [], totalCount: data.totalCount ?? (data.items ?? data ?? []).length };
+}
+
 // ── Service Agreements ────────────────────────────────────────────────────────
 
 export async function getServiceAgreements(
