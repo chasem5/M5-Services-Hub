@@ -3986,6 +3986,22 @@ Respond with this JSON:
     }
   });
 
+  // Temporary debug: inspect raw quote data from BuildOps
+  app.get("/api/buildops/debug-quote/:quoteId", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getQuoteById } = await import("./buildops");
+      const raw = await getQuoteById(creds.clientId, creds.clientSecret, creds.tenantId, req.params.quoteId);
+      const fs = await import("fs");
+      fs.writeFileSync("/tmp/buildops_quote_debug.json", JSON.stringify(raw, null, 2));
+      console.log("[BuildOps debug-quote] Written to /tmp/buildops_quote_debug.json");
+      res.json({ keys: Object.keys(raw), raw });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/buildops/sync-quotes", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
@@ -4025,22 +4041,45 @@ Respond with this JSON:
       let created = 0;
       let updated = 0;
 
+      // Helper: normalize name for fuzzy match
+      const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
       for (const quote of allQuotes) {
         const customerId = quote.billingCustomerId ?? quote.customerId ?? (quote as any).customer?.id;
-        const matchedClient = customerId ? allClients.find(c => c.buildopsId === customerId) : null;
+        let matchedClient = customerId ? allClients.find(c => c.buildopsId === customerId) : null;
+
+        // Fallback: if no UUID match, try to match by company name from billTo text field
+        // billTo format: "Company Name,\nAddress line 1, ..."
+        if (!matchedClient) {
+          const billToRaw: string | undefined = (quote as any).billTo;
+          if (billToRaw) {
+            const billToName = billToRaw.split(/[\n,]/)[0].trim();
+            if (billToName) {
+              const normBillTo = normName(billToName);
+              matchedClient = allClients.find(c => {
+                const normClient = normName(c.name);
+                return normClient === normBillTo || normClient.includes(normBillTo) || normBillTo.includes(normClient);
+              }) ?? null;
+            }
+          }
+        }
         const quoteTitle = quote.name ?? (quote.quoteNumber ? `Quote #${quote.quoteNumber}` : `BuildOps Quote ${quote.id}`);
         const total = extractTotal(quote);
         const status = normalizeStatus(quote.status);
 
         // Targeted debug: log customer fields for quote 2074 (Enterprise Mobility)
         if (quote.quoteNumber === 2074 || quote.id === "d3792341-d208-4a81-991f-1212d4aa06fd") {
-          console.log("[BuildOps sync-quotes] Quote 2074 customer fields:", {
+          const debugPayload = {
             billingCustomerId: (quote as any).billingCustomerId,
             customerId: (quote as any).customerId,
             customerNested: (quote as any).customer,
+            allKeys: Object.keys(quote),
             resolvedId: customerId,
             matchedClient: matchedClient ? { id: matchedClient.id, name: matchedClient.name } : null,
-          });
+          };
+          console.log("[BuildOps sync-quotes] Quote 2074 customer fields:", debugPayload);
+          const fs = await import("fs");
+          fs.writeFileSync("/tmp/buildops_quote_2074_debug.json", JSON.stringify({ quote, debugPayload }, null, 2));
         }
 
         const existingLead = allLeads.find((l: any) => l.buildopsQuoteId === quote.id);
