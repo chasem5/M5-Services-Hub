@@ -79,7 +79,7 @@ export const contactBuildings = pgTable("contact_buildings", {
   id: serial("id").primaryKey(),
   contactId: integer("contact_id").references(() => clientContacts.id),
   clientId: integer("client_id").references(() => clients.id),
-  buildopsId: varchar("buildops_id"),
+  buildopsId: varchar("buildops_id").unique(),
   name: varchar("name"),
   address: text("address"),
   lat: decimal("lat", { precision: 10, scale: 7 }),
