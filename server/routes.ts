@@ -4082,7 +4082,14 @@ Respond with this JSON:
           : null;
 
         const addressParts = [prop.street1, prop.street2, prop.city, prop.state, prop.zipCode].filter(Boolean);
-        const address = addressParts.length > 0 ? addressParts.join(", ") : null;
+        let address = addressParts.length > 0 ? addressParts.join(", ") : null;
+        if (!address && typeof prop.address === "string" && prop.address.trim()) {
+          address = prop.address.trim();
+        } else if (!address && prop.address && typeof prop.address === "object") {
+          const a = prop.address as any;
+          const parts2 = [a.street1 ?? a.street, a.street2, a.city, a.state, a.zipCode ?? a.zip].filter(Boolean);
+          if (parts2.length > 0) address = parts2.join(", ");
+        }
         const name = prop.name || address || `Property ${prop.id.slice(0, 8)}`;
 
         const existing = existingBuildings.find(b => b.buildopsId === prop.id);

@@ -1117,7 +1117,8 @@ export default function Leads() {
     mutationFn: () => apiRequest("POST", "/api/buildops/sync-quotes", {}).then(r => r.json()),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-      toast({ title: "BuildOps sync complete", description: `${data.created} created, ${data.updated} updated (${data.total} total)` });
+      const propMsg = data.matchedViaProperty ? `, ${data.matchedViaProperty} matched via property` : "";
+      toast({ title: "BuildOps sync complete", description: `${data.created} created, ${data.updated} updated${propMsg} (${data.total} total)` });
     },
     onError: (err: any) => {
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
