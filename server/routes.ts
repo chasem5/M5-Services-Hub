@@ -13,7 +13,8 @@ import {
   insertClientOfficeSchema,
   insertClientContactSchema,
   insertContactBuildingSchema,
-  insertLeadSchema, 
+  insertLeadSchema,
+  type InsertLead,
   insertTaskSchema, 
   insertReminderSchema, 
   insertServiceCatalogSchema, 
@@ -1163,8 +1164,26 @@ Do not include any other text, just the JSON.`,
   app.patch("/api/leads/:id/stage", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     const { stage } = z.object({ stage: z.string() }).parse(req.body);
-    const lead = await storage.updateLeadStage(id, stage);
-    await logActivity(req, "lead", lead.id, "stage_updated", { stage });
+
+    const currentLead = await storage.getLead(id);
+    if (!currentLead) return res.status(404).json({ message: "Lead not found" });
+
+    const pStages = await storage.listPipelineStages();
+    const stageMap = new Map(pStages.map(s => [s.slug, s]));
+    const currentStageObj = stageMap.get(currentLead.stage);
+    const targetStageObj = stageMap.get(stage);
+
+    let finalStage = stage;
+    if (currentStageObj?.track === "relationship" && targetStageObj?.track === "deal" && stage !== "proposal_sent") {
+      finalStage = "proposal_sent";
+    }
+
+    const lead = await storage.updateLeadStage(id, finalStage);
+    if (finalStage !== stage) {
+      await logActivity(req, "lead", lead.id, "stage_updated", { from: currentLead.stage, to: finalStage, reason: "Auto-normalized: relationship to deal track must pass through Proposal Sent" });
+    } else {
+      await logActivity(req, "lead", lead.id, "stage_updated", { stage: finalStage });
+    }
     res.json(lead);
   });
 
@@ -1739,6 +1758,76 @@ Respond ONLY with JSON — no markdown:
     const estimateData = insertEstimateSchema.parse({ ...req.body, createdBy: userId });
     const estimate = await storage.createEstimate(estimateData);
     await logActivity(req, "estimate", estimate.id, "created");
+
+    try {
+      const creds = await getBuildOpsCreds();
+      const defaultDeptId = creds ? await storage.getAppSetting("buildopsDefaultDepartmentId") : null;
+      if (creds && defaultDeptId) {
+        const client = await storage.getClient(estimate.clientId);
+        if (client) {
+          const { createQuote, createCustomer, mapClientToCustomer } = await import("./buildops");
+
+          let billingCustomerId = client.buildopsId;
+          if (!billingCustomerId) {
+            const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone });
+            const buildopsCustomer = await createCustomer(creds.clientId, creds.clientSecret, creds.tenantId, payload);
+            billingCustomerId = buildopsCustomer.id;
+            await storage.updateClient(client.id, { buildopsId: buildopsCustomer.id });
+            await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: buildopsCustomer.id, action: "push", message: "Auto-created BuildOps customer on estimate creation" });
+            await logActivity(req, "client", client.id, "buildops_customer_created", { buildopsId: buildopsCustomer.id });
+          }
+
+          const lineItems = await storage.listEstimateLineItems(estimate.id);
+          const quote = await createQuote(creds.clientId, creds.clientSecret, creds.tenantId, {
+            departmentId: defaultDeptId,
+            name: estimate.title,
+            scopeOfWork: estimate.notes ?? undefined,
+            billingCustomerId: billingCustomerId ?? undefined,
+            items: lineItems.map(li => ({
+              description: li.description,
+              quantity: parseFloat(li.quantity),
+              unitPrice: parseFloat(li.unitPrice),
+            })),
+          });
+
+          await storage.updateEstimate(estimate.id, { buildopsQuoteId: quote.id });
+          await storage.createBuildopsSyncLog({ entityType: "estimate", entityId: estimate.id, buildopsId: quote.id, action: "push", message: `Quote #${quote.quoteNumber ?? quote.id} auto-created in BuildOps` });
+
+          let targetLead = estimate.leadId ? await storage.getLead(estimate.leadId) : null;
+          if (!targetLead) {
+            const allLeads = await storage.listLeads();
+            const pStages = await storage.listPipelineStages();
+            const relationshipSlugs = pStages.filter(s => s.track === "relationship").map(s => s.slug);
+            const candidates = allLeads
+              .filter(l => l.clientId === estimate.clientId && relationshipSlugs.includes(l.stage))
+              .sort((a, b) => new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime());
+            targetLead = candidates[0] ?? null;
+          }
+          if (targetLead) {
+            const pStages = await storage.listPipelineStages();
+            const relationshipSlugs = pStages.filter(s => s.track === "relationship").map(s => s.slug);
+            const quoteMetadata: Partial<InsertLead> = {
+              buildopsQuoteId: quote.id,
+              buildopsQuoteStatus: quote.status ?? "draft",
+              buildopsQuoteNumber: quote.quoteNumber?.toString() ?? null,
+              buildopsQuoteTotal: quote.totalAmount?.toString() ?? estimate.total,
+            };
+            if (relationshipSlugs.includes(targetLead.stage)) {
+              await storage.updateLeadStage(targetLead.id, "proposal_sent");
+              await logActivity(req, "lead", targetLead.id, "stage_updated", { from: targetLead.stage, to: "proposal_sent", reason: "Auto-advanced on estimate creation" });
+            }
+            await storage.updateLead(targetLead.id, quoteMetadata);
+          }
+
+          const updatedEstimate = await storage.getEstimate(estimate.id);
+          return res.json(updatedEstimate ?? estimate);
+        }
+      }
+    } catch (buildopsErr: any) {
+      console.error("[BuildOps auto-push on estimate creation]", buildopsErr.message);
+      return res.json({ ...estimate, buildopsWarning: `BuildOps auto-sync failed: ${buildopsErr.message}` });
+    }
+
     res.json(estimate);
   });
 
@@ -1829,7 +1918,15 @@ Respond ONLY with JSON — no markdown:
   app.get("/api/activity-logs", isAuthenticated, async (req, res) => {
     const entityType = req.query.entityType as string;
     const entityId = req.query.entityId ? parseInt(req.query.entityId as string) : undefined;
-    const logs = await storage.listActivityLogs(entityType, entityId);
+    let logs = await storage.listActivityLogs(entityType, entityId);
+
+    if (entityType === "client" && entityId) {
+      const client = await storage.getClient(entityId);
+      if (!client?.buildopsId) {
+        logs = logs.filter(l => !l.action.startsWith("buildops_"));
+      }
+    }
+
     res.json(logs);
   });
 
@@ -3496,11 +3593,11 @@ Respond with this JSON:
       let updated = 0;
 
       for (const customer of allCustomers) {
+        const boName = (customer.name || "").toLowerCase().trim();
+        const boEmail = (customer.email || "").toLowerCase().trim();
         const existing = allClients.find(c => c.buildopsId === customer.id) ||
-          allClients.find(c =>
-            c.name.toLowerCase().trim() === (customer.name || "").toLowerCase().trim() &&
-            (c.email === customer.email || !customer.email)
-          );
+          (boEmail ? allClients.find(c => c.email && c.email.toLowerCase().trim() === boEmail && !c.buildopsId) : null) ||
+          allClients.find(c => c.name.toLowerCase().trim() === boName && !c.buildopsId);
 
         if (existing) {
           if (!existing.buildopsId) {
@@ -3595,17 +3692,30 @@ Respond with this JSON:
       if (!estimate) return res.status(404).json({ message: "Estimate not found" });
 
       const client = await storage.getClient(estimate.clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+
       const lineItems = await storage.listEstimateLineItems(estimateId);
       const defaultDeptId = await storage.getAppSetting("buildopsDefaultDepartmentId");
 
       if (!defaultDeptId) return res.status(400).json({ message: "No default department configured in BuildOps settings" });
 
-      const { createQuote } = await import("./buildops");
+      const { createQuote, createCustomer, mapClientToCustomer } = await import("./buildops");
+
+      let billingCustomerId = client.buildopsId;
+      if (!billingCustomerId) {
+        const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone });
+        const buildopsCustomer = await createCustomer(creds.clientId, creds.clientSecret, creds.tenantId, payload);
+        billingCustomerId = buildopsCustomer.id;
+        await storage.updateClient(client.id, { buildopsId: buildopsCustomer.id });
+        await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: buildopsCustomer.id, action: "push", message: "Auto-created BuildOps customer on first estimate push" });
+        await logActivity(req, "client", client.id, "buildops_customer_created", { buildopsId: buildopsCustomer.id });
+      }
+
       const quote = await createQuote(creds.clientId, creds.clientSecret, creds.tenantId, {
         departmentId: defaultDeptId,
         name: estimate.title,
         scopeOfWork: estimate.notes ?? undefined,
-        billingCustomerId: client?.buildopsId ?? undefined,
+        billingCustomerId: billingCustomerId ?? undefined,
         items: lineItems.map(li => ({
           description: li.description,
           quantity: parseFloat(li.quantity),
@@ -3613,8 +3723,34 @@ Respond with this JSON:
         })),
       });
 
-      await storage.updateEstimate(estimateId, { buildopsQuoteId: quote.id } as any);
+      await storage.updateEstimate(estimateId, { buildopsQuoteId: quote.id });
       await storage.createBuildopsSyncLog({ entityType: "estimate", entityId: estimateId, buildopsId: quote.id, action: "push", message: `Quote #${quote.quoteNumber ?? quote.id} created in BuildOps` });
+
+      let targetLead = estimate.leadId ? await storage.getLead(estimate.leadId) : null;
+      if (!targetLead) {
+        const allLeads = await storage.listLeads();
+        const pStages = await storage.listPipelineStages();
+        const relationshipSlugs = pStages.filter(s => s.track === "relationship").map(s => s.slug);
+        const candidates = allLeads
+          .filter(l => l.clientId === estimate.clientId && relationshipSlugs.includes(l.stage))
+          .sort((a, b) => new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime());
+        targetLead = candidates[0] ?? null;
+      }
+      if (targetLead) {
+        const pStages = await storage.listPipelineStages();
+        const relationshipSlugs = pStages.filter(s => s.track === "relationship").map(s => s.slug);
+        const quoteMetadata: Partial<InsertLead> = {
+          buildopsQuoteId: quote.id,
+          buildopsQuoteStatus: quote.status ?? "draft",
+          buildopsQuoteNumber: quote.quoteNumber?.toString() ?? null,
+          buildopsQuoteTotal: quote.totalAmount?.toString() ?? estimate.total,
+        };
+        if (relationshipSlugs.includes(targetLead.stage)) {
+          await storage.updateLeadStage(targetLead.id, "proposal_sent");
+          await logActivity(req, "lead", targetLead.id, "stage_updated", { from: targetLead.stage, to: "proposal_sent", reason: "Auto-advanced on first estimate push to BuildOps" });
+        }
+        await storage.updateLead(targetLead.id, quoteMetadata);
+      }
 
       res.json({ ok: true, buildopsQuoteId: quote.id, quoteNumber: quote.quoteNumber });
     } catch (err: any) {
@@ -3644,6 +3780,210 @@ Respond with this JSON:
   app.get("/api/buildops/last-sync", isAuthenticated, async (req, res) => {
     const log = await storage.getLastBuildopsSync();
     res.json(log);
+  });
+
+  app.get("/api/buildops/linked-data", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getCustomers } = await import("./buildops");
+
+      let allBOCustomers: any[] = [];
+      let page = 1;
+      while (true) {
+        const batch = await getCustomers(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
+        allBOCustomers = allBOCustomers.concat(batch.items ?? []);
+        if (allBOCustomers.length >= batch.totalCount || (batch.items ?? []).length === 0) break;
+        page++;
+      }
+
+      const allClients = await storage.listClients();
+      const linkedClients = allClients.filter(c => c.buildopsId);
+      const unlinkedClients = allClients.filter(c => !c.buildopsId);
+
+      const customers = allBOCustomers.map((bo: any) => {
+        const matchedClient = linkedClients.find(c => c.buildopsId === bo.id);
+        return {
+          buildopsId: bo.id,
+          buildopsName: bo.name || "Unnamed",
+          buildopsEmail: bo.email || null,
+          buildopsPhone: bo.phonePrimary || null,
+          buildopsStatus: bo.status || null,
+          crmClientId: matchedClient?.id ?? null,
+          crmClientName: matchedClient?.name ?? null,
+          matched: !!matchedClient,
+        };
+      });
+
+      const duplicateGroups: { name: string; clients: { id: number; name: string; email: string | null; phone: string | null; buildopsId: string | null }[] }[] = [];
+      const nameMap = new Map<string, typeof allClients>();
+      for (const client of allClients) {
+        const normName = client.name.toLowerCase().trim();
+        if (!nameMap.has(normName)) nameMap.set(normName, []);
+        nameMap.get(normName)!.push(client);
+      }
+      for (const [normName, group] of nameMap.entries()) {
+        if (group.length > 1) {
+          duplicateGroups.push({
+            name: group[0].name,
+            clients: group.map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone, buildopsId: c.buildopsId, industry: c.industry, address: c.address, website: c.website, notes: c.notes, serviceNeeds: c.serviceNeeds, annualRevenue: c.annualRevenue, tier: c.tier, logoUrl: c.logoUrl })),
+          });
+        }
+      }
+
+      res.json({
+        customers,
+        unlinkedCrmClients: unlinkedClients.map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone })),
+        totalBuildOps: allBOCustomers.length,
+        totalMatched: customers.filter((c: any) => c.matched).length,
+        totalUnmatched: customers.filter((c: any) => !c.matched).length,
+        duplicateGroups,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/buildops/match-client", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const { crmClientId, buildopsId } = req.body;
+      if (!crmClientId || typeof crmClientId !== "number" || !Number.isInteger(crmClientId)) {
+        return res.status(400).json({ message: "crmClientId must be a valid integer" });
+      }
+      if (!buildopsId || typeof buildopsId !== "string") {
+        return res.status(400).json({ message: "buildopsId must be a non-empty string" });
+      }
+
+      const targetClient = await storage.getClient(crmClientId);
+      if (!targetClient) return res.status(404).json({ message: "CRM client not found" });
+
+      if (targetClient.buildopsId && targetClient.buildopsId !== buildopsId) {
+        return res.status(400).json({ message: `Client "${targetClient.name}" is already linked to a different BuildOps customer` });
+      }
+
+      const existingWithBuildopsId = (await storage.listClients()).find(c => c.buildopsId === buildopsId);
+      if (existingWithBuildopsId && existingWithBuildopsId.id !== crmClientId) {
+        return res.status(400).json({ message: `BuildOps customer is already matched to "${existingWithBuildopsId.name}"` });
+      }
+
+      await storage.updateClient(crmClientId, { buildopsId });
+      await storage.createBuildopsSyncLog({ entityType: "client", entityId: crmClientId, buildopsId, action: "pull", message: "Manually matched" });
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/buildops/unmatch-client/:id", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      if (!Number.isInteger(clientId) || clientId <= 0) {
+        return res.status(400).json({ message: "Invalid client ID" });
+      }
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+      if (!client.buildopsId) return res.status(400).json({ message: "Client is not linked to BuildOps" });
+
+      const oldBuildopsId = client.buildopsId;
+      await storage.updateClient(clientId, { buildopsId: null });
+      await storage.createBuildopsSyncLog({ entityType: "client", entityId: clientId, buildopsId: oldBuildopsId, action: "push", message: "Manually unmatched" });
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/buildops/merge-duplicate", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const { keepClientId, deleteClientId, fieldChoices } = req.body;
+      if (!keepClientId || !deleteClientId || typeof keepClientId !== "number" || typeof deleteClientId !== "number") {
+        return res.status(400).json({ message: "keepClientId and deleteClientId must be valid integers" });
+      }
+      if (keepClientId === deleteClientId) {
+        return res.status(400).json({ message: "Cannot merge a client with itself" });
+      }
+
+      const keepClient = await storage.getClient(keepClientId);
+      const deleteClient = await storage.getClient(deleteClientId);
+      if (!keepClient) return res.status(404).json({ message: "Keep client not found" });
+      if (!deleteClient) return res.status(404).json({ message: "Delete client not found" });
+
+      const choices: Record<string, string> = fieldChoices || {};
+      const merged: Record<string, any> = {};
+      const mergeField = (field: string) => {
+        const kv = (keepClient as any)[field];
+        const dv = (deleteClient as any)[field];
+        if (choices[field]) {
+          merged[field] = choices[field];
+        } else if (!kv && dv) {
+          merged[field] = dv;
+        }
+      };
+      mergeField("industry");
+      mergeField("address");
+      mergeField("phone");
+      mergeField("email");
+      mergeField("website");
+      mergeField("annualRevenue");
+      mergeField("tier");
+      mergeField("logoUrl");
+
+      const keepNotes = (keepClient.notes || "").trim();
+      const deleteNotes = (deleteClient.notes || "").trim();
+      if (deleteNotes && deleteNotes !== keepNotes) {
+        merged.notes = keepNotes ? `${keepNotes}\n\n--- Merged from duplicate ---\n${deleteNotes}` : deleteNotes;
+      }
+
+      const keepNeeds = keepClient.serviceNeeds || [];
+      const deleteNeeds = deleteClient.serviceNeeds || [];
+      if (deleteNeeds.length > 0) {
+        const combined = [...new Set([...keepNeeds, ...deleteNeeds])];
+        if (combined.length > keepNeeds.length) merged.serviceNeeds = combined;
+      }
+
+      if (!keepClient.buildopsId && deleteClient.buildopsId) {
+        merged.buildopsId = deleteClient.buildopsId;
+      }
+
+      if (Object.keys(merged).length > 0) {
+        await storage.updateClient(keepClientId, merged);
+      }
+
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const clientIdTables = [
+        "client_offices", "client_contacts", "bd_spend_entries",
+        "leads", "estimates", "proposals",
+        "meetings", "email_messages", "contact_buildings",
+        "building_portfolios",
+      ];
+
+      for (const table of clientIdTables) {
+        await db.execute(sql.raw(`UPDATE "${table}" SET client_id = ${keepClientId} WHERE client_id = ${deleteClientId}`));
+      }
+
+      const relatedClientTables = ["tasks", "reminders"];
+      for (const table of relatedClientTables) {
+        await db.execute(sql.raw(`UPDATE "${table}" SET related_client_id = ${keepClientId} WHERE related_client_id = ${deleteClientId}`));
+      }
+
+      await db.execute(sql.raw(`DELETE FROM "clients" WHERE id = ${deleteClientId}`));
+
+      const mergedFields = Object.keys(merged).filter(k => k !== "notes" && k !== "serviceNeeds");
+      const mergeDetails = mergedFields.length > 0 ? ` (filled in: ${mergedFields.join(", ")})` : "";
+
+      await storage.createBuildopsSyncLog({
+        entityType: "client",
+        entityId: keepClientId,
+        action: "pull",
+        message: `Merged duplicate "${deleteClient.name}" (ID ${deleteClientId}) into "${keepClient.name}" (ID ${keepClientId})${mergeDetails}`,
+      });
+
+      res.json({ ok: true, kept: keepClientId, deleted: deleteClientId, mergedFields: Object.keys(merged) });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   app.post("/api/buildops/sync-quotes", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {

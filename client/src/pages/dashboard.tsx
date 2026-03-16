@@ -121,9 +121,10 @@ const monthLabel = (yearMonth: string) => {
 };
 
 const stageLabels: Record<string, string> = {
-  new_lead: "New Lead",
-  contacted: "Contacted",
-  qualified: "Qualified",
+  met_introduced: "Met / Introduced",
+  new_lead: "Reached Out",
+  in_conversation: "In Conversation",
+  qualified: "Ready for Proposal",
   proposal_sent: "Proposal Sent",
   won: "Won",
   lost: "Lost",

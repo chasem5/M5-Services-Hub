@@ -6,7 +6,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, ChevronUp, ChevronDown, Pencil, Check, X } from "lucide-react";
+import { Plus, Trash2, GripVertical, Pencil, Check, X } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 function getStageColors(color: string | null | undefined) {
   switch (color) {
@@ -14,6 +31,146 @@ function getStageColors(color: string | null | undefined) {
     case "red": return { dot: "bg-red-500", badge: "bg-red-100 text-red-700 border-red-200" };
     default: return { dot: "bg-muted-foreground", badge: "bg-muted text-muted-foreground border-border" };
   }
+}
+
+function SortableStageRow({
+  stage,
+  editingId,
+  editingLabel,
+  setEditingId,
+  setEditingLabel,
+  updateMutation,
+  deleteMutation,
+}: {
+  stage: PipelineStage;
+  editingId: number | null;
+  editingLabel: string;
+  setEditingId: (id: number | null) => void;
+  setEditingLabel: (label: string) => void;
+  updateMutation: any;
+  deleteMutation: any;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: stage.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  const isEditing = editingId === stage.id;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 p-2 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
+      data-testid={`pipeline-stage-row-${stage.id}`}
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="p-0.5 rounded cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none shrink-0"
+        data-testid={`drag-handle-pipeline-stage-${stage.id}`}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+
+      <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${getStageColors(stage.color).dot}`} />
+
+      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0 leading-none ${
+        stage.track === "deal"
+          ? "bg-primary/10 text-primary border border-primary/20"
+          : "bg-muted text-muted-foreground border border-border/50"
+      }`} data-testid={`badge-track-${stage.id}`}>
+        {stage.track === "deal" ? "Deal" : "Rel"}
+      </span>
+
+      {isEditing ? (
+        <Input
+          autoFocus
+          value={editingLabel}
+          onChange={(e) => setEditingLabel(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") updateMutation.mutate({ id: stage.id, data: { label: editingLabel } });
+            if (e.key === "Escape") setEditingId(null);
+          }}
+          className="h-7 text-sm flex-1 min-w-0"
+          data-testid={`input-pipeline-stage-label-${stage.id}`}
+        />
+      ) : (
+        <span className="flex-1 text-sm font-medium truncate min-w-0">{stage.label}</span>
+      )}
+
+      <select
+        value={stage.color ?? "default"}
+        onChange={(e) => {
+          const val = e.target.value === "default" ? null : e.target.value;
+          updateMutation.mutate({ id: stage.id, data: { color: val } });
+        }}
+        className="text-xs border rounded px-1 py-0.5 bg-background h-7 shrink-0 w-[72px]"
+        data-testid={`select-pipeline-stage-color-${stage.id}`}
+      >
+        <option value="default">Default</option>
+        <option value="green">Green</option>
+        <option value="red">Red</option>
+      </select>
+
+      <div className="flex items-center shrink-0">
+        {isEditing ? (
+          <>
+            <Button
+              size="icon"
+              variant="default"
+              className="h-7 w-7"
+              onClick={() => updateMutation.mutate({ id: stage.id, data: { label: editingLabel } })}
+              disabled={updateMutation.isPending}
+              data-testid={`button-save-pipeline-stage-${stage.id}`}
+            >
+              <Check className="h-3 w-3" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-muted-foreground"
+              onClick={() => setEditingId(null)}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => { setEditingId(stage.id); setEditingLabel(stage.label); }}
+              data-testid={`button-edit-pipeline-stage-${stage.id}`}
+            >
+              <Pencil className="h-3 w-3" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-destructive hover:text-destructive"
+              onClick={() => deleteMutation.mutate(stage.id)}
+              data-testid={`button-delete-pipeline-stage-${stage.id}`}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function PipelineStagesManager() {
@@ -26,6 +183,11 @@ export function PipelineStagesManager() {
   const { data: stages = [] } = useQuery<PipelineStage[]>({
     queryKey: ["/api/pipeline-stages"],
   });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const createMutation = useMutation({
     mutationFn: (data: { label: string; slug: string; color?: string | null }) =>
@@ -64,12 +226,19 @@ export function PipelineStagesManager() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/pipeline-stages"] }),
   });
 
-  const moveStage = (index: number, dir: "up" | "down") => {
-    const newOrder = [...stages];
-    const offset = dir === "up" ? -1 : 1;
-    const [item] = newOrder.splice(index, 1);
-    newOrder.splice(index + offset, 0, item);
-    reorderMutation.mutate(newOrder.map(s => s.id));
+  const makeTrackDragHandler = (track: "relationship" | "deal") => (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const trackStages = stages.filter(s => s.track === track);
+    const otherTrackStages = stages.filter(s => s.track !== track);
+    const oldIndex = trackStages.findIndex(s => s.id === active.id);
+    const newIndex = trackStages.findIndex(s => s.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reorderedTrack = arrayMove(trackStages, oldIndex, newIndex);
+    const fullOrder = track === "relationship"
+      ? [...reorderedTrack, ...otherTrackStages]
+      : [...otherTrackStages, ...reorderedTrack];
+    reorderMutation.mutate(fullOrder.map(s => s.id));
   };
 
   const handleCreate = () => {
@@ -78,111 +247,53 @@ export function PipelineStagesManager() {
     createMutation.mutate({ label: newStageLabel.trim(), slug, color: newStageColor });
   };
 
+  const relationshipStages = stages.filter(s => s.track === "relationship");
+  const dealStages = stages.filter(s => s.track === "deal");
+
   return (
-    <div className="space-y-2">
-      <div className="space-y-2 max-h-[400px] overflow-y-auto">
-        {stages.map((stage, index) => (
-          <div
-            key={stage.id}
-            className="flex items-center gap-2 p-2.5 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
-            data-testid={`pipeline-stage-row-${stage.id}`}
-          >
-            <div className="flex flex-col gap-0.5">
-              <button
-                onClick={() => moveStage(index, "up")}
-                disabled={index === 0}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
-                data-testid={`button-pipeline-stage-up-${stage.id}`}
-              >
-                <ChevronUp className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={() => moveStage(index, "down")}
-                disabled={index === stages.length - 1}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed"
-                data-testid={`button-pipeline-stage-down-${stage.id}`}
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Relationship Track</p>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={makeTrackDragHandler("relationship")}>
+          <SortableContext items={relationshipStages.map(s => s.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-1.5">
+              {relationshipStages.map((stage) => (
+                <SortableStageRow
+                  key={stage.id}
+                  stage={stage}
+                  editingId={editingId}
+                  editingLabel={editingLabel}
+                  setEditingId={setEditingId}
+                  setEditingLabel={setEditingLabel}
+                  updateMutation={updateMutation}
+                  deleteMutation={deleteMutation}
+                />
+              ))}
             </div>
+          </SortableContext>
+        </DndContext>
+      </div>
 
-            <div className={`h-3 w-3 rounded-full flex-shrink-0 ${getStageColors(stage.color).dot}`} />
-
-            {editingId === stage.id ? (
-              <Input
-                autoFocus
-                value={editingLabel}
-                onChange={(e) => setEditingLabel(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") updateMutation.mutate({ id: stage.id, data: { label: editingLabel } });
-                  if (e.key === "Escape") setEditingId(null);
-                }}
-                className="h-7 text-sm flex-1"
-                data-testid={`input-pipeline-stage-label-${stage.id}`}
-              />
-            ) : (
-              <span className="flex-1 text-sm font-medium truncate">{stage.label}</span>
-            )}
-
-            <select
-              value={stage.color ?? "default"}
-              onChange={(e) => {
-                const val = e.target.value === "default" ? null : e.target.value;
-                updateMutation.mutate({ id: stage.id, data: { color: val } });
-              }}
-              className="text-xs border rounded px-1.5 py-1 bg-background h-7"
-              data-testid={`select-pipeline-stage-color-${stage.id}`}
-            >
-              <option value="default">Default</option>
-              <option value="green">Green (Won)</option>
-              <option value="red">Red (Lost)</option>
-            </select>
-
-            {editingId === stage.id ? (
-              <Button
-                size="icon"
-                variant="default"
-                className="h-7 w-7"
-                onClick={() => updateMutation.mutate({ id: stage.id, data: { label: editingLabel } })}
-                disabled={updateMutation.isPending}
-                data-testid={`button-save-pipeline-stage-${stage.id}`}
-              >
-                <Check className="h-3.5 w-3.5" />
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                onClick={() => { setEditingId(stage.id); setEditingLabel(stage.label); }}
-                data-testid={`button-edit-pipeline-stage-${stage.id}`}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-            )}
-
-            {editingId === stage.id ? (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-muted-foreground"
-                onClick={() => setEditingId(null)}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-destructive hover:text-destructive"
-                onClick={() => deleteMutation.mutate(stage.id)}
-                data-testid={`button-delete-pipeline-stage-${stage.id}`}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        ))}
+      <div className="space-y-1.5">
+        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Deal Track</p>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={makeTrackDragHandler("deal")}>
+          <SortableContext items={dealStages.map(s => s.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-1.5">
+              {dealStages.map((stage) => (
+                <SortableStageRow
+                  key={stage.id}
+                  stage={stage}
+                  editingId={editingId}
+                  editingLabel={editingLabel}
+                  setEditingId={setEditingId}
+                  setEditingLabel={setEditingLabel}
+                  updateMutation={updateMutation}
+                  deleteMutation={deleteMutation}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       </div>
 
       <div className="border-t pt-3 space-y-2">
@@ -193,13 +304,13 @@ export function PipelineStagesManager() {
             value={newStageLabel}
             onChange={(e) => setNewStageLabel(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
-            className="flex-1 h-8"
+            className="flex-1 h-8 min-w-0"
             data-testid="input-new-pipeline-stage-name"
           />
           <select
             value={newStageColor ?? "default"}
             onChange={(e) => setNewStageColor(e.target.value === "default" ? null : e.target.value)}
-            className="text-xs border rounded px-1.5 py-1 bg-background h-8"
+            className="text-xs border rounded px-1.5 py-1 bg-background h-8 shrink-0"
             data-testid="select-new-pipeline-stage-color"
           >
             <option value="default">Default</option>
@@ -208,7 +319,7 @@ export function PipelineStagesManager() {
           </select>
           <Button
             size="sm"
-            className="h-8"
+            className="h-8 shrink-0"
             disabled={!newStageLabel.trim() || createMutation.isPending}
             onClick={handleCreate}
             data-testid="button-add-pipeline-stage"

@@ -115,12 +115,20 @@ export default function Estimates() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
       setIsCreateDialogOpen(false);
       form.reset();
       toast({
         title: "Success",
         description: "Estimate created successfully",
       });
+      if (data.buildopsWarning) {
+        toast({
+          title: "BuildOps Sync Warning",
+          description: data.buildopsWarning,
+          variant: "destructive",
+        });
+      }
       setLocation(`/estimates/${data.id}`);
     },
     onError: (error: Error) => {

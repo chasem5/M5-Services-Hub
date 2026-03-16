@@ -50,10 +50,11 @@ function ChangeView({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
 }
 
 const STAGE_COLORS: Record<string, string> = {
+  met_introduced: "#94a3b8", // slate
   new_lead: "#3b82f6", // blue
-  discovery: "#8b5cf6", // violet
-  proposal: "#f59e0b", // amber
-  negotiation: "#ec4899", // pink
+  in_conversation: "#6366f1", // indigo
+  qualified: "#8b5cf6", // violet
+  proposal_sent: "#a855f7", // purple
   won: "#10b981", // emerald
   lost: "#ef4444", // red
 };
@@ -160,10 +161,11 @@ export function MapView() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Stages</SelectItem>
-            <SelectItem value="new_lead">New Lead</SelectItem>
-            <SelectItem value="discovery">Discovery</SelectItem>
-            <SelectItem value="proposal">Proposal</SelectItem>
-            <SelectItem value="negotiation">Negotiation</SelectItem>
+            <SelectItem value="met_introduced">Met / Introduced</SelectItem>
+            <SelectItem value="new_lead">Reached Out</SelectItem>
+            <SelectItem value="in_conversation">In Conversation</SelectItem>
+            <SelectItem value="qualified">Ready for Proposal</SelectItem>
+            <SelectItem value="proposal_sent">Proposal Sent</SelectItem>
             <SelectItem value="won">Won</SelectItem>
             <SelectItem value="lost">Lost</SelectItem>
           </SelectContent>

@@ -122,9 +122,6 @@ export default function EstimateDetail() {
     queryKey: ["/api/clients"],
   });
 
-  const { data: connVerified } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
-  const isBuildopsVerified = connVerified?.value === "true";
-
   const clientIdForBuilding = selectedClientIdForBuilding ?? estimate?.clientId ?? null;
   const { data: buildingsForClient = [] } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/clients", clientIdForBuilding, "all-buildings"],
@@ -196,18 +193,6 @@ export default function EstimateDetail() {
     onError: (err: any) => toast({ title: "AI generation failed", description: err.message, variant: "destructive" }),
   });
 
-  const pushBuildopsMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/buildops/push-estimate/${id}`, {});
-      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", id] });
-      toast({ title: "Pushed to BuildOps", description: data.quoteNumber ? `Quote #${data.quoteNumber} created` : "Quote created in BuildOps" });
-    },
-    onError: (err: any) => toast({ title: "Push failed", description: err.message, variant: "destructive" }),
-  });
 
   const form = useForm({
     resolver: zodResolver(insertEstimateSchema),
@@ -347,18 +332,12 @@ export default function EstimateDetail() {
             {aiGenerateMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {aiGenerateMutation.isPending ? "Generating..." : "AI Generate Scope"}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => pushBuildopsMutation.mutate()}
-            disabled={pushBuildopsMutation.isPending || !isBuildopsVerified}
-            title={!isBuildopsVerified ? "Verify BuildOps connection in Admin → BuildOps before syncing" : undefined}
-            data-testid="button-push-buildops-estimate"
-            className="gap-1.5"
-          >
-            <Zap className="h-4 w-4" />
-            Push to BuildOps
-          </Button>
+          {(estimate as any).buildopsQuoteId && (
+            <Badge variant="outline" className="text-xs px-2 py-1 h-7 font-medium border-orange-200 bg-orange-50 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400 dark:border-orange-800 gap-1.5" data-testid="badge-buildops-linked">
+              <Zap className="h-3.5 w-3.5" />
+              BuildOps Linked
+            </Badge>
+          )}
           {estimate.status === "draft" && (
             <Button 
               variant="outline"

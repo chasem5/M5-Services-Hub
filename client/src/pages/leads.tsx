@@ -61,7 +61,6 @@ import {
   Settings,
   Trash2,
   Pencil,
-  ChevronUp,
   ChevronDown,
   GripVertical,
   TrendingUp,
@@ -141,6 +140,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { PipelineStagesManager } from "@/components/PipelineStagesManager";
+import { BuildOpsIcon } from "@/components/BuildOpsIcon";
 import { TierBadge } from "@/components/TierBadge";
 import { AttachmentsPanel } from "@/components/AttachmentsPanel";
 import { SearchableSelect } from "@/components/SearchableSelect";
@@ -575,6 +575,7 @@ function KanbanColumn({
                 aiSummaries={aiSummaries}
                 fetchAiSummary={fetchAiSummary}
                 activitySummary={activitySummary}
+                stageTrack={stage.track ?? "relationship"}
               />
             ))}
         </div>
@@ -598,6 +599,7 @@ function LeadCard({
   aiSummaries, 
   fetchAiSummary,
   activitySummary,
+  stageTrack = "relationship",
   isOverlay = false
 }: { 
   lead: Lead; 
@@ -614,6 +616,7 @@ function LeadCard({
   aiSummaries: Record<number, { healthLabel: string; headline: string; observation: string; nextStep: string }>;
   fetchAiSummary: (id: number) => void;
   activitySummary: any[] | undefined;
+  stageTrack?: string;
   isOverlay?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -760,6 +763,21 @@ function LeadCard({
                   <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
                     +{lead.tags.length - 3}
                   </Badge>
+                )}
+              </div>
+            )}
+
+            {lead.buildopsQuoteId && stageTrack === "deal" && (
+              <div className="flex items-center gap-1.5 border-t pt-1.5 mt-0.5" data-testid={`badge-buildops-quote-${lead.id}`}>
+                <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-medium border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-800 gap-1">
+                  <BuildOpsIcon className="h-3 w-3 shrink-0" />
+                  {lead.buildopsQuoteNumber ? `#${lead.buildopsQuoteNumber}` : "Quote"}
+                  {lead.buildopsQuoteStatus && <span className="capitalize">· {lead.buildopsQuoteStatus}</span>}
+                </Badge>
+                {lead.buildopsQuoteTotal && (
+                  <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 tabular-nums">
+                    {formatCurrency(lead.buildopsQuoteTotal)}
+                  </span>
                 )}
               </div>
             )}
@@ -919,6 +937,7 @@ export default function Leads() {
   const [isManageStagesOpen, setIsManageStagesOpen] = useState(false);
   const [deleteStageId, setDeleteStageId] = useState<number | null>(null);
   const [deleteStageLabel, setDeleteStageLabel] = useState("");
+  const [pendingDealMove, setPendingDealMove] = useState<{ leadId: number; stage: string; clientName: string } | null>(null);
   const [editingStageId, setEditingStageId] = useState<number | null>(null);
   const [editingStageLabel, setEditingStageLabel] = useState("");
   const [newStageLabel, setNewStageLabel] = useState("");
@@ -1065,6 +1084,13 @@ export default function Leads() {
     const lead = leads?.find(l => l.id === leadId);
 
     if (lead && lead.stage !== newStage) {
+      const currentStageObj = stages.find(s => s.slug === lead.stage);
+      const targetStageObj = stages.find(s => s.slug === newStage);
+      if (currentStageObj?.track === "relationship" && targetStageObj?.track === "deal") {
+        const client = clients?.find(c => c.id === lead.clientId);
+        setPendingDealMove({ leadId, stage: newStage, clientName: client?.name ?? "this client" });
+        return;
+      }
       updateLeadStageMutation.mutate({ id: leadId, stage: newStage });
     }
   };
@@ -1367,7 +1393,7 @@ export default function Leads() {
       title: "",
       clientId: undefined,
       buildingId: null,
-      stage: "new_lead",
+      stage: "met_introduced",
       valueType: "fixed",
       value: "0",
       valueTier: null,
@@ -1678,6 +1704,7 @@ export default function Leads() {
             className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium flex items-center gap-1.5 ${buildopsView ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
             data-testid="button-view-buildops"
           >
+            <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />
             BuildOps Quotes
           </button>
           <Button size="sm" variant="outline" className="h-7 rounded-full text-xs gap-1.5" onClick={() => {
@@ -1769,7 +1796,10 @@ export default function Leads() {
           <div className="p-4 md:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-heading font-bold">BuildOps Quotes</h2>
+                <h2 className="text-lg font-heading font-bold flex items-center gap-2">
+                  <BuildOpsIcon className="h-5 w-5 shrink-0" />
+                  BuildOps Quotes
+                </h2>
                 <p className="text-sm text-muted-foreground">Quotes synced from BuildOps — tracked as deals</p>
               </div>
               <Button
@@ -1825,7 +1855,10 @@ export default function Leads() {
                                       <p className="font-semibold text-xs truncate">{getClientName(l.clientId)}</p>
                                       <p className="text-[11px] text-muted-foreground truncate">{l.title}</p>
                                       {l.buildopsQuoteNumber && (
-                                        <p className="text-[10px] text-blue-600 dark:text-blue-400">#{l.buildopsQuoteNumber}</p>
+                                        <p className="text-[10px] text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                          <BuildOpsIcon className="h-2.5 w-2.5 shrink-0" />
+                                          #{l.buildopsQuoteNumber}
+                                        </p>
                                       )}
                                     </div>
                                     <div className="shrink-0 text-right">
@@ -1855,41 +1888,107 @@ export default function Leads() {
             onDragEnd={handleDragEnd}
           >
             <div className="flex h-full overflow-x-auto p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth">
-              {(activeFilters?.stages?.length
-                ? stages.filter(s => activeFilters!.stages!.includes(s.slug))
-                : stages
-              ).map((stage) => {
-                const sc = getStageColors(stage.color);
-                const weightedVal = getStageWeightedValue(stage.slug);
-                const rawVal = getStageRawValue(stage.slug);
-                const cardCount = filteredLeads?.filter(l => l.stage === stage.slug).length || 0;
+              {(() => {
+                const visibleStages = activeFilters?.stages?.length
+                  ? stages.filter(s => activeFilters!.stages!.includes(s.slug))
+                  : stages;
+                const relationshipStages = visibleStages.filter(s => s.track !== "deal");
+                const dealStages = visibleStages.filter(s => s.track === "deal");
 
                 return (
-                  <KanbanColumn 
-                    key={stage.id} 
-                    stage={stage} 
-                    sc={sc} 
-                    weightedVal={weightedVal} 
-                    rawVal={rawVal} 
-                    cardCount={cardCount}
-                    filteredLeads={filteredLeads}
-                    tierMap={tierMap}
-                    formatCurrency={formatCurrency}
-                    getBuildingName={getBuildingName}
-                    getClientName={getClientName}
-                    getContactName={getContactName}
-                    getServiceTypeColor={getServiceTypeColor}
-                    getServiceTypeLabel={getServiceTypeLabel}
-                    getUserName={getUserName}
-                    openLeadDetail={openLeadDetail}
-                    tasks={tasks}
-                    loadingAiSummary={loadingAiSummary}
-                    aiSummaries={aiSummaries}
-                    fetchAiSummary={fetchAiSummary}
-                    activitySummary={activitySummary}
-                  />
+                  <>
+                    {relationshipStages.length > 0 && (
+                      <>
+                        <div className="flex flex-col items-center justify-start pt-2 shrink-0">
+                          <div className="writing-mode-vertical text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 bg-muted/30 px-1.5 py-3 rounded-full" style={{ writingMode: "vertical-lr", textOrientation: "mixed" }} data-testid="track-label-relationship">
+                            Relationship
+                          </div>
+                        </div>
+                        {relationshipStages.map((stage) => {
+                          const sc = getStageColors(stage.color);
+                          const weightedVal = getStageWeightedValue(stage.slug);
+                          const rawVal = getStageRawValue(stage.slug);
+                          const cardCount = filteredLeads?.filter(l => l.stage === stage.slug).length || 0;
+                          return (
+                            <KanbanColumn 
+                              key={stage.id} 
+                              stage={stage} 
+                              sc={sc} 
+                              weightedVal={weightedVal} 
+                              rawVal={rawVal} 
+                              cardCount={cardCount}
+                              filteredLeads={filteredLeads}
+                              tierMap={tierMap}
+                              formatCurrency={formatCurrency}
+                              getBuildingName={getBuildingName}
+                              getClientName={getClientName}
+                              getContactName={getContactName}
+                              getServiceTypeColor={getServiceTypeColor}
+                              getServiceTypeLabel={getServiceTypeLabel}
+                              getUserName={getUserName}
+                              openLeadDetail={openLeadDetail}
+                              tasks={tasks}
+                              loadingAiSummary={loadingAiSummary}
+                              aiSummaries={aiSummaries}
+                              fetchAiSummary={fetchAiSummary}
+                              activitySummary={activitySummary}
+                            />
+                          );
+                        })}
+                      </>
+                    )}
+                    {relationshipStages.length > 0 && dealStages.length > 0 && (
+                      <div className="flex flex-col items-center justify-stretch shrink-0 py-2">
+                        <div className="w-px flex-1 bg-border" />
+                        <div className="my-2 px-2 py-1 rounded-full bg-primary/10 border border-primary/20">
+                          <ArrowRight className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="w-px flex-1 bg-border" />
+                      </div>
+                    )}
+                    {dealStages.length > 0 && (
+                      <>
+                        <div className="flex flex-col items-center justify-start pt-2 shrink-0">
+                          <div className="writing-mode-vertical text-[10px] font-bold uppercase tracking-[0.2em] text-primary/60 bg-primary/5 px-1.5 py-3 rounded-full border border-primary/10" style={{ writingMode: "vertical-lr", textOrientation: "mixed" }} data-testid="track-label-deal">
+                            Deal
+                          </div>
+                        </div>
+                        {dealStages.map((stage) => {
+                          const sc = getStageColors(stage.color);
+                          const weightedVal = getStageWeightedValue(stage.slug);
+                          const rawVal = getStageRawValue(stage.slug);
+                          const cardCount = filteredLeads?.filter(l => l.stage === stage.slug).length || 0;
+                          return (
+                            <KanbanColumn 
+                              key={stage.id} 
+                              stage={stage} 
+                              sc={sc} 
+                              weightedVal={weightedVal} 
+                              rawVal={rawVal} 
+                              cardCount={cardCount}
+                              filteredLeads={filteredLeads}
+                              tierMap={tierMap}
+                              formatCurrency={formatCurrency}
+                              getBuildingName={getBuildingName}
+                              getClientName={getClientName}
+                              getContactName={getContactName}
+                              getServiceTypeColor={getServiceTypeColor}
+                              getServiceTypeLabel={getServiceTypeLabel}
+                              getUserName={getUserName}
+                              openLeadDetail={openLeadDetail}
+                              tasks={tasks}
+                              loadingAiSummary={loadingAiSummary}
+                              aiSummaries={aiSummaries}
+                              fetchAiSummary={fetchAiSummary}
+                              activitySummary={activitySummary}
+                            />
+                          );
+                        })}
+                      </>
+                    )}
+                  </>
                 );
-              })}
+              })()}
             </div>
             <DragOverlay>
               {activeDragId && leads?.find(l => l.id === activeDragId) ? (
@@ -3328,7 +3427,15 @@ export default function Leads() {
                                 variant={isActive ? "secondary" : "outline"}
                                 size="sm"
                                 className="justify-start font-medium"
-                                onClick={() => updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.slug })}
+                                onClick={() => {
+                                  const currentStageObj = stages.find(s => s.slug === selectedLead.stage);
+                                  if (currentStageObj?.track === "relationship" && stage.track === "deal") {
+                                    const client = clients?.find(c => c.id === selectedLead.clientId);
+                                    setPendingDealMove({ leadId: selectedLead.id, stage: stage.slug, clientName: client?.name ?? "this client" });
+                                    return;
+                                  }
+                                  updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.slug });
+                                }}
                               >
                                 <div className={`h-2 w-2 rounded-full mr-2 ${isActive ? sc.dot : 'bg-muted-foreground/30'}`} />
                                 {stage.label}
@@ -3797,11 +3904,11 @@ export default function Leads() {
                 };
 
                 const stageDefaults: Record<string, string> = {
-                  new_lead:      "Reach out to introduce M5 and learn about their current service gaps.",
-                  contacted:     "Follow up on initial interest and qualify their budget and timeline.",
-                  qualified:     "Confirm scope, decision-makers, and when they expect to move forward.",
-                  proposal_sent: "Check if they've reviewed the proposal and address any open questions.",
-                  negotiation:   "Resolve remaining objections and confirm the approval path.",
+                  met_introduced: "Schedule a discovery call to understand their facility needs.",
+                  new_lead:       "Reach out to introduce M5 and learn about their current service gaps.",
+                  in_conversation: "Follow up on initial interest and qualify their budget and timeline.",
+                  qualified:      "Confirm scope, decision-makers, and when they expect to move forward.",
+                  proposal_sent:  "Check if they've reviewed the proposal and address any open questions.",
                 };
 
                 return sorted.map(({ lead, healthLabel, aiData, daysActivity }) => {
@@ -4194,6 +4301,43 @@ export default function Leads() {
               onClick={() => { if (deleteStageId !== null) { deleteStageMutation.mutate(deleteStageId); setDeleteStageId(null); } }}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={pendingDealMove !== null} onOpenChange={(open) => { if (!open) setPendingDealMove(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="title-deal-move-confirm" className="flex items-center gap-2">
+              <BuildOpsIcon className="h-5 w-5 shrink-0" />
+              Move to Deal Track?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3" data-testid="description-deal-move-confirm">
+              <span className="block">
+                You're about to move this lead into the <strong>Deal</strong> track for <strong>{pendingDealMove?.clientName}</strong>.
+              </span>
+              <span className="block">
+                This will auto-advance the lead to <strong>Proposal Sent</strong> and may create a new customer in BuildOps if one doesn't already exist when an estimate is created.
+              </span>
+              <span className="block text-amber-600 dark:text-amber-400 font-medium">
+                BuildOps customers are difficult to delete — please make sure this is the right company and not a duplicate before proceeding.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-deal-move">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-confirm-deal-move"
+              disabled={updateLeadStageMutation.isPending}
+              onClick={() => {
+                if (pendingDealMove) {
+                  updateLeadStageMutation.mutate({ id: pendingDealMove.leadId, stage: pendingDealMove.stage });
+                  setPendingDealMove(null);
+                }
+              }}
+            >
+              {updateLeadStageMutation.isPending ? "Moving…" : "Yes, Move to Deal Track"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

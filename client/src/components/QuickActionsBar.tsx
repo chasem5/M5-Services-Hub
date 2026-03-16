@@ -197,7 +197,7 @@ function AddDealDialog({
         title: title.trim(),
         clientId: clientId ? parseInt(clientId) : undefined,
         contactId: contactId ? parseInt(contactId) : null,
-        stage: stage || (stages[0]?.slug ?? "new_lead"),
+        stage: stage || (stages[0]?.slug ?? "met_introduced"),
         serviceType: serviceType || null,
         value: value || "0",
         valueType: "fixed",

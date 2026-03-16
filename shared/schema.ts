@@ -93,6 +93,7 @@ export const pipelineStages = pgTable("pipeline_stages", {
   slug: varchar("slug").notNull().unique(),
   sortOrder: integer("sort_order").notNull().default(0),
   color: varchar("color"), // 'green' | 'red' | null (default)
+  track: varchar("track", { length: 20 }).default("relationship"), // 'relationship' | 'deal'
 });
 
 export const leads = pgTable("leads", {

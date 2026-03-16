@@ -1130,17 +1130,123 @@ export class DatabaseStorage implements IStorage {
   }
 
   async seedDefaultPipelineStages(): Promise<void> {
+    await db.execute(sql`ALTER TABLE pipeline_stages ADD COLUMN IF NOT EXISTS track VARCHAR(20) DEFAULT 'relationship'`);
     const existing = await db.select().from(pipelineStages);
-    if (existing.length > 0) return;
+    if (existing.length > 0) {
+      await this.migratePipelineStageTracks();
+      return;
+    }
     const defaults = [
-      { label: "New Lead", slug: "new_lead", sortOrder: 0, color: null },
-      { label: "Contacted", slug: "contacted", sortOrder: 1, color: null },
-      { label: "Qualified", slug: "qualified", sortOrder: 2, color: null },
-      { label: "Proposal Sent", slug: "proposal_sent", sortOrder: 3, color: null },
-      { label: "Won", slug: "won", sortOrder: 4, color: "green" },
-      { label: "Lost", slug: "lost", sortOrder: 5, color: "red" },
+      { label: "Met / Introduced", slug: "met_introduced", sortOrder: 0, color: null, track: "relationship" },
+      { label: "Reached Out", slug: "new_lead", sortOrder: 1, color: null, track: "relationship" },
+      { label: "In Conversation", slug: "in_conversation", sortOrder: 2, color: null, track: "relationship" },
+      { label: "Ready for Proposal", slug: "qualified", sortOrder: 3, color: null, track: "relationship" },
+      { label: "Proposal Sent", slug: "proposal_sent", sortOrder: 4, color: null, track: "deal" },
+      { label: "Won", slug: "won", sortOrder: 5, color: "green", track: "deal" },
+      { label: "Lost", slug: "lost", sortOrder: 6, color: "red", track: "deal" },
     ];
     await db.insert(pipelineStages).values(defaults);
+  }
+
+  async migratePipelineStageTracks(): Promise<void> {
+    await db.execute(sql`ALTER TABLE pipeline_stages ADD COLUMN IF NOT EXISTS track VARCHAR(20) DEFAULT 'relationship'`);
+    const existing = await db.select().from(pipelineStages);
+    const dealSlugs = ["proposal_sent", "won", "lost"];
+    const allDealStagesCorrect = existing
+      .filter(s => dealSlugs.includes(s.slug))
+      .every(s => s.track === "deal");
+    const allOtherStagesCorrect = existing
+      .filter(s => !dealSlugs.includes(s.slug))
+      .every(s => s.track === "relationship");
+    const hasRequiredStages = existing.some(s => s.slug === "met_introduced") && existing.some(s => s.slug === "in_conversation");
+    const hasNoLegacyContacted = !existing.some(s => s.slug === "contacted");
+    if (allDealStagesCorrect && allOtherStagesCorrect && hasRequiredStages && hasNoLegacyContacted) return;
+
+    const relationshipSlugs = ["new_lead", "contacted", "qualified", "met_introduced", "in_conversation"];
+
+    for (const stage of existing) {
+      if (dealSlugs.includes(stage.slug)) {
+        await db.update(pipelineStages).set({ track: "deal" }).where(eq(pipelineStages.id, stage.id));
+      } else {
+        await db.update(pipelineStages).set({ track: "relationship" }).where(eq(pipelineStages.id, stage.id));
+      }
+    }
+
+    const existingSlugs = existing.map(s => s.slug);
+    const maxOrder = Math.max(...existing.map(s => s.sortOrder), -1);
+
+    if (!existingSlugs.includes("met_introduced")) {
+      await db.insert(pipelineStages).values({
+        label: "Met / Introduced",
+        slug: "met_introduced",
+        sortOrder: 0,
+        color: null,
+        track: "relationship",
+      });
+      for (const stage of existing) {
+        if (relationshipSlugs.includes(stage.slug) || !dealSlugs.includes(stage.slug)) {
+          await db.update(pipelineStages).set({ sortOrder: stage.sortOrder + 1 }).where(eq(pipelineStages.id, stage.id));
+        }
+      }
+    }
+
+    if (!existingSlugs.includes("in_conversation")) {
+      const contactedStage = existing.find(s => s.slug === "contacted");
+      const insertOrder = contactedStage ? contactedStage.sortOrder + 1 : 2;
+      await db.insert(pipelineStages).values({
+        label: "In Conversation",
+        slug: "in_conversation",
+        sortOrder: insertOrder,
+        color: null,
+        track: "relationship",
+      });
+    }
+
+    if (existingSlugs.includes("new_lead")) {
+      await db.update(pipelineStages).set({ label: "Reached Out" }).where(eq(pipelineStages.slug, "new_lead"));
+    }
+
+    if (existingSlugs.includes("contacted") && existingSlugs.includes("new_lead")) {
+      await db.execute(sql`UPDATE leads SET stage = 'new_lead' WHERE stage = 'contacted'`);
+      await db.delete(pipelineStages).where(eq(pipelineStages.slug, "contacted"));
+    } else if (existingSlugs.includes("contacted") && !existingSlugs.includes("new_lead")) {
+      await db.update(pipelineStages).set({ slug: "new_lead", label: "Reached Out" }).where(eq(pipelineStages.slug, "contacted"));
+      await db.execute(sql`UPDATE leads SET stage = 'new_lead' WHERE stage = 'contacted'`);
+    }
+
+    if (existingSlugs.includes("qualified")) {
+      await db.update(pipelineStages).set({ label: "Ready for Proposal" }).where(eq(pipelineStages.slug, "qualified"));
+    }
+
+    const canonicalRelOrder = ["met_introduced", "new_lead", "in_conversation", "qualified"];
+    const canonicalDealOrder = ["proposal_sent", "won", "lost"];
+    const allStages = await db.select().from(pipelineStages);
+    const relStages = allStages
+      .filter(s => s.track === "relationship")
+      .sort((a, b) => {
+        const ai = canonicalRelOrder.indexOf(a.slug);
+        const bi = canonicalRelOrder.indexOf(b.slug);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.sortOrder - b.sortOrder;
+      });
+    const dlStages = allStages
+      .filter(s => s.track === "deal")
+      .sort((a, b) => {
+        const ai = canonicalDealOrder.indexOf(a.slug);
+        const bi = canonicalDealOrder.indexOf(b.slug);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.sortOrder - b.sortOrder;
+      });
+    const sorted = [...relStages, ...dlStages];
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].sortOrder !== i) {
+        await db.update(pipelineStages).set({ sortOrder: i }).where(eq(pipelineStages.id, sorted[i].id));
+      }
+    }
   }
 
   // BD Spend

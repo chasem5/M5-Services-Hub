@@ -370,37 +370,13 @@ function LinkedInSyncButton({
   return null;
 }
 
-function BuildOpsPushButton({ clientId, buildopsId }: { clientId: number; buildopsId?: string | null }) {
-  const { toast } = useToast();
-  const { data: connVerified } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
-  const isVerified = connVerified?.value === "true";
-
-  const pushMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/buildops/push-client/${clientId}`, {});
-      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
-      toast({ title: buildopsId ? "Synced to BuildOps" : "Pushed to BuildOps", description: "Customer updated in BuildOps" });
-    },
-    onError: (err: any) => toast({ title: "BuildOps sync failed", description: err.message, variant: "destructive" }),
-  });
-
+function BuildOpsStatusBadge({ buildopsId }: { buildopsId?: string | null }) {
+  if (!buildopsId) return null;
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="h-6 text-xs gap-1 px-2"
-      onClick={() => pushMutation.mutate()}
-      disabled={pushMutation.isPending || !isVerified}
-      title={!isVerified ? "Verify BuildOps connection in Admin → BuildOps before syncing" : undefined}
-      data-testid="button-buildops-push-client"
-    >
+    <Badge variant="outline" className="h-6 text-xs gap-1 px-2 border-green-200 bg-green-50 text-green-700 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800" data-testid="badge-buildops-linked">
       <Zap className="h-3 w-3" />
-      {pushMutation.isPending ? "Syncing..." : buildopsId ? "Sync to BuildOps" : "Push to BuildOps"}
-    </Button>
+      BuildOps Linked
+    </Badge>
   );
 }
 
@@ -1284,7 +1260,7 @@ export default function ClientDetail() {
           </div>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-muted-foreground">{client.industry || "No industry specified"}</p>
-            <BuildOpsPushButton clientId={clientId} buildopsId={(client as any).buildopsId} />
+            <BuildOpsStatusBadge buildopsId={(client as any).buildopsId} />
           </div>
         </div>
       </div>
@@ -1860,16 +1836,17 @@ export default function ClientDetail() {
             {(() => {
               const activeDeals = leads?.filter(l => !["won", "lost"].includes(l.stage)) ?? [];
               const stageColors: Record<string, string> = {
-                new_lead: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-                contacted: "bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300",
-                qualified: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+                met_introduced: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+                new_lead: "bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300",
+                in_conversation: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+                qualified: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
                 proposal_sent: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
                 won: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
                 lost: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
               };
               const stageLabels: Record<string, string> = {
-                new_lead: "New Lead", contacted: "Contacted", qualified: "Qualified",
-                proposal_sent: "Proposal Sent", won: "Won", lost: "Lost",
+                met_introduced: "Met / Introduced", new_lead: "Reached Out", in_conversation: "In Conversation",
+                qualified: "Ready for Proposal", proposal_sent: "Proposal Sent", won: "Won", lost: "Lost",
               };
               const fmtVal = (v: string | null | undefined) => {
                 const n = parseFloat(v ?? "0");

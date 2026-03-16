@@ -11,7 +11,9 @@ import {
   User as UserIcon,
   Target,
   ClipboardList,
-  Calculator
+  Calculator,
+  Link2,
+  ArrowRightCircle
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +24,28 @@ interface ActivityTimelineProps {
   entityType?: "lead" | "client" | "task" | "estimate" | "proposal";
   entityId?: number;
   limit?: number;
+}
+
+interface StageMetadata {
+  from?: string;
+  to?: string;
+  stage?: string;
+  reason?: string;
+}
+
+function getMetadata(log: ActivityLog): Record<string, unknown> {
+  if (log.metadata && typeof log.metadata === "object") return log.metadata as Record<string, unknown>;
+  return {};
+}
+
+function getStageMetadata(log: ActivityLog): StageMetadata {
+  const m = getMetadata(log);
+  return {
+    from: typeof m.from === "string" ? m.from : undefined,
+    to: typeof m.to === "string" ? m.to : undefined,
+    stage: typeof m.stage === "string" ? m.stage : undefined,
+    reason: typeof m.reason === "string" ? m.reason : undefined,
+  };
 }
 
 const getActionIcon = (action: string, entityType: string) => {
@@ -40,6 +64,10 @@ const getActionIcon = (action: string, entityType: string) => {
     case "rejected":
     case "lost":
       return <AlertCircle className="h-4 w-4 text-destructive" />;
+    case "buildops_customer_created":
+      return <Link2 className="h-4 w-4 text-orange-500" />;
+    case "stage_changed":
+      return <ArrowRightCircle className="h-4 w-4 text-purple-500" />;
     default:
       return <Circle className="h-4 w-4 text-muted-foreground" />;
   }
@@ -136,10 +164,40 @@ export function ActivityTimeline({ entityType, entityId, limit }: ActivityTimeli
                 </div>
                 
                 <div className="text-sm text-muted-foreground">
-                  <span className="capitalize font-medium text-foreground">{log.action.replace("_", " ")}</span>
-                  {" "}{log.entityType}{" "}
-                  {Boolean(log.metadata) && typeof log.metadata === 'object' && 'title' in (log.metadata as Record<string, unknown>) && (
-                    <span className="font-medium text-foreground italic">"{(log.metadata as Record<string, unknown>).title as string}"</span>
+                  {log.action === "buildops_customer_created" ? (
+                    <span>
+                      <span className="font-medium text-orange-600">Linked to BuildOps</span>
+                      {" "}— customer auto-created
+                    </span>
+                  ) : log.action === "stage_changed" || (log.action === "stage_updated" && getMetadata(log).reason) ? (
+                    (() => {
+                      const sm = getStageMetadata(log);
+                      return (
+                        <span>
+                          <span className="capitalize font-medium text-foreground">Stage changed</span>
+                          {" "}
+                          {sm.from && <span>from <span className="font-medium">{sm.from.replace(/_/g, " ")}</span></span>}
+                          {" → "}
+                          <span className="font-medium text-foreground">{(sm.to ?? sm.stage ?? "").replace(/_/g, " ")}</span>
+                          {sm.reason && (
+                            <span className="text-xs text-muted-foreground/70 ml-1">({sm.reason})</span>
+                          )}
+                        </span>
+                      );
+                    })()
+                  ) : (
+                    (() => {
+                      const m = getMetadata(log);
+                      return (
+                        <>
+                          <span className="capitalize font-medium text-foreground">{log.action.replace(/_/g, " ")}</span>
+                          {" "}{log.entityType}{" "}
+                          {typeof m.title === "string" && (
+                            <span className="font-medium text-foreground italic">"{m.title}"</span>
+                          )}
+                        </>
+                      );
+                    })()
                   )}
                 </div>
 

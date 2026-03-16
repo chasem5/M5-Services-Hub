@@ -130,7 +130,11 @@ function useCreateEstimateFromCalc() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
       toast({ title: "Estimate Created", description: "Your estimate has been created with calculated line items." });
+      if (data.buildopsWarning) {
+        toast({ title: "BuildOps Sync Warning", description: data.buildopsWarning, variant: "destructive" });
+      }
       setLocation(`/estimates/${data.id}`);
     },
     onError: (err: Error) => {

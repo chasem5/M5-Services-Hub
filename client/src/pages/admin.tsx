@@ -393,6 +393,486 @@ function BuildOpsPanel() {
   );
 }
 
+interface LinkedCustomer {
+  buildopsId: string;
+  buildopsName: string;
+  buildopsEmail: string | null;
+  buildopsPhone: string | null;
+  buildopsStatus: string | null;
+  crmClientId: number | null;
+  crmClientName: string | null;
+  matched: boolean;
+}
+
+interface UnlinkedCrmClient {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+}
+
+interface DuplicateClientDetail {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  buildopsId: string | null;
+  industry: string | null;
+  address: string | null;
+  website: string | null;
+  notes: string | null;
+  serviceNeeds: string[] | null;
+  annualRevenue: string | null;
+  tier: string | null;
+  logoUrl: string | null;
+}
+
+interface DuplicateGroup {
+  name: string;
+  clients: DuplicateClientDetail[];
+}
+
+interface LinkedDataResponse {
+  customers: LinkedCustomer[];
+  unlinkedCrmClients: UnlinkedCrmClient[];
+  totalBuildOps: number;
+  totalMatched: number;
+  totalUnmatched: number;
+  duplicateGroups: DuplicateGroup[];
+}
+
+function BuildOpsMatchingPanel() {
+  const { toast } = useToast();
+  const [filter, setFilter] = useState<"all" | "matched" | "unmatched">("all");
+  const [search, setSearch] = useState("");
+  const [matchingBuildopsId, setMatchingBuildopsId] = useState<string | null>(null);
+  const [selectedCrmClientId, setSelectedCrmClientId] = useState<string>("");
+
+  const { data, isLoading, error } = useQuery<LinkedDataResponse>({
+    queryKey: ["/api/buildops/linked-data"],
+  });
+
+  const matchMutation = useMutation({
+    mutationFn: async ({ crmClientId, buildopsId }: { crmClientId: number; buildopsId: string }) => {
+      const res = await apiRequest("POST", "/api/buildops/match-client", { crmClientId, buildopsId });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/linked-data"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setMatchingBuildopsId(null);
+      setSelectedCrmClientId("");
+      toast({ title: "Matched successfully" });
+    },
+    onError: (err: any) => toast({ title: "Match failed", description: err.message, variant: "destructive" }),
+  });
+
+  const unmatchMutation = useMutation({
+    mutationFn: async (clientId: number) => {
+      const res = await apiRequest("POST", `/api/buildops/unmatch-client/${clientId}`, {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/linked-data"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({ title: "Unmatched successfully" });
+    },
+    onError: (err: any) => toast({ title: "Unmatch failed", description: err.message, variant: "destructive" }),
+  });
+
+  const [mergePreview, setMergePreview] = useState<{ group: DuplicateGroup; keepId: number; deleteId: number } | null>(null);
+  const [fieldChoices, setFieldChoices] = useState<Record<string, string>>({});
+
+  const mergeMutation = useMutation({
+    mutationFn: async ({ keepClientId, deleteClientId, fieldChoices: fc }: { keepClientId: number; deleteClientId: number; fieldChoices?: Record<string, string> }) => {
+      const res = await apiRequest("POST", "/api/buildops/merge-duplicate", { keepClientId, deleteClientId, fieldChoices: fc });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/linked-data"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setMergePreview(null);
+      setFieldChoices({});
+      toast({ title: "Duplicates merged successfully" });
+    },
+    onError: (err: any) => toast({ title: "Merge failed", description: err.message, variant: "destructive" }),
+  });
+
+  const filteredCustomers = (data?.customers ?? []).filter(c => {
+    if (filter === "matched" && !c.matched) return false;
+    if (filter === "unmatched" && c.matched) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return c.buildopsName.toLowerCase().includes(q) ||
+        (c.buildopsEmail ?? "").toLowerCase().includes(q) ||
+        (c.crmClientName ?? "").toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  if (isLoading) {
+    return (
+      <Card className="border-none shadow-sm bg-card">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading BuildOps data...</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="border-none shadow-sm bg-card">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4" />
+            Failed to load BuildOps data. Make sure credentials are configured and connection is verified.
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+    <Card className="border-none shadow-sm bg-card">
+      <CardHeader className="pb-4 border-b">
+        <div className="flex items-center gap-3">
+          <div className="bg-primary/10 p-2 rounded-full">
+            <LinkIcon className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <CardTitle className="text-base font-heading">BuildOps Customer Matching</CardTitle>
+            <CardDescription className="text-xs">
+              {data ? `${data.totalMatched} matched, ${data.totalUnmatched} unmatched of ${data.totalBuildOps} BuildOps customers` : "Match or unmatch BuildOps customers to your CRM clients"}
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/buildops/linked-data"] })}
+            data-testid="button-refresh-linked-data"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-4 space-y-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Input
+            placeholder="Search by name or email..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 min-w-[200px] h-8"
+            data-testid="input-search-linked-data"
+          />
+          <div className="flex gap-1">
+            {(["all", "matched", "unmatched"] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors font-medium capitalize ${filter === f ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+                data-testid={`button-filter-${f}`}
+              >
+                {f === "all" ? `All (${data?.totalBuildOps ?? 0})` : f === "matched" ? `Matched (${data?.totalMatched ?? 0})` : `Unmatched (${data?.totalUnmatched ?? 0})`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="border rounded-lg overflow-hidden">
+          <div className="max-h-[500px] overflow-y-auto">
+            {filteredCustomers.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                {search ? "No results match your search" : "No BuildOps customers found"}
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 sticky top-0">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">BuildOps Customer</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">CRM Match</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</th>
+                    <th className="text-right px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-wider w-[120px]">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredCustomers.map(c => (
+                    <tr key={c.buildopsId} className="hover:bg-muted/20" data-testid={`row-linked-${c.buildopsId}`}>
+                      <td className="px-3 py-2.5">
+                        <p className="font-medium text-sm truncate max-w-[200px]">{c.buildopsName}</p>
+                        {c.buildopsEmail && <p className="text-xs text-muted-foreground truncate">{c.buildopsEmail}</p>}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {c.matched ? (
+                          <div className="flex items-center gap-1.5">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                            <span className="text-sm truncate max-w-[180px]">{c.crmClientName}</span>
+                          </div>
+                        ) : matchingBuildopsId === c.buildopsId ? (
+                          <div className="flex items-center gap-1.5">
+                            <Select value={selectedCrmClientId} onValueChange={setSelectedCrmClientId}>
+                              <SelectTrigger className="h-7 text-xs w-[180px]" data-testid={`select-match-client-${c.buildopsId}`}>
+                                <SelectValue placeholder="Select CRM client..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(data?.unlinkedCrmClients ?? []).map(cl => (
+                                  <SelectItem key={cl.id} value={String(cl.id)}>
+                                    {cl.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              size="sm"
+                              className="h-7 px-2"
+                              disabled={!selectedCrmClientId || matchMutation.isPending}
+                              onClick={() => matchMutation.mutate({ crmClientId: parseInt(selectedCrmClientId), buildopsId: c.buildopsId })}
+                              data-testid={`button-confirm-match-${c.buildopsId}`}
+                            >
+                              <Check className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2"
+                              onClick={() => { setMatchingBuildopsId(null); setSelectedCrmClientId(""); }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No match</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0 ${c.matched ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
+                        >
+                          {c.matched ? "Linked" : "Unlinked"}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {c.matched ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs text-destructive hover:text-destructive gap-1"
+                            onClick={() => c.crmClientId && unmatchMutation.mutate(c.crmClientId)}
+                            disabled={unmatchMutation.isPending}
+                            data-testid={`button-unmatch-${c.buildopsId}`}
+                          >
+                            <X className="h-3 w-3" />
+                            Unmatch
+                          </Button>
+                        ) : matchingBuildopsId !== c.buildopsId ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => { setMatchingBuildopsId(c.buildopsId); setSelectedCrmClientId(""); }}
+                            data-testid={`button-match-${c.buildopsId}`}
+                          >
+                            <LinkIcon className="h-3 w-3" />
+                            Match
+                          </Button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {(data?.duplicateGroups ?? []).length > 0 && (
+          <div className="mt-4 border rounded-lg border-amber-200 bg-amber-50/50 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <span className="text-sm font-semibold text-amber-800">
+                {data!.duplicateGroups.length} Duplicate {data!.duplicateGroups.length === 1 ? "Group" : "Groups"} Detected
+              </span>
+            </div>
+            <p className="text-xs text-amber-700">
+              These CRM clients share the same name. Click "Review & Merge" to compare their info side by side, choose which values to keep, and combine them into one record.
+            </p>
+            {data!.duplicateGroups.map((group, gi) => (
+              <div key={gi} className="bg-white rounded-md border border-amber-200 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">"{group.name}" — {group.clients.length} records</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={() => {
+                      setMergePreview({ group, keepId: group.clients[0].id, deleteId: group.clients[1].id });
+                      setFieldChoices({});
+                    }}
+                    data-testid={`button-review-merge-${gi}`}
+                  >
+                    <LinkIcon className="h-3 w-3" />
+                    Review & Merge
+                  </Button>
+                </div>
+                <div className="flex gap-4 text-xs text-muted-foreground">
+                  {group.clients.map(c => (
+                    <div key={c.id} className="flex items-center gap-1.5">
+                      <span className="font-mono bg-muted px-1 py-0.5 rounded text-[10px]">ID {c.id}</span>
+                      {c.email && <span>{c.email}</span>}
+                      {c.phone && <span>{c.phone}</span>}
+                      {c.buildopsId && <span className="text-green-700">BuildOps ✓</span>}
+                      {!c.email && !c.phone && !c.buildopsId && <span className="italic">no extra info</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+
+    {mergePreview && (() => {
+      const a = mergePreview.group.clients.find(c => c.id === mergePreview.keepId)!;
+      const b = mergePreview.group.clients.find(c => c.id === mergePreview.deleteId)!;
+
+      const MERGE_FIELDS: { key: string; label: string }[] = [
+        { key: "email", label: "Email" },
+        { key: "phone", label: "Phone" },
+        { key: "industry", label: "Industry" },
+        { key: "address", label: "Address" },
+        { key: "website", label: "Website" },
+        { key: "annualRevenue", label: "Annual Revenue" },
+        { key: "tier", label: "Tier" },
+        { key: "notes", label: "Notes" },
+      ];
+
+      return (
+        <AlertDialog open onOpenChange={(open) => { if (!open) { setMergePreview(null); setFieldChoices({}); } }}>
+          <AlertDialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-base">Merge "{mergePreview.group.name}" Records</AlertDialogTitle>
+              <AlertDialogDescription className="text-xs">
+                Compare the two records below. Where both have different values, pick which one to keep. All leads, contacts, estimates, and other records will be combined.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="space-y-1 mt-2">
+              <div className="grid grid-cols-[140px_1fr_1fr] gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wider pb-2 border-b">
+                <span>Field</span>
+                <span>Record #{a.id}</span>
+                <span>Record #{b.id}</span>
+              </div>
+
+              {MERGE_FIELDS.map(({ key, label }) => {
+                const aVal = (a as any)[key] || "";
+                const bVal = (b as any)[key] || "";
+                const aStr = String(aVal).trim();
+                const bStr = String(bVal).trim();
+                const bothHaveValues = !!aStr && !!bStr;
+                const conflict = bothHaveValues && aStr !== bStr;
+                const chosen = fieldChoices[key];
+
+                return (
+                  <div key={key} className={`grid grid-cols-[140px_1fr_1fr] gap-2 py-2 text-sm items-start ${conflict ? "bg-amber-50/60 -mx-2 px-2 rounded" : ""} border-b border-border/40`}>
+                    <span className="text-xs font-medium text-muted-foreground pt-0.5">{label}</span>
+                    {conflict ? (
+                      <>
+                        <button
+                          onClick={() => setFieldChoices(prev => ({ ...prev, [key]: aStr }))}
+                          className={`text-left text-xs p-2 rounded border transition-colors break-words ${chosen === aStr ? "border-primary bg-primary/10 ring-1 ring-primary/30" : "border-border hover:border-primary/40"}`}
+                          data-testid={`merge-pick-a-${key}`}
+                        >
+                          {aStr}
+                        </button>
+                        <button
+                          onClick={() => setFieldChoices(prev => ({ ...prev, [key]: bStr }))}
+                          className={`text-left text-xs p-2 rounded border transition-colors break-words ${chosen === bStr ? "border-primary bg-primary/10 ring-1 ring-primary/30" : "border-border hover:border-primary/40"}`}
+                          data-testid={`merge-pick-b-${key}`}
+                        >
+                          {bStr}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`text-xs break-words ${aStr ? "" : "text-muted-foreground italic"}`}>{aStr || "—"}</span>
+                        <span className={`text-xs break-words ${bStr ? "" : "text-muted-foreground italic"}`}>{bStr || "—"}</span>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+
+              {(a.serviceNeeds?.length || b.serviceNeeds?.length) ? (
+                <div className="grid grid-cols-[140px_1fr_1fr] gap-2 py-2 text-sm border-b border-border/40">
+                  <span className="text-xs font-medium text-muted-foreground">Service Needs</span>
+                  <span className="text-xs">{(a.serviceNeeds || []).join(", ") || "—"}</span>
+                  <span className="text-xs">{(b.serviceNeeds || []).join(", ") || "—"}</span>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-[140px_1fr_1fr] gap-2 py-2 text-sm border-b border-border/40">
+                <span className="text-xs font-medium text-muted-foreground">BuildOps Link</span>
+                <span className="text-xs">{a.buildopsId ? <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 border-green-200">Linked</Badge> : "—"}</span>
+                <span className="text-xs">{b.buildopsId ? <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 border-green-200">Linked</Badge> : "—"}</span>
+              </div>
+            </div>
+
+            {(() => {
+              const conflicts = MERGE_FIELDS.filter(({ key }) => {
+                const aStr = String((a as any)[key] || "").trim();
+                const bStr = String((b as any)[key] || "").trim();
+                return !!aStr && !!bStr && aStr !== bStr;
+              });
+              const unresolvedCount = conflicts.filter(({ key }) => !fieldChoices[key]).length;
+
+              return (
+                <div className="mt-3 space-y-3">
+                  {unresolvedCount > 0 && (
+                    <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      {unresolvedCount} conflicting {unresolvedCount === 1 ? "field needs" : "fields need"} your choice — click a value above to select it
+                    </div>
+                  )}
+
+                  <div className="text-xs text-muted-foreground bg-muted/40 px-3 py-2 rounded">
+                    Record <span className="font-mono font-medium">#{a.id}</span> will be kept as the primary. Any missing info will be filled from <span className="font-mono font-medium">#{b.id}</span>. Service needs will be combined. Notes will be merged. All leads, contacts, and records from both will be combined.
+                  </div>
+
+                  <AlertDialogFooter>
+                    <AlertDialogCancel data-testid="button-cancel-merge">Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={unresolvedCount > 0 || mergeMutation.isPending}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        mergeMutation.mutate({ keepClientId: a.id, deleteClientId: b.id, fieldChoices });
+                      }}
+                      data-testid="button-confirm-merge"
+                    >
+                      {mergeMutation.isPending ? "Merging..." : "Confirm Merge"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </div>
+              );
+            })()}
+          </AlertDialogContent>
+        </AlertDialog>
+      );
+    })()}
+    </>
+  );
+}
+
 export default function AdminPage() {
   const [, setLocation] = useLocation();
   const { user: currentUser } = useAuth();
@@ -1335,6 +1815,7 @@ export default function AdminPage() {
 
         <TabsContent value="buildops" className="pt-4 space-y-6">
           <BuildOpsPanel />
+          <BuildOpsMatchingPanel />
         </TabsContent>
       </Tabs>
 
