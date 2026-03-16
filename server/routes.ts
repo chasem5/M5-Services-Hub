@@ -4026,11 +4026,22 @@ Respond with this JSON:
       let updated = 0;
 
       for (const quote of allQuotes) {
-        const customerId = quote.billingCustomerId ?? quote.customerId ?? quote.customer?.id;
+        const customerId = quote.billingCustomerId ?? quote.customerId ?? (quote as any).customer?.id;
         const matchedClient = customerId ? allClients.find(c => c.buildopsId === customerId) : null;
         const quoteTitle = quote.name ?? (quote.quoteNumber ? `Quote #${quote.quoteNumber}` : `BuildOps Quote ${quote.id}`);
         const total = extractTotal(quote);
         const status = normalizeStatus(quote.status);
+
+        // Targeted debug: log customer fields for quote 2074 (Enterprise Mobility)
+        if (quote.quoteNumber === 2074 || quote.id === "d3792341-d208-4a81-991f-1212d4aa06fd") {
+          console.log("[BuildOps sync-quotes] Quote 2074 customer fields:", {
+            billingCustomerId: (quote as any).billingCustomerId,
+            customerId: (quote as any).customerId,
+            customerNested: (quote as any).customer,
+            resolvedId: customerId,
+            matchedClient: matchedClient ? { id: matchedClient.id, name: matchedClient.name } : null,
+          });
+        }
 
         const existingLead = allLeads.find((l: any) => l.buildopsQuoteId === quote.id);
 
@@ -4046,6 +4057,7 @@ Respond with this JSON:
           // Re-match client if not yet linked but we now have a match
           if (!existingLead.clientId && matchedClient) {
             updateFields.clientId = matchedClient.id;
+            console.log(`[BuildOps sync-quotes] Re-linked lead ${existingLead.id} (quote #${quote.quoteNumber}) → client ${matchedClient.id} (${matchedClient.name})`);
           }
           await db.update(leadsTable).set(updateFields).where(eq(leadsTable.id, existingLead.id));
           updated++;
