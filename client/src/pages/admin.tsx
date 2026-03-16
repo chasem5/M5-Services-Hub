@@ -893,6 +893,8 @@ export default function AdminPage() {
     queryKey: ["/api/my-permissions"],
   });
   const isSuperAdmin = myPerms?.isSuperAdmin ?? false;
+  const { data: buildopsVerifiedSetting } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
+  const isBuildopsVerifiedForPanel = buildopsVerifiedSetting?.value === "true";
 
   if (currentUser && currentUser.role !== "admin" && currentUser.role !== "super_admin") {
     setLocation("/");
@@ -1815,7 +1817,7 @@ export default function AdminPage() {
 
         <TabsContent value="buildops" className="pt-4 space-y-6">
           <BuildOpsPanel />
-          {storedVerified?.value === "true" ? (
+          {isBuildopsVerifiedForPanel ? (
             <BuildOpsMatchingPanel />
           ) : (
             <p className="text-sm text-muted-foreground px-1">
