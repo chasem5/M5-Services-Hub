@@ -317,36 +317,35 @@ export async function createQuote(
 
 export interface BuildOpsProperty {
   id: string;
-  name?: string;
+  companyName?: string;
   customerId?: string;
-  street1?: string;
-  street2?: string;
-  city?: string;
-  state?: string;
-  zipCode?: string;
-  country?: string;
+  billingCustomerId?: string;
+  status?: string;
+  isActive?: boolean;
 }
 
 export async function getProperties(
   clientId: string,
   clientSecret: string,
   tenantId: string,
-  page = 1,
+  page = 0,
   pageSize = 100
 ): Promise<{ items: BuildOpsProperty[]; totalCount: number }> {
   const token = await getToken(clientId, clientSecret);
   const res = await fetch(
-    `${BASE_URL}/v1/properties?page=${page}&limit=${pageSize}`,
+    `${BASE_URL}/v1/properties?page=${page}&page_size=${pageSize}`,
     { headers: buildOpsHeaders(token, tenantId) }
   );
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? `HTTP ${res.status}`);
+    const rawText = await res.text().catch(() => "");
+    console.log(`[BuildOps getProperties] HTTP ${res.status} body:`, rawText.slice(0, 500));
+    let body: any = {};
+    try { body = JSON.parse(rawText); } catch {}
+    throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
   }
   const data = await res.json();
-  const items: BuildOpsProperty[] = data.items ?? data ?? [];
-  if (items.length > 0) console.log("[BuildOps getProperties] sample item keys:", Object.keys(items[0]));
-  return { items, totalCount: data.totalCount ?? data.total ?? items.length };
+  const items: BuildOpsProperty[] = data.items ?? [];
+  return { items, totalCount: data.totalCount ?? items.length };
 }
 
 // ── Service Agreements ────────────────────────────────────────────────────────

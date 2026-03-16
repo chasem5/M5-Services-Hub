@@ -4059,7 +4059,7 @@ Respond with this JSON:
       const { contactBuildings } = await import("@shared/schema");
 
       let allProperties: any[] = [];
-      let page = 1;
+      let page = 0;
       while (true) {
         const batch = await getProperties(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
         allProperties = allProperties.concat(batch.items);
@@ -4077,20 +4077,13 @@ Respond with this JSON:
       for (const prop of allProperties) {
         if (!prop.id) { skipped++; continue; }
 
-        const matchedClient = prop.customerId
-          ? allClients.find(c => c.buildopsId === prop.customerId) ?? null
+        // Match via customerId or billingCustomerId
+        const resolvedCustomerId = prop.customerId ?? prop.billingCustomerId ?? null;
+        const matchedClient = resolvedCustomerId
+          ? allClients.find(c => c.buildopsId === resolvedCustomerId) ?? null
           : null;
 
-        const addressParts = [prop.street1, prop.street2, prop.city, prop.state, prop.zipCode].filter(Boolean);
-        let address = addressParts.length > 0 ? addressParts.join(", ") : null;
-        if (!address && typeof prop.address === "string" && prop.address.trim()) {
-          address = prop.address.trim();
-        } else if (!address && prop.address && typeof prop.address === "object") {
-          const a = prop.address as any;
-          const parts2 = [a.street1 ?? a.street, a.street2, a.city, a.state, a.zipCode ?? a.zip].filter(Boolean);
-          if (parts2.length > 0) address = parts2.join(", ");
-        }
-        const name = prop.name || address || `Property ${prop.id.slice(0, 8)}`;
+        const name = prop.companyName || `Property ${prop.id.slice(0, 8)}`;
 
         const existing = existingBuildings.find(b => b.buildopsId === prop.id);
 
@@ -4098,7 +4091,6 @@ Respond with this JSON:
           await db.update(contactBuildings).set({
             clientId: matchedClient?.id ?? existing.clientId,
             name,
-            address: address ?? existing.address,
           }).where(eq(contactBuildings.id, existing.id));
           updated++;
         } else {
@@ -4106,7 +4098,6 @@ Respond with this JSON:
             buildopsId: prop.id,
             clientId: matchedClient?.id ?? null,
             name,
-            address,
           });
           created++;
         }
