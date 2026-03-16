@@ -4004,27 +4004,50 @@ Respond with this JSON:
         page++;
       }
 
+      // Log raw field names from first quote to help diagnose field mapping issues
+      if (allQuotes.length > 0) {
+        console.log("[BuildOps sync-quotes] First quote raw keys:", Object.keys(allQuotes[0]));
+        console.log("[BuildOps sync-quotes] First quote sample:", JSON.stringify(allQuotes[0]).slice(0, 500));
+      }
+
+      // Helper: extract total from quote — BuildOps may use different field names
+      const extractTotal = (q: any): string | null => {
+        const raw = q.totalAmount ?? q.total ?? q.amount ?? q.grandTotal ?? q.quoteTotal ?? q.priceTotal ?? q.subtotal;
+        return raw != null && raw !== "" ? String(raw) : null;
+      };
+
+      // Helper: normalize status to lowercase
+      const normalizeStatus = (s: any): string | null =>
+        s != null ? String(s).toLowerCase().replace(/\s+/g, "") : null;
+
       const allClients = await storage.listClients();
       const allLeads = await db.select().from(leadsTable);
       let created = 0;
       let updated = 0;
 
       for (const quote of allQuotes) {
-        const customerId = quote.billingCustomerId ?? quote.customerId;
+        const customerId = quote.billingCustomerId ?? quote.customerId ?? quote.customer?.id;
         const matchedClient = customerId ? allClients.find(c => c.buildopsId === customerId) : null;
         const quoteTitle = quote.name ?? (quote.quoteNumber ? `Quote #${quote.quoteNumber}` : `BuildOps Quote ${quote.id}`);
+        const total = extractTotal(quote);
+        const status = normalizeStatus(quote.status);
 
         const existingLead = allLeads.find((l: any) => l.buildopsQuoteId === quote.id);
 
         if (existingLead) {
-          await db.update(leadsTable).set({
-            buildopsQuoteStatus: quote.status ?? null,
+          const updateFields: any = {
+            buildopsQuoteStatus: status,
             buildopsQuoteNumber: quote.quoteNumber ? String(quote.quoteNumber) : null,
-            buildopsQuoteTotal: quote.totalAmount != null ? String(quote.totalAmount) : null,
+            buildopsQuoteTotal: total,
             title: quoteTitle,
-            value: quote.totalAmount != null ? String(quote.totalAmount) : existingLead.value,
+            value: total ?? existingLead.value,
             updatedAt: new Date(),
-          }).where(eq(leadsTable.id, existingLead.id));
+          };
+          // Re-match client if not yet linked but we now have a match
+          if (!existingLead.clientId && matchedClient) {
+            updateFields.clientId = matchedClient.id;
+          }
+          await db.update(leadsTable).set(updateFields).where(eq(leadsTable.id, existingLead.id));
           updated++;
         } else {
           const [newLead] = await db.insert(leadsTable).values({
@@ -4032,10 +4055,10 @@ Respond with this JSON:
             clientId: matchedClient?.id ?? null,
             stage: "proposal_sent",
             buildopsQuoteId: quote.id,
-            buildopsQuoteStatus: quote.status ?? null,
+            buildopsQuoteStatus: status,
             buildopsQuoteNumber: quote.quoteNumber ? String(quote.quoteNumber) : null,
-            buildopsQuoteTotal: quote.totalAmount != null ? String(quote.totalAmount) : null,
-            value: quote.totalAmount != null ? String(quote.totalAmount) : "0",
+            buildopsQuoteTotal: total,
+            value: total ?? "0",
             contractType: "one_time",
             createdAt: new Date(),
             updatedAt: new Date(),

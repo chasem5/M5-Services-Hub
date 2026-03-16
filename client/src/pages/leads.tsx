@@ -1817,20 +1817,21 @@ export default function Leads() {
             {(() => {
               const buildopsLeads = (leads ?? []).filter((l: any) => l.buildopsQuoteId);
               const boCols = [
-                { key: "draft", label: "Quote Needed", statuses: ["draft", null, undefined], color: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300" },
-                { key: "sent", label: "Quote Sent", statuses: ["sent", "submitted", "pending"], color: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300" },
-                { key: "approved", label: "Approved / Won", statuses: ["approved", "won", "accepted"], color: "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300" },
-                { key: "rejected", label: "Rejected / Expired", statuses: ["rejected", "expired", "lost"], color: "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300" },
+                { key: "draft", label: "Quote Needed", statuses: ["draft", "new", "open"], color: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300" },
+                { key: "sent", label: "Quote Sent", statuses: ["sent", "submitted", "pending", "review", "awaitingapproval"], color: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300" },
+                { key: "approved", label: "Approved / Won", statuses: ["approved", "won", "accepted", "jobadded", "converted"], color: "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300" },
+                { key: "rejected", label: "Rejected / Expired", statuses: ["rejected", "expired", "lost", "cancelled", "declined"], color: "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300" },
               ];
               const formatCurrencyLocal = (v: any) =>
-                v != null ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v)) : "—";
+                v != null && Number(v) !== 0 ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v)) : "—";
               return (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {boCols.map(col => {
-                    const colLeads = buildopsLeads.filter((l: any) =>
-                      col.statuses.includes((l as any).buildopsQuoteStatus) ||
-                      (col.key === "draft" && !(l as any).buildopsQuoteStatus)
-                    );
+                    const colLeads = buildopsLeads.filter((l: any) => {
+                      const statusLower = l.buildopsQuoteStatus?.toLowerCase() ?? null;
+                      return col.statuses.includes(statusLower) ||
+                        (col.key === "draft" && !statusLower);
+                    });
                     return (
                       <div key={col.key}>
                         <div className={`rounded-t-lg border-b-0 border px-3 py-2 flex items-center justify-between ${col.color}`}>
