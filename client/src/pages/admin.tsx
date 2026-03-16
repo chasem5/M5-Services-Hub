@@ -1815,7 +1815,13 @@ export default function AdminPage() {
 
         <TabsContent value="buildops" className="pt-4 space-y-6">
           <BuildOpsPanel />
-          <BuildOpsMatchingPanel />
+          {storedVerified?.value === "true" ? (
+            <BuildOpsMatchingPanel />
+          ) : (
+            <p className="text-sm text-muted-foreground px-1">
+              Verify your BuildOps connection above to manage customer matching.
+            </p>
+          )}
         </TabsContent>
       </Tabs>
 

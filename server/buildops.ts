@@ -231,7 +231,8 @@ export async function getDepartments(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? `HTTP ${res.status}`);
+    console.warn(`[BuildOps] departments endpoint returned ${res.status}: ${body.message ?? "unknown error"} — returning empty list`);
+    return [];
   }
   const data = await res.json();
   return data.departments ?? data.items ?? [];
