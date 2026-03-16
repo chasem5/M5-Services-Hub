@@ -336,7 +336,7 @@ export async function getProperties(
 ): Promise<{ items: BuildOpsProperty[]; totalCount: number }> {
   const token = await getToken(clientId, clientSecret);
   const res = await fetch(
-    `${BASE_URL}/v1/locations?page=${page}&limit=${pageSize}`,
+    `${BASE_URL}/v1/properties?page=${page}&limit=${pageSize}`,
     { headers: buildOpsHeaders(token, tenantId) }
   );
   if (!res.ok) {
@@ -344,7 +344,9 @@ export async function getProperties(
     throw new Error(body.message ?? `HTTP ${res.status}`);
   }
   const data = await res.json();
-  return { items: data.items ?? data ?? [], totalCount: data.totalCount ?? (data.items ?? data ?? []).length };
+  const items: BuildOpsProperty[] = data.items ?? data ?? [];
+  if (items.length > 0) console.log("[BuildOps getProperties] sample item keys:", Object.keys(items[0]));
+  return { items, totalCount: data.totalCount ?? data.total ?? items.length };
 }
 
 // ── Service Agreements ────────────────────────────────────────────────────────
