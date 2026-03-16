@@ -3986,6 +3986,52 @@ Respond with this JSON:
     }
   });
 
+  // BuildOps Data Audit — returns raw API responses for field mapping review
+  app.get("/api/buildops/audit-data", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getCustomers, getCustomerById, getQuotes, getQuoteById, getServiceAgreements } = await import("./buildops");
+
+      // Customers — listing + first record detail
+      const custList = await getCustomers(creds.clientId, creds.clientSecret, creds.tenantId, 1, 20);
+      const customers = (custList.items ?? custList as any) as any[];
+      let customerDetail: any = null;
+      if (customers.length > 0) {
+        try { customerDetail = await getCustomerById(creds.clientId, creds.clientSecret, creds.tenantId, customers[0].id); } catch {}
+      }
+
+      // Quotes — listing + first record detail
+      const quotesResult = await getQuotes(creds.clientId, creds.clientSecret, creds.tenantId, 1, 20);
+      const quotes = (quotesResult.items ?? quotesResult as any) as any[];
+      let quoteDetail: any = null;
+      if (quotes.length > 0) {
+        try { quoteDetail = await getQuoteById(creds.clientId, creds.clientSecret, creds.tenantId, quotes[0].id); } catch {}
+      }
+
+      // Service Agreements — for first customer if available
+      let serviceAgreements: any[] = [];
+      if (customers.length > 0) {
+        try {
+          const saResult = await getServiceAgreements(creds.clientId, creds.clientSecret, creds.tenantId, customers[0].id);
+          serviceAgreements = (saResult.items ?? saResult as any) as any[];
+        } catch {}
+      }
+
+      res.json({
+        customers,
+        customerDetail,
+        customerCount: custList.totalCount ?? customers.length,
+        quotes,
+        quoteDetail,
+        quoteCount: quotesResult.totalCount ?? quotes.length,
+        serviceAgreements,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Temporary debug: inspect raw quote data from BuildOps
   app.get("/api/buildops/debug-quote/:quoteId", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     try {

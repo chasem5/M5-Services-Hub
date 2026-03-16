@@ -873,6 +873,325 @@ function BuildOpsMatchingPanel() {
   );
 }
 
+// ── Field mapping definitions ────────────────────────────────────────────────
+type FieldStatus = "mapped" | "partial" | "unmapped";
+interface FieldMapping { crmField: string; status: FieldStatus; note?: string }
+
+const CUSTOMER_FIELD_MAP: Record<string, FieldMapping> = {
+  id:              { crmField: "clients.buildopsId", status: "mapped" },
+  name:            { crmField: "clients.name", status: "mapped" },
+  email:           { crmField: "clients.email", status: "mapped" },
+  phonePrimary:    { crmField: "clients.phone", status: "mapped" },
+  phoneAlternate:  { crmField: "", status: "unmapped" },
+  status:          { crmField: "", status: "unmapped" },
+  customerType:    { crmField: "", status: "unmapped" },
+  customerNumber:  { crmField: "", status: "unmapped" },
+  accountNumber:   { crmField: "", status: "unmapped" },
+  addresses:       { crmField: "clients.address (billing addr)", status: "partial", note: "Only billing address used" },
+};
+
+const QUOTE_FIELD_MAP: Record<string, FieldMapping> = {
+  id:                        { crmField: "leads.buildopsQuoteId", status: "mapped" },
+  quoteNumber:               { crmField: "leads.buildopsQuoteNumber", status: "mapped" },
+  name:                      { crmField: "leads.title", status: "mapped" },
+  status:                    { crmField: "leads.buildopsQuoteStatus", status: "mapped" },
+  totalAmountQuoted:         { crmField: "leads.value + buildopsQuoteTotal", status: "mapped" },
+  billingCustomerId:         { crmField: "leads.clientId (UUID match)", status: "mapped" },
+  billTo:                    { crmField: "leads.clientId (name fallback)", status: "partial", note: "Used when billingCustomerId is null" },
+  scopeOfWork:               { crmField: "", status: "unmapped" },
+  issueDescription:          { crmField: "", status: "unmapped" },
+  description:               { crmField: "", status: "unmapped" },
+  propertyId:                { crmField: "", status: "unmapped", note: "Could map to building" },
+  dueDate:                   { crmField: "", status: "unmapped" },
+  expirationDate:            { crmField: "", status: "unmapped" },
+  expirationLength:          { crmField: "", status: "unmapped" },
+  subTotal:                  { crmField: "", status: "unmapped" },
+  totalEstimatedCost:        { crmField: "", status: "unmapped", note: "Useful for margin calc" },
+  totalBudgetedHours:        { crmField: "", status: "unmapped" },
+  departmentId:              { crmField: "", status: "unmapped", note: "Could map to serviceType" },
+  accountManagerId:          { crmField: "", status: "unmapped", note: "Could map to assignedTo" },
+  salesById:                 { crmField: "", status: "unmapped" },
+  customerPoNumber:          { crmField: "", status: "unmapped" },
+  internalApprovalStatus:    { crmField: "", status: "unmapped" },
+  billingStatus:             { crmField: "", status: "unmapped" },
+  version:                   { crmField: "", status: "unmapped" },
+  serviceAgreementId:        { crmField: "", status: "unmapped" },
+  jobTypeId:                 { crmField: "", status: "unmapped" },
+  orderedById:               { crmField: "", status: "unmapped" },
+  propertyRepId:             { crmField: "", status: "unmapped" },
+  audit:                     { crmField: "", status: "unmapped", note: "Contains createdBy/createdDate" },
+  taxRateId:                 { crmField: "", status: "unmapped" },
+};
+
+const SA_FIELD_MAP: Record<string, FieldMapping> = {
+  id:              { crmField: "", status: "unmapped" },
+  agreementNumber: { crmField: "", status: "unmapped" },
+  name:            { crmField: "", status: "unmapped" },
+  status:          { crmField: "", status: "unmapped" },
+  startDate:       { crmField: "", status: "unmapped" },
+  endDate:         { crmField: "", status: "unmapped" },
+  totalAmount:     { crmField: "", status: "unmapped" },
+  customerId:      { crmField: "→ client (UUID match)", status: "partial" },
+};
+
+const FIELD_STATUS_BADGE: Record<FieldStatus, string> = {
+  mapped:   "bg-green-100 text-green-700 border-green-200",
+  partial:  "bg-amber-100 text-amber-700 border-amber-200",
+  unmapped: "bg-slate-100 text-slate-500 border-slate-200",
+};
+
+function formatCellValue(val: any): string {
+  if (val === null || val === undefined) return "—";
+  if (typeof val === "object") return JSON.stringify(val).slice(0, 80);
+  return String(val).slice(0, 80);
+}
+
+function AuditTable({ records, detailRecord, fieldMap, entityLabel }: {
+  records: any[];
+  detailRecord: any | null;
+  fieldMap: Record<string, FieldMapping>;
+  entityLabel: string;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<"all" | FieldStatus>("all");
+
+  // Build complete set of keys: from listing + detail record
+  const listingKeys = Array.from(new Set(records.flatMap(r => Object.keys(r))));
+  const detailKeys = detailRecord ? Object.keys(detailRecord) : [];
+  const extraDetailKeys = detailKeys.filter(k => !listingKeys.includes(k));
+  const allKeys = [...listingKeys, ...extraDetailKeys];
+
+  const filteredKeys = allKeys.filter(k => {
+    if (filterStatus === "all") return true;
+    const mapping = fieldMap[k];
+    if (!mapping) return filterStatus === "unmapped";
+    return mapping.status === filterStatus;
+  });
+
+  const mappedCount = allKeys.filter(k => fieldMap[k]?.status === "mapped").length;
+  const partialCount = allKeys.filter(k => fieldMap[k]?.status === "partial").length;
+  const unmappedCount = allKeys.filter(k => !fieldMap[k] || fieldMap[k]?.status === "unmapped").length;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary badges */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs text-muted-foreground font-medium">{allKeys.length} fields from BuildOps API</span>
+        <button onClick={() => setFilterStatus("all")} className={`text-xs px-2 py-0.5 rounded-full border font-medium transition-colors ${filterStatus === "all" ? "bg-slate-700 text-white border-slate-700" : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"}`}>
+          All ({allKeys.length})
+        </button>
+        <button onClick={() => setFilterStatus("mapped")} className={`text-xs px-2 py-0.5 rounded-full border font-medium transition-colors ${filterStatus === "mapped" ? "bg-green-600 text-white border-green-600" : "bg-green-100 text-green-700 border-green-200 hover:bg-green-200"}`}>
+          Mapped ({mappedCount})
+        </button>
+        <button onClick={() => setFilterStatus("partial")} className={`text-xs px-2 py-0.5 rounded-full border font-medium transition-colors ${filterStatus === "partial" ? "bg-amber-600 text-white border-amber-600" : "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"}`}>
+          Partial ({partialCount})
+        </button>
+        <button onClick={() => setFilterStatus("unmapped")} className={`text-xs px-2 py-0.5 rounded-full border font-medium transition-colors ${filterStatus === "unmapped" ? "bg-slate-600 text-white border-slate-600" : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200"}`}>
+          Unmapped ({unmappedCount})
+        </button>
+      </div>
+
+      {/* Field mapping legend */}
+      <div className="border rounded-lg overflow-hidden">
+        <div className="bg-muted/40 px-3 py-2 border-b flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Field Mapping Legend</span>
+          <span className="text-xs text-muted-foreground">{entityLabel} fields → CRM fields</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 max-h-56 overflow-y-auto">
+          {filteredKeys.map((key, i) => {
+            const mapping = fieldMap[key];
+            const status: FieldStatus = mapping?.status ?? "unmapped";
+            const isFromDetailOnly = extraDetailKeys.includes(key);
+            return (
+              <div key={key} className={`flex items-start gap-2 px-3 py-1.5 text-xs border-b last:border-b-0 ${i % 2 === 1 ? "border-l" : ""}`}>
+                <div className="flex-1 min-w-0">
+                  <span className="font-mono font-medium text-slate-700">{key}</span>
+                  {isFromDetailOnly && <span className="ml-1 text-[10px] text-blue-500">(detail only)</span>}
+                </div>
+                {mapping?.crmField ? (
+                  <span className="text-slate-500 shrink-0">→ <span className="font-mono text-slate-600">{mapping.crmField}</span></span>
+                ) : (
+                  <span className={`shrink-0 px-1.5 py-0 rounded border text-[10px] font-medium ${FIELD_STATUS_BADGE[status]}`}>
+                    {status === "unmapped" ? "unmapped" : status}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Data table */}
+      {records.length > 0 && (
+        <div className="border rounded-lg overflow-hidden">
+          <div className="bg-muted/40 px-3 py-2 border-b flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Live Data — {records.length} of {entityLabel}s shown
+            </span>
+            <button onClick={() => setShowAll(v => !v)} className="text-xs text-primary hover:underline">
+              {showAll ? "Show fewer" : "Show all fields"}
+            </button>
+          </div>
+          <div className="overflow-x-auto max-h-80">
+            <table className="text-xs w-full border-collapse min-w-max">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-muted/80">
+                  {filteredKeys.slice(0, showAll ? undefined : 8).map(key => {
+                    const mapping = fieldMap[key];
+                    const status: FieldStatus = mapping?.status ?? "unmapped";
+                    return (
+                      <th key={key} className={`px-3 py-2 text-left font-semibold whitespace-nowrap border-r last:border-r-0 ${
+                        status === "mapped" ? "text-green-700 bg-green-50" :
+                        status === "partial" ? "text-amber-700 bg-amber-50" :
+                        "text-slate-500"
+                      }`}>
+                        <div>{key}</div>
+                        {mapping?.crmField && <div className="text-[10px] font-normal opacity-70">→ {mapping.crmField.split(" ")[0]}</div>}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {records.map((record, ri) => (
+                  <tr key={ri} className="border-t hover:bg-muted/30">
+                    {filteredKeys.slice(0, showAll ? undefined : 8).map(key => (
+                      <td key={key} className="px-3 py-1.5 whitespace-nowrap border-r last:border-r-0 font-mono text-slate-600 max-w-[200px] truncate">
+                        {formatCellValue(record[key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!showAll && filteredKeys.length > 8 && (
+            <div className="px-3 py-2 text-xs text-muted-foreground border-t bg-muted/20">
+              Showing first 8 of {filteredKeys.length} fields. Click "Show all fields" above to see all.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BuildOpsAuditPanel() {
+  const [auditTab, setAuditTab] = useState("quotes");
+  const [hasFetched, setHasFetched] = useState(false);
+
+  const { data, isLoading, error, refetch } = useQuery<{
+    customers: any[];
+    customerDetail: any | null;
+    customerCount: number;
+    quotes: any[];
+    quoteDetail: any | null;
+    quoteCount: number;
+    serviceAgreements: any[];
+  }>({
+    queryKey: ["/api/buildops/audit-data"],
+    enabled: false,
+  });
+
+  const handleFetch = () => {
+    setHasFetched(true);
+    refetch();
+  };
+
+  return (
+    <Card className="border-none shadow-sm bg-card">
+      <CardHeader className="pb-4 border-b">
+        <div className="flex items-center gap-3">
+          <div className="bg-primary/10 p-2 rounded-full">
+            <GitBranch className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <CardTitle className="text-base font-heading">Data Field Audit</CardTitle>
+            <CardDescription className="text-xs">
+              View all raw fields returned by the BuildOps API — see what's mapped to your CRM and what isn't. Use this to tell us which fields to wire up.
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleFetch}
+            disabled={isLoading}
+            data-testid="button-buildops-audit-fetch"
+          >
+            {isLoading ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+            {isLoading ? "Fetching..." : hasFetched ? "Refresh Data" : "Fetch Live Data"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-6">
+        {!hasFetched && !isLoading && (
+          <div className="text-center py-10 text-muted-foreground">
+            <GitBranch className="h-10 w-10 mx-auto mb-3 opacity-20" />
+            <p className="text-sm font-medium">Click "Fetch Live Data" to pull raw field data from BuildOps</p>
+            <p className="text-xs mt-1 opacity-70">Fetches first 20 customers, 20 quotes, and any service agreements</p>
+          </div>
+        )}
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-destructive py-4">
+            <AlertCircle className="h-4 w-4" />
+            Failed to fetch audit data. Ensure BuildOps is connected.
+          </div>
+        )}
+        {data && (
+          <Tabs value={auditTab} onValueChange={setAuditTab}>
+            <TabsList className="mb-4 h-9 bg-muted/60 rounded-lg p-1">
+              <TabsTrigger value="quotes" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Quotes ({data.quoteCount})
+              </TabsTrigger>
+              <TabsTrigger value="customers" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Customers ({data.customerCount})
+              </TabsTrigger>
+              <TabsTrigger value="service-agreements" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Service Agreements ({data.serviceAgreements.length})
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="quotes" className="space-y-0 mt-0">
+              <AuditTable
+                records={data.quotes}
+                detailRecord={data.quoteDetail}
+                fieldMap={QUOTE_FIELD_MAP}
+                entityLabel="Quote"
+              />
+            </TabsContent>
+
+            <TabsContent value="customers" className="space-y-0 mt-0">
+              <AuditTable
+                records={data.customers}
+                detailRecord={data.customerDetail}
+                fieldMap={CUSTOMER_FIELD_MAP}
+                entityLabel="Customer"
+              />
+            </TabsContent>
+
+            <TabsContent value="service-agreements" className="space-y-0 mt-0">
+              {data.serviceAgreements.length === 0 ? (
+                <div className="text-center py-8 text-sm text-muted-foreground">
+                  No service agreements found for the first BuildOps customer.
+                  <br />
+                  <span className="text-xs opacity-70">Service agreement data is fetched per-customer.</span>
+                </div>
+              ) : (
+                <AuditTable
+                  records={data.serviceAgreements}
+                  detailRecord={data.serviceAgreements[0] ?? null}
+                  fieldMap={SA_FIELD_MAP}
+                  entityLabel="Service Agreement"
+                />
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminPage() {
   const [, setLocation] = useLocation();
   const { user: currentUser } = useAuth();
@@ -1818,10 +2137,13 @@ export default function AdminPage() {
         <TabsContent value="buildops" className="pt-4 space-y-6">
           <BuildOpsPanel />
           {isBuildopsVerifiedForPanel ? (
-            <BuildOpsMatchingPanel />
+            <>
+              <BuildOpsAuditPanel />
+              <BuildOpsMatchingPanel />
+            </>
           ) : (
             <p className="text-sm text-muted-foreground px-1">
-              Verify your BuildOps connection above to manage customer matching.
+              Verify your BuildOps connection above to manage customer matching and view field mappings.
             </p>
           )}
         </TabsContent>
