@@ -111,8 +111,9 @@ export function mapBuildOpsStatusToStage(status: string | null | undefined): str
   if (!status) return "proposal_sent";
   const s = status.toLowerCase().replace(/\s+/g, "");
   if (["approved", "jobadded", "projectadded", "won", "converted"].includes(s)) return "won";
-  if (["cancelled", "rejected", "expired", "declined", "lost"].includes(s)) return "lost";
-  if (["draft", "new", "open"].includes(s)) return "qualified";
+  if (["rejected", "expired", "declined", "lost"].includes(s)) return "lost";
+  if (s === "cancelled") return "canceled";
+  if (["draft", "new", "open"].includes(s)) return "draft";
   return "proposal_sent"; // senttocustomer, customerviewed, sent, submitted, pending, review, awaitingapproval
 }
 

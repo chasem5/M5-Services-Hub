@@ -47,7 +47,7 @@ function SortableStageRow({
   editingLabel: string;
   setEditingId: (id: number | null) => void;
   setEditingLabel: (label: string) => void;
-  updateMutation: any;
+  updateMutation: { mutate: (args: { id: number; data: { label?: string; color?: string | null; track?: string } }) => void; isPending: boolean };
   deleteMutation: any;
 }) {
   const {
@@ -86,13 +86,19 @@ function SortableStageRow({
 
       <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${getStageColors(stage.color).dot}`} />
 
-      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0 leading-none ${
-        stage.track === "deal"
-          ? "bg-primary/10 text-primary border border-primary/20"
-          : "bg-muted text-muted-foreground border border-border/50"
-      }`} data-testid={`badge-track-${stage.id}`}>
+      <button
+        onClick={() => updateMutation.mutate({ id: stage.id, data: { track: stage.track === "deal" ? "relationship" : "deal" } })}
+        title={stage.track === "deal" ? "Move to Relationship track" : "Move to Deal track"}
+        disabled={updateMutation.isPending}
+        data-testid={`badge-track-${stage.id}`}
+        className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0 leading-none cursor-pointer hover:opacity-70 transition-opacity disabled:opacity-40 ${
+          stage.track === "deal"
+            ? "bg-primary/10 text-primary border border-primary/20"
+            : "bg-muted text-muted-foreground border border-border/50"
+        }`}
+      >
         {stage.track === "deal" ? "Deal" : "Rel"}
-      </span>
+      </button>
 
       {isEditing ? (
         <Input
@@ -202,7 +208,7 @@ export function PipelineStagesManager() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { label?: string; color?: string | null } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { label?: string; color?: string | null; track?: string } }) =>
       apiRequest("PUT", `/api/pipeline-stages/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/pipeline-stages"] });
