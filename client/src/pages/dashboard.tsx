@@ -173,7 +173,7 @@ const stageLabels: Record<string, string> = {
 export default function Dashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const isAdminOrManager = user?.role === "admin" || user?.role === "manager";
+  const isAdminOrManager = user?.role === "super_admin" || user?.role === "admin" || user?.role === "manager";
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [quickAction, setQuickAction] = useState<"deal" | "contact" | "company" | "task" | "activity" | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>(user?.dashboardFilter ?? "all");
