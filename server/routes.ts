@@ -5353,22 +5353,26 @@ Guidelines:
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
 
-      const [dealStats] = await db.execute(sql`
+      const toRows = (r: any): any[] => {
+        if (Array.isArray(r)) return r;
+        if (r && Array.isArray((r as any).rows)) return (r as any).rows;
+        return [];
+      };
+
+      const [dealStats] = toRows(await db.execute(sql`
         SELECT
           COUNT(*) FILTER (WHERE stage = 'won') as won_count,
           COUNT(*) FILTER (WHERE stage = 'lost') as lost_count,
           COUNT(*) FILTER (WHERE stage NOT IN ('won', 'lost', 'canceled')) as open_count,
           COALESCE(SUM(CAST(value AS numeric)) FILTER (WHERE stage NOT IN ('won', 'lost', 'canceled')), 0) as pipeline_value
         FROM leads WHERE client_id = ${clientId}
-      `);
+      `));
 
-      const wonCount = Number(dealStats.won_count ?? 0);
-      const lostCount = Number(dealStats.lost_count ?? 0);
-      const openCount = Number(dealStats.open_count ?? 0);
-      const pipelineValue = Number(dealStats.pipeline_value ?? 0);
+      const wonCount = Number(dealStats?.won_count ?? 0);
+      const lostCount = Number(dealStats?.lost_count ?? 0);
+      const openCount = Number(dealStats?.open_count ?? 0);
+      const pipelineValue = Number(dealStats?.pipeline_value ?? 0);
       const hitRate = (wonCount + lostCount) > 0 ? Math.round((wonCount / (wonCount + lostCount)) * 100) : null;
-
-      const toRows = (r: any): any[] => Array.isArray(r) ? r : Array.from(r as Iterable<any>);
 
       const dealsByStage = toRows(await db.execute(sql`
         SELECT stage, COUNT(*) as cnt
@@ -5520,7 +5524,11 @@ Guidelines:
 
       const hasDateRange = dateFrom && dateTo;
 
-      const toRows = (result: any): any[] => Array.isArray(result) ? result : Array.from(result as Iterable<any>);
+      const toRows = (result: any): any[] => {
+        if (Array.isArray(result)) return result;
+        if (result && Array.isArray((result as any).rows)) return (result as any).rows;
+        return [];
+      };
 
       const dealsByClient = toRows(await db.execute(sql`
         SELECT client_id,
@@ -5570,7 +5578,7 @@ Guidelines:
           GROUP BY client_id
         ) sub
       `));
-      const globalAvgMonthly = Number(globalAvgRow.global_avg ?? 0);
+      const globalAvgMonthly = Number(globalAvgRow?.global_avg ?? 0);
 
       const agrByClient = toRows(await db.execute(sql`
         SELECT client_id,
