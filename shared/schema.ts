@@ -673,6 +673,8 @@ export const buildopsJobs = pgTable("buildops_jobs", {
   materialCost: decimal("material_cost", { precision: 12, scale: 2 }),
   grossProfit: decimal("gross_profit", { precision: 12, scale: 2 }),
   billingStatus: varchar("billing_status"),
+  billingType: varchar("billing_type"),
+  isServiceAgreementJob: boolean("is_service_agreement_job").default(false),
   scheduledDate: timestamp("scheduled_date"),
   dueDate: timestamp("due_date"),
   completedDate: timestamp("completed_date"),

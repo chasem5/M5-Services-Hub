@@ -534,6 +534,7 @@ export interface BuildOpsJob {
   status?: string;
   priority?: string;
   jobTypeName?: string;
+  billingType?: string;
   customerName?: string;
   customerPropertyName?: string;
   amountQuoted?: number;
@@ -544,6 +545,8 @@ export interface BuildOpsJob {
   grossProfit?: number;
   billingStatus?: string;
   scheduledDate?: string;
+  scheduledStart?: string;
+  scheduledEnd?: string;
   dueDate?: string;
   completedDate?: string;
   customerId?: string;
@@ -590,9 +593,12 @@ export async function getJobs(
     }
     const data = await res.json();
     const items: BuildOpsJob[] = data.items ?? [];
+    const totalCount: number = data.totalCount ?? data.total ?? 0;
     allJobs.push(...items);
+    if (items.length === 0 || (totalCount > 0 && allJobs.length >= totalCount)) break;
     if (items.length < limit) break;
     page++;
+    if (page > 200) break;
   }
   return allJobs;
 }
@@ -618,9 +624,12 @@ export async function getInvoices(
     }
     const data = await res.json();
     const items: BuildOpsInvoice[] = data.items ?? [];
+    const totalCount: number = data.totalCount ?? data.total ?? 0;
     allInvoices.push(...items);
+    if (items.length === 0 || (totalCount > 0 && allInvoices.length >= totalCount)) break;
     if (items.length < limit) break;
     page++;
+    if (page > 200) break;
   }
   return allInvoices;
 }
@@ -646,9 +655,12 @@ export async function getAllServiceAgreements(
     }
     const data = await res.json();
     const items: BuildOpsServiceAgreement[] = data.items ?? [];
+    const totalCount: number = data.totalCount ?? data.total ?? 0;
     all.push(...items);
+    if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
     if (items.length < limit) break;
     page++;
+    if (page > 200) break;
   }
   return all;
 }
@@ -660,14 +672,27 @@ export async function getServiceAgreements(
   customerId: string
 ): Promise<BuildOpsServiceAgreement[]> {
   const token = await getToken(clientId, clientSecret);
-  const res = await fetch(
-    `${BASE_URL}/v1/service-agreements?customer_id=${encodeURIComponent(customerId)}&page=1&limit=50`,
-    { headers: buildOpsHeaders(token, tenantId) }
-  );
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? `HTTP ${res.status}`);
+  const headers = buildOpsHeaders(token, tenantId);
+  const all: BuildOpsServiceAgreement[] = [];
+  let page = 1;
+  const limit = 100;
+  while (true) {
+    const res = await fetch(
+      `${BASE_URL}/v1/service-agreements?customer_id=${encodeURIComponent(customerId)}&page=${page}&limit=${limit}`,
+      { headers }
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message ?? `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const items: BuildOpsServiceAgreement[] = data.items ?? [];
+    const totalCount: number = data.totalCount ?? data.total ?? 0;
+    all.push(...items);
+    if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
+    if (items.length < limit) break;
+    page++;
+    if (page > 50) break;
   }
-  const data = await res.json();
-  return data.items ?? [];
+  return all;
 }

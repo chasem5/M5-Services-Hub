@@ -1153,14 +1153,62 @@ const QUOTE_FIELD_MAP: Record<string, FieldMapping> = {
 };
 
 const SA_FIELD_MAP: Record<string, FieldMapping> = {
-  id:              { crmField: "", status: "unmapped" },
-  agreementNumber: { crmField: "", status: "unmapped" },
-  name:            { crmField: "", status: "unmapped" },
-  status:          { crmField: "", status: "unmapped" },
-  startDate:       { crmField: "", status: "unmapped" },
-  endDate:         { crmField: "", status: "unmapped" },
-  totalAmount:     { crmField: "", status: "unmapped" },
-  customerId:      { crmField: "→ client (UUID match)", status: "partial" },
+  id:                        { crmField: "buildops_agreements.buildopsId", status: "mapped" },
+  agreementNumber:           { crmField: "buildops_agreements.agreementNumber", status: "mapped" },
+  name:                      { crmField: "buildops_agreements.agreementName", status: "mapped" },
+  status:                    { crmField: "buildops_agreements.status", status: "mapped" },
+  startDate:                 { crmField: "buildops_agreements.startDate", status: "mapped" },
+  endDate:                   { crmField: "buildops_agreements.endDate", status: "mapped" },
+  contractValue:             { crmField: "buildops_agreements.contractValue", status: "mapped" },
+  totalAmount:               { crmField: "buildops_agreements.contractValue (fallback)", status: "partial", note: "Used when contractValue is null" },
+  frequency:                 { crmField: "buildops_agreements.frequency", status: "mapped" },
+  advancedSchedulingState:   { crmField: "buildops_agreements.advancedSchedulingState", status: "mapped" },
+  customerId:                { crmField: "buildops_agreements.clientId (UUID match)", status: "mapped" },
+};
+
+const JOB_FIELD_MAP: Record<string, FieldMapping> = {
+  id:                      { crmField: "buildops_jobs.buildopsId", status: "mapped" },
+  jobNumber:               { crmField: "buildops_jobs.jobNumber", status: "mapped" },
+  title:                   { crmField: "buildops_jobs.title", status: "mapped" },
+  issueDescription:        { crmField: "buildops_jobs.issueDescription", status: "mapped" },
+  status:                  { crmField: "buildops_jobs.status", status: "mapped" },
+  priority:                { crmField: "buildops_jobs.priority", status: "mapped" },
+  jobTypeName:             { crmField: "buildops_jobs.jobTypeName", status: "mapped" },
+  billingType:             { crmField: "buildops_jobs.billingType", status: "mapped", note: "T&M, Fixed, SA, etc." },
+  billingStatus:           { crmField: "buildops_jobs.billingStatus", status: "mapped" },
+  customerName:            { crmField: "buildops_jobs.customerName", status: "mapped" },
+  customerPropertyName:    { crmField: "buildops_jobs.customerPropertyName", status: "mapped" },
+  amountQuoted:            { crmField: "buildops_jobs.amountQuoted", status: "mapped" },
+  totalAmount:             { crmField: "buildops_jobs.totalAmount", status: "mapped", note: "$0 for T&M until invoiced" },
+  costAmount:              { crmField: "buildops_jobs.costAmount", status: "mapped" },
+  laborCost:               { crmField: "buildops_jobs.laborCost", status: "mapped" },
+  materialCost:            { crmField: "buildops_jobs.materialCost", status: "mapped" },
+  grossProfit:             { crmField: "buildops_jobs.grossProfit", status: "mapped" },
+  scheduledDate:           { crmField: "buildops_jobs.scheduledDate", status: "mapped", note: "Also checks scheduledStart, scheduledStartDate" },
+  scheduledStart:          { crmField: "buildops_jobs.scheduledDate (alias)", status: "partial", note: "Mapped to scheduledDate column" },
+  dueDate:                 { crmField: "buildops_jobs.dueDate", status: "mapped" },
+  completedDate:           { crmField: "buildops_jobs.completedDate", status: "mapped" },
+  customerId:              { crmField: "buildops_jobs.clientId (UUID match)", status: "mapped" },
+  customerPropertyId:      { crmField: "buildops_jobs.buildopsPropertyId", status: "mapped" },
+  quoteId:                 { crmField: "buildops_jobs.buildopsQuoteId", status: "mapped" },
+  serviceAgreementId:      { crmField: "buildops_jobs.buildopsServiceAgreementId + isServiceAgreementJob", status: "mapped" },
+};
+
+const INVOICE_FIELD_MAP: Record<string, FieldMapping> = {
+  id:              { crmField: "buildops_invoices.buildopsId", status: "mapped" },
+  invoiceNumber:   { crmField: "buildops_invoices.invoiceNumber", status: "mapped" },
+  status:          { crmField: "buildops_invoices.status", status: "mapped" },
+  totalAmount:     { crmField: "buildops_invoices.totalAmount", status: "mapped" },
+  subtotal:        { crmField: "buildops_invoices.subtotal", status: "mapped" },
+  taxAmount:       { crmField: "buildops_invoices.taxAmount", status: "mapped" },
+  customerName:    { crmField: "buildops_invoices.customerName", status: "mapped" },
+  jobNumber:       { crmField: "buildops_invoices.jobNumber", status: "mapped" },
+  isFinalInvoice:  { crmField: "buildops_invoices.isFinalInvoice", status: "mapped" },
+  issuedDate:      { crmField: "buildops_invoices.issuedDate", status: "mapped" },
+  dueDate:         { crmField: "buildops_invoices.dueDate", status: "mapped" },
+  closedDate:      { crmField: "buildops_invoices.closedDate", status: "mapped" },
+  customerId:      { crmField: "buildops_invoices.clientId (UUID match)", status: "mapped" },
+  jobId:           { crmField: "buildops_invoices.buildopsJobId", status: "mapped" },
 };
 
 const FIELD_STATUS_BADGE: Record<FieldStatus, string> = {
@@ -1317,6 +1365,13 @@ function BuildOpsAuditPanel() {
     quoteDetail: any | null;
     quoteCount: number;
     serviceAgreements: any[];
+    serviceAgreementCount: number;
+    jobs: any[];
+    jobCount: number;
+    jobDetail: any | null;
+    invoices: any[];
+    invoiceCount: number;
+    invoiceDetail: any | null;
   }>({
     queryKey: ["/api/buildops/audit-data"],
     enabled: false,
@@ -1357,7 +1412,7 @@ function BuildOpsAuditPanel() {
           <div className="text-center py-10 text-muted-foreground">
             <GitBranch className="h-10 w-10 mx-auto mb-3 opacity-20" />
             <p className="text-sm font-medium">Click "Fetch Live Data" to pull raw field data from BuildOps</p>
-            <p className="text-xs mt-1 opacity-70">Fetches first 20 customers, 20 quotes, and any service agreements</p>
+            <p className="text-xs mt-1 opacity-70">Fetches sample records from customers, quotes, jobs, invoices, and service agreements</p>
           </div>
         )}
         {error && (
@@ -1368,17 +1423,49 @@ function BuildOpsAuditPanel() {
         )}
         {data && (
           <Tabs value={auditTab} onValueChange={setAuditTab}>
-            <TabsList className="mb-4 h-9 bg-muted/60 rounded-lg p-1">
+            <TabsList className="mb-4 h-9 bg-muted/60 rounded-lg p-1 flex-wrap gap-1">
+              <TabsTrigger value="jobs" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Jobs ({data.jobCount})
+              </TabsTrigger>
+              <TabsTrigger value="invoices" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Invoices ({data.invoiceCount})
+              </TabsTrigger>
+              <TabsTrigger value="service-agreements" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Service Agmts ({data.serviceAgreementCount ?? data.serviceAgreements.length})
+              </TabsTrigger>
               <TabsTrigger value="quotes" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 Quotes ({data.quoteCount})
               </TabsTrigger>
               <TabsTrigger value="customers" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 Customers ({data.customerCount})
               </TabsTrigger>
-              <TabsTrigger value="service-agreements" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
-                Service Agreements ({data.serviceAgreements.length})
-              </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="jobs" className="space-y-0 mt-0">
+              {data.jobs.length === 0 ? (
+                <div className="text-center py-8 text-sm text-muted-foreground">No jobs returned from BuildOps API.</div>
+              ) : (
+                <AuditTable
+                  records={data.jobs}
+                  detailRecord={data.jobDetail}
+                  fieldMap={JOB_FIELD_MAP}
+                  entityLabel="Job"
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="invoices" className="space-y-0 mt-0">
+              {data.invoices.length === 0 ? (
+                <div className="text-center py-8 text-sm text-muted-foreground">No invoices returned from BuildOps API.</div>
+              ) : (
+                <AuditTable
+                  records={data.invoices}
+                  detailRecord={data.invoiceDetail}
+                  fieldMap={INVOICE_FIELD_MAP}
+                  entityLabel="Invoice"
+                />
+              )}
+            </TabsContent>
 
             <TabsContent value="quotes" className="space-y-0 mt-0">
               <AuditTable
@@ -1401,9 +1488,7 @@ function BuildOpsAuditPanel() {
             <TabsContent value="service-agreements" className="space-y-0 mt-0">
               {data.serviceAgreements.length === 0 ? (
                 <div className="text-center py-8 text-sm text-muted-foreground">
-                  No service agreements found for the first BuildOps customer.
-                  <br />
-                  <span className="text-xs opacity-70">Service agreement data is fetched per-customer.</span>
+                  No service agreements found.
                 </div>
               ) : (
                 <AuditTable

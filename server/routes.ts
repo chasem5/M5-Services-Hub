@@ -3805,11 +3805,26 @@ Respond with this JSON:
       if (!client.buildopsId) return res.json([]);
 
       const { db } = await import("./db");
-      const { eq } = await import("drizzle-orm");
+      const { eq, sql } = await import("drizzle-orm");
       const { buildopsAgreements } = await import("@shared/schema");
       const agreements = await db.select().from(buildopsAgreements).where(eq(buildopsAgreements.clientId, clientId));
       if (agreements.length > 0) {
-        return res.json(agreements);
+        // Enrich each agreement with total invoiced revenue from SA-linked jobs
+        const enriched = await Promise.all(agreements.map(async (agr) => {
+          try {
+            const [row] = await db.execute(sql`
+              SELECT COALESCE(SUM(CAST(i.total_amount AS numeric)), 0) as total_invoiced
+              FROM buildops_invoices i
+              INNER JOIN buildops_jobs j ON i.buildops_job_id = j.buildops_id
+              WHERE j.buildops_service_agreement_id = ${agr.buildopsId}
+                AND j.client_id = ${clientId}
+            `);
+            return { ...agr, totalInvoiced: Number((row as any).total_invoiced ?? 0) };
+          } catch {
+            return { ...agr, totalInvoiced: 0 };
+          }
+        }));
+        return res.json(enriched);
       }
 
       const creds = await getBuildOpsCreds();
@@ -4036,7 +4051,7 @@ Respond with this JSON:
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
-      const { getCustomers, getCustomerById, getQuotes, getQuoteById, getServiceAgreements } = await import("./buildops");
+      const { getCustomers, getCustomerById, getQuotes, getQuoteById, getServiceAgreements, BASE_URL, getToken, buildOpsHeaders } = await import("./buildops");
 
       // Customers — listing + first record detail
       const custList = await getCustomers(creds.clientId, creds.clientSecret, creds.tenantId, 1, 20);
@@ -4054,14 +4069,51 @@ Respond with this JSON:
         try { quoteDetail = await getQuoteById(creds.clientId, creds.clientSecret, creds.tenantId, quotes[0].id); } catch {}
       }
 
-      // Service Agreements — for first customer if available
+      // Service Agreements — paginated across all customers
       let serviceAgreements: any[] = [];
-      if (customers.length > 0) {
-        try {
-          const saResult = await getServiceAgreements(creds.clientId, creds.clientSecret, creds.tenantId, customers[0].id);
-          serviceAgreements = (saResult.items ?? saResult as any) as any[];
-        } catch {}
-      }
+      let serviceAgreementCount = 0;
+      try {
+        const token = await getToken(creds.clientId, creds.clientSecret);
+        const headers = buildOpsHeaders(token, creds.tenantId);
+        const saRes = await fetch(`${BASE_URL}/v1/service-agreements?page=1&limit=20`, { headers });
+        if (saRes.ok) {
+          const saData = await saRes.json();
+          serviceAgreements = saData.items ?? [];
+          serviceAgreementCount = saData.totalCount ?? serviceAgreements.length;
+        }
+      } catch {}
+
+      // Jobs — first page sample
+      let jobs: any[] = [];
+      let jobCount = 0;
+      let jobDetail: any = null;
+      try {
+        const token = await getToken(creds.clientId, creds.clientSecret);
+        const headers = buildOpsHeaders(token, creds.tenantId);
+        const jobRes = await fetch(`${BASE_URL}/v1/jobs?page=1&limit=10`, { headers });
+        if (jobRes.ok) {
+          const jobData = await jobRes.json();
+          jobs = jobData.items ?? [];
+          jobCount = jobData.totalCount ?? jobs.length;
+          if (jobs.length > 0) jobDetail = jobs[0];
+        }
+      } catch {}
+
+      // Invoices — first page sample
+      let invoices: any[] = [];
+      let invoiceCount = 0;
+      let invoiceDetail: any = null;
+      try {
+        const token = await getToken(creds.clientId, creds.clientSecret);
+        const headers = buildOpsHeaders(token, creds.tenantId);
+        const invRes = await fetch(`${BASE_URL}/v1/invoices?page=1&limit=10`, { headers });
+        if (invRes.ok) {
+          const invData = await invRes.json();
+          invoices = invData.items ?? [];
+          invoiceCount = invData.totalCount ?? invoices.length;
+          if (invoices.length > 0) invoiceDetail = invoices[0];
+        }
+      } catch {}
 
       res.json({
         customers,
@@ -4071,6 +4123,13 @@ Respond with this JSON:
         quoteDetail,
         quoteCount: quotesResult.totalCount ?? quotes.length,
         serviceAgreements,
+        serviceAgreementCount,
+        jobs,
+        jobCount,
+        jobDetail,
+        invoices,
+        invoiceCount,
+        invoiceDetail,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -4375,15 +4434,27 @@ Respond with this JSON:
       const jobs = await getJobs(creds.clientId, creds.clientSecret, creds.tenantId);
       let created = 0, updated = 0, skipped = 0;
 
+      const parseDate = (d?: string | null): Date | null => {
+        if (!d) return null;
+        // Handle date-only strings (YYYY-MM-DD) as local dates to avoid UTC midnight shift
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          const [y, m, day] = d.split("-").map(Number);
+          return new Date(y, m - 1, day);
+        }
+        const parsed = new Date(d);
+        return isNaN(parsed.getTime()) ? null : parsed;
+      };
+
       for (const job of jobs) {
         if (!job.id) { skipped++; continue; }
         const matchedClient = job.customerId ? clientByBuildopsId.get(job.customerId) : null;
 
-        const parseDate = (d?: string | null) => {
-          if (!d) return null;
-          const parsed = new Date(d);
-          return isNaN(parsed.getTime()) ? null : parsed;
-        };
+        // scheduled date: try multiple field names from the API
+        const rawJob = job as any;
+        const scheduledDateRaw = job.scheduledDate ?? job.scheduledStart ?? rawJob.scheduledStartDate ?? rawJob.firstVisitDate ?? rawJob.visitDate ?? null;
+
+        // SA job: has a serviceAgreementId or job number contains "SA"
+        const isSAJob = !!(job.serviceAgreementId) || /SA/i.test(job.jobNumber ?? "");
 
         const payload = {
           buildopsId: job.id,
@@ -4394,6 +4465,7 @@ Respond with this JSON:
           status: job.status ?? null,
           priority: job.priority ?? null,
           jobTypeName: job.jobTypeName ?? null,
+          billingType: job.billingType ?? rawJob.billingTypeName ?? rawJob.contractBillingType ?? null,
           customerName: job.customerName ?? null,
           customerPropertyName: job.customerPropertyName ?? null,
           amountQuoted: job.amountQuoted != null ? String(job.amountQuoted) : null,
@@ -4403,7 +4475,8 @@ Respond with this JSON:
           materialCost: job.materialCost != null ? String(job.materialCost) : null,
           grossProfit: job.grossProfit != null ? String(job.grossProfit) : null,
           billingStatus: job.billingStatus ?? null,
-          scheduledDate: parseDate(job.scheduledDate),
+          isServiceAgreementJob: isSAJob,
+          scheduledDate: parseDate(scheduledDateRaw),
           dueDate: parseDate(job.dueDate),
           completedDate: parseDate(job.completedDate),
           buildopsCustomerId: job.customerId ?? null,
@@ -4450,15 +4523,19 @@ Respond with this JSON:
       const invoices = await getInvoices(creds.clientId, creds.clientSecret, creds.tenantId);
       let created = 0, updated = 0, skipped = 0;
 
+      const parseDate = (d?: string | null): Date | null => {
+        if (!d) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          const [y, m, day] = d.split("-").map(Number);
+          return new Date(y, m - 1, day);
+        }
+        const parsed = new Date(d);
+        return isNaN(parsed.getTime()) ? null : parsed;
+      };
+
       for (const inv of invoices) {
         if (!inv.id) { skipped++; continue; }
         const matchedClient = inv.customerId ? clientByBuildopsId.get(inv.customerId) : null;
-
-        const parseDate = (d?: string | null) => {
-          if (!d) return null;
-          const parsed = new Date(d);
-          return isNaN(parsed.getTime()) ? null : parsed;
-        };
 
         const payload = {
           buildopsId: inv.id,
@@ -4516,15 +4593,19 @@ Respond with this JSON:
       const agreements = await getAllServiceAgreements(creds.clientId, creds.clientSecret, creds.tenantId);
       let created = 0, updated = 0, skipped = 0;
 
+      const parseDate = (d?: string | null): Date | null => {
+        if (!d) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          const [y, m, day] = d.split("-").map(Number);
+          return new Date(y, m - 1, day);
+        }
+        const parsed = new Date(d);
+        return isNaN(parsed.getTime()) ? null : parsed;
+      };
+
       for (const agr of agreements) {
         if (!agr.id) { skipped++; continue; }
         const matchedClient = agr.customerId ? clientByBuildopsId.get(agr.customerId) : null;
-
-        const parseDate = (d?: string | null) => {
-          if (!d) return null;
-          const parsed = new Date(d);
-          return isNaN(parsed.getTime()) ? null : parsed;
-        };
 
         const payload = {
           buildopsId: agr.id,

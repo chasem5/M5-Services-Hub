@@ -3528,8 +3528,14 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
     const n = typeof v === "string" ? parseFloat(v) : v;
     return isNaN(n) ? "—" : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
+  // Parse dates without timezone drift for date-only strings
   const fmtDate = (d: string | null | undefined) => {
     if (!d) return "—";
+    // date-only string: parse as local date
+    if (/^\d{4}-\d{2}-\d{2}T/.test(d) || /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      const parsed = new Date(d);
+      return isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString();
+    }
     return new Date(d).toLocaleDateString();
   };
 
@@ -3537,30 +3543,35 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
     if (!s) return "bg-gray-100 text-gray-700";
     const sl = s.toLowerCase();
     if (sl === "open") return "bg-blue-100 text-blue-700";
-    if (sl === "closed" || sl === "complete") return "bg-green-100 text-green-700";
+    if (sl === "closed" || sl === "complete" || sl === "completed") return "bg-green-100 text-green-700";
     if (sl === "canceled" || sl === "cancelled") return "bg-red-100 text-red-700";
+    if (sl === "in progress" || sl === "inprogress") return "bg-amber-100 text-amber-700";
     return "bg-gray-100 text-gray-700";
   };
 
   if (isLoading) return <Card className="border-none shadow-sm bg-card"><CardContent className="p-6"><Skeleton className="h-40 w-full" /></CardContent></Card>;
 
   const sorted = [...(jobs ?? [])].sort((a, b) => (b.jobNumber || "").localeCompare(a.jobNumber || "", undefined, { numeric: true }));
-  const totalQuoted = sorted.reduce((sum, j) => sum + (parseFloat(j.amountQuoted) || 0), 0);
+  const totalRevenue = sorted.reduce((sum, j) => sum + (parseFloat(j.totalAmount) || parseFloat(j.amountQuoted) || 0), 0);
   const totalCost = sorted.reduce((sum, j) => sum + (parseFloat(j.costAmount) || 0), 0);
+  const saJobCount = sorted.filter(j => j.isServiceAgreementJob).length;
 
   return (
     <Card className="border-none shadow-sm bg-card">
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <CardTitle className="flex items-center gap-2"><Briefcase className="h-5 w-5" /> BuildOps Jobs</CardTitle>
-            <CardDescription>{sorted.length} jobs synced from BuildOps</CardDescription>
+            <CardDescription>
+              {sorted.length} jobs synced from BuildOps
+              {saJobCount > 0 && <span className="ml-2 text-amber-600">· {saJobCount} service agreement jobs</span>}
+            </CardDescription>
           </div>
           {sorted.length > 0 && (
             <div className="flex gap-4 text-sm">
-              <div><span className="text-muted-foreground">Total Quoted:</span> <span className="font-semibold">{fmt(totalQuoted)}</span></div>
+              <div><span className="text-muted-foreground">Total Revenue:</span> <span className="font-semibold">{fmt(totalRevenue)}</span></div>
               <div><span className="text-muted-foreground">Total Cost:</span> <span className="font-semibold">{fmt(totalCost)}</span></div>
-              <div><span className="text-muted-foreground">Margin:</span> <span className="font-semibold">{fmt(totalQuoted - totalCost)}</span></div>
+              <div><span className="text-muted-foreground">Margin:</span> <span className="font-semibold">{fmt(totalRevenue - totalCost)}</span></div>
             </div>
           )}
         </div>
@@ -3580,6 +3591,7 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
                   <th className="py-2 px-3 font-medium">Job #</th>
                   <th className="py-2 px-3 font-medium">Title</th>
                   <th className="py-2 px-3 font-medium">Type</th>
+                  <th className="py-2 px-3 font-medium">Billing</th>
                   <th className="py-2 px-3 font-medium">Status</th>
                   <th className="py-2 px-3 font-medium text-right">Revenue</th>
                   <th className="py-2 px-3 font-medium text-right">Labor</th>
@@ -3593,18 +3605,36 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
               </thead>
               <tbody>
                 {sorted.map((job: any) => {
-                  const quoted = parseFloat(job.amountQuoted) || 0;
+                  const revenue = parseFloat(job.totalAmount) || parseFloat(job.amountQuoted) || 0;
                   const cost = parseFloat(job.costAmount) || 0;
-                  const margin = quoted - cost;
+                  const margin = revenue - cost;
+                  const isSA = job.isServiceAgreementJob;
+                  const isTM = (job.billingType || "").toLowerCase().includes("time") || (job.billingType || "").toLowerCase() === "t&m";
                   return (
                     <tr key={job.id} className="border-b hover:bg-muted/50" data-testid={`row-job-${job.id}`}>
-                      <td className="py-2.5 px-3 font-mono font-medium">{job.jobNumber || "—"}</td>
-                      <td className="py-2.5 px-3 max-w-[250px] truncate">{job.title || job.issueDescription || "—"}</td>
+                      <td className="py-2.5 px-3 font-mono font-medium">
+                        <div className="flex items-center gap-1.5">
+                          {job.jobNumber || "—"}
+                          {isSA && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-amber-50 text-amber-700 border-amber-300 shrink-0">SA</Badge>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 max-w-[200px] truncate">{job.title || job.issueDescription || "—"}</td>
                       <td className="py-2.5 px-3 text-xs">{job.jobTypeName || "—"}</td>
+                      <td className="py-2.5 px-3 text-xs">
+                        {job.billingType ? (
+                          <Badge variant="outline" className={cn("text-[10px] px-1.5", isTM ? "bg-blue-50 text-blue-700 border-blue-200" : isSA ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-gray-50 text-gray-700 border-gray-200")}>
+                            {job.billingType}
+                          </Badge>
+                        ) : "—"}
+                      </td>
                       <td className="py-2.5 px-3">
                         <Badge variant="outline" className={cn("text-xs", statusColor(job.status))}>{job.status || "Unknown"}</Badge>
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono">{fmt(job.totalAmount ?? job.amountQuoted)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono">
+                        {isTM && revenue === 0 ? <span className="text-muted-foreground text-xs italic">T&M</span> : fmt(revenue)}
+                      </td>
                       <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{fmt(job.laborCost)}</td>
                       <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{fmt(job.materialCost)}</td>
                       <td className="py-2.5 px-3 text-right font-mono">{fmt(job.costAmount)}</td>
@@ -3812,6 +3842,7 @@ function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
                   <th className="py-2 px-3 font-medium">Name</th>
                   <th className="py-2 px-3 font-medium">Status</th>
                   <th className="py-2 px-3 font-medium text-right">Contract Value</th>
+                  <th className="py-2 px-3 font-medium text-right">Total Invoiced</th>
                   <th className="py-2 px-3 font-medium">Frequency</th>
                   <th className="py-2 px-3 font-medium">Start Date</th>
                   <th className="py-2 px-3 font-medium">End Date</th>
@@ -3820,6 +3851,9 @@ function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
               <tbody>
                 {sorted.map((agr: any) => {
                   const agrStatus = deriveAgrStatus(agr);
+                  const contractVal = agr.contractValue ? parseFloat(agr.contractValue) : null;
+                  const invoiced = agr.totalInvoiced ?? null;
+                  const pct = contractVal && contractVal > 0 && invoiced !== null ? Math.round((invoiced / contractVal) * 100) : null;
                   return (
                   <tr key={agr.id} className="border-b hover:bg-muted/50" data-testid={`row-agreement-${agr.id}`}>
                     <td className="py-2.5 px-3 font-mono font-medium">{agr.agreementNumber || "—"}</td>
@@ -3827,7 +3861,15 @@ function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
                     <td className="py-2.5 px-3">
                       <Badge variant="outline" className={cn("text-xs", stateColor(agrStatus))}>{agrStatus}</Badge>
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono">{agr.contractValue ? `$${parseFloat(agr.contractValue).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
+                    <td className="py-2.5 px-3 text-right font-mono">{contractVal != null ? `$${contractVal.toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
+                    <td className="py-2.5 px-3 text-right font-mono">
+                      {invoiced !== null ? (
+                        <span className="flex flex-col items-end">
+                          <span>${invoiced.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                          {pct !== null && <span className="text-[10px] text-muted-foreground">{pct}% of contract</span>}
+                        </span>
+                      ) : "—"}
+                    </td>
                     <td className="py-2.5 px-3 text-xs">{agr.frequency || "—"}</td>
                     <td className="py-2.5 px-3 text-xs">{fmtDate(agr.startDate)}</td>
                     <td className="py-2.5 px-3 text-xs">{fmtDate(agr.endDate)}</td>
