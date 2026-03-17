@@ -41,6 +41,7 @@ import {
   valueTierSettings,
   appSettings,
   buildopsSyncLog,
+  buildopsEmployees,
   buildopsAgreements,
   buildopsInvoices,
   buildopsJobs,
@@ -379,6 +380,7 @@ export interface IStorage {
 
   // BuildOps Rep Matching
   getBuildOpsRepsForMatching(): Promise<{ buildopsId: string; name: string; email: string | null }[]>;
+  upsertBuildOpsEmployees(employees: { buildopsId: string; name: string; email: string | null; phone: string | null; title: string | null; isActive: boolean }[]): Promise<{ created: number; updated: number }>;
   updateUserBuildopsRep(userId: string, buildopsRepId: string | null): Promise<User>;
 
   // Bulk Operations
@@ -2323,19 +2325,28 @@ export class DatabaseStorage implements IStorage {
   // BuildOps Rep Matching
   async getBuildOpsRepsForMatching(): Promise<{ buildopsId: string; name: string; email: string | null }[]> {
     const rows = await db
-      .select({ buildopsId: clientContacts.buildopsId, name: clientContacts.name, email: clientContacts.email })
-      .from(clientContacts)
-      .where(sql`${clientContacts.buildopsId} IS NOT NULL`);
-    const seen = new Set<string>();
-    const result: { buildopsId: string; name: string; email: string | null }[] = [];
-    for (const r of rows) {
-      const key = r.email?.toLowerCase() ?? r.buildopsId!;
-      if (!seen.has(key)) {
-        seen.add(key);
-        result.push({ buildopsId: r.buildopsId!, name: r.name, email: r.email ?? null });
+      .select({ buildopsId: buildopsEmployees.buildopsId, name: buildopsEmployees.name, email: buildopsEmployees.email })
+      .from(buildopsEmployees)
+      .orderBy(buildopsEmployees.name);
+    return rows.map(r => ({ buildopsId: r.buildopsId, name: r.name, email: r.email ?? null }));
+  }
+
+  async upsertBuildOpsEmployees(employees: { buildopsId: string; name: string; email: string | null; phone: string | null; title: string | null; isActive: boolean }[]): Promise<{ created: number; updated: number }> {
+    let created = 0;
+    let updated = 0;
+    for (const emp of employees) {
+      const existing = await db.select().from(buildopsEmployees).where(eq(buildopsEmployees.buildopsId, emp.buildopsId)).limit(1);
+      if (existing.length > 0) {
+        await db.update(buildopsEmployees)
+          .set({ name: emp.name, email: emp.email, phone: emp.phone, title: emp.title, isActive: emp.isActive, syncedAt: new Date() })
+          .where(eq(buildopsEmployees.buildopsId, emp.buildopsId));
+        updated++;
+      } else {
+        await db.insert(buildopsEmployees).values({ buildopsId: emp.buildopsId, name: emp.name, email: emp.email, phone: emp.phone, title: emp.title, isActive: emp.isActive ?? true, syncedAt: new Date() });
+        created++;
       }
     }
-    return result;
+    return { created, updated };
   }
 
   async updateUserBuildopsRep(userId: string, buildopsRepId: string | null): Promise<User> {

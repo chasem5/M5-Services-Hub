@@ -393,6 +393,76 @@ export async function getRepresentatives(
   return result.reps;
 }
 
+// ── Employees (M5's own staff in BuildOps) ────────────────────────────────────
+
+export interface BuildOpsEmployee {
+  id: string;
+  name?: string;
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  email?: string;
+  cellPhone?: string;
+  landlinePhone?: string;
+  title?: string;
+  isActive?: boolean;
+}
+
+function extractEmployeeArray(data: any): BuildOpsEmployee[] {
+  if (Array.isArray(data)) return data;
+  for (const key of ["items", "data", "results", "employees", "records"]) {
+    const val = data?.[key];
+    if (Array.isArray(val)) return val;
+    if (val && typeof val === "object") {
+      for (const nested of ["items", "data", "results", "employees"]) {
+        if (Array.isArray(val[nested])) return val[nested];
+      }
+    }
+  }
+  return [];
+}
+
+export async function getEmployees(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string
+): Promise<{ employees: BuildOpsEmployee[]; debug?: Record<string, any> }> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+  const allEmployees: BuildOpsEmployee[] = [];
+  let debugInfo: Record<string, any> | undefined;
+  let page = 1;
+
+  while (true) {
+    const url = `${BASE_URL}/v1/employees?page=${page}&limit=100`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const rawText = await res.text().catch(() => "");
+      debugInfo = { status: res.status, headers: Object.fromEntries(res.headers.entries()), bodyPreview: rawText.slice(0, 500) };
+      console.warn(`[BuildOps getEmployees] HTTP ${res.status} page ${page}: ${rawText.slice(0, 200)}`);
+      break;
+    }
+    const data = await res.json();
+    const items = extractEmployeeArray(data);
+    console.log(`[BuildOps getEmployees] page ${page}: got ${items.length} employees, totalCount=${data.totalCount ?? "?"}`);
+    allEmployees.push(...items);
+    const totalCount: number = data.totalCount ?? items.length;
+    if (items.length === 0 || allEmployees.length >= totalCount) break;
+    page++;
+    if (page > 50) break;
+  }
+
+  if (allEmployees.length === 0) {
+    const probeUrl = `${BASE_URL}/v1/employees?page=1&limit=5`;
+    const probeRes = await fetch(probeUrl, { headers });
+    const rawText = await probeRes.text().catch(() => "");
+    debugInfo = { status: probeRes.status, headers: Object.fromEntries(probeRes.headers.entries()), bodyPreview: rawText.slice(0, 500) };
+    console.warn(`[BuildOps getEmployees] 0 employees returned. Status=${probeRes.status}, body=${rawText.slice(0, 300)}`);
+  }
+
+  return { employees: allEmployees, debug: debugInfo };
+}
+
 // ── Departments ───────────────────────────────────────────────────────────────
 
 export async function getDepartments(

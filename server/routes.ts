@@ -4435,147 +4435,46 @@ Respond with this JSON:
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
-      const { getAllRepresentatives, getRepresentativesForCustomer } = await import("./buildops");
-      const { db } = await import("./db");
-      const { eq } = await import("drizzle-orm");
-      const { clientContacts } = await import("@shared/schema");
+      const { getEmployees } = await import("./buildops");
 
-      const allClients = await storage.listClients();
-      const clientsWithBuildopsId = allClients.filter(c => c.buildopsId);
+      console.log("[sync-reps] Fetching M5 employees from BuildOps /v1/employees");
+      const result = await getEmployees(creds.clientId, creds.clientSecret, creds.tenantId);
+      const { employees, debug: debugInfo } = result;
 
-      const allExistingContacts = await db.select().from(clientContacts);
-      const contactByBuildopsId = new Map(
-        allExistingContacts.filter(c => c.buildopsId).map(c => [c.buildopsId!, c])
-      );
+      console.log(`[sync-reps] Got ${employees.length} employees from BuildOps`);
 
       let created = 0;
       let updated = 0;
       let skipped = 0;
-      let totalReps = 0;
-      let debugInfo: Record<string, any> | undefined;
 
-      type CrmClient = typeof allClients[number];
-      const upsertRep = async (rep: { id: string; name?: string; firstName?: string; middleName?: string; lastName?: string; email?: string; cellPhone?: string; landlinePhone?: string; phone?: string; title?: string; profilePictureUrl?: string }, matchedClient: CrmClient) => {
-        const fullName = rep.name
-          || [rep.firstName, rep.middleName, rep.lastName].filter(Boolean).join(" ").trim()
-          || "Unknown";
-        const email = rep.email?.trim() || null;
-        const phone = rep.cellPhone?.trim() || rep.landlinePhone?.trim() || rep.phone?.trim() || null;
+      if (employees.length > 0) {
+        const mapped = employees
+          .filter(e => e.id)
+          .map(e => ({
+            buildopsId: e.id,
+            name: e.name || [e.firstName, e.middleName, e.lastName].filter(Boolean).join(" ").trim() || "Unknown",
+            email: e.email?.trim() || null,
+            phone: e.cellPhone?.trim() || e.landlinePhone?.trim() || null,
+            title: e.title?.trim() || null,
+            isActive: e.isActive ?? true,
+          }));
 
-        const existingByBuildops = contactByBuildopsId.get(rep.id);
-        const existingByEmail = email
-          ? allExistingContacts.find(c =>
-              c.clientId === matchedClient.id &&
-              c.email?.toLowerCase() === email.toLowerCase() &&
-              !c.buildopsId
-            )
-          : undefined;
-        const existing = existingByBuildops ?? existingByEmail;
-
-        const contactPayload = {
-          name: fullName,
-          email,
-          phone,
-          title: rep.title || null,
-          buildopsId: rep.id,
-          profilePictureUrl: rep.profilePictureUrl || null,
-        };
-
-        if (existing) {
-          await db.update(clientContacts)
-            .set(contactPayload)
-            .where(eq(clientContacts.id, existing.id));
-          contactByBuildopsId.set(rep.id, { ...existing, ...contactPayload });
-          updated++;
-        } else {
-          const inserted = await db.insert(clientContacts).values({
-            clientId: matchedClient.id,
-            buildopsId: rep.id,
-            name: fullName,
-            email,
-            phone,
-            title: rep.title || null,
-            profilePictureUrl: rep.profilePictureUrl || null,
-            isPrimary: false,
-          }).returning();
-          if (inserted[0]) contactByBuildopsId.set(rep.id, inserted[0]);
-          created++;
-        }
-      };
-
-      // ── Primary: per-customer iteration ──
-      console.log(`[sync-reps] Starting per-customer sync for ${clientsWithBuildopsId.length} clients with buildopsId`);
-      const seenRepIds = new Set<string>();
-
-      for (const client of clientsWithBuildopsId) {
-        try {
-          const reps = await getRepresentativesForCustomer(
-            creds.clientId, creds.clientSecret, creds.tenantId, client.buildopsId!
-          );
-          if (reps.length > 0) console.log(`[sync-reps] customer ${client.name} (${client.buildopsId}): ${reps.length} reps`);
-          for (const rep of reps) {
-            if (!rep.id || seenRepIds.has(rep.id)) continue;
-            seenRepIds.add(rep.id);
-            totalReps++;
-            try {
-              await upsertRep(rep, client);
-            } catch (repErr: any) {
-              console.warn(`[sync-reps] Error processing rep ${rep.id}: ${repErr.message}`);
-              skipped++;
-            }
-          }
-        } catch (custErr: any) {
-          console.warn(`[sync-reps] Error fetching reps for customer ${client.buildopsId}: ${custErr.message}`);
-        }
+        const counts = await storage.upsertBuildOpsEmployees(mapped);
+        created = counts.created;
+        updated = counts.updated;
       }
-
-      // ── Supplementary: top-level endpoint for reps not tied to a known customer ──
-      const topLevelResult = await getAllRepresentatives(creds.clientId, creds.clientSecret, creds.tenantId);
-      debugInfo = topLevelResult.debug;
-      const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const clientByNormName = new Map(allClients.map(c => [normName(c.name), c]));
-
-      let topLevelExtra = 0;
-      for (const rep of topLevelResult.reps) {
-        if (!rep.id || seenRepIds.has(rep.id)) continue;
-        seenRepIds.add(rep.id);
-
-        let matchedClient = null;
-        if (rep.company) {
-          const normCompany = normName(rep.company);
-          matchedClient = clientByNormName.get(normCompany) ?? null;
-          if (!matchedClient) {
-            matchedClient = allClients.find(c => {
-              const nc = normName(c.name);
-              return nc.includes(normCompany) || normCompany.includes(nc);
-            }) ?? null;
-          }
-        }
-        if (!matchedClient) {
-          skipped++;
-          continue;
-        }
-        totalReps++;
-        topLevelExtra++;
-        try {
-          await upsertRep(rep, matchedClient);
-        } catch (repErr: any) {
-          console.warn(`[sync-reps] Error processing top-level rep ${rep.id}: ${repErr.message}`);
-          skipped++;
-        }
-      }
-
-      console.log(`[sync-reps] Top-level endpoint returned ${topLevelResult.reps.length} reps, ${topLevelExtra} were new (not in per-customer results)`);
-
-      const msg = `Synced representatives: ${created} created, ${updated} updated, ${skipped} skipped. Per-customer: ${clientsWithBuildopsId.length} customers queried, top-level: ${topLevelResult.reps.length} reps (${topLevelExtra} extra).`;
-      console.log(`[sync-reps] ${msg}`);
-      await storage.createBuildopsSyncLog({ entityType: "contact", action: "pull", message: msg });
 
       const userId = (req as any).user?.claims?.sub;
       const currentUser = userId ? await storage.getUser(userId) : null;
       const isSuperAdmin = currentUser?.role === "super_admin";
 
-      const response: any = { ok: true, created, updated, skipped, total: totalReps, clientsProcessed: clientsWithBuildopsId.length };
+      const msg = employees.length === 0
+        ? `Sync employees: 0 returned from BuildOps /v1/employees. The endpoint may not be available for this tenant.`
+        : `Sync employees: ${created} created, ${updated} updated, ${skipped} skipped. Total: ${employees.length} from BuildOps.`;
+      console.log(`[sync-reps] ${msg}`);
+      await storage.createBuildopsSyncLog({ entityType: "contact", action: "pull", message: msg });
+
+      const response: any = { ok: true, created, updated, skipped, total: employees.length };
       if (isSuperAdmin && debugInfo) {
         response.debug = debugInfo;
       }

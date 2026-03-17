@@ -731,6 +731,19 @@ export const buildopsAgreements = pgTable("buildops_agreements", {
 });
 export type BuildopsAgreement = typeof buildopsAgreements.$inferSelect;
 
+// BuildOps Employees (M5's own staff synced from BuildOps)
+export const buildopsEmployees = pgTable("buildops_employees", {
+  id: serial("id").primaryKey(),
+  buildopsId: varchar("buildops_id").notNull().unique(),
+  name: varchar("name").notNull(),
+  email: varchar("email"),
+  phone: varchar("phone"),
+  title: varchar("title"),
+  isActive: boolean("is_active").default(true),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+});
+export type BuildopsEmployee = typeof buildopsEmployees.$inferSelect;
+
 // BuildOps Sync Log
 export const buildopsSyncLog = pgTable("buildops_sync_log", {
   id: serial("id").primaryKey(),
