@@ -1779,10 +1779,19 @@ Respond ONLY with JSON — no markdown:
           }
 
           const lineItems = await storage.listEstimateLineItems(estimate.id);
+          const scopePartsAuto = lineItems.map(li => li.description).filter(Boolean);
+          const scopeOfWorkAuto = estimate.notes
+            ? estimate.notes
+            : scopePartsAuto.length > 0
+              ? scopePartsAuto.join("\n")
+              : undefined;
+          const totalAmountQuotedAuto = lineItems.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0);
+
           const quote = await createQuote(creds.clientId, creds.clientSecret, creds.tenantId, {
             departmentId: defaultDeptId,
             name: estimate.title,
-            scopeOfWork: estimate.notes ?? undefined,
+            scopeOfWork: scopeOfWorkAuto,
+            totalAmountQuoted: totalAmountQuotedAuto > 0 ? totalAmountQuotedAuto : undefined,
             billingCustomerId: billingCustomerId ?? undefined,
             items: lineItems.map(li => ({
               description: li.description,
@@ -3735,10 +3744,19 @@ Respond with this JSON:
         await logActivity(req, "client", client.id, "buildops_customer_created", { buildopsId: buildopsCustomer.id });
       }
 
+      const scopeParts = lineItems.map(li => li.description).filter(Boolean);
+      const scopeOfWork = estimate.notes
+        ? estimate.notes
+        : scopeParts.length > 0
+          ? scopeParts.join("\n")
+          : undefined;
+      const totalAmountQuoted = lineItems.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0);
+
       const quote = await createQuote(creds.clientId, creds.clientSecret, creds.tenantId, {
         departmentId: defaultDeptId,
         name: estimate.title,
-        scopeOfWork: estimate.notes ?? undefined,
+        scopeOfWork,
+        totalAmountQuoted: totalAmountQuoted > 0 ? totalAmountQuoted : undefined,
         billingCustomerId: billingCustomerId ?? undefined,
         items: lineItems.map(li => ({
           description: li.description,
@@ -4254,6 +4272,7 @@ Respond with this JSON:
       let created = 0;
       let updated = 0;
       let matchedViaProperty = 0;
+      let valueUpdated = 0;
 
       const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -4309,6 +4328,14 @@ Respond with this JSON:
             value: total ?? existingLead.value,
             updatedAt: new Date(),
           };
+          if (quote.issueDescription && (!existingLead.notes || existingLead.notes.trim() === "")) {
+            updateFields.notes = quote.issueDescription;
+          }
+          const existingVal = parseFloat(existingLead.value ?? "0") || 0;
+          const newVal = parseFloat(total ?? "0") || 0;
+          if (newVal > 0 && Math.abs(newVal - existingVal) > 0.01) {
+            valueUpdated++;
+          }
           if (!existingLead.clientId && matchedClient) {
             updateFields.clientId = matchedClient.id;
             console.log(`[BuildOps sync-quotes] Re-linked lead ${existingLead.id} (quote #${quote.quoteNumber}) → client ${matchedClient.id} (${matchedClient.name})`);
@@ -4334,6 +4361,7 @@ Respond with this JSON:
             buildopsPropertyId: resolvedPropertyId,
             buildopsExpirationDate: expirationDate,
             value: total ?? "0",
+            notes: quote.issueDescription || null,
             contractType: "one_time",
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -4343,7 +4371,7 @@ Respond with this JSON:
         }
       }
 
-      res.json({ ok: true, created, updated, matchedViaProperty, total: allQuotes.length });
+      res.json({ ok: true, created, updated, matchedViaProperty, valueUpdated, total: allQuotes.length });
     } catch (err: any) {
       await storage.createBuildopsSyncLog({ entityType: "lead", action: "error", message: err.message });
       res.status(500).json({ message: err.message });

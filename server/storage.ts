@@ -1101,6 +1101,9 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_city varchar`);
       await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_state varchar`);
       await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_zip varchar`);
+      await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS buildops_expiration_date timestamp`);
+      await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS buildops_property_id varchar`);
+      await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS buildops_quote_total decimal(12,2)`);
     } catch (e) {
       console.error("migrateBuildopsClientColumns error:", e);
     }

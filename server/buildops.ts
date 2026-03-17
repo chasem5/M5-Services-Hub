@@ -365,6 +365,7 @@ export interface CreateQuotePayload {
   departmentId: string;
   name: string;
   scopeOfWork?: string;
+  totalAmountQuoted?: number;
   billingCustomerId?: string;
   items?: QuoteLineItem[];
 }

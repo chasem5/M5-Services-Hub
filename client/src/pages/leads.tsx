@@ -87,6 +87,7 @@ import {
   Building,
   CalendarDays,
   CornerDownRight,
+  Zap,
 } from "lucide-react";
 import {
   Card,
@@ -1117,8 +1118,10 @@ export default function Leads() {
     mutationFn: () => apiRequest("POST", "/api/buildops/sync-quotes", {}).then(r => r.json()),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-      const propMsg = data.matchedViaProperty ? `, ${data.matchedViaProperty} matched via property` : "";
-      toast({ title: "BuildOps sync complete", description: `${data.created} created, ${data.updated} updated${propMsg} (${data.total} total)` });
+      const parts = [`${data.created} created`, `${data.updated} updated`];
+      if (data.matchedViaProperty) parts.push(`${data.matchedViaProperty} matched via property`);
+      if (data.valueUpdated) parts.push(`${data.valueUpdated} values updated`);
+      toast({ title: "BuildOps sync complete", description: `${parts.join(", ")} (${data.total} total)` });
     },
     onError: (err: any) => {
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
@@ -3387,6 +3390,34 @@ export default function Leads() {
                           <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Created</p>
                           <p className="font-medium text-sm">{new Date(selectedLead.createdAt).toLocaleDateString()}</p>
                         </div>
+                        {(selectedLead as any).buildopsExpirationDate && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                              <CalendarIcon className="h-3 w-3" /> Quote Expires
+                            </p>
+                            <p className="font-medium text-sm" data-testid="text-quote-expiration">
+                              {new Date((selectedLead as any).buildopsExpirationDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </p>
+                          </div>
+                        )}
+                        {(selectedLead as any).buildopsQuoteId && (
+                          <div className="space-y-1 col-span-2">
+                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                              <Zap className="h-3 w-3" /> BuildOps Quote
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs capitalize" data-testid="badge-quote-status">
+                                {(selectedLead as any).buildopsQuoteNumber ? `#${(selectedLead as any).buildopsQuoteNumber}` : "Quote"}
+                                {(selectedLead as any).buildopsQuoteStatus && <span className="ml-1">· {(selectedLead as any).buildopsQuoteStatus}</span>}
+                              </Badge>
+                              {(selectedLead as any).buildopsQuoteTotal && (
+                                <span className="text-xs font-mono font-bold text-primary" data-testid="text-quote-total">
+                                  {formatCurrency((selectedLead as any).buildopsQuoteTotal)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-2">
