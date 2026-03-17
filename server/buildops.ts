@@ -283,13 +283,28 @@ export function mapClientToCustomer(client: {
  * Fetch ALL representatives from the top-level /v1/representatives endpoint (paginated).
  * Each rep has a `company` field identifying which customer it belongs to.
  */
+function extractRepArray(data: any): BuildOpsRepresentative[] {
+  if (Array.isArray(data)) return data;
+  for (const key of ["items", "data", "results", "representatives", "contacts"]) {
+    const val = data?.[key];
+    if (Array.isArray(val)) return val;
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      for (const nested of ["items", "data", "results", "representatives", "contacts"]) {
+        if (Array.isArray(val[nested])) return val[nested];
+      }
+    }
+  }
+  return [];
+}
+
 export async function getAllRepresentatives(
   clientId: string,
   clientSecret: string,
   tenantId: string
-): Promise<BuildOpsRepresentative[]> {
+): Promise<{ reps: BuildOpsRepresentative[]; debug?: Record<string, any> }> {
   const token = await getToken(clientId, clientSecret);
   const allReps: BuildOpsRepresentative[] = [];
+  let debugInfo: Record<string, any> | undefined;
   let page = 1;
   while (true) {
     const url = `${BASE_URL}/v1/representatives?page=${page}&limit=100`;
@@ -300,27 +315,65 @@ export async function getAllRepresentatives(
       break;
     }
     const data = await res.json();
-    const items: BuildOpsRepresentative[] = data.items ?? (Array.isArray(data) ? data : []);
+    const items = extractRepArray(data);
     console.log(`[BuildOps getAllRepresentatives] page ${page}: got ${items.length} reps, totalCount=${data.totalCount ?? "?"}`);
     allReps.push(...items);
     const totalCount: number = data.totalCount ?? items.length;
     if (items.length === 0 || allReps.length >= totalCount) break;
     page++;
-    if (page > 50) break; // safety
+    if (page > 50) break;
   }
-  return allReps;
+  if (allReps.length === 0) {
+    const probeUrl = `${BASE_URL}/v1/representatives?page=1&limit=5`;
+    const probeRes = await fetch(probeUrl, { headers: buildOpsHeaders(token, tenantId) });
+    const rawText = await probeRes.text().catch(() => "");
+    debugInfo = {
+      status: probeRes.status,
+      headers: Object.fromEntries(probeRes.headers.entries()),
+      bodyPreview: rawText.slice(0, 500),
+    };
+    const hdrs = JSON.stringify(debugInfo.headers).slice(0, 300);
+    console.warn(`[BuildOps getAllRepresentatives] 0 reps returned. Raw probe response: status=${probeRes.status}, headers=${hdrs}, body=${rawText.slice(0, 500)}`);
+  }
+  return { reps: allReps, debug: debugInfo };
 }
 
-/**
- * @deprecated Use getAllRepresentatives() instead — the per-customer endpoint returns 404.
- */
+export async function getRepresentativesForCustomer(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  customerId: string
+): Promise<BuildOpsRepresentative[]> {
+  const token = await getToken(clientId, clientSecret);
+  const reps: BuildOpsRepresentative[] = [];
+  let page = 1;
+  while (true) {
+    const url = `${BASE_URL}/v1/customers/${customerId}/representatives?page=${page}&limit=100`;
+    const res = await fetch(url, { headers: buildOpsHeaders(token, tenantId) });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      console.warn(`[BuildOps getRepresentativesForCustomer] HTTP ${res.status} customer=${customerId} page ${page}: ${body.message ?? JSON.stringify(body).slice(0, 200)}`);
+      break;
+    }
+    const data = await res.json();
+    const items = extractRepArray(data);
+    reps.push(...items);
+    const totalCount: number = data.totalCount ?? items.length;
+    if (items.length === 0 || reps.length >= totalCount) break;
+    page++;
+    if (page > 20) break;
+  }
+  return reps;
+}
+
 export async function getRepresentatives(
   clientId: string,
   clientSecret: string,
   tenantId: string,
   _customerId: string
 ): Promise<BuildOpsRepresentative[]> {
-  return getAllRepresentatives(clientId, clientSecret, tenantId);
+  const result = await getAllRepresentatives(clientId, clientSecret, tenantId);
+  return result.reps;
 }
 
 // ── Departments ───────────────────────────────────────────────────────────────
