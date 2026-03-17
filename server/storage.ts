@@ -227,6 +227,7 @@ export interface IStorage {
   migrateLeadServiceTypes(): Promise<void>;
   migrateIndustryOptions(): Promise<void>;
   migrateDashboardFilter(): Promise<void>;
+  migrateBuildopsClientColumns(): Promise<void>;
 
   // Industry Options
   listIndustryOptions(): Promise<IndustryOption[]>;
@@ -1085,6 +1086,23 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS dashboard_filter varchar DEFAULT 'all'`);
     } catch (e) {
       console.error("migrateDashboardFilter error:", e);
+    }
+  }
+
+  async migrateBuildopsClientColumns(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS buildops_status varchar`);
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS buildops_customer_type varchar`);
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS buildops_account_number varchar`);
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS buildops_customer_number varchar`);
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS buildops_last_synced_at timestamp`);
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone_alternate varchar`);
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_street varchar`);
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_city varchar`);
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_state varchar`);
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS address_zip varchar`);
+    } catch (e) {
+      console.error("migrateBuildopsClientColumns error:", e);
     }
   }
 

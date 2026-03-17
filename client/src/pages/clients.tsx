@@ -1478,7 +1478,7 @@ export default function Customers() {
                                   <span className="text-base">{client.name}</span>
                                   {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
                                   {isAdminOrManager && (client as any).buildopsStatus === "inactive" && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-${client.id}`}>Inactive</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-${client.id}`}>Inactive in BuildOps</span>
                                   )}
                                 </div>
                                 {(client.serviceNeeds ?? []).length > 0 && (
@@ -1611,7 +1611,7 @@ export default function Customers() {
                                 <h3 className="font-bold text-sm truncate">{client.name}</h3>
                                 {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
                                 {isAdminOrManager && (client as any).buildopsStatus === "inactive" && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-card-${client.id}`}>Inactive</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-card-${client.id}`}>Inactive in BuildOps</span>
                                 )}
                               </div>
                               <TierBadge tier={client.tier} size="xs" />

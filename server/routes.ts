@@ -152,6 +152,7 @@ export async function registerRoutes(
   await storage.migrateContactStages();
   await storage.migrateIndustryOptions();
   await storage.migrateDashboardFilter();
+  await storage.migrateBuildopsClientColumns();
   // Seed default value tier settings
   await storage.getValueTierSettings();
   // Seed default contact stages on startup
@@ -3607,6 +3608,7 @@ Respond with this JSON:
           addressState: billing?.state || null,
           addressZip: billing?.zipCode || null,
           buildopsCustomerType: customer.customerType || null,
+          ...(customer.customerType ? { industry: customer.customerType } : {}),
           buildopsStatus: isInactive ? "inactive" : "active",
           buildopsAccountNumber: customer.accountNumber || null,
           buildopsCustomerNumber: customer.customerNumber || null,
