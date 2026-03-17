@@ -5440,7 +5440,7 @@ Guidelines:
         trendDirection, openCount, avgMonthlyJobs, globalAvgMonthly, hitRate
       );
 
-      // SA rows: contract value vs actual invoiced revenue per agreement
+      // SA rows: active agreements with contract value vs actual invoiced revenue
       const saRows = await db.execute(sql`
         SELECT
           a.buildops_id,
@@ -5457,6 +5457,8 @@ Guidelines:
           AND j.client_id = ${clientId}
         LEFT JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
         WHERE a.client_id = ${clientId}
+          AND (a.end_date IS NULL OR a.end_date > NOW())
+          AND (a.advanced_scheduling_state IS NULL OR LOWER(a.advanced_scheduling_state) NOT IN ('canceled', 'cancelled'))
         GROUP BY a.buildops_id, a.agreement_number, a.agreement_name, a.status,
                  a.start_date, a.end_date, a.frequency, a.contract_value
         ORDER BY a.start_date DESC
