@@ -4070,6 +4070,31 @@ Respond with this JSON:
   });
 
   // Temporary debug: inspect raw quote data from BuildOps
+  // Debug: inspect raw representatives response for a given BuildOps customer ID
+  app.get("/api/buildops/debug-reps/:customerId", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getToken, buildOpsHeaders, BASE_URL } = await import("./buildops") as any;
+      const token = await getToken(creds.clientId, creds.clientSecret);
+      const customerId = req.params.customerId;
+      const primaryUrl = `${BASE_URL}/v1/customers/${customerId}/representatives?page=1&limit=50`;
+      const fallbackUrl = `${BASE_URL}/v1/customers/representatives?customerId=${customerId}&page=1&limit=50`;
+      const r1 = await fetch(primaryUrl, { headers: buildOpsHeaders(token, creds.tenantId) });
+      const body1 = await r1.json().catch(() => null);
+      const r2 = await fetch(fallbackUrl, { headers: buildOpsHeaders(token, creds.tenantId) });
+      const body2 = await r2.json().catch(() => null);
+      console.log("[debug-reps] primary status:", r1.status, "body:", JSON.stringify(body1)?.slice(0, 500));
+      console.log("[debug-reps] fallback status:", r2.status, "body:", JSON.stringify(body2)?.slice(0, 500));
+      res.json({
+        primary: { status: r1.status, url: primaryUrl, body: body1 },
+        fallback: { status: r2.status, url: fallbackUrl, body: body2 },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/buildops/debug-quote/:quoteId", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
@@ -4231,6 +4256,67 @@ Respond with this JSON:
     } catch (err: any) {
       console.error("[BuildOps sync-representatives] Error:", err.message);
       await storage.createBuildopsSyncLog({ entityType: "contact", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Unified quotes list: BuildOps quotes enriched with CRM estimate linkage
+  app.get("/api/buildops/quotes-list", isAuthenticated, async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.json({ items: [], totalCount: 0, buildopsConfigured: false });
+
+      const { getQuotes } = await import("./buildops");
+      const { db } = await import("./db");
+      const { estimates: estimatesTable } = await import("@shared/schema");
+      const { isNotNull } = await import("drizzle-orm");
+
+      // Fetch all BuildOps quotes (paginate if needed)
+      let allQuotes: any[] = [];
+      let page = 1;
+      while (true) {
+        const batch = await getQuotes(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
+        allQuotes = allQuotes.concat(batch.items);
+        if (allQuotes.length >= batch.totalCount || batch.items.length === 0) break;
+        page++;
+        if (page > 20) break; // safety
+      }
+
+      // Load all CRM clients and estimates that have a buildopsQuoteId
+      const allClients = await storage.listClients();
+      const linkedEstimates = await db
+        .select()
+        .from(estimatesTable)
+        .where(isNotNull(estimatesTable.buildopsQuoteId));
+
+      const clientByBuildopsId = new Map(allClients.filter(c => c.buildopsId).map(c => [c.buildopsId!, c]));
+      const estimateByQuoteId = new Map(linkedEstimates.map(e => [e.buildopsQuoteId!, e]));
+
+      const enriched = allQuotes.map((q: any) => {
+        const customerId = q.billingCustomerId ?? q.customerId ?? q.customer?.id;
+        const crmClient = customerId ? clientByBuildopsId.get(customerId) ?? null : null;
+        const linkedEst = estimateByQuoteId.get(q.id) ?? null;
+        return {
+          id: q.id,
+          quoteNumber: q.quoteNumber ?? null,
+          name: q.name ?? null,
+          status: q.status ?? null,
+          totalAmount: q.totalAmountQuoted ?? q.totalAmount ?? null,
+          expirationDate: q.expirationDate ?? null,
+          createdAt: q.createdAt ?? null,
+          updatedAt: q.updatedAt ?? null,
+          buildopsCustomerId: customerId ?? null,
+          customerName: crmClient?.name ?? q.billTo?.split(/[\n,]/)[0]?.trim() ?? null,
+          crmClientId: crmClient?.id ?? null,
+          linkedEstimateId: linkedEst?.id ?? null,
+          linkedEstimateTitle: linkedEst?.title ?? null,
+          linkedEstimateStatus: linkedEst?.status ?? null,
+        };
+      });
+
+      res.json({ items: enriched, totalCount: enriched.length, buildopsConfigured: true });
+    } catch (err: any) {
+      console.error("[buildops quotes-list]", err.message);
       res.status(500).json({ message: err.message });
     }
   });

@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Calculator, BookOpen, ClipboardList } from "lucide-react";
+import { FileText, Calculator, BookOpen, ClipboardList, Zap } from "lucide-react";
 import Estimates from "./estimates";
 import ServiceCatalog from "./service-catalog";
 import Proposals from "./proposals";
 import CalculatorsSection from "./calculators";
+import BuildOpsQuotes from "./buildops-quotes";
 
 interface MyPermissions {
   role: string;
@@ -17,6 +18,7 @@ interface MyPermissions {
 function getTabFromLocation(path: string): string {
   if (path === "/service-catalog") return "catalog";
   if (path === "/proposals") return "proposals";
+  if (path === "/buildops-quotes") return "buildops-quotes";
   return "estimates";
 }
 
@@ -51,6 +53,7 @@ export default function EstimatesHub() {
       if (value === "estimates") setLocation("/estimates");
       else if (value === "catalog") setLocation("/service-catalog");
       else if (value === "proposals") setLocation("/proposals");
+      else if (value === "buildops-quotes") setLocation("/buildops-quotes");
     }
   };
 
@@ -111,6 +114,14 @@ export default function EstimatesHub() {
               Proposals
             </TabsTrigger>
           )}
+          <TabsTrigger
+            value="buildops-quotes"
+            data-testid="tab-buildops-quotes"
+            className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium"
+          >
+            <Zap className="mr-2 h-4 w-4" />
+            BuildOps Quotes
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="estimates" className="mt-0 -mx-4 md:-mx-6">
@@ -131,6 +142,9 @@ export default function EstimatesHub() {
             <Proposals />
           </TabsContent>
         )}
+        <TabsContent value="buildops-quotes" className="mt-0 -mx-4 md:-mx-6">
+          <BuildOpsQuotes />
+        </TabsContent>
       </Tabs>
     </div>
   );

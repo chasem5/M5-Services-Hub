@@ -37,6 +37,7 @@ function ProtectedRouter() {
           <Route path="/estimates/:id" component={EstimateDetail} />
           <Route path="/service-catalog" component={EstimatesHub} />
           <Route path="/proposals" component={EstimatesHub} />
+          <Route path="/buildops-quotes" component={EstimatesHub} />
           <Route path="/settings" component={Settings} />
           <Route path="/admin" component={AdminPage} />
           <Route path="/email" component={EmailSync} />

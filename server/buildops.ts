@@ -1,4 +1,4 @@
-const BASE_URL = "https://public-api.live.buildops.com";
+export const BASE_URL = "https://public-api.live.buildops.com";
 
 // ── Token cache ───────────────────────────────────────────────────────────────
 interface TokenCache {
@@ -7,7 +7,7 @@ interface TokenCache {
 }
 const tokenCache = new Map<string, TokenCache>();
 
-async function getToken(clientId: string, clientSecret: string): Promise<string> {
+export async function getToken(clientId: string, clientSecret: string): Promise<string> {
   const cacheKey = `${clientId}:${clientSecret}`;
   const cached = tokenCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.token;
@@ -34,7 +34,7 @@ async function getToken(clientId: string, clientSecret: string): Promise<string>
   return token;
 }
 
-function buildOpsHeaders(token: string, tenantId: string): Record<string, string> {
+export function buildOpsHeaders(token: string, tenantId: string): Record<string, string> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",

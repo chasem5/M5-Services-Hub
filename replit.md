@@ -16,7 +16,7 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 - **Client Database** — Company profiles, contacts, tabbed detail view (Overview, Contacts, Leads, Estimates, Org Chart, Activity); contacts support `reportsTo` for hierarchy; contacts have custom stages (with color coding, inline picker, and manage stages dialog)
 - **Task Management** — Priority + status filtering, due date tracking, assignments, detail sheet editing
 - **Reminders** — Bell notification dropdown in header, create/dismiss reminders linked to leads/clients/tasks
-- **Estimates Hub** — Consolidated hub at `/estimates` with sub-navigation tabs for Estimates, Calculators, Service Catalog, and Proposals; sidebar shows single "Estimates" entry instead of three separate links
+- **Estimates Hub** — Consolidated hub at `/estimates` with sub-navigation tabs for Estimates, Calculators, Service Catalog, Proposals, and **BuildOps Quotes**; sidebar shows single "Estimates" entry; `/buildops-quotes` also routes here
 - **Estimate Calculators** — Five service-specific calculators (Building Engineering, Special Projects, Facility Solutions, Janitorial, Property Assessment) with real-time live price breakdowns using catalog rates with fallback defaults; "Create Estimate" button pre-populates a new estimate with calculated line items
 - **Service Catalog** — Predefined service items with pricing by service type; Admin/Manager CRUD
 - **Estimation Tool** — Estimate builder at `/estimates/:id` with line items from catalog or custom, auto-computed totals + tax
@@ -78,6 +78,8 @@ Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `co
 - Client detail: BuildOpsIcon tooltip badge when synced; "BuildOps Linked" badge (replaced manual push button); BuildOps Service Agreements section on overview tab (loads when client has `buildopsId`)
 - Estimate detail: "AI Generate Scope" (GPT-4o), "Push to BuildOps" button (only shown when not yet linked; auto-creates customer if needed); BuildOpsIcon badge when linked
 - `client/src/components/BuildOpsIcon.tsx` — reusable orange "B" SVG icon, shown on clients list (table+card), client-detail header, estimate-detail header
+- **Estimates Hub → BuildOps Quotes tab** (`/buildops-quotes`) — unified view of all BuildOps quotes; `GET /api/buildops/quotes-list` enriches each quote with CRM client name and linked estimate; filters by status/linked state; "Sync to CRM" button; external link to BuildOps per row
+- **Representatives sync note**: `/v1/customers/{id}/representatives` returns 404 for this tenant — this endpoint does not exist in their BuildOps subscription; `getRepresentatives()` silently returns [] on 404
 
 ## Branding
 
