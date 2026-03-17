@@ -5223,15 +5223,13 @@ Guidelines:
   function computeHealthScore(
     trendDirection: string,
     openDeals: number,
-    completedJobsLast12: number,
-    avgMonthlyJobsAllClients: number,
+    activeJobs: number,
     hitRate: number | null
   ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk" } {
     let healthScore = 0;
     if (trendDirection === "growing") healthScore++;
     if (openDeals > 0) healthScore++;
-    if (avgMonthlyJobsAllClients > 0 && (completedJobsLast12 / 12) > avgMonthlyJobsAllClients) healthScore++;
-    else if (avgMonthlyJobsAllClients === 0 && completedJobsLast12 > 0) healthScore++;
+    if (activeJobs > 0) healthScore++;
     if (hitRate !== null && hitRate > 50) healthScore++;
     const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
     return { healthScore, healthStatus };
@@ -5246,6 +5244,15 @@ Guidelines:
 
       const clientId = parseInt(req.params.id as string);
       if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
+
+      const scopedUserId = await getScopedUserId(req, "customers");
+      if (scopedUserId) {
+        const client = await storage.getClient(clientId);
+        if (!client || client.assignedTo !== scopedUserId) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
       const client = await storage.getClient(clientId);
       if (!client) return res.status(404).json({ message: "Client not found" });
 
@@ -5266,6 +5273,13 @@ Guidelines:
       const openCount = Number(dealStats.open_count ?? 0);
       const pipelineValue = Number(dealStats.pipeline_value ?? 0);
       const hitRate = (wonCount + lostCount) > 0 ? Math.round((wonCount / (wonCount + lostCount)) * 100) : null;
+
+      const dealsByStage = await db.execute(sql`
+        SELECT stage, COUNT(*) as cnt
+        FROM leads WHERE client_id = ${clientId}
+        GROUP BY stage ORDER BY cnt DESC
+      `);
+      const dealStages = (dealsByStage as any[]).map(r => ({ stage: r.stage as string, count: Number(r.cnt) }));
 
       const [invoiceStats] = await db.execute(sql`
         SELECT COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
@@ -5302,16 +5316,6 @@ Guidelines:
       const completedJobsLast12 = monthlyJobCounts.reduce((s, m) => s + m.count, 0);
       const avgMonthlyJobs = completedJobsLast12 / 12;
 
-      const [globalAvgRow] = await db.execute(sql`
-        SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
-          SELECT client_id, COUNT(*) / 12.0 as cnt
-          FROM buildops_jobs
-          WHERE completed_date >= NOW() - INTERVAL '12 months'
-          GROUP BY client_id
-        ) sub
-      `);
-      const globalAvgMonthly = Number(globalAvgRow.global_avg ?? 0);
-
       const invoiceByMonth = await db.execute(sql`
         SELECT TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
                SUM(CAST(total_amount AS numeric)) as revenue
@@ -5327,7 +5331,7 @@ Guidelines:
       const revenueTrend = zeroFillTrend(sparseRevenue);
       const trendDirection = computeTrendDirection(revenueTrend);
       const { healthScore, healthStatus } = computeHealthScore(
-        trendDirection, openCount, completedJobsLast12, globalAvgMonthly, hitRate
+        trendDirection, openCount, activeJobs, hitRate
       );
 
       res.json({
@@ -5345,6 +5349,7 @@ Guidelines:
         trendDirection,
         healthScore,
         healthStatus,
+        dealStages,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -5357,6 +5362,8 @@ Guidelines:
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scopedUserId = await getScopedUserId(req, "customers");
+
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const tierFilter = req.query.tier as string | undefined;
@@ -5366,9 +5373,7 @@ Guidelines:
 
       const allClients = await storage.listClients();
 
-      const dateClause = dateFrom && dateTo
-        ? sql`AND COALESCE(closed_date, issued_date) >= ${dateFrom}::timestamp AND COALESCE(closed_date, issued_date) <= ${dateTo}::timestamp`
-        : sql``;
+      const hasDateRange = dateFrom && dateTo;
 
       const dealsByClient = await db.execute(sql`
         SELECT client_id,
@@ -5380,35 +5385,33 @@ Guidelines:
       `);
       const dealMap = new Map((dealsByClient as any[]).map(r => [Number(r.client_id), r]));
 
-      const invoicesByClient = await db.execute(sql`
-        SELECT client_id,
-          COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
-        FROM buildops_invoices WHERE client_id IS NOT NULL ${dateClause} GROUP BY client_id
-      `);
+      const invoicesByClient = hasDateRange
+        ? await db.execute(sql`
+            SELECT client_id,
+              COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
+            FROM buildops_invoices
+            WHERE client_id IS NOT NULL
+              AND COALESCE(closed_date, issued_date) >= ${dateFrom}::timestamp
+              AND COALESCE(closed_date, issued_date) <= ${dateTo}::timestamp
+            GROUP BY client_id
+          `)
+        : await db.execute(sql`
+            SELECT client_id,
+              COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
+            FROM buildops_invoices WHERE client_id IS NOT NULL GROUP BY client_id
+          `);
       const invoiceMap = new Map((invoicesByClient as any[]).map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
 
       const jobsByClient = await db.execute(sql`
         SELECT client_id,
           COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active,
-          COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '12 months') as completed_12m,
           COUNT(*) as total
         FROM buildops_jobs WHERE client_id IS NOT NULL GROUP BY client_id
       `);
       const jobMap = new Map((jobsByClient as any[]).map(r => [Number(r.client_id), {
         active: Number(r.active ?? 0),
-        completed12m: Number(r.completed_12m ?? 0),
         total: Number(r.total ?? 0),
       }]));
-
-      const [globalAvgRow] = await db.execute(sql`
-        SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
-          SELECT client_id, COUNT(*) / 12.0 as cnt
-          FROM buildops_jobs
-          WHERE completed_date >= NOW() - INTERVAL '12 months'
-          GROUP BY client_id
-        ) sub
-      `);
-      const globalAvgMonthly = Number(globalAvgRow.global_avg ?? 0);
 
       const agrByClient = await db.execute(sql`
         SELECT client_id,
@@ -5421,15 +5424,28 @@ Guidelines:
       `);
       const agrMap = new Map((agrByClient as any[]).map(r => [Number(r.client_id), Number(r.total_contract ?? 0)]));
 
-      const trendByClient = await db.execute(sql`
-        SELECT client_id,
-          TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
-          SUM(CAST(total_amount AS numeric)) as revenue
-        FROM buildops_invoices
-        WHERE client_id IS NOT NULL
-          AND COALESCE(closed_date, issued_date) >= NOW() - INTERVAL '12 months'
-        GROUP BY client_id, month ORDER BY client_id, month
-      `);
+      const agrClientIds = new Set((agrByClient as any[]).map(r => Number(r.client_id)));
+
+      const trendByClient = hasDateRange
+        ? await db.execute(sql`
+            SELECT client_id,
+              TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
+              SUM(CAST(total_amount AS numeric)) as revenue
+            FROM buildops_invoices
+            WHERE client_id IS NOT NULL
+              AND COALESCE(closed_date, issued_date) >= ${dateFrom}::timestamp
+              AND COALESCE(closed_date, issued_date) <= ${dateTo}::timestamp
+            GROUP BY client_id, month ORDER BY client_id, month
+          `)
+        : await db.execute(sql`
+            SELECT client_id,
+              TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
+              SUM(CAST(total_amount AS numeric)) as revenue
+            FROM buildops_invoices
+            WHERE client_id IS NOT NULL
+              AND COALESCE(closed_date, issued_date) >= NOW() - INTERVAL '12 months'
+            GROUP BY client_id, month ORDER BY client_id, month
+          `);
       const trendMap = new Map<number, { month: string; revenue: number }[]>();
       for (const r of trendByClient as any[]) {
         const cid = Number(r.client_id);
@@ -5457,17 +5473,19 @@ Guidelines:
 
       const results: ReportRow[] = [];
       for (const client of allClients) {
+        if (scopedUserId && client.assignedTo !== scopedUserId) continue;
+
         const deals = dealMap.get(client.id);
         const won = Number(deals?.won ?? 0);
         const lost = Number(deals?.lost ?? 0);
         const openDeals = Number(deals?.open_deals ?? 0);
         const pipeline = Number(deals?.pipeline ?? 0);
         const ltv = invoiceMap.get(client.id) ?? 0;
-        const jobs = jobMap.get(client.id) ?? { active: 0, completed12m: 0, total: 0 };
+        const jobs = jobMap.get(client.id) ?? { active: 0, total: 0 };
         const contractTotal = agrMap.get(client.id) ?? 0;
         const mrr = contractTotal / 12;
 
-        const hasData = won > 0 || lost > 0 || openDeals > 0 || ltv > 0 || jobs.total > 0;
+        const hasData = won > 0 || lost > 0 || openDeals > 0 || ltv > 0 || jobs.total > 0 || agrClientIds.has(client.id);
         if (!hasData) continue;
 
         const hitRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 100) : null;
@@ -5476,7 +5494,7 @@ Guidelines:
         const filledTrend = zeroFillTrend(sparseTrend);
         const trendDirection = computeTrendDirection(filledTrend);
         const { healthScore, healthStatus } = computeHealthScore(
-          trendDirection, openDeals, jobs.completed12m, globalAvgMonthly, hitRate
+          trendDirection, openDeals, jobs.active, hitRate
         );
 
         if (tierFilter && client.tier !== tierFilter) continue;
