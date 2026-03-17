@@ -1855,9 +1855,15 @@ Respond ONLY with JSON — no markdown:
   });
 
   app.delete("/api/estimates/:id", isAuthenticated, async (req, res) => {
-    const id = parseInt(req.params.id as string);
-    await storage.deleteEstimate(id);
-    res.sendStatus(204);
+    try {
+      const id = parseInt(req.params.id as string);
+      await storage.deleteEstimate(id);
+      res.sendStatus(204);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to delete estimate";
+      console.error("[delete-estimate] Error:", message);
+      res.status(500).json({ message });
+    }
   });
 
   app.patch("/api/estimates/:id/snooze-follow-up", isAuthenticated, async (req, res) => {
@@ -5196,28 +5202,87 @@ Respond with this JSON:
   app.get("/api/quotes-pipeline", isAuthenticated, async (req, res) => {
     try {
       const { db } = await import("./db");
-      const { desc } = await import("drizzle-orm");
-      const { estimates: estimatesTable } = await import("@shared/schema");
+      const { desc, and, sql } = await import("drizzle-orm");
+      const { estimates: estimatesTable, leads: leadsTable } = await import("@shared/schema");
 
-      const allEstimates = await db.select().from(estimatesTable).orderBy(desc(estimatesTable.updatedAt)) as any[];
+      type PipelineItem = {
+        id: number | string;
+        title: string | null;
+        status: string;
+        total: string | null;
+        clientId: number | null;
+        clientName: string;
+        leadId: number | null;
+        buildopsQuoteId: string | null;
+        updatedAt: Date | null;
+        createdAt: Date | null;
+        daysOld: number;
+        source: "crm" | "buildops";
+      };
+
+      const allEstimates = await db.select().from(estimatesTable).orderBy(desc(estimatesTable.updatedAt));
       const allClients = await storage.listClients();
       const clientMap = new Map(allClients.map(c => [c.id, c.name]));
 
-      const pipeline = allEstimates
-        .filter((e: any) => e.status === "draft" || e.status === "sent")
-        .map((e: any) => ({
+      const pipeline: PipelineItem[] = allEstimates
+        .filter(e => e.status === "draft" || e.status === "sent")
+        .map(e => ({
           id: e.id,
           title: e.title,
           status: e.status,
           total: e.total,
           clientId: e.clientId,
-          clientName: clientMap.get(e.clientId) ?? "Unknown",
+          clientName: clientMap.get(e.clientId ?? 0) ?? "Unknown",
           leadId: e.leadId,
           buildopsQuoteId: e.buildopsQuoteId,
           updatedAt: e.updatedAt,
           createdAt: e.createdAt,
-          daysOld: Math.floor((Date.now() - new Date(e.updatedAt).getTime()) / 86400000),
+          daysOld: Math.floor((Date.now() - new Date(e.updatedAt ?? Date.now()).getTime()) / 86400000),
+          source: "crm" as const,
         }));
+
+      // Collect buildopsQuoteIds already linked to estimates to avoid duplicates
+      const linkedBOQuoteIds = new Set(
+        allEstimates
+          .filter(e => e.buildopsQuoteId)
+          .map(e => e.buildopsQuoteId)
+      );
+
+      // Add BuildOps leads with draft/sent quotes not already linked to an estimate
+      const boLeads = await db.select({
+        id: leadsTable.id,
+        title: leadsTable.title,
+        clientId: leadsTable.clientId,
+        buildopsQuoteId: leadsTable.buildopsQuoteId,
+        buildopsQuoteStatus: leadsTable.buildopsQuoteStatus,
+        buildopsQuoteTotal: leadsTable.buildopsQuoteTotal,
+        updatedAt: leadsTable.updatedAt,
+        createdAt: leadsTable.createdAt,
+      }).from(leadsTable)
+        .where(and(
+          sql`${leadsTable.buildopsQuoteId} IS NOT NULL`,
+          sql`${leadsTable.buildopsQuoteStatus} IN ('draft', 'sent')`,
+          sql`${leadsTable.stage} NOT IN ('won', 'lost')`
+        ));
+
+      for (const lead of boLeads) {
+        if (linkedBOQuoteIds.has(lead.buildopsQuoteId)) continue;
+        const status = lead.buildopsQuoteStatus === "draft" ? "draft" : "sent";
+        pipeline.push({
+          id: `bo-lead-${lead.id}`,
+          title: lead.title,
+          status,
+          total: lead.buildopsQuoteTotal ?? "0",
+          clientId: lead.clientId,
+          clientName: clientMap.get(lead.clientId ?? 0) ?? "Unknown",
+          leadId: lead.id,
+          buildopsQuoteId: lead.buildopsQuoteId,
+          updatedAt: lead.updatedAt,
+          createdAt: lead.createdAt,
+          daysOld: Math.floor((Date.now() - new Date(lead.updatedAt).getTime()) / 86400000),
+          source: "buildops",
+        });
+      }
 
       res.json(pipeline);
     } catch (err: any) {

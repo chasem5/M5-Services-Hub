@@ -41,6 +41,8 @@ import {
   valueTierSettings,
   appSettings,
   buildopsSyncLog,
+  buildopsAgreements,
+  buildopsInvoices,
   aiFeedback,
   type BuildopsSyncLog,
   type AiFeedback,
@@ -567,18 +569,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateLead(id: number, updateData: Partial<InsertLead>): Promise<Lead> {
+    const setData: Partial<Lead> & { updatedAt: Date } = { ...updateData, updatedAt: new Date() };
+    if (updateData.stage === "won") {
+      // Only set won_at on actual transition; preserve existing won_at if already set
+      const [existing] = await db.select({ stage: leads.stage, wonAt: leads.wonAt }).from(leads).where(eq(leads.id, id));
+      if (existing && existing.stage !== "won" && !existing.wonAt) {
+        setData.wonAt = new Date();
+      }
+    }
     const [lead] = await db
       .update(leads)
-      .set({ ...updateData, updatedAt: new Date() })
+      .set(setData)
       .where(eq(leads.id, id))
       .returning();
     return lead;
   }
 
-  async updateLeadStage(id: number, stage: any): Promise<Lead> {
+  async updateLeadStage(id: number, stage: string): Promise<Lead> {
+    const setData: Partial<Lead> & { updatedAt: Date } = { stage, updatedAt: new Date() };
+    if (stage === "won") {
+      // Only set won_at on transition to won; preserve existing won_at if already set
+      const [existing] = await db.select({ stage: leads.stage, wonAt: leads.wonAt }).from(leads).where(eq(leads.id, id));
+      if (existing && existing.stage !== "won" && !existing.wonAt) {
+        setData.wonAt = new Date();
+      }
+    }
     const [lead] = await db
       .update(leads)
-      .set({ stage, updatedAt: new Date() })
+      .set(setData)
       .where(eq(leads.id, id))
       .returning();
     return lead;
@@ -698,6 +716,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteEstimate(id: number): Promise<void> {
+    await db.delete(estimateLineItems).where(eq(estimateLineItems.estimateId, id));
+    await db.delete(proposals).where(eq(proposals.estimateId, id));
     await db.delete(estimates).where(eq(estimates.id, id));
   }
 
@@ -764,6 +784,8 @@ export class DatabaseStorage implements IStorage {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const twelveMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 11, 1);
+    const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, 1);
 
     // Load tier settings for pipeline value calculation
     const tierSettings = await this.getValueTierSettings();
@@ -786,11 +808,18 @@ export class DatabaseStorage implements IStorage {
       ? and(sql`${leads.stage} NOT IN ('won', 'lost')`, userFilter)
       : sql`${leads.stage} NOT IN ('won', 'lost')`;
 
-    const wonLeadsWhere = userFilter ? and(eq(leads.stage, 'won'), userFilter) : eq(leads.stage, 'won');
-    const lostLeadsWhere = userFilter ? and(eq(leads.stage, 'lost'), userFilter) : eq(leads.stage, 'lost');
+    // Win rate: last 12 months only
+    const wonLeadsWhere = userFilter
+      ? and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${twelveMonthsAgo}`, userFilter)
+      : and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${twelveMonthsAgo}`);
+    const lostLeadsWhere = userFilter
+      ? and(eq(leads.stage, 'lost'), sql`${leads.updatedAt} >= ${twelveMonthsAgo}`, userFilter)
+      : and(eq(leads.stage, 'lost'), sql`${leads.updatedAt} >= ${twelveMonthsAgo}`);
+
+    // Monthly revenue: won deals this month using won_at (fall back to updated_at)
     const monthlyWonWhere = userFilter
-      ? and(eq(leads.stage, 'won'), sql`${leads.updatedAt} >= ${firstDayOfMonth}`, userFilter)
-      : and(eq(leads.stage, 'won'), sql`${leads.updatedAt} >= ${firstDayOfMonth}`);
+      ? and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${firstDayOfMonth}`, userFilter)
+      : and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${firstDayOfMonth}`);
 
     const openTasksWhere = taskUserFilter
       ? and(sql`${tasks.status} != 'done'`, taskUserFilter)
@@ -812,8 +841,21 @@ export class DatabaseStorage implements IStorage {
       overdueTasks,
       estimateStatusCounts,
       bdSpendThisMonth,
+      buildopsActiveAgreements,
     ] = await Promise.all([
-      db.select({ id: leads.id, value: leads.value, valueType: leads.valueType, valueTier: leads.valueTier, stage: leads.stage, updatedAt: leads.updatedAt, contractType: leads.contractType, recurringFrequency: leads.recurringFrequency, clientId: leads.clientId }).from(leads).where(activeleadsWhere),
+      db.select({
+        id: leads.id,
+        value: leads.value,
+        valueType: leads.valueType,
+        valueTier: leads.valueTier,
+        stage: leads.stage,
+        updatedAt: leads.updatedAt,
+        contractType: leads.contractType,
+        recurringFrequency: leads.recurringFrequency,
+        clientId: leads.clientId,
+        buildopsQuoteId: leads.buildopsQuoteId,
+        buildopsQuoteTotal: leads.buildopsQuoteTotal,
+      }).from(leads).where(activeleadsWhere),
       db.select({ count: sql<number>`count(*)` }).from(tasks).where(openTasksWhere),
       db.select({ count: sql<number>`count(*)` }).from(tasks).where(dueTodayWhere),
       db.select({ stage: leads.stage, count: sql<number>`count(*)` }).from(leads).where(userFilter ? and(sql`1=1`, userFilter) : sql`1=1`).groupBy(leads.stage),
@@ -822,41 +864,100 @@ export class DatabaseStorage implements IStorage {
       db.select({ count: sql<number>`count(*)` }).from(tasks).where(overdueWhere),
       db.select({ status: estimates.status, count: sql<number>`count(*)` }).from(estimates).groupBy(estimates.status),
       db.select({ total: sql<string>`sum(${bdSpendEntries.amount})` }).from(bdSpendEntries).where(sql`${bdSpendEntries.date} >= ${firstDayOfMonth}`),
+      db.select({
+        contractValue: buildopsAgreements.contractValue,
+        frequency: buildopsAgreements.frequency,
+        startDate: buildopsAgreements.startDate,
+        endDate: buildopsAgreements.endDate,
+      }).from(buildopsAgreements).where(sql`LOWER(${buildopsAgreements.status}) = 'active'`),
     ]);
 
-    // Pipeline value — tier-aware JS sum
-    const pipelineValue = activeLeadRows.reduce((sum, lead) => sum + getLeadValue(lead as any), 0);
+    // Active leads: split into CRM (no buildopsQuoteId) and BuildOps (has buildopsQuoteId)
+    const crmActiveLeads = activeLeadRows.filter(l => !l.buildopsQuoteId);
+    const buildopsActiveLeads = activeLeadRows.filter(l => !!l.buildopsQuoteId);
 
-    // Monthly revenue — won deals this month (fixed value only for actual revenue)
+    // Pipeline value — CRM leads use tier-aware value; BuildOps leads prefer buildopsQuoteTotal
+    const pipelineValueCRM = crmActiveLeads.reduce((sum, lead) => sum + getLeadValue(lead), 0);
+    const pipelineValueBO = buildopsActiveLeads.reduce((sum, lead) => {
+      return sum + (lead.buildopsQuoteTotal ? parseFloat(lead.buildopsQuoteTotal) : getLeadValue(lead));
+    }, 0);
+    const pipelineValue = pipelineValueCRM + pipelineValueBO;
+
+    // Monthly revenue — won CRM deals this month using won_at
     const monthlyRevenueLeads = await db.select({ value: leads.value }).from(leads).where(monthlyWonWhere);
-    const monthlyRevenue = monthlyRevenueLeads.reduce((sum, l) => sum + parseFloat(l.value || "0"), 0);
+    const crmMonthlyRevenue = monthlyRevenueLeads.reduce((sum, l) => sum + parseFloat(l.value || "0"), 0);
 
-    // Win rate
+    // BuildOps invoices revenue this month
+    const buildopsInvoiceRows = await db.select({ totalAmount: buildopsInvoices.totalAmount })
+      .from(buildopsInvoices)
+      .where(and(
+        sql`${buildopsInvoices.issuedDate} >= ${firstDayOfMonth}`,
+        sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
+      ));
+    const buildopsMonthlyRevenue = buildopsInvoiceRows.reduce((sum, inv) => sum + parseFloat(inv.totalAmount || "0"), 0);
+    const monthlyRevenue = crmMonthlyRevenue + buildopsMonthlyRevenue;
+
+    // Win rate: last 12 months, include BuildOps quote wins/losses
     const won = Number(wonLeads[0].count);
     const lost = Number(lostLeads[0].count);
-    const winRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 100) : null;
 
-    // Revenue by month — last 6 months (won deals, fixed value)
-    const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+    // BuildOps-only quote wins/losses in last 12 months (exclude leads already counted in CRM won/lost)
+    // A lead counted in CRM won/lost has stage='won' or stage='lost'; exclude those to avoid double-counting
+    const buildopsWonLostRows = await db.select({
+      buildopsQuoteStatus: leads.buildopsQuoteStatus,
+      count: sql<number>`count(*)`,
+    }).from(leads)
+      .where(and(
+        sql`${leads.buildopsQuoteId} IS NOT NULL`,
+        sql`${leads.buildopsQuoteStatus} IN ('won', 'lost')`,
+        sql`${leads.stage} NOT IN ('won', 'lost')`,
+        sql`${leads.updatedAt} >= ${twelveMonthsAgo}`,
+        userFilter ?? sql`1=1`
+      ))
+      .groupBy(leads.buildopsQuoteStatus);
+
+    const boWon = buildopsWonLostRows.find(r => r.buildopsQuoteStatus === 'won');
+    const boLost = buildopsWonLostRows.find(r => r.buildopsQuoteStatus === 'lost');
+    const totalWon = won + Number(boWon?.count ?? 0);
+    const totalLost = lost + Number(boLost?.count ?? 0);
+    const winRate = (totalWon + totalLost) > 0 ? Math.round((totalWon / (totalWon + totalLost)) * 100) : null;
+
+    // Revenue by month — last 6 months (CRM won deals by won_at + BuildOps invoices by issued_date)
     const wonRevenueWhere = userFilter
-      ? and(eq(leads.stage, 'won'), sql`${leads.updatedAt} >= ${sixMonthsAgo}`, userFilter)
-      : and(eq(leads.stage, 'won'), sql`${leads.updatedAt} >= ${sixMonthsAgo}`);
+      ? and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${sixMonthsAgo}`, userFilter)
+      : and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${sixMonthsAgo}`);
     const revenueRows = await db
       .select({
-        month: sql<string>`TO_CHAR(${leads.updatedAt}, 'YYYY-MM')`,
+        month: sql<string>`TO_CHAR(COALESCE(${leads.wonAt}, ${leads.updatedAt}), 'YYYY-MM')`,
         revenue: sql<string>`sum(${leads.value})`,
       })
       .from(leads)
       .where(wonRevenueWhere)
-      .groupBy(sql`TO_CHAR(${leads.updatedAt}, 'YYYY-MM')`)
-      .orderBy(sql`TO_CHAR(${leads.updatedAt}, 'YYYY-MM')`);
+      .groupBy(sql`TO_CHAR(COALESCE(${leads.wonAt}, ${leads.updatedAt}), 'YYYY-MM')`)
+      .orderBy(sql`TO_CHAR(COALESCE(${leads.wonAt}, ${leads.updatedAt}), 'YYYY-MM')`);
+
+    // BuildOps invoice revenue by month (last 6 months)
+    const boInvoiceRevenueRows = await db
+      .select({
+        month: sql<string>`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`,
+        revenue: sql<string>`sum(${buildopsInvoices.totalAmount})`,
+      })
+      .from(buildopsInvoices)
+      .where(and(
+        sql`${buildopsInvoices.issuedDate} >= ${sixMonthsAgo}`,
+        sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
+      ))
+      .groupBy(sql`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`)
+      .orderBy(sql`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`);
 
     const revenueByMonth: { month: string; revenue: string }[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const found = revenueRows.find(r => r.month === key);
-      revenueByMonth.push({ month: key, revenue: found?.revenue || "0" });
+      const foundCRM = revenueRows.find(r => r.month === key);
+      const foundBO = boInvoiceRevenueRows.find(r => r.month === key);
+      const combined = parseFloat(foundCRM?.revenue || "0") + parseFloat(foundBO?.revenue || "0");
+      revenueByMonth.push({ month: key, revenue: combined.toString() });
     }
 
     // Top 5 clients by open pipeline value (tier-aware)
@@ -870,7 +971,7 @@ export class DatabaseStorage implements IStorage {
     const clientValueMap: Record<number, number> = {};
     for (const lead of allActiveLeadsWithClient) {
       if (lead.clientId == null) continue;
-      clientValueMap[lead.clientId] = (clientValueMap[lead.clientId] || 0) + getLeadValue(lead as any);
+      clientValueMap[lead.clientId] = (clientValueMap[lead.clientId] || 0) + getLeadValue(lead);
     }
     const allClients = await db.select({ id: clients.id, name: clients.name }).from(clients);
     const topClientsRows = Object.entries(clientValueMap)
@@ -881,10 +982,10 @@ export class DatabaseStorage implements IStorage {
         return { clientId: Number(clientId), name: client?.name ?? "Unknown", pipelineValue: value.toString() };
       });
 
-    // MRR — tier-aware
+    // MRR — CRM recurring leads (tier-aware) + BuildOps active agreements
     const recurringLeads = activeLeadRows.filter(l => l.contractType === "recurring");
-    const mrr = recurringLeads.reduce((acc, lead) => {
-      const value = getLeadValue(lead as any);
+    const crmMrr = recurringLeads.reduce((acc, lead) => {
+      const value = getLeadValue(lead);
       let monthlyValue = 0;
       if (lead.recurringFrequency === "monthly") monthlyValue = value;
       else if (lead.recurringFrequency === "quarterly") monthlyValue = value / 3;
@@ -892,9 +993,79 @@ export class DatabaseStorage implements IStorage {
       return acc + monthlyValue;
     }, 0);
 
+    // BuildOps agreements MRR: prorate contract_value over duration or divide by 12 for annual
+    const bOmrr = buildopsActiveAgreements.reduce((acc, agr) => {
+      const contractValue = parseFloat(agr.contractValue || "0");
+      if (!contractValue) return acc;
+      const freq = (agr.frequency || "").toLowerCase();
+      let monthly = 0;
+      if (freq.includes("month")) {
+        monthly = contractValue;
+      } else if (freq.includes("quarter")) {
+        monthly = contractValue / 3;
+      } else if (freq.includes("annual") || freq.includes("year")) {
+        monthly = contractValue / 12;
+      } else if (agr.startDate && agr.endDate) {
+        // Prorate over active duration in months
+        const startMs = new Date(agr.startDate).getTime();
+        const endMs = new Date(agr.endDate).getTime();
+        const durationMonths = Math.max((endMs - startMs) / (1000 * 60 * 60 * 24 * 30.44), 1);
+        monthly = contractValue / durationMonths;
+      } else {
+        // Default: assume annual
+        monthly = contractValue / 12;
+      }
+      return acc + monthly;
+    }, 0);
+
+    const mrr = crmMrr + bOmrr;
+
+    // Estimate pipeline: include leads with buildopsQuoteId as extra "buildops_quote" entries
+    const boQuoteLeads = await db.select({
+      id: leads.id,
+      clientId: leads.clientId,
+      title: leads.title,
+      buildopsQuoteId: leads.buildopsQuoteId,
+      buildopsQuoteStatus: leads.buildopsQuoteStatus,
+      buildopsQuoteTotal: leads.buildopsQuoteTotal,
+    }).from(leads)
+      .where(and(
+        sql`${leads.buildopsQuoteId} IS NOT NULL`,
+        sql`${leads.buildopsQuoteStatus} IN ('draft', 'sent')`,
+        sql`${leads.stage} NOT IN ('won', 'lost')`,
+        userFilter ?? sql`1=1`
+      ));
+
+    // Get estimate IDs linked to buildops quotes to avoid double-counting
+    const linkedEstimates = await db.select({ buildopsQuoteId: estimates.buildopsQuoteId })
+      .from(estimates)
+      .where(sql`${estimates.buildopsQuoteId} IS NOT NULL`);
+    const linkedBOQuoteIds = new Set(linkedEstimates.map(e => e.buildopsQuoteId).filter(Boolean));
+
+    const unlinkedBOLeads = boQuoteLeads.filter(l => !linkedBOQuoteIds.has(l.buildopsQuoteId));
+
+    // Add buildops quote counts to estimate status counts (mutable copy with number counts)
+    const estimateStatusCountsWithBO: { status: string; count: number }[] = estimateStatusCounts.map(e => ({
+      status: e.status,
+      count: Number(e.count),
+    }));
+    for (const lead of unlinkedBOLeads) {
+      const status = lead.buildopsQuoteStatus === "draft" ? "draft" : "sent";
+      const existing = estimateStatusCountsWithBO.find(e => e.status === status);
+      if (existing) {
+        existing.count = existing.count + 1;
+      } else {
+        estimateStatusCountsWithBO.push({ status, count: 1 });
+      }
+    }
+
     return {
       activeLeads: activeLeadRows.length,
+      activeLeadsCRM: crmActiveLeads.length,
+      activeLeadsBuildOps: buildopsActiveLeads.length,
       pipelineValue: pipelineValue.toString(),
+      pipelineValueCRM: pipelineValueCRM.toString(),
+      pipelineValueBuildOps: pipelineValueBO.toString(),
       openTasks: openTasks[0].count,
       tasksDueToday: tasksDueToday[0].count,
       monthlyRevenue: monthlyRevenue.toString(),
@@ -902,7 +1073,7 @@ export class DatabaseStorage implements IStorage {
       winRate,
       overdueTasks: overdueTasks[0].count,
       revenueByMonth,
-      estimateStatusCounts,
+      estimateStatusCounts: estimateStatusCountsWithBO,
       bdSpendThisMonth: bdSpendThisMonth[0].total || "0",
       topClients: topClientsRows,
       mrr: mrr.toString(),
@@ -1116,6 +1287,10 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`ALTER TABLE contact_buildings ADD COLUMN IF NOT EXISTS buildops_is_inactive boolean DEFAULT false`);
       await db.execute(sql`ALTER TABLE client_contacts ADD COLUMN IF NOT EXISTS buildops_id varchar`);
       await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS building_id integer`);
+      // Add won_at timestamp column for accurate revenue date tracking
+      await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS won_at timestamp`);
+      // Backfill won_at for existing won leads using updated_at as fallback
+      await db.execute(sql`UPDATE leads SET won_at = updated_at WHERE stage = 'won' AND won_at IS NULL`);
     } catch (e) {
       console.error("migrateBuildopsPropertyColumns error:", e);
     }

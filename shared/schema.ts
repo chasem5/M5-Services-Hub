@@ -141,6 +141,7 @@ export const leads = pgTable("leads", {
   buildopsPropertyId: varchar("buildops_property_id"),
   buildopsExpirationDate: timestamp("buildops_expiration_date"),
   followUpSnoozedUntil: timestamp("follow_up_snoozed_until"),
+  wonAt: timestamp("won_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -472,7 +473,7 @@ export const insertContactBuildingSchema = createInsertSchema(contactBuildings).
   name: z.string().optional().nullable(),
   address: z.string().min(1, "Address is required"),
 });
-export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true, wonAt: true }).extend({
   buildingId: z.number().optional().nullable(),
   contactId: z.number().optional().nullable(),
   serviceType: z.enum(["building_engineering", "facility_solutions", "janitorial", "special_projects", "property_assessment"]).optional().nullable(),

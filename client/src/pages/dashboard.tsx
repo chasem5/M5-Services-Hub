@@ -30,6 +30,7 @@ import {
   TriangleAlert,
   RefreshCw,
   MoreHorizontal,
+  type LucideIcon,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -64,7 +65,11 @@ import type { User } from "@shared/models/auth";
 
 interface DashboardStats {
   activeLeads: number;
+  activeLeadsCRM: number;
+  activeLeadsBuildOps: number;
   pipelineValue: string;
+  pipelineValueCRM: string;
+  pipelineValueBuildOps: string;
   openTasks: number;
   tasksDueToday: number;
   monthlyRevenue: string;
@@ -76,6 +81,40 @@ interface DashboardStats {
   bdSpendThisMonth: string;
   topClients: { clientId: number; name: string; pipelineValue: string }[];
   mrr: string;
+}
+
+interface PulseAlert {
+  type: string;
+  leadId: number | null;
+  clientId: number | null;
+  clientName: string;
+  title: string;
+  daysSince?: number;
+  daysLeft?: number;
+  hoursSince?: number;
+  priority?: string;
+  threadId?: string;
+  estimateId?: number;
+  total?: string | number;
+  daysOld?: number;
+  endDate?: string;
+  daysUntil?: number;
+  action?: string;
+}
+
+interface QuotePipelineItem {
+  id: number | string;
+  title: string | null;
+  status: string;
+  total: string | null;
+  clientId: number | null;
+  clientName: string;
+  leadId: number | null;
+  buildopsQuoteId: string | null;
+  updatedAt: string | null;
+  createdAt: string | null;
+  daysOld: number;
+  source: "crm" | "buildops";
 }
 
 interface TeamPerformanceStat {
@@ -138,6 +177,8 @@ export default function Dashboard() {
   const [quickAction, setQuickAction] = useState<"deal" | "contact" | "company" | "task" | "activity" | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>(user?.dashboardFilter ?? "all");
   const [pulseTab, setPulseTab] = useState<"all" | "F" | "E" | "A" | "B" | "C" | "D">("all");
+  const [pulseCollapsed, setPulseCollapsed] = useState(true);
+  const [pipelineCollapsed, setPipelineCollapsed] = useState(true);
 
   const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -188,11 +229,11 @@ export default function Dashboard() {
     enabled: isAdminOrManager,
   });
 
-  const { data: clientPulse = [], isLoading: pulseLoading, refetch: refetchPulse } = useQuery<any[]>({
+  const { data: clientPulse = [], isLoading: pulseLoading, refetch: refetchPulse } = useQuery<PulseAlert[]>({
     queryKey: ["/api/client-pulse"],
   });
 
-  const { data: quotesPipeline = [], isLoading: pipelineLoading } = useQuery<any[]>({
+  const { data: quotesPipeline = [], isLoading: pipelineLoading } = useQuery<QuotePipelineItem[]>({
     queryKey: ["/api/quotes-pipeline"],
   });
 
@@ -395,21 +436,58 @@ export default function Dashboard() {
 
       {/* Metric Cards — 7-col grid, Pipeline Value spans 2, Tasks combined */}
       <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-7">
-        <MetricCard
-          title="Active Leads"
-          value={stats?.activeLeads}
-          icon={Target}
-          loading={statsLoading}
-          dataTestId="text-active-leads"
-        />
-        <MetricCard
-          title="Pipeline Value"
-          value={stats ? formatCurrency(stats.pipelineValue) : undefined}
-          icon={DollarSign}
-          loading={statsLoading}
-          dataTestId="text-pipeline-value"
-          className="col-span-1 lg:col-span-2"
-        />
+        {/* Active Leads with CRM/BuildOps breakdown */}
+        <Card className="shadow-sm border-border/40 bg-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-tight">
+              Active Leads
+            </CardTitle>
+            <Target className="h-4 w-4 shrink-0 text-primary" />
+          </CardHeader>
+          <CardContent>
+            {statsLoading ? (
+              <Skeleton className="h-7 w-16" />
+            ) : (
+              <>
+                <div className="font-heading font-bold text-xl leading-tight" data-testid="text-active-leads">
+                  {stats?.activeLeads ?? 0}
+                </div>
+                {(stats?.activeLeadsCRM !== undefined || stats?.activeLeadsBuildOps !== undefined) && (
+                  <div className="text-[11px] text-muted-foreground mt-1">
+                    {stats.activeLeadsCRM ?? 0} CRM · {stats.activeLeadsBuildOps ?? 0} BuildOps
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Pipeline Value with CRM/BuildOps breakdown */}
+        <Card className="shadow-sm border-border/40 bg-card col-span-1 lg:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-tight">
+              Pipeline Value
+            </CardTitle>
+            <DollarSign className="h-4 w-4 shrink-0 text-primary" />
+          </CardHeader>
+          <CardContent>
+            {statsLoading ? (
+              <Skeleton className="h-7 w-24" />
+            ) : (
+              <>
+                <div className="font-heading font-bold text-xl leading-tight" data-testid="text-pipeline-value">
+                  {stats ? formatCurrency(stats.pipelineValue) : "—"}
+                </div>
+                {(stats?.pipelineValueCRM !== undefined || stats?.pipelineValueBuildOps !== undefined) && (
+                  <div className="text-[11px] text-muted-foreground mt-1">
+                    {formatCurrency(stats.pipelineValueCRM ?? 0)} CRM · {formatCurrency(stats.pipelineValueBuildOps ?? 0)} BO
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+
         <MetricCard
           title="Estimated MRR"
           value={stats ? formatCurrency(stats.mrr) : undefined}
@@ -425,14 +503,36 @@ export default function Dashboard() {
           loading={statsLoading}
           dataTestId="text-monthly-revenue"
         />
-        <MetricCard
-          title="Win Rate"
-          value={stats ? (stats.winRate !== null ? `${stats.winRate}%` : "—") : undefined}
-          icon={Trophy}
-          loading={statsLoading}
-          dataTestId="text-win-rate"
-          accentColor={stats?.winRate !== null && stats?.winRate !== undefined ? (stats.winRate >= 50 ? "text-green-600" : "text-orange-500") : undefined}
-        />
+
+        {/* Win Rate with time window label */}
+        <Card className="shadow-sm border-border/40 bg-card">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider leading-tight">
+              Win Rate
+            </CardTitle>
+            <Trophy className="h-4 w-4 shrink-0 text-primary" />
+          </CardHeader>
+          <CardContent>
+            {statsLoading ? (
+              <Skeleton className="h-7 w-16" />
+            ) : (
+              <>
+                <div
+                  className={cn(
+                    "font-heading font-bold text-xl leading-tight",
+                    stats?.winRate !== null && stats?.winRate !== undefined
+                      ? stats.winRate >= 50 ? "text-green-600" : "text-orange-500"
+                      : undefined
+                  )}
+                  data-testid="text-win-rate"
+                >
+                  {stats ? (stats.winRate !== null ? `${stats.winRate}%` : "—") : "—"}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">Last 12 months</div>
+              </>
+            )}
+          </CardContent>
+        </Card>
         {/* Combined Tasks card */}
         <Card className="shadow-sm border-border/40 bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -478,9 +578,49 @@ export default function Dashboard() {
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">Follow-up signals across deals &amp; quotes</p>
               </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground shrink-0"
+                onClick={() => setPulseCollapsed(!pulseCollapsed)}
+                data-testid="button-toggle-pulse"
+              >
+                {pulseCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </Button>
             </div>
-            {/* Tab bar */}
-            {!pulseLoading && clientPulse.length > 0 && (() => {
+
+            {/* Collapsed summary row */}
+            {pulseCollapsed && !pulseLoading && clientPulse.length > 0 && (() => {
+              const categoryDefs: { key: "F" | "E" | "A" | "B" | "C" | "D"; label: string; color: string }[] = [
+                { key: "F", label: "Expired",    color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" },
+                { key: "E", label: "Expiring",   color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" },
+                { key: "A", label: "Acknowledge",color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" },
+                { key: "B", label: "Price",      color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
+                { key: "C", label: "Draft",      color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" },
+                { key: "D", label: "Follow-Up",  color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" },
+              ];
+              const counts = categoryDefs.map(c => ({
+                ...c,
+                count: clientPulse.filter((p) => p.type === c.key).length,
+              })).filter(c => c.count > 0);
+              return (
+                <div className="flex flex-wrap gap-1.5 mt-3 pb-1">
+                  {counts.map(c => (
+                    <button
+                      key={c.key}
+                      onClick={() => { setPulseCollapsed(false); setPulseTab(c.key); }}
+                      data-testid={`pulse-summary-${c.key}`}
+                      className={cn("text-xs px-2 py-0.5 rounded-full font-semibold", c.color)}
+                    >
+                      {c.label} <span className="font-bold">{c.count}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Tab bar — only when expanded */}
+            {!pulseCollapsed && !pulseLoading && clientPulse.length > 0 && (() => {
               const tabDefs: { key: "all"|"F"|"E"|"A"|"B"|"C"|"D"; label: string; activeClass: string }[] = [
                 { key: "all", label: "All",        activeClass: "bg-primary text-white" },
                 { key: "F",   label: "Expired",    activeClass: "bg-orange-600 text-white" },
@@ -493,7 +633,7 @@ export default function Dashboard() {
               return (
                 <div className="flex flex-wrap gap-1 mt-3 pb-1">
                   {tabDefs.map(({ key, label, activeClass }) => {
-                    const count = key === "all" ? clientPulse.length : clientPulse.filter((p: any) => p.type === key).length;
+                    const count = key === "all" ? clientPulse.length : clientPulse.filter((p) => p.type === key).length;
                     if (key !== "all" && count === 0) return null;
                     return (
                       <button
@@ -522,7 +662,14 @@ export default function Dashboard() {
             })()}
           </CardHeader>
           <CardContent className="p-0 mt-2">
-            {pulseLoading ? (
+            {pulseCollapsed ? (
+              clientPulse.length === 0 && !pulseLoading ? (
+                <div className="px-6 pb-4 flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  All caught up — no follow-ups needed
+                </div>
+              ) : null
+            ) : pulseLoading ? (
               <div className="px-6 pb-4 space-y-2">
                 {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
@@ -532,7 +679,7 @@ export default function Dashboard() {
                 All caught up — no follow-ups needed
               </div>
             ) : (() => {
-              const sectionMeta: Record<string, { icon: any; label: string; color: string; desc: string }> = {
+              const sectionMeta: Record<string, { icon: LucideIcon; label: string; color: string; desc: string }> = {
                 F: { icon: TriangleAlert, label: "Expired Quote",              color: "text-orange-600",  desc: "Quote has expired — reach out to re-engage this client" },
                 E: { icon: TriangleAlert, label: "Expiring Soon",              color: "text-red-600",    desc: "Sent quote approaching its 30-day window — act before it lapses" },
                 A: { icon: Mail,         label: "Acknowledge Client Request",  color: "text-amber-600",  desc: "Inbound email received — client is waiting on a reply for 24+ hours" },
@@ -541,14 +688,14 @@ export default function Dashboard() {
                 D: { icon: Send,         label: "Follow Up Sent Quote",        color: "text-purple-600", desc: "Quote sent 7+ days ago with no response — time to check back in" },
               };
 
-              const PulseRow = ({ item, idx, showCategory }: { item: any; idx: number; showCategory?: boolean }) => {
+              const PulseRow = ({ item, idx, showCategory }: { item: PulseAlert; idx: number; showCategory?: boolean }) => {
                 const isExpiring = item.type === "E";
                 const isExpired = item.type === "F";
                 const pillColor = isExpired
                   ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
                   : isExpiring
-                  ? (item.daysLeft <= 3 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300")
-                  : (item.priority === "high" || item.daysSince >= 3
+                  ? ((item.daysLeft ?? Infinity) <= 3 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300")
+                  : (item.priority === "high" || (item.daysSince ?? 0) >= 3
                       ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
                       : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300");
                 const meta = sectionMeta[item.type];
@@ -602,7 +749,7 @@ export default function Dashboard() {
               };
 
               if (pulseTab !== "all") {
-                const items = clientPulse.filter((p: any) => p.type === pulseTab);
+                const items = clientPulse.filter((p) => p.type === pulseTab);
                 const meta = sectionMeta[pulseTab];
                 return (
                   <div className="divide-y divide-border/40">
@@ -613,7 +760,7 @@ export default function Dashboard() {
                       </div>
                       <p className="text-[11px] text-muted-foreground mt-0.5">{meta.desc}</p>
                     </div>
-                    {items.map((item: any, idx: number) => (
+                    {items.map((item, idx) => (
                       <PulseRow key={idx} item={item} idx={idx} />
                     ))}
                   </div>
@@ -623,7 +770,7 @@ export default function Dashboard() {
               return (
                 <div className="divide-y divide-border/40">
                   {(["F","E","A","B","C","D"] as const).map(type => {
-                    const section = clientPulse.filter((p: any) => p.type === type);
+                    const section = clientPulse.filter((p) => p.type === type);
                     if (!section.length) return null;
                     const meta = sectionMeta[type];
                     return (
@@ -635,7 +782,7 @@ export default function Dashboard() {
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5">{meta.desc}</p>
                         </div>
-                        {section.map((item: any, idx: number) => (
+                        {section.map((item, idx) => (
                           <PulseRow key={idx} item={item} idx={idx} />
                         ))}
                       </div>
@@ -650,12 +797,50 @@ export default function Dashboard() {
         {/* Quotes Pipeline */}
         <Card className="shadow-sm border-border/40 bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-heading font-bold flex items-center gap-2">
-              <FileText className="h-4 w-4 text-primary" />
-              Quotes Pipeline
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">All active estimates — draft &amp; sent</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg font-heading font-bold flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                  Quotes Pipeline
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">All active estimates — draft &amp; sent</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground shrink-0"
+                onClick={() => setPipelineCollapsed(!pipelineCollapsed)}
+                data-testid="button-toggle-pipeline"
+              >
+                {pipelineCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </Button>
+            </div>
+
+            {pipelineCollapsed && !pipelineLoading && quotesPipeline.length > 0 && (
+              <div className="flex gap-3 mt-2">
+                {(["draft", "sent"] as const).map(status => {
+                  const count = quotesPipeline.filter(q => q.status === status).length;
+                  const total = quotesPipeline.filter(q => q.status === status).reduce((s, q) => s + Number(q.total ?? 0), 0);
+                  return (
+                    <button
+                      key={status}
+                      onClick={() => setPipelineCollapsed(false)}
+                      data-testid={`pipeline-summary-${status}`}
+                      className={cn(
+                        "text-xs px-2.5 py-1 rounded-full font-semibold",
+                        status === "draft"
+                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                      )}
+                    >
+                      {status === "draft" ? "Draft" : "Sent"} {count} · {formatCurrency(total)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </CardHeader>
+          {!pipelineCollapsed && (
           <CardContent className="p-0">
             {pipelineLoading ? (
               <div className="px-6 pb-4 space-y-2">
@@ -664,7 +849,7 @@ export default function Dashboard() {
             ) : (
               <div className="grid grid-cols-2 divide-x divide-border/40">
                 {(["draft","sent"] as const).map(status => {
-                  const items = quotesPipeline.filter((q: any) => q.status === status);
+                  const items = quotesPipeline.filter((q) => q.status === status);
                   return (
                     <div key={status}>
                       <div className="px-4 py-2 bg-muted/30 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -675,32 +860,37 @@ export default function Dashboard() {
                         <p className="px-4 py-4 text-xs text-muted-foreground italic">None</p>
                       ) : (
                         <div className="divide-y divide-border/40">
-                          {items.map((q: any) => (
-                            <Link key={q.id} href={`/estimates/${q.id}`}>
-                              <div
-                                className="px-4 py-2.5 hover:bg-muted/20 cursor-pointer group"
-                                data-testid={`quote-tile-${q.id}`}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="font-semibold text-sm truncate">{q.clientName}</p>
-                                    <p className="text-xs text-muted-foreground truncate">{q.title}</p>
-                                  </div>
-                                  <div className="shrink-0 text-right">
-                                    <p className="text-sm font-semibold tabular-nums">{formatCurrency(q.total)}</p>
-                                    <div className="flex items-center gap-1 justify-end">
-                                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${q.daysOld >= 7 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : q.daysOld >= 3 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}>
-                                        {q.daysOld}d
-                                      </span>
-                                      {q.buildopsQuoteId && (
-                                        <span className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full font-medium">BO</span>
-                                      )}
+                          {items.map((q) => {
+                            const href = q.source === "buildops" && q.leadId
+                              ? `/leads/${q.leadId}`
+                              : `/estimates/${q.id}`;
+                            return (
+                              <Link key={q.id} href={href}>
+                                <div
+                                  className="px-4 py-2.5 hover:bg-muted/20 cursor-pointer group"
+                                  data-testid={`quote-tile-${q.id}`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="font-semibold text-sm truncate">{q.clientName}</p>
+                                      <p className="text-xs text-muted-foreground truncate">{q.title}</p>
+                                    </div>
+                                    <div className="shrink-0 text-right">
+                                      <p className="text-sm font-semibold tabular-nums">{formatCurrency(q.total ?? "0")}</p>
+                                      <div className="flex items-center gap-1 justify-end">
+                                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${q.daysOld >= 7 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : q.daysOld >= 3 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}>
+                                          {q.daysOld}d
+                                        </span>
+                                        {q.buildopsQuoteId && (
+                                          <span className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full font-medium">BO</span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
-                              </div>
-                            </Link>
-                          ))}
+                              </Link>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -709,6 +899,7 @@ export default function Dashboard() {
               </div>
             )}
           </CardContent>
+          )}
         </Card>
       </div>
 
@@ -1181,7 +1372,7 @@ function MetricCard({
 }: {
   title: string;
   value?: string | number;
-  icon: any;
+  icon: LucideIcon;
   loading: boolean;
   dataTestId: string;
   accentColor?: string;
