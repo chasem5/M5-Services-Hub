@@ -277,10 +277,13 @@ export async function getRepresentatives(
 ): Promise<BuildOpsRepresentative[]> {
   try {
     const token = await getToken(clientId, clientSecret);
-    const res = await fetch(
-      `${BASE_URL}/v1/customers/${customerId}/representatives?page=1&limit=50`,
-      { headers: buildOpsHeaders(token, tenantId) }
-    );
+    // Try primary endpoint first; fall back to alternate query-param form on 404/405
+    const primaryUrl = `${BASE_URL}/v1/customers/${customerId}/representatives?page=1&limit=50`;
+    const fallbackUrl = `${BASE_URL}/v1/customers/representatives?customerId=${customerId}&page=1&limit=50`;
+    let res = await fetch(primaryUrl, { headers: buildOpsHeaders(token, tenantId) });
+    if (res.status === 404 || res.status === 405) {
+      res = await fetch(fallbackUrl, { headers: buildOpsHeaders(token, tenantId) });
+    }
     if (!res.ok) {
       if (res.status === 404) return [];
       const body = await res.json().catch(() => ({}));

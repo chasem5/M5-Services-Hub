@@ -4186,10 +4186,10 @@ Respond with this JSON:
             const fullName = rep.name || [rep.firstName, rep.middleName, rep.lastName].filter(Boolean).join(" ") || "Unknown";
             const email = rep.email || null;
 
+            const normalizedEmail = email?.toLowerCase().trim();
             const existingContact = allContactsForClient.find(c =>
               (rep.id && c.buildopsId === rep.id) ||
-              (email && c.email === email) ||
-              c.name === fullName
+              (normalizedEmail && c.email?.toLowerCase().trim() === normalizedEmail)
             );
             const existing = existingContact ? [existingContact] : [];
 
