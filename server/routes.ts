@@ -4501,8 +4501,8 @@ Respond with this JSON:
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ error: "BuildOps credentials not configured" });
-      const { getBuildOpsToken, buildOpsHeaders, BASE_URL } = await import("./buildops");
-      const token = await getBuildOpsToken(creds.clientId, creds.clientSecret);
+      const { getToken, buildOpsHeaders, BASE_URL } = await import("./buildops");
+      const token = await getToken(creds.clientId, creds.clientSecret);
 
       const endpoints = [
         "/v1/employees?page=1&limit=5",
