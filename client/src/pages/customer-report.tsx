@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import {
@@ -17,6 +18,7 @@ import {
   Search,
   ExternalLink,
   HeartPulse,
+  Sparkles,
 } from "lucide-react";
 
 interface ClientIntel {
@@ -45,11 +47,69 @@ type SortKey = "ltv" | "hitRate" | "pipelineValue" | "velocityLast90" | "activeJ
 const fmt = (v: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 
-const healthBadge = (status: string) => {
-  if (status === "healthy") return <Badge className="bg-green-100 text-green-700 border-green-200 text-xs" data-testid="badge-health-healthy">Healthy</Badge>;
-  if (status === "watch") return <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs" data-testid="badge-health-watch">Watch</Badge>;
-  return <Badge className="bg-red-100 text-red-700 border-red-200 text-xs" data-testid="badge-health-at-risk">At Risk</Badge>;
-};
+function HealthBadgeHover({ client }: { client: ClientIntel }) {
+  const [open, setOpen] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleOpen = async (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (isOpen && summary === null && !loading) {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          healthStatus: client.healthStatus,
+          healthScore: String(client.healthScore),
+          velocityLast90: String(client.velocityLast90),
+          velocityPrior90: String(client.velocityPrior90),
+          velocityDirection: client.velocityDirection,
+          velocityChange: String(client.velocityLast90 - client.velocityPrior90),
+          ltv: String(client.ltv),
+          hitRate: client.hitRate !== null ? String(client.hitRate) : "",
+          wonCount: String(client.wonCount),
+          lostCount: String(client.lostCount),
+          openCount: String(client.openDeals),
+          totalJobs: String(client.totalJobs),
+          hasActiveSA: String(client.hasActiveSA),
+        });
+        const res = await fetch(`/api/clients/${client.clientId}/health-summary?${params}`, { credentials: "include" });
+        const json = await res.json();
+        setSummary(json.summary ?? "No summary available.");
+      } catch {
+        setSummary("Unable to generate summary.");
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const badgeEl = (() => {
+    if (client.healthStatus === "healthy") return <Badge className="bg-green-100 text-green-700 border-green-200 text-xs cursor-pointer" data-testid="badge-health-healthy">Healthy</Badge>;
+    if (client.healthStatus === "watch") return <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs cursor-pointer" data-testid="badge-health-watch">Watch</Badge>;
+    return <Badge className="bg-red-100 text-red-700 border-red-200 text-xs cursor-pointer" data-testid="badge-health-at-risk">At Risk</Badge>;
+  })();
+
+  return (
+    <HoverCard open={open} onOpenChange={handleOpen} openDelay={400}>
+      <HoverCardTrigger asChild>{badgeEl}</HoverCardTrigger>
+      <HoverCardContent className="w-72 text-sm" side="right">
+        <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          <Sparkles className="h-3.5 w-3.5 text-primary" />
+          AI Health Summary
+        </div>
+        {loading ? (
+          <div className="space-y-1.5">
+            <Skeleton className="h-3.5 w-full" />
+            <Skeleton className="h-3.5 w-5/6" />
+            <Skeleton className="h-3.5 w-4/6" />
+          </div>
+        ) : (
+          <p className="text-muted-foreground leading-relaxed">{summary}</p>
+        )}
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
 
 const trendIcon = (dir: string) => {
   if (dir === "growing") return <TrendingUp className="h-4 w-4 text-green-600" />;
@@ -248,7 +308,7 @@ export default function CustomerReport() {
                         <Link href={`/customers/${c.clientId}`} className="hover:text-primary hover:underline">{c.name}</Link>
                       </td>
                       <td className="py-2.5 px-3">{tierLabel(c.tier)}</td>
-                      <td className="py-2.5 px-3">{healthBadge(c.healthStatus)}</td>
+                      <td className="py-2.5 px-3"><HealthBadgeHover client={c} /></td>
                       <td className="py-2.5 px-3 text-right font-mono">{fmt(c.ltv)}</td>
                       <td className="py-2.5 px-3 text-right font-mono">{fmt(c.pipelineValue)}</td>
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums">{c.velocityLast90}</td>

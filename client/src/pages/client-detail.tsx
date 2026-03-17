@@ -92,6 +92,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { 
   Table, 
   TableBody, 
@@ -3941,6 +3942,41 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
     },
   });
 
+  const [healthHoverOpen, setHealthHoverOpen] = useState(false);
+  const [healthSummary, setHealthSummary] = useState<string | null>(null);
+  const [healthSummaryLoading, setHealthSummaryLoading] = useState(false);
+
+  const handleHealthHover = async (isOpen: boolean) => {
+    setHealthHoverOpen(isOpen);
+    if (isOpen && healthSummary === null && !healthSummaryLoading && data) {
+      setHealthSummaryLoading(true);
+      try {
+        const params = new URLSearchParams({
+          healthStatus: data.healthStatus,
+          healthScore: String(data.healthScore),
+          velocityLast90: String(data.velocityLast90),
+          velocityPrior90: String(data.velocityPrior90),
+          velocityDirection: data.velocityDirection,
+          velocityChange: String(data.velocityChange),
+          ltv: String(data.ltv ?? 0),
+          hitRate: data.hitRate !== null && data.hitRate !== undefined ? String(data.hitRate) : "",
+          wonCount: String(data.wonCount ?? 0),
+          lostCount: String(data.lostCount ?? 0),
+          openCount: String(data.openCount ?? 0),
+          totalJobs: String(data.totalJobs ?? 0),
+          hasActiveSA: String(data.hasActiveSA),
+        });
+        const res = await fetch(`/api/clients/${clientId}/health-summary?${params}`, { credentials: "include" });
+        const json = await res.json();
+        setHealthSummary(json.summary ?? "No summary available.");
+      } catch {
+        setHealthSummary("Unable to generate summary.");
+      } finally {
+        setHealthSummaryLoading(false);
+      }
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -3969,10 +4005,29 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
     <div className="space-y-6">
       {/* ── Header row ── */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold", healthBg, healthColor)} data-testid="badge-client-health">
-          <HeartPulse className="h-4 w-4" />
-          {healthLabel} ({data.healthScore}/3)
-        </div>
+        <HoverCard open={healthHoverOpen} onOpenChange={handleHealthHover} openDelay={400}>
+          <HoverCardTrigger asChild>
+            <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold cursor-pointer", healthBg, healthColor)} data-testid="badge-client-health">
+              <HeartPulse className="h-4 w-4" />
+              {healthLabel} ({data.healthScore}/3)
+            </div>
+          </HoverCardTrigger>
+          <HoverCardContent className="w-80 text-sm" side="right">
+            <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              AI Health Summary
+            </div>
+            {healthSummaryLoading ? (
+              <div className="space-y-1.5">
+                <Skeleton className="h-3.5 w-full" />
+                <Skeleton className="h-3.5 w-5/6" />
+                <Skeleton className="h-3.5 w-4/6" />
+              </div>
+            ) : (
+              <p className="text-muted-foreground leading-relaxed">{healthSummary}</p>
+            )}
+          </HoverCardContent>
+        </HoverCard>
         <div className={cn("flex items-center gap-1.5 text-sm font-medium", velocityColor)}>
           {velocityIcon}
           Activity: {velocityLabel}

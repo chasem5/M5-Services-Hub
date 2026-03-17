@@ -623,11 +623,27 @@ export async function getInvoices(
       throw new Error(body.message ?? `HTTP ${res.status}`);
     }
     const data = await res.json();
-    const items: BuildOpsInvoice[] = data.items ?? [];
-    const totalCount: number = data.totalCount ?? data.total ?? 0;
+    // Debug: log response shape on first page to understand pagination structure
+    if (page === 1) {
+      const keys = Object.keys(data);
+      const totalCount = data.totalCount ?? data.total ?? data.count ?? data.totalItems ?? "?";
+      const itemsKey = ["items","data","results","invoices"].find(k => Array.isArray(data[k])) ?? "(none)";
+      console.log(`[BuildOps getInvoices] page=1 keys=${JSON.stringify(keys)} totalCount=${totalCount} itemsKey=${itemsKey}`);
+    }
+    // Try multiple possible array field names
+    const items: BuildOpsInvoice[] = (
+      Array.isArray(data.items) ? data.items :
+      Array.isArray(data.data) ? data.data :
+      Array.isArray(data.results) ? data.results :
+      Array.isArray(data.invoices) ? data.invoices :
+      Array.isArray(data) ? data : []
+    );
+    const totalCount: number = data.totalCount ?? data.total ?? data.count ?? data.totalItems ?? 0;
     allInvoices.push(...items);
-    if (items.length === 0 || (totalCount > 0 && allInvoices.length >= totalCount)) break;
-    if (items.length < limit) break;
+    console.log(`[BuildOps getInvoices] page=${page} got=${items.length} total=${totalCount} accumulated=${allInvoices.length}`);
+    if (items.length === 0) break;
+    if (totalCount > 0 && allInvoices.length >= totalCount) break;
+    if (items.length < limit && totalCount === 0) break; // only early-exit if no totalCount signal
     page++;
     if (page > 200) break;
   }

@@ -5385,12 +5385,18 @@ Guidelines:
       `));
       const dealStages = dealsByStage.map(r => ({ stage: r.stage as string, count: Number(r.cnt) }));
 
-      // ── Revenue (best-effort — invoice dates may be null) ────────────────
-      const [invoiceStats] = toRows(await db.execute(sql`
+      // ── Revenue: won deal value (primary) + invoice total (secondary) ────
+      const [dealLtvRow] = toRows(await db.execute(sql`
+        SELECT COALESCE(SUM(CAST(value AS numeric)), 0) as ltv
+        FROM leads WHERE client_id = ${clientId} AND stage = 'won'
+      `));
+      const [invoiceLtvRow] = toRows(await db.execute(sql`
         SELECT COALESCE(SUM(CAST(total_amount AS numeric)), 0) as ltv
         FROM buildops_invoices WHERE client_id = ${clientId}
       `));
-      const ltv = Number(invoiceStats?.ltv ?? 0);
+      const dealLtv = Number(dealLtvRow?.ltv ?? 0);
+      const invoiceLtv = Number(invoiceLtvRow?.ltv ?? 0);
+      const ltv = Math.max(dealLtv, invoiceLtv);
 
       // ── Job counts ───────────────────────────────────────────────────────
       const [jobStats] = toRows(await db.execute(sql`
@@ -5495,6 +5501,47 @@ Guidelines:
     }
   });
 
+  // ── AI Health Summary (lazy — called on hover) ─────────────────────────────
+  app.get("/api/clients/:id/health-summary", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
+
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+
+      const {
+        healthStatus, healthScore,
+        velocityLast90, velocityPrior90, velocityDirection, velocityChange,
+        ltv, hitRate, wonCount, lostCount, totalJobs, openCount, hasActiveSA,
+      } = req.query as Record<string, string>;
+
+      const prompt = `You are a concise B2B CRM analyst. Write a 2-3 sentence health summary for this customer account.
+Customer: ${client.name}
+Health Status: ${healthStatus ?? "unknown"} (score ${healthScore ?? "?"}/3)
+Job Velocity (last 90 days vs prior 90): ${velocityLast90 ?? "?"} vs ${velocityPrior90 ?? "?"} jobs (${velocityDirection ?? "stable"}, ${velocityChange ?? "0"}% change)
+Total Jobs Ever: ${totalJobs ?? "?"}
+LTV (won deal value): $${ltv ? Number(ltv).toLocaleString() : "0"}
+Open Deals: ${openCount ?? "0"} | Won: ${wonCount ?? "0"} | Lost: ${lostCount ?? "0"} | Hit Rate: ${hitRate ?? "?"}%
+Active Service Agreement: ${hasActiveSA === "true" ? "Yes" : "No"}
+
+Write a punchy, factual summary that highlights what's driving the health status. Focus on velocity trend and service agreement status. Do not use bullet points. 2-3 sentences max.`;
+
+      const { openai } = await import("./openai");
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 150,
+        temperature: 0.4,
+      });
+
+      const summary = completion.choices[0]?.message?.content?.trim() ?? "No summary available.";
+      res.json({ summary });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/reports/customer-intelligence", isAuthenticated, async (req, res) => {
     try {
       if (!(await hasModuleAccess(req, "customers"))) {
@@ -5530,6 +5577,14 @@ Guidelines:
       `));
       const dealMap = new Map(dealsByClient.map(r => [Number(r.client_id), r]));
 
+      // Won deal LTV per client (primary signal)
+      const wonDealsByClient = toRows(await db.execute(sql`
+        SELECT client_id, COALESCE(SUM(CAST(value AS numeric)), 0) as ltv
+        FROM leads WHERE client_id IS NOT NULL AND stage = 'won' GROUP BY client_id
+      `));
+      const wonDealMap = new Map(wonDealsByClient.map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
+
+      // Invoice LTV per client (use if higher than deal LTV after full sync)
       const invoicesByClient = toRows(await db.execute(sql`
         SELECT client_id, COALESCE(SUM(CAST(total_amount AS numeric)), 0) as ltv
         FROM buildops_invoices WHERE client_id IS NOT NULL GROUP BY client_id
@@ -5593,7 +5648,7 @@ Guidelines:
         const lost = Number(deals?.lost ?? 0);
         const openDeals = Number(deals?.open_deals ?? 0);
         const pipeline = Number(deals?.pipeline ?? 0);
-        const ltv = invoiceMap.get(client.id) ?? 0;
+        const ltv = Math.max(wonDealMap.get(client.id) ?? 0, invoiceMap.get(client.id) ?? 0);
         const jobs = jobMap.get(client.id) ?? { active: 0, total: 0, last90: 0, prior90: 0 };
         const contractTotal = agrMap.get(client.id) ?? 0;
         const mrr = contractTotal / 12;
