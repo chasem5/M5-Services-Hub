@@ -297,7 +297,11 @@ function BuildOpsPanel() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
-      toast({ title: "Time entries synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
+      if (data.available === false) {
+        toast({ title: "Time entries not available", description: data.message, variant: "destructive" });
+      } else {
+        toast({ title: "Time entries synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
+      }
     },
     onError: (err: any) => toast({ title: "Time entries sync failed", description: err.message, variant: "destructive" }),
   });

@@ -4123,7 +4123,7 @@ Respond with this JSON:
       try {
         const token = await getToken(creds.clientId, creds.clientSecret);
         const headers = buildOpsHeaders(token, creds.tenantId);
-        const teRes = await fetch(`${BASE_URL}/v1/time-entries?page=1&limit=10`, { headers });
+        const teRes = await fetch(`${BASE_URL}/v1/time-entries?page=1`, { headers });
         if (teRes.ok) {
           const teData = await teRes.json();
           timeEntries = teData.items ?? (Array.isArray(teData) ? teData : []);
@@ -4142,7 +4142,7 @@ Respond with this JSON:
       try {
         const token = await getToken(creds.clientId, creds.clientSecret);
         const headers = buildOpsHeaders(token, creds.tenantId);
-        const poRes = await fetch(`${BASE_URL}/v1/purchase-orders?page=1&limit=10`, { headers });
+        const poRes = await fetch(`${BASE_URL}/v1/purchase-orders?page=1`, { headers });
         if (poRes.ok) {
           const poData = await poRes.json();
           purchaseOrders = poData.items ?? (Array.isArray(poData) ? poData : []);
@@ -4764,6 +4764,12 @@ Respond with this JSON:
       await storage.createBuildopsSyncLog({ entityType: "time_entry", action: "pull", message: msg });
       res.json({ ok: true, created, updated, skipped, total: entries.length });
     } catch (err: any) {
+      if ((err as any).unavailable) {
+        const msg = "Time entries endpoint not available on this BuildOps plan — no data synced.";
+        console.warn("[BuildOps sync-time-entries] Endpoint unavailable:", err.message);
+        await storage.createBuildopsSyncLog({ entityType: "time_entry", action: "error", message: msg });
+        return res.json({ ok: false, available: false, message: msg, created: 0, updated: 0, total: 0 });
+      }
       console.error("[BuildOps sync-time-entries] Error:", err.message);
       await storage.createBuildopsSyncLog({ entityType: "time_entry", action: "error", message: err.message });
       res.status(500).json({ message: err.message });

@@ -743,17 +743,24 @@ export async function getTimeEntries(
   const headers = buildOpsHeaders(token, tenantId);
   const all: BuildOpsTimeEntry[] = [];
   let page = 1;
-  const limit = 100;
   while (true) {
-    let url = `${BASE_URL}/v1/time-entries?page=${page}&limit=${limit}`;
+    let url = `${BASE_URL}/v1/time-entries?page=${page}`;
     if (jobId) url += `&jobId=${encodeURIComponent(jobId)}`;
     const res = await fetch(url, { headers });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.message ?? `HTTP ${res.status}`);
+      const text = await res.text().catch(() => "");
+      // 404 / routing error means endpoint not available on this plan
+      if (res.status === 404 || text.startsWith("Cannot ")) {
+        const err = new Error(`TIME_ENTRIES_UNAVAILABLE: /v1/time-entries not found (HTTP ${res.status})`);
+        (err as any).unavailable = true;
+        throw err;
+      }
+      let msg = text;
+      try { msg = JSON.parse(text).message ?? text; } catch {}
+      throw new Error(msg || `HTTP ${res.status}`);
     }
     const data = await res.json();
-    const items: BuildOpsTimeEntry[] = data.items ?? data ?? [];
+    const items: BuildOpsTimeEntry[] = data.items ?? (Array.isArray(data) ? data : []);
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     all.push(...items);
     if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
@@ -773,17 +780,19 @@ export async function getPurchaseOrders(
   const headers = buildOpsHeaders(token, tenantId);
   const all: BuildOpsPurchaseOrder[] = [];
   let page = 1;
-  const limit = 100;
   while (true) {
-    let url = `${BASE_URL}/v1/purchase-orders?page=${page}&limit=${limit}`;
+    // NOTE: BuildOps /v1/purchase-orders rejects a `limit` query param — use page only
+    let url = `${BASE_URL}/v1/purchase-orders?page=${page}`;
     if (jobId) url += `&jobId=${encodeURIComponent(jobId)}`;
     const res = await fetch(url, { headers });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.message ?? `HTTP ${res.status}`);
+      const text = await res.text().catch(() => "");
+      let msg = text;
+      try { msg = JSON.parse(text).message ?? text; } catch {}
+      throw new Error(msg || `HTTP ${res.status}`);
     }
     const data = await res.json();
-    const items: BuildOpsPurchaseOrder[] = data.items ?? data ?? [];
+    const items: BuildOpsPurchaseOrder[] = data.items ?? (Array.isArray(data) ? data : []);
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     all.push(...items);
     if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
