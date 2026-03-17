@@ -5192,9 +5192,58 @@ Guidelines:
     }
   });
 
+  // ── Customer Intelligence helpers ─────────────────────────────────────────
+  function generateLast12Months(): string[] {
+    const months: string[] = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+    return months;
+  }
+
+  function zeroFillTrend(sparse: { month: string; revenue: number }[]): { month: string; revenue: number }[] {
+    const months12 = generateLast12Months();
+    const map = new Map(sparse.map(r => [r.month, r.revenue]));
+    return months12.map(m => ({ month: m, revenue: map.get(m) ?? 0 }));
+  }
+
+  function computeTrendDirection(trend: { revenue: number }[]): "growing" | "flat" | "declining" {
+    const nonZero = trend.filter(t => t.revenue > 0);
+    if (nonZero.length < 3) return "flat";
+    const half = Math.floor(trend.length / 2);
+    const firstAvg = trend.slice(0, half).reduce((s, m) => s + m.revenue, 0) / half;
+    const secondAvg = trend.slice(half).reduce((s, m) => s + m.revenue, 0) / (trend.length - half);
+    if (secondAvg > firstAvg * 1.1) return "growing";
+    if (secondAvg < firstAvg * 0.9) return "declining";
+    return "flat";
+  }
+
+  function computeHealthScore(
+    trendDirection: string,
+    openDeals: number,
+    completedJobsLast12: number,
+    avgMonthlyJobsAllClients: number,
+    hitRate: number | null
+  ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk" } {
+    let healthScore = 0;
+    if (trendDirection === "growing") healthScore++;
+    if (openDeals > 0) healthScore++;
+    if (avgMonthlyJobsAllClients > 0 && (completedJobsLast12 / 12) > avgMonthlyJobsAllClients) healthScore++;
+    else if (avgMonthlyJobsAllClients === 0 && completedJobsLast12 > 0) healthScore++;
+    if (hitRate !== null && hitRate > 50) healthScore++;
+    const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+    return { healthScore, healthStatus };
+  }
+
   // ── Customer Intelligence ──────────────────────────────────────────────────
   app.get("/api/clients/:id/intelligence", isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const clientId = parseInt(req.params.id as string);
       if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
       const client = await storage.getClient(clientId);
@@ -5250,9 +5299,18 @@ Guidelines:
         GROUP BY 1 ORDER BY 1
       `);
       const monthlyJobCounts = (monthlyJobRows as any[]).map(r => ({ month: r.month, count: Number(r.cnt) }));
-      const avgMonthlyJobs = monthlyJobCounts.length > 0
-        ? monthlyJobCounts.reduce((s, m) => s + m.count, 0) / 12
-        : 0;
+      const completedJobsLast12 = monthlyJobCounts.reduce((s, m) => s + m.count, 0);
+      const avgMonthlyJobs = completedJobsLast12 / 12;
+
+      const [globalAvgRow] = await db.execute(sql`
+        SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
+          SELECT client_id, COUNT(*) / 12.0 as cnt
+          FROM buildops_jobs
+          WHERE completed_date >= NOW() - INTERVAL '12 months'
+          GROUP BY client_id
+        ) sub
+      `);
+      const globalAvgMonthly = Number(globalAvgRow.global_avg ?? 0);
 
       const invoiceByMonth = await db.execute(sql`
         SELECT TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
@@ -5262,27 +5320,15 @@ Guidelines:
           AND COALESCE(closed_date, issued_date) >= NOW() - INTERVAL '12 months'
         GROUP BY 1 ORDER BY 1
       `);
-      const revenueTrend = (invoiceByMonth as any[]).map(r => ({
-        month: r.month,
+      const sparseRevenue = (invoiceByMonth as any[]).map(r => ({
+        month: r.month as string,
         revenue: Number(r.revenue ?? 0),
       }));
-
-      let trendDirection: "growing" | "flat" | "declining" = "flat";
-      if (revenueTrend.length >= 3) {
-        const half = Math.floor(revenueTrend.length / 2);
-        const firstHalf = revenueTrend.slice(0, half).reduce((s, m) => s + m.revenue, 0) / half;
-        const secondHalf = revenueTrend.slice(half).reduce((s, m) => s + m.revenue, 0) / (revenueTrend.length - half);
-        if (secondHalf > firstHalf * 1.1) trendDirection = "growing";
-        else if (secondHalf < firstHalf * 0.9) trendDirection = "declining";
-      }
-
-      let healthScore = 0;
-      if (trendDirection === "growing") healthScore++;
-      if (openCount > 0) healthScore++;
-      if (activeJobs > 0) healthScore++;
-      if (hitRate !== null && hitRate > 50) healthScore++;
-
-      const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+      const revenueTrend = zeroFillTrend(sparseRevenue);
+      const trendDirection = computeTrendDirection(revenueTrend);
+      const { healthScore, healthStatus } = computeHealthScore(
+        trendDirection, openCount, completedJobsLast12, globalAvgMonthly, hitRate
+      );
 
       res.json({
         hitRate,
@@ -5307,12 +5353,22 @@ Guidelines:
 
   app.get("/api/reports/customer-intelligence", isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const tierFilter = req.query.tier as string | undefined;
       const healthFilter = req.query.health as string | undefined;
+      const dateFrom = req.query.dateFrom as string | undefined;
+      const dateTo = req.query.dateTo as string | undefined;
 
       const allClients = await storage.listClients();
+
+      const dateClause = dateFrom && dateTo
+        ? sql`AND COALESCE(closed_date, issued_date) >= ${dateFrom}::timestamp AND COALESCE(closed_date, issued_date) <= ${dateTo}::timestamp`
+        : sql``;
 
       const dealsByClient = await db.execute(sql`
         SELECT client_id,
@@ -5327,17 +5383,32 @@ Guidelines:
       const invoicesByClient = await db.execute(sql`
         SELECT client_id,
           COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
-        FROM buildops_invoices WHERE client_id IS NOT NULL GROUP BY client_id
+        FROM buildops_invoices WHERE client_id IS NOT NULL ${dateClause} GROUP BY client_id
       `);
       const invoiceMap = new Map((invoicesByClient as any[]).map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
 
       const jobsByClient = await db.execute(sql`
         SELECT client_id,
           COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active,
+          COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '12 months') as completed_12m,
           COUNT(*) as total
         FROM buildops_jobs WHERE client_id IS NOT NULL GROUP BY client_id
       `);
-      const jobMap = new Map((jobsByClient as any[]).map(r => [Number(r.client_id), { active: Number(r.active ?? 0), total: Number(r.total ?? 0) }]));
+      const jobMap = new Map((jobsByClient as any[]).map(r => [Number(r.client_id), {
+        active: Number(r.active ?? 0),
+        completed12m: Number(r.completed_12m ?? 0),
+        total: Number(r.total ?? 0),
+      }]));
+
+      const [globalAvgRow] = await db.execute(sql`
+        SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
+          SELECT client_id, COUNT(*) / 12.0 as cnt
+          FROM buildops_jobs
+          WHERE completed_date >= NOW() - INTERVAL '12 months'
+          GROUP BY client_id
+        ) sub
+      `);
+      const globalAvgMonthly = Number(globalAvgRow.global_avg ?? 0);
 
       const agrByClient = await db.execute(sql`
         SELECT client_id,
@@ -5366,7 +5437,25 @@ Guidelines:
         trendMap.get(cid)!.push({ month: r.month, revenue: Number(r.revenue ?? 0) });
       }
 
-      const results: any[] = [];
+      interface ReportRow {
+        clientId: number;
+        name: string;
+        tier: string | null;
+        hitRate: number | null;
+        wonCount: number;
+        lostCount: number;
+        openDeals: number;
+        pipelineValue: number;
+        ltv: number;
+        mrr: number;
+        activeJobs: number;
+        totalJobs: number;
+        trendDirection: "growing" | "flat" | "declining";
+        healthScore: number;
+        healthStatus: "healthy" | "watch" | "at_risk";
+      }
+
+      const results: ReportRow[] = [];
       for (const client of allClients) {
         const deals = dealMap.get(client.id);
         const won = Number(deals?.won ?? 0);
@@ -5374,7 +5463,7 @@ Guidelines:
         const openDeals = Number(deals?.open_deals ?? 0);
         const pipeline = Number(deals?.pipeline ?? 0);
         const ltv = invoiceMap.get(client.id) ?? 0;
-        const jobs = jobMap.get(client.id) ?? { active: 0, total: 0 };
+        const jobs = jobMap.get(client.id) ?? { active: 0, completed12m: 0, total: 0 };
         const contractTotal = agrMap.get(client.id) ?? 0;
         const mrr = contractTotal / 12;
 
@@ -5383,22 +5472,12 @@ Guidelines:
 
         const hitRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 100) : null;
 
-        const trend = trendMap.get(client.id) ?? [];
-        let trendDirection: "growing" | "flat" | "declining" = "flat";
-        if (trend.length >= 3) {
-          const half = Math.floor(trend.length / 2);
-          const first = trend.slice(0, half).reduce((s, m) => s + m.revenue, 0) / half;
-          const second = trend.slice(half).reduce((s, m) => s + m.revenue, 0) / (trend.length - half);
-          if (second > first * 1.1) trendDirection = "growing";
-          else if (second < first * 0.9) trendDirection = "declining";
-        }
-
-        let healthScore = 0;
-        if (trendDirection === "growing") healthScore++;
-        if (openDeals > 0) healthScore++;
-        if (jobs.active > 0) healthScore++;
-        if (hitRate !== null && hitRate > 50) healthScore++;
-        const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+        const sparseTrend = trendMap.get(client.id) ?? [];
+        const filledTrend = zeroFillTrend(sparseTrend);
+        const trendDirection = computeTrendDirection(filledTrend);
+        const { healthScore, healthStatus } = computeHealthScore(
+          trendDirection, openDeals, jobs.completed12m, globalAvgMonthly, hitRate
+        );
 
         if (tierFilter && client.tier !== tierFilter) continue;
         if (healthFilter && healthStatus !== healthFilter) continue;

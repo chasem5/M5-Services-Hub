@@ -4004,8 +4004,8 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
                 : <X className="h-4 w-4 text-red-400" />}
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Active jobs</span>
-              {data.activeJobs > 0
+              <span className="text-muted-foreground">Jobs above average ({data.avgMonthlyJobs}/mo)</span>
+              {data.avgMonthlyJobs > 0
                 ? <CheckCircle2 className="h-4 w-4 text-green-600" />
                 : <X className="h-4 w-4 text-red-400" />}
             </div>

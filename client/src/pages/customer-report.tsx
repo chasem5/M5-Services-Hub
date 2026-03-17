@@ -67,13 +67,17 @@ export default function CustomerReport() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("ltv");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const queryParams = new URLSearchParams();
   if (tierFilter !== "all") queryParams.set("tier", tierFilter);
   if (healthFilterState !== "all") queryParams.set("health", healthFilterState);
+  if (dateFrom) queryParams.set("dateFrom", dateFrom);
+  if (dateTo) queryParams.set("dateTo", dateTo);
 
   const { data: clients, isLoading, isError } = useQuery<ClientIntel[]>({
-    queryKey: ["/api/reports/customer-intelligence", tierFilter, healthFilterState],
+    queryKey: ["/api/reports/customer-intelligence", tierFilter, healthFilterState, dateFrom, dateTo],
     queryFn: async () => {
       const res = await fetch(`/api/reports/customer-intelligence?${queryParams.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load report");
@@ -93,13 +97,23 @@ export default function CustomerReport() {
       const q = search.toLowerCase();
       filtered = filtered.filter(c => c.name.toLowerCase().includes(q));
     }
+    const numericVal = (c: ClientIntel, key: SortKey): number => {
+      switch (key) {
+        case "ltv": return c.ltv;
+        case "hitRate": return c.hitRate ?? -1;
+        case "pipelineValue": return c.pipelineValue;
+        case "mrr": return c.mrr;
+        case "activeJobs": return c.activeJobs;
+        case "healthScore": return c.healthScore;
+        default: return 0;
+      }
+    };
     return [...filtered].sort((a, b) => {
-      let av: number, bv: number;
       if (sortKey === "name") {
         return sortDir === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
       }
-      av = (a as any)[sortKey] ?? -1;
-      bv = (b as any)[sortKey] ?? -1;
+      const av = numericVal(a, sortKey);
+      const bv = numericVal(b, sortKey);
       return sortDir === "asc" ? av - bv : bv - av;
     });
   }, [clients, search, sortKey, sortDir]);
@@ -185,6 +199,8 @@ export default function CustomerReport() {
             <SelectItem value="at_risk">At Risk</SelectItem>
           </SelectContent>
         </Select>
+        <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" placeholder="From" data-testid="input-date-from" />
+        <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" placeholder="To" data-testid="input-date-to" />
         <span className="text-sm text-muted-foreground ml-auto">{sorted.length} customers</span>
       </div>
 
