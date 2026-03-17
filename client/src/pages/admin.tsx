@@ -1509,14 +1509,99 @@ function BuildOpsAuditPanel() {
   );
 }
 
+function UserRepRow({ user, onSave, isSaving }: {
+  user: User;
+  onSave: (userId: string, buildopsRepId: string | null) => void;
+  isSaving: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState(user.buildopsRepId ?? "");
+
+  const displayName = user.firstName || user.lastName
+    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
+    : user.email ?? "—";
+
+  const handleSave = () => {
+    const val = inputVal.trim() || null;
+    onSave(user.id, val);
+    setEditing(false);
+  };
+
+  const handleUnlink = () => {
+    setInputVal("");
+    onSave(user.id, null);
+    setEditing(false);
+  };
+
+  return (
+    <tr className="hover:bg-muted/20 transition-colors">
+      <td className="px-3 py-2 font-medium">{displayName}</td>
+      <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell text-xs">{user.email ?? "—"}</td>
+      <td className="px-3 py-2">
+        {editing ? (
+          <div className="flex items-center gap-1.5">
+            <Input
+              className="h-7 text-xs w-56 font-mono"
+              placeholder="Paste BuildOps rep ID…"
+              value={inputVal}
+              onChange={e => setInputVal(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
+              autoFocus
+              data-testid={`input-rep-id-${user.id}`}
+            />
+            <Button size="sm" variant="default" className="h-7 px-2 text-xs" onClick={handleSave} disabled={isSaving} data-testid={`button-save-rep-${user.id}`}>
+              Save
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setInputVal(user.buildopsRepId ?? ""); setEditing(false); }}>
+              Cancel
+            </Button>
+          </div>
+        ) : user.buildopsRepId ? (
+          <span className="flex items-center gap-1.5 text-green-700 dark:text-green-400 text-xs font-medium">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            <span className="font-mono">{user.buildopsRepId}</span>
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground italic">— not linked —</span>
+        )}
+      </td>
+      <td className="px-3 py-2 text-right">
+        <div className="flex items-center justify-end gap-1">
+          {!editing && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => { setInputVal(user.buildopsRepId ?? ""); setEditing(true); }}
+              disabled={isSaving}
+              data-testid={`button-edit-rep-${user.id}`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {user.buildopsRepId && !editing && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-muted-foreground hover:text-destructive"
+              onClick={handleUnlink}
+              disabled={isSaving}
+              data-testid={`button-unlink-rep-${user.id}`}
+            >
+              <Unlink className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 function AccountManagerMappingPanel() {
   const { toast } = useToast();
 
   const { data: allUsers = [], isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
-  });
-  const { data: buildopsReps = [], isLoading: repsLoading } = useQuery<{ buildopsId: string; name: string; email: string | null }[]>({
-    queryKey: ["/api/buildops/reps-for-matching"],
   });
 
   const autoMatchMutation = useMutation({
@@ -1545,9 +1630,7 @@ function AccountManagerMappingPanel() {
     onError: (err: any) => toast({ title: "Failed to update", description: err.message, variant: "destructive" }),
   });
 
-  const repById = new Map(buildopsReps.map(r => [r.buildopsId, r]));
-
-  const isLoading = usersLoading || repsLoading;
+  const linkedCount = allUsers.filter(u => u.buildopsRepId).length;
 
   return (
     <Card className="border-none shadow-sm bg-card">
@@ -1556,12 +1639,15 @@ function AccountManagerMappingPanel() {
           <div className="flex items-center gap-2">
             <UserCheck className="h-4 w-4 text-primary" />
             <CardTitle className="text-base font-semibold">Account Manager Mapping</CardTitle>
+            {allUsers.length > 0 && (
+              <span className="text-xs text-muted-foreground">({linkedCount}/{allUsers.length} linked)</span>
+            )}
           </div>
           <Button
             size="sm"
             variant="outline"
             onClick={() => autoMatchMutation.mutate()}
-            disabled={autoMatchMutation.isPending || isLoading}
+            disabled={autoMatchMutation.isPending || usersLoading}
             data-testid="button-auto-match-reps"
           >
             {autoMatchMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5 mr-1.5" />}
@@ -1569,18 +1655,16 @@ function AccountManagerMappingPanel() {
           </Button>
         </div>
         <CardDescription className="text-xs">
-          Link each CRM user to their BuildOps rep account. Once linked, dashboards and reports can be filtered by account manager.
+          Link each CRM user to their BuildOps rep ID. Paste the ID from BuildOps, or use Auto-Match to link by email automatically.
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
-        {isLoading ? (
+        {usersLoading ? (
           <div className="space-y-2">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
           </div>
-        ) : buildopsReps.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">
-            No BuildOps reps synced yet. Run "Sync Representatives" above first.
-          </p>
+        ) : allUsers.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2">No CRM users found.</p>
         ) : (
           <div className="border rounded-md overflow-hidden">
             <table className="w-full text-sm">
@@ -1588,61 +1672,19 @@ function AccountManagerMappingPanel() {
                 <tr>
                   <th className="text-left font-semibold px-3 py-2">CRM User</th>
                   <th className="text-left font-semibold px-3 py-2 hidden sm:table-cell">Email</th>
-                  <th className="text-left font-semibold px-3 py-2">BuildOps Rep</th>
+                  <th className="text-left font-semibold px-3 py-2">BuildOps Rep ID</th>
                   <th className="w-[90px] px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {allUsers.map(user => {
-                  const linkedRep = user.buildopsRepId ? repById.get(user.buildopsRepId) : undefined;
-                  const displayName = user.firstName || user.lastName
-                    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
-                    : user.email ?? "—";
-                  return (
-                    <tr key={user.id} className="hover:bg-muted/20 transition-colors">
-                      <td className="px-3 py-2 font-medium">{displayName}</td>
-                      <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell text-xs">{user.email ?? "—"}</td>
-                      <td className="px-3 py-2">
-                        {linkedRep ? (
-                          <span className="flex items-center gap-1.5 text-green-700 dark:text-green-400 text-xs font-medium">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            {linkedRep.name}
-                          </span>
-                        ) : (
-                          <Select
-                            value=""
-                            onValueChange={(val) => linkRepMutation.mutate({ userId: user.id, buildopsRepId: val || null })}
-                          >
-                            <SelectTrigger className="h-7 text-xs w-48" data-testid={`select-rep-${user.id}`}>
-                              <SelectValue placeholder="— not linked —" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {buildopsReps.map(r => (
-                                <SelectItem key={r.buildopsId} value={r.buildopsId}>
-                                  {r.name}{r.email ? ` (${r.email})` : ""}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {linkedRep && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-muted-foreground hover:text-destructive"
-                            onClick={() => linkRepMutation.mutate({ userId: user.id, buildopsRepId: null })}
-                            disabled={linkRepMutation.isPending}
-                            data-testid={`button-unlink-rep-${user.id}`}
-                          >
-                            <Unlink className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {allUsers.map(user => (
+                  <UserRepRow
+                    key={user.id}
+                    user={user}
+                    onSave={(userId, buildopsRepId) => linkRepMutation.mutate({ userId, buildopsRepId })}
+                    isSaving={linkRepMutation.isPending}
+                  />
+                ))}
               </tbody>
             </table>
           </div>

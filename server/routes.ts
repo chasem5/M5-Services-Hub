@@ -4575,7 +4575,7 @@ Respond with this JSON:
       const currentUser = userId ? await storage.getUser(userId) : null;
       const isSuperAdmin = currentUser?.role === "super_admin";
 
-      const response: any = { ok: true, created, updated, skipped, total: totalReps };
+      const response: any = { ok: true, created, updated, skipped, total: totalReps, clientsProcessed: clientsWithBuildopsId.length };
       if (isSuperAdmin && debugInfo) {
         response.debug = debugInfo;
       }
