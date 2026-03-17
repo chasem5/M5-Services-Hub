@@ -5223,13 +5223,14 @@ Guidelines:
   function computeHealthScore(
     trendDirection: string,
     openDeals: number,
-    activeJobs: number,
+    clientMonthlyJobAvg: number,
+    globalMonthlyJobAvg: number,
     hitRate: number | null
   ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk" } {
     let healthScore = 0;
     if (trendDirection === "growing") healthScore++;
     if (openDeals > 0) healthScore++;
-    if (activeJobs > 0) healthScore++;
+    if (globalMonthlyJobAvg > 0 ? clientMonthlyJobAvg > globalMonthlyJobAvg : clientMonthlyJobAvg > 0) healthScore++;
     if (hitRate !== null && hitRate > 50) healthScore++;
     const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
     return { healthScore, healthStatus };
@@ -5246,15 +5247,11 @@ Guidelines:
       if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
 
       const scopedUserId = await getScopedUserId(req, "customers");
-      if (scopedUserId) {
-        const client = await storage.getClient(clientId);
-        if (!client || client.assignedTo !== scopedUserId) {
-          return res.status(403).json({ message: "Access denied" });
-        }
-      }
-
       const client = await storage.getClient(clientId);
       if (!client) return res.status(404).json({ message: "Client not found" });
+      if (scopedUserId && client.createdBy !== scopedUserId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
 
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
@@ -5330,8 +5327,20 @@ Guidelines:
       }));
       const revenueTrend = zeroFillTrend(sparseRevenue);
       const trendDirection = computeTrendDirection(revenueTrend);
+
+      const [globalAvgRow] = await db.execute(sql`
+        SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
+          SELECT client_id, COUNT(*) / 12.0 as cnt
+          FROM buildops_jobs
+          WHERE completed_date >= NOW() - INTERVAL '12 months'
+          GROUP BY client_id
+        ) sub
+      `);
+      const globalAvgMonthly = Number(globalAvgRow.global_avg ?? 0);
+
+      const jobsAboveAvg = globalAvgMonthly > 0 ? avgMonthlyJobs > globalAvgMonthly : avgMonthlyJobs > 0;
       const { healthScore, healthStatus } = computeHealthScore(
-        trendDirection, openCount, activeJobs, hitRate
+        trendDirection, openCount, avgMonthlyJobs, globalAvgMonthly, hitRate
       );
 
       res.json({
@@ -5350,6 +5359,7 @@ Guidelines:
         healthScore,
         healthStatus,
         dealStages,
+        jobsAboveAvg,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -5371,7 +5381,7 @@ Guidelines:
       const dateFrom = req.query.dateFrom as string | undefined;
       const dateTo = req.query.dateTo as string | undefined;
 
-      const allClients = await storage.listClients();
+      const allClients = await storage.listClients(scopedUserId ?? undefined);
 
       const hasDateRange = dateFrom && dateTo;
 
@@ -5405,13 +5415,25 @@ Guidelines:
       const jobsByClient = await db.execute(sql`
         SELECT client_id,
           COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active,
+          COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '12 months') as completed_12m,
           COUNT(*) as total
         FROM buildops_jobs WHERE client_id IS NOT NULL GROUP BY client_id
       `);
       const jobMap = new Map((jobsByClient as any[]).map(r => [Number(r.client_id), {
         active: Number(r.active ?? 0),
+        completed12m: Number(r.completed_12m ?? 0),
         total: Number(r.total ?? 0),
       }]));
+
+      const [globalAvgRow] = await db.execute(sql`
+        SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
+          SELECT client_id, COUNT(*) / 12.0 as cnt
+          FROM buildops_jobs
+          WHERE completed_date >= NOW() - INTERVAL '12 months'
+          GROUP BY client_id
+        ) sub
+      `);
+      const globalAvgMonthly = Number(globalAvgRow.global_avg ?? 0);
 
       const agrByClient = await db.execute(sql`
         SELECT client_id,
@@ -5473,15 +5495,13 @@ Guidelines:
 
       const results: ReportRow[] = [];
       for (const client of allClients) {
-        if (scopedUserId && client.assignedTo !== scopedUserId) continue;
-
         const deals = dealMap.get(client.id);
         const won = Number(deals?.won ?? 0);
         const lost = Number(deals?.lost ?? 0);
         const openDeals = Number(deals?.open_deals ?? 0);
         const pipeline = Number(deals?.pipeline ?? 0);
         const ltv = invoiceMap.get(client.id) ?? 0;
-        const jobs = jobMap.get(client.id) ?? { active: 0, total: 0 };
+        const jobs = jobMap.get(client.id) ?? { active: 0, completed12m: 0, total: 0 };
         const contractTotal = agrMap.get(client.id) ?? 0;
         const mrr = contractTotal / 12;
 
@@ -5493,8 +5513,9 @@ Guidelines:
         const sparseTrend = trendMap.get(client.id) ?? [];
         const filledTrend = zeroFillTrend(sparseTrend);
         const trendDirection = computeTrendDirection(filledTrend);
+        const clientMonthlyAvg = jobs.completed12m / 12;
         const { healthScore, healthStatus } = computeHealthScore(
-          trendDirection, openDeals, jobs.active, hitRate
+          trendDirection, openDeals, clientMonthlyAvg, globalAvgMonthly, hitRate
         );
 
         if (tierFilter && client.tier !== tierFilter) continue;

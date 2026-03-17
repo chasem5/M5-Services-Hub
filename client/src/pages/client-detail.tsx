@@ -3858,6 +3858,8 @@ interface IntelData {
   trendDirection: "growing" | "flat" | "declining";
   healthScore: number;
   healthStatus: "healthy" | "watch" | "at_risk";
+  dealStages: { stage: string; count: number }[];
+  jobsAboveAvg: boolean;
 }
 
 const fmtCur = (v: number) =>
@@ -4004,8 +4006,8 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
                 : <X className="h-4 w-4 text-red-400" />}
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Active jobs ({data.activeJobs})</span>
-              {data.activeJobs > 0
+              <span className="text-muted-foreground">Jobs above average ({data.avgMonthlyJobs}/mo)</span>
+              {data.jobsAboveAvg
                 ? <CheckCircle2 className="h-4 w-4 text-green-600" />
                 : <X className="h-4 w-4 text-red-400" />}
             </div>
