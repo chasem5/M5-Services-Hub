@@ -3575,6 +3575,7 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
                   <th className="py-2 px-3 font-medium text-right">Cost</th>
                   <th className="py-2 px-3 font-medium text-right">Margin</th>
                   <th className="py-2 px-3 font-medium">Property</th>
+                  <th className="py-2 px-3 font-medium">Due</th>
                   <th className="py-2 px-3 font-medium">Completed</th>
                 </tr>
               </thead>
@@ -3596,6 +3597,7 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
                       <td className="py-2.5 px-3 text-right font-mono">{fmt(job.costAmount)}</td>
                       <td className={cn("py-2.5 px-3 text-right font-mono", margin > 0 ? "text-green-600" : margin < 0 ? "text-red-600" : "")}>{fmt(margin)}</td>
                       <td className="py-2.5 px-3 text-xs max-w-[150px] truncate">{job.customerPropertyName || "—"}</td>
+                      <td className="py-2.5 px-3 text-xs">{fmtDate(job.dueDate)}</td>
                       <td className="py-2.5 px-3 text-xs">{fmtDate(job.completedDate)}</td>
                     </tr>
                   );
@@ -3736,13 +3738,21 @@ function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
     return new Date(d).toLocaleDateString();
   };
 
-  const stateColor = (s: string | null | undefined) => {
-    if (!s) return "bg-gray-100 text-gray-700";
-    const sl = s.toLowerCase();
-    if (sl === "active" || sl === "confirmed") return "bg-green-100 text-green-700";
-    if (sl === "canceled" || sl === "cancelled") return "bg-red-100 text-red-700";
-    if (sl === "draft" || sl === "pending") return "bg-blue-100 text-blue-700";
-    if (sl === "expired") return "bg-amber-100 text-amber-700";
+  const deriveAgrStatus = (agr: any) => {
+    const state = (agr.advancedSchedulingState || "").toLowerCase();
+    if (state === "canceled" || state === "cancelled") return "canceled";
+    if (agr.endDate && new Date(agr.endDate) < new Date()) return "expired";
+    if (state === "active" || state === "confirmed") return "active";
+    if (state === "draft" || state === "pending") return "draft";
+    if (state) return state;
+    return "unknown";
+  };
+
+  const stateColor = (s: string) => {
+    if (s === "active" || s === "confirmed") return "bg-green-100 text-green-700";
+    if (s === "canceled" || s === "cancelled") return "bg-red-100 text-red-700";
+    if (s === "draft" || s === "pending") return "bg-blue-100 text-blue-700";
+    if (s === "expired") return "bg-amber-100 text-amber-700";
     return "bg-gray-100 text-gray-700";
   };
 
@@ -3774,23 +3784,26 @@ function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="py-2 px-3 font-medium">Agreement #</th>
                   <th className="py-2 px-3 font-medium">Name</th>
-                  <th className="py-2 px-3 font-medium">State</th>
+                  <th className="py-2 px-3 font-medium">Status</th>
                   <th className="py-2 px-3 font-medium">Start Date</th>
                   <th className="py-2 px-3 font-medium">End Date</th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((agr: any) => (
+                {sorted.map((agr: any) => {
+                  const agrStatus = deriveAgrStatus(agr);
+                  return (
                   <tr key={agr.id} className="border-b hover:bg-muted/50" data-testid={`row-agreement-${agr.id}`}>
                     <td className="py-2.5 px-3 font-mono font-medium">{agr.agreementNumber || "—"}</td>
                     <td className="py-2.5 px-3">{agr.agreementName || "—"}</td>
                     <td className="py-2.5 px-3">
-                      <Badge variant="outline" className={cn("text-xs", stateColor(agr.advancedSchedulingState))}>{agr.advancedSchedulingState || "Unknown"}</Badge>
+                      <Badge variant="outline" className={cn("text-xs", stateColor(agrStatus))}>{agrStatus}</Badge>
                     </td>
                     <td className="py-2.5 px-3 text-xs">{fmtDate(agr.startDate)}</td>
                     <td className="py-2.5 px-3 text-xs">{fmtDate(agr.endDate)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -257,7 +257,7 @@ function BuildOpsPanel() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
-      toast({ title: "Jobs synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
+      toast({ title: "Jobs synced", description: `${data.created} created, ${data.updated} updated, ${data.skipped || (data.total - data.created - data.updated)} skipped of ${data.total} total` });
     },
     onError: (err: any) => toast({ title: "Jobs sync failed", description: err.message, variant: "destructive" }),
   });
@@ -270,7 +270,7 @@ function BuildOpsPanel() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
-      toast({ title: "Invoices synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
+      toast({ title: "Invoices synced", description: `${data.created} created, ${data.updated} updated, ${data.skipped || (data.total - data.created - data.updated)} skipped of ${data.total} total` });
     },
     onError: (err: any) => toast({ title: "Invoices sync failed", description: err.message, variant: "destructive" }),
   });
@@ -283,7 +283,7 @@ function BuildOpsPanel() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
-      toast({ title: "Agreements synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
+      toast({ title: "Agreements synced", description: `${data.created} created, ${data.updated} updated, ${data.skipped || (data.total - data.created - data.updated)} skipped of ${data.total} total` });
     },
     onError: (err: any) => toast({ title: "Agreements sync failed", description: err.message, variant: "destructive" }),
   });
