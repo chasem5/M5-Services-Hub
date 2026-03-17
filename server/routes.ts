@@ -5518,17 +5518,19 @@ Guidelines:
 
       const hasDateRange = dateFrom && dateTo;
 
-      const dealsByClient = await db.execute(sql`
+      const toRows = (result: any): any[] => Array.isArray(result) ? result : Array.from(result as Iterable<any>);
+
+      const dealsByClient = toRows(await db.execute(sql`
         SELECT client_id,
           COUNT(*) FILTER (WHERE stage = 'won') as won,
           COUNT(*) FILTER (WHERE stage = 'lost') as lost,
           COUNT(*) FILTER (WHERE stage NOT IN ('won', 'lost', 'canceled')) as open_deals,
           COALESCE(SUM(CAST(value AS numeric)) FILTER (WHERE stage NOT IN ('won', 'lost', 'canceled')), 0) as pipeline
         FROM leads WHERE client_id IS NOT NULL GROUP BY client_id
-      `);
-      const dealMap = new Map((dealsByClient as any[]).map(r => [Number(r.client_id), r]));
+      `));
+      const dealMap = new Map(dealsByClient.map(r => [Number(r.client_id), r]));
 
-      const invoicesByClient = hasDateRange
+      const invoicesByClient = toRows(hasDateRange
         ? await db.execute(sql`
             SELECT client_id,
               COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
@@ -5542,33 +5544,33 @@ Guidelines:
             SELECT client_id,
               COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
             FROM buildops_invoices WHERE client_id IS NOT NULL GROUP BY client_id
-          `);
-      const invoiceMap = new Map((invoicesByClient as any[]).map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
+          `));
+      const invoiceMap = new Map(invoicesByClient.map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
 
-      const jobsByClient = await db.execute(sql`
+      const jobsByClient = toRows(await db.execute(sql`
         SELECT client_id,
           COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active,
           COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '12 months') as completed_12m,
           COUNT(*) as total
         FROM buildops_jobs WHERE client_id IS NOT NULL GROUP BY client_id
-      `);
-      const jobMap = new Map((jobsByClient as any[]).map(r => [Number(r.client_id), {
+      `));
+      const jobMap = new Map(jobsByClient.map(r => [Number(r.client_id), {
         active: Number(r.active ?? 0),
         completed12m: Number(r.completed_12m ?? 0),
         total: Number(r.total ?? 0),
       }]));
 
-      const [globalAvgRow] = await db.execute(sql`
+      const [globalAvgRow] = toRows(await db.execute(sql`
         SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
           SELECT client_id, COUNT(*) / 12.0 as cnt
           FROM buildops_jobs
           WHERE completed_date >= NOW() - INTERVAL '12 months'
           GROUP BY client_id
         ) sub
-      `);
+      `));
       const globalAvgMonthly = Number(globalAvgRow.global_avg ?? 0);
 
-      const agrByClient = await db.execute(sql`
+      const agrByClient = toRows(await db.execute(sql`
         SELECT client_id,
           COALESCE(SUM(CAST(contract_value AS numeric)), 0) as total_contract
         FROM buildops_agreements
@@ -5576,12 +5578,12 @@ Guidelines:
           AND (end_date IS NULL OR end_date > NOW())
           AND (advanced_scheduling_state IS NULL OR LOWER(advanced_scheduling_state) NOT IN ('canceled', 'cancelled'))
         GROUP BY client_id
-      `);
-      const agrMap = new Map((agrByClient as any[]).map(r => [Number(r.client_id), Number(r.total_contract ?? 0)]));
+      `));
+      const agrMap = new Map(agrByClient.map(r => [Number(r.client_id), Number(r.total_contract ?? 0)]));
 
-      const agrClientIds = new Set((agrByClient as any[]).map(r => Number(r.client_id)));
+      const agrClientIds = new Set(agrByClient.map(r => Number(r.client_id)));
 
-      const trendByClient = hasDateRange
+      const trendByClient = toRows(hasDateRange
         ? await db.execute(sql`
             SELECT client_id,
               TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
@@ -5600,9 +5602,9 @@ Guidelines:
             WHERE client_id IS NOT NULL
               AND COALESCE(closed_date, issued_date) >= NOW() - INTERVAL '12 months'
             GROUP BY client_id, month ORDER BY client_id, month
-          `);
+          `));
       const trendMap = new Map<number, { month: string; revenue: number }[]>();
-      for (const r of trendByClient as any[]) {
+      for (const r of trendByClient) {
         const cid = Number(r.client_id);
         if (!trendMap.has(cid)) trendMap.set(cid, []);
         trendMap.get(cid)!.push({ month: r.month, revenue: Number(r.revenue ?? 0) });
