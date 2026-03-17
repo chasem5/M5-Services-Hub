@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Mail,
   Megaphone,
+  HeartPulse,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -129,6 +130,27 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Reports</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location === "/reports/customer-intelligence"}
+                  tooltip="Customer Intelligence"
+                  className={location === "/reports/customer-intelligence" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                >
+                  <Link href="/reports/customer-intelligence" data-testid="link-customer-intelligence" onClick={() => isMobile && setOpenMobile(false)}>
+                    <HeartPulse className={location === "/reports/customer-intelligence" ? "text-primary" : ""} />
+                    <span className="group-data-[collapsible=icon]:hidden">Customer Intel</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

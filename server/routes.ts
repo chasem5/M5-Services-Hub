@@ -5192,5 +5192,242 @@ Guidelines:
     }
   });
 
+  // ── Customer Intelligence ──────────────────────────────────────────────────
+  app.get("/api/clients/:id/intelligence", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const [dealStats] = await db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE stage = 'won') as won_count,
+          COUNT(*) FILTER (WHERE stage = 'lost') as lost_count,
+          COUNT(*) FILTER (WHERE stage NOT IN ('won', 'lost', 'canceled')) as open_count,
+          COALESCE(SUM(CAST(value AS numeric)) FILTER (WHERE stage NOT IN ('won', 'lost', 'canceled')), 0) as pipeline_value
+        FROM leads WHERE client_id = ${clientId}
+      `);
+
+      const wonCount = Number(dealStats.won_count ?? 0);
+      const lostCount = Number(dealStats.lost_count ?? 0);
+      const openCount = Number(dealStats.open_count ?? 0);
+      const pipelineValue = Number(dealStats.pipeline_value ?? 0);
+      const hitRate = (wonCount + lostCount) > 0 ? Math.round((wonCount / (wonCount + lostCount)) * 100) : null;
+
+      const [invoiceStats] = await db.execute(sql`
+        SELECT COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
+        FROM buildops_invoices WHERE client_id = ${clientId}
+      `);
+      const ltv = Number(invoiceStats.ltv ?? 0);
+
+      const [agrStats] = await db.execute(sql`
+        SELECT COALESCE(SUM(CAST(contract_value AS numeric)), 0) as total_contract
+        FROM buildops_agreements
+        WHERE client_id = ${clientId}
+          AND (end_date IS NULL OR end_date > NOW())
+          AND (advanced_scheduling_state IS NULL OR LOWER(advanced_scheduling_state) NOT IN ('canceled', 'cancelled'))
+      `);
+      const mrr = Number(agrStats.total_contract ?? 0) / 12;
+
+      const [jobStats] = await db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active_jobs,
+          COUNT(*) FILTER (WHERE LOWER(status) IN ('closed', 'complete', 'completed')) as completed_jobs,
+          COUNT(*) as total_jobs
+        FROM buildops_jobs WHERE client_id = ${clientId}
+      `);
+      const activeJobs = Number(jobStats.active_jobs ?? 0);
+      const completedJobs = Number(jobStats.completed_jobs ?? 0);
+
+      const monthlyJobRows = await db.execute(sql`
+        SELECT TO_CHAR(completed_date, 'YYYY-MM') as month, COUNT(*) as cnt
+        FROM buildops_jobs
+        WHERE client_id = ${clientId} AND completed_date >= NOW() - INTERVAL '12 months'
+        GROUP BY 1 ORDER BY 1
+      `);
+      const monthlyJobCounts = (monthlyJobRows as any[]).map(r => ({ month: r.month, count: Number(r.cnt) }));
+      const avgMonthlyJobs = monthlyJobCounts.length > 0
+        ? monthlyJobCounts.reduce((s, m) => s + m.count, 0) / 12
+        : 0;
+
+      const invoiceByMonth = await db.execute(sql`
+        SELECT TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
+               SUM(CAST(total_amount AS numeric)) as revenue
+        FROM buildops_invoices
+        WHERE client_id = ${clientId}
+          AND COALESCE(closed_date, issued_date) >= NOW() - INTERVAL '12 months'
+        GROUP BY 1 ORDER BY 1
+      `);
+      const revenueTrend = (invoiceByMonth as any[]).map(r => ({
+        month: r.month,
+        revenue: Number(r.revenue ?? 0),
+      }));
+
+      let trendDirection: "growing" | "flat" | "declining" = "flat";
+      if (revenueTrend.length >= 3) {
+        const half = Math.floor(revenueTrend.length / 2);
+        const firstHalf = revenueTrend.slice(0, half).reduce((s, m) => s + m.revenue, 0) / half;
+        const secondHalf = revenueTrend.slice(half).reduce((s, m) => s + m.revenue, 0) / (revenueTrend.length - half);
+        if (secondHalf > firstHalf * 1.1) trendDirection = "growing";
+        else if (secondHalf < firstHalf * 0.9) trendDirection = "declining";
+      }
+
+      let healthScore = 0;
+      if (trendDirection === "growing") healthScore++;
+      if (openCount > 0) healthScore++;
+      if (activeJobs > 0) healthScore++;
+      if (hitRate !== null && hitRate > 50) healthScore++;
+
+      const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+
+      res.json({
+        hitRate,
+        wonCount,
+        lostCount,
+        openCount,
+        pipelineValue,
+        ltv,
+        mrr,
+        activeJobs,
+        completedJobs,
+        avgMonthlyJobs: Math.round(avgMonthlyJobs * 10) / 10,
+        revenueTrend,
+        trendDirection,
+        healthScore,
+        healthStatus,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/reports/customer-intelligence", isAuthenticated, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const tierFilter = req.query.tier as string | undefined;
+      const healthFilter = req.query.health as string | undefined;
+
+      const allClients = await storage.listClients();
+
+      const dealsByClient = await db.execute(sql`
+        SELECT client_id,
+          COUNT(*) FILTER (WHERE stage = 'won') as won,
+          COUNT(*) FILTER (WHERE stage = 'lost') as lost,
+          COUNT(*) FILTER (WHERE stage NOT IN ('won', 'lost', 'canceled')) as open_deals,
+          COALESCE(SUM(CAST(value AS numeric)) FILTER (WHERE stage NOT IN ('won', 'lost', 'canceled')), 0) as pipeline
+        FROM leads WHERE client_id IS NOT NULL GROUP BY client_id
+      `);
+      const dealMap = new Map((dealsByClient as any[]).map(r => [Number(r.client_id), r]));
+
+      const invoicesByClient = await db.execute(sql`
+        SELECT client_id,
+          COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
+        FROM buildops_invoices WHERE client_id IS NOT NULL GROUP BY client_id
+      `);
+      const invoiceMap = new Map((invoicesByClient as any[]).map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
+
+      const jobsByClient = await db.execute(sql`
+        SELECT client_id,
+          COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active,
+          COUNT(*) as total
+        FROM buildops_jobs WHERE client_id IS NOT NULL GROUP BY client_id
+      `);
+      const jobMap = new Map((jobsByClient as any[]).map(r => [Number(r.client_id), { active: Number(r.active ?? 0), total: Number(r.total ?? 0) }]));
+
+      const agrByClient = await db.execute(sql`
+        SELECT client_id,
+          COALESCE(SUM(CAST(contract_value AS numeric)), 0) as total_contract
+        FROM buildops_agreements
+        WHERE client_id IS NOT NULL
+          AND (end_date IS NULL OR end_date > NOW())
+          AND (advanced_scheduling_state IS NULL OR LOWER(advanced_scheduling_state) NOT IN ('canceled', 'cancelled'))
+        GROUP BY client_id
+      `);
+      const agrMap = new Map((agrByClient as any[]).map(r => [Number(r.client_id), Number(r.total_contract ?? 0)]));
+
+      const trendByClient = await db.execute(sql`
+        SELECT client_id,
+          TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
+          SUM(CAST(total_amount AS numeric)) as revenue
+        FROM buildops_invoices
+        WHERE client_id IS NOT NULL
+          AND COALESCE(closed_date, issued_date) >= NOW() - INTERVAL '12 months'
+        GROUP BY client_id, month ORDER BY client_id, month
+      `);
+      const trendMap = new Map<number, { month: string; revenue: number }[]>();
+      for (const r of trendByClient as any[]) {
+        const cid = Number(r.client_id);
+        if (!trendMap.has(cid)) trendMap.set(cid, []);
+        trendMap.get(cid)!.push({ month: r.month, revenue: Number(r.revenue ?? 0) });
+      }
+
+      const results: any[] = [];
+      for (const client of allClients) {
+        const deals = dealMap.get(client.id);
+        const won = Number(deals?.won ?? 0);
+        const lost = Number(deals?.lost ?? 0);
+        const openDeals = Number(deals?.open_deals ?? 0);
+        const pipeline = Number(deals?.pipeline ?? 0);
+        const ltv = invoiceMap.get(client.id) ?? 0;
+        const jobs = jobMap.get(client.id) ?? { active: 0, total: 0 };
+        const contractTotal = agrMap.get(client.id) ?? 0;
+        const mrr = contractTotal / 12;
+
+        const hasData = won > 0 || lost > 0 || openDeals > 0 || ltv > 0 || jobs.total > 0;
+        if (!hasData) continue;
+
+        const hitRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 100) : null;
+
+        const trend = trendMap.get(client.id) ?? [];
+        let trendDirection: "growing" | "flat" | "declining" = "flat";
+        if (trend.length >= 3) {
+          const half = Math.floor(trend.length / 2);
+          const first = trend.slice(0, half).reduce((s, m) => s + m.revenue, 0) / half;
+          const second = trend.slice(half).reduce((s, m) => s + m.revenue, 0) / (trend.length - half);
+          if (second > first * 1.1) trendDirection = "growing";
+          else if (second < first * 0.9) trendDirection = "declining";
+        }
+
+        let healthScore = 0;
+        if (trendDirection === "growing") healthScore++;
+        if (openDeals > 0) healthScore++;
+        if (jobs.active > 0) healthScore++;
+        if (hitRate !== null && hitRate > 50) healthScore++;
+        const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+
+        if (tierFilter && client.tier !== tierFilter) continue;
+        if (healthFilter && healthStatus !== healthFilter) continue;
+
+        results.push({
+          clientId: client.id,
+          name: client.name,
+          tier: client.tier,
+          hitRate,
+          wonCount: won,
+          lostCount: lost,
+          openDeals,
+          pipelineValue: pipeline,
+          ltv,
+          mrr,
+          activeJobs: jobs.active,
+          totalJobs: jobs.total,
+          trendDirection,
+          healthScore,
+          healthStatus,
+        });
+      }
+
+      results.sort((a, b) => b.ltv - a.ltv);
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

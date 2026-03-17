@@ -19,6 +19,7 @@ import InvitePage from "@/pages/invite";
 import AdminPage from "@/pages/admin";
 import EmailSync from "@/pages/email-sync";
 import Announcements from "@/pages/announcements";
+import CustomerReport from "@/pages/customer-report";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function ProtectedRouter() {
@@ -42,6 +43,7 @@ function ProtectedRouter() {
           <Route path="/admin" component={AdminPage} />
           <Route path="/email" component={EmailSync} />
           <Route path="/announcements" component={Announcements} />
+          <Route path="/reports/customer-intelligence" component={CustomerReport} />
           <Route component={NotFound} />
         </Switch>
       </ErrorBoundary>

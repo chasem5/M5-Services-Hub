@@ -23,6 +23,7 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 - **Proposals** — Proposal builder linked to estimates, status workflow (Draft → Sent → Signed), PDF export with M5 branding
 - **Activity Timeline** — Reusable timeline component used on lead, client, and estimate detail views
 - **Email Sync** — Gmail OAuth integration with three-column desktop layout (thread list w-72 / email messages flex-1 / CRM sidebar w-80); AI-powered analysis (summary, sentiment, tasks, stage suggestions) with user-identity-aware prompts; thread grouping by `gmailThreadId` with collapsible per-message expansion; CC detection; domain-based auto-linking; AI connection + create suggestions in CRM sidebar with thumbs feedback + X dismiss; bulk multi-select on thread rows with block/dismiss action bar; CRM sidebar shows thread summary, inline linked records editing (combobox, no dialog), People in This Thread section, remaining AI suggestions; all thread participants (from/to/cc across whole chain) passed to AI for better suggestions; block individual sender or entire domain; email search; auto-sync every 15 minutes; emails persist permanently in DB
+- **Customer Intelligence** — Per-customer Intelligence tab showing health score (0-4), hit rate, LTV, pipeline value, MRR, active/completed jobs, avg monthly jobs, 12-month revenue trend chart (Recharts AreaChart), and health score breakdown; Company-wide report at `/reports/customer-intelligence` ranked by LTV with tier/health filters, sortable table with trend indicators; Health score: +1 revenue growing, +1 active pipeline, +1 active jobs, +1 hit rate >50%; Statuses: Healthy (4), Watch (2-3), At Risk (0-1); Sidebar "Reports" section with Customer Intel link
 - **Settings** — Profile view; Admin-only team member role management
 
 ## Architecture
@@ -31,6 +32,7 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 - `client/src/components/layout/` — ProtectedLayout (auth gate + sidebar), Sidebar, AppSidebar
 - `client/src/pages/estimates-hub.tsx` — Consolidated estimates hub with sub-navigation tabs
 - `client/src/pages/calculators.tsx` — Five service-specific estimate calculators
+- `client/src/pages/customer-report.tsx` — Company-wide customer intelligence report
 - `client/src/components/` — ActivityTimeline, RemindersDropdown, ProposalPdf
 - `server/routes.ts` — All API routes under `/api`
 - `server/storage.ts` — Drizzle-based storage implementation
