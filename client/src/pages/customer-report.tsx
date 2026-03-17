@@ -38,6 +38,9 @@ interface ClientIntel {
   velocityPrior90: number;
   velocityDirection: "growing" | "flat" | "declining";
   hasActiveSA: boolean;
+  invoiceTrend: "growing" | "flat" | "declining";
+  invoiceLast3Avg: number;
+  invoicePrior3Avg: number;
   healthScore: number;
   healthStatus: "healthy" | "watch" | "at_risk";
 }
@@ -71,6 +74,9 @@ function HealthBadgeHover({ client }: { client: ClientIntel }) {
           openCount: String(client.openDeals),
           totalJobs: String(client.totalJobs),
           hasActiveSA: String(client.hasActiveSA),
+          invoiceTrend: client.invoiceTrend ?? "flat",
+          invoiceLast3Avg: String(client.invoiceLast3Avg ?? 0),
+          invoicePrior3Avg: String(client.invoicePrior3Avg ?? 0),
         });
         const res = await fetch(`/api/clients/${client.clientId}/health-summary?${params}`, { credentials: "include" });
         const json = await res.json();

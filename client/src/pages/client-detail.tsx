@@ -3690,6 +3690,7 @@ function BuildOpsInvoicesTab({ clientId }: { clientId: number }) {
     const raw = (inv.status || "").toLowerCase();
     if (raw === "void" || raw === "voided") return "void";
     if (raw === "draft") return "draft";
+    if (raw === "exported" || raw === "paid") return "paid";
     if (inv.closedDate) return "paid";
     if (inv.dueDate) {
       const due = new Date(inv.dueDate);
@@ -3913,6 +3914,9 @@ interface IntelData {
   activeJobs: number;
   totalJobs: number;
   hasActiveSA: boolean;
+  invoiceTrend: "growing" | "flat" | "declining";
+  invoiceLast3Avg: number;
+  invoicePrior3Avg: number;
   serviceAgreements: {
     buildopsId: string;
     agreementNumber: string;
@@ -3965,6 +3969,9 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
           openCount: String(data.openCount ?? 0),
           totalJobs: String(data.totalJobs ?? 0),
           hasActiveSA: String(data.hasActiveSA),
+          invoiceTrend: data.invoiceTrend ?? "flat",
+          invoiceLast3Avg: String(data.invoiceLast3Avg ?? 0),
+          invoicePrior3Avg: String(data.invoicePrior3Avg ?? 0),
         });
         const res = await fetch(`/api/clients/${clientId}/health-summary?${params}`, { credentials: "include" });
         const json = await res.json();
@@ -4009,7 +4016,7 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
           <HoverCardTrigger>
             <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold cursor-pointer", healthBg, healthColor)} data-testid="badge-client-health">
               <HeartPulse className="h-4 w-4" />
-              {healthLabel} ({data.healthScore}/3)
+              {healthLabel} ({data.healthScore}/6)
             </div>
           </HoverCardTrigger>
           <HoverCardContent className="w-80 text-sm" side="right">
@@ -4117,25 +4124,78 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
       {/* ── Health score breakdown ── */}
       <Card className="shadow-sm bg-card">
         <CardContent className="p-4">
-          <p className="text-sm font-semibold mb-3">Health Score (3 signals)</p>
-          <div className="space-y-2.5 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Job activity not declining</span>
-              {data.velocityDirection !== "declining"
-                ? <CheckCircle2 className="h-4 w-4 text-green-600" />
-                : <X className="h-4 w-4 text-red-400" />}
+          <p className="text-sm font-semibold mb-3">Health Score Breakdown ({data.healthScore}/6)</p>
+          <div className="space-y-3 text-sm">
+            {/* SA — 2 pts */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground truncate">Active service agreement</span>
+                <span className="text-xs text-muted-foreground shrink-0">(2 pts)</span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className={cn("text-xs font-semibold", data.hasActiveSA ? "text-green-600" : "text-red-400")}>
+                  {data.hasActiveSA ? "+2" : "+0"}
+                </span>
+                {data.hasActiveSA
+                  ? <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  : <X className="h-4 w-4 text-red-400" />}
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Has revenue or open deals</span>
-              {data.openCount > 0 || data.ltv > 0
-                ? <CheckCircle2 className="h-4 w-4 text-green-600" />
-                : <X className="h-4 w-4 text-red-400" />}
+            {/* Invoice trend — 2 pts */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Receipt className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground truncate">Invoice revenue trend</span>
+                <span className="text-xs text-muted-foreground shrink-0">(2 pts)</span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className={cn("text-xs font-semibold", data.invoiceTrend === "growing" ? "text-green-600" : data.invoiceTrend === "declining" ? "text-red-400" : "text-amber-600")}>
+                  {data.invoiceTrend === "growing" ? "+2" : data.invoiceTrend === "flat" ? "+1" : "+0"}
+                </span>
+                {data.invoiceTrend === "growing"
+                  ? <TrendingUp className="h-4 w-4 text-green-600" />
+                  : data.invoiceTrend === "declining"
+                  ? <TrendingDown className="h-4 w-4 text-red-400" />
+                  : <Minus className="h-4 w-4 text-amber-500" />}
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Active service agreement</span>
-              {data.hasActiveSA
-                ? <CheckCircle2 className="h-4 w-4 text-green-600" />
-                : <X className="h-4 w-4 text-red-400" />}
+            {data.invoiceLast3Avg > 0 || data.invoicePrior3Avg > 0 ? (
+              <p className="text-xs text-muted-foreground pl-5 -mt-1">
+                Last 3 mo avg {fmtCur(data.invoiceLast3Avg)}/mo vs prior {fmtCur(data.invoicePrior3Avg)}/mo
+              </p>
+            ) : null}
+            {/* Job velocity — 1 pt */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Briefcase className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground truncate">Job activity not declining</span>
+                <span className="text-xs text-muted-foreground shrink-0">(1 pt)</span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className={cn("text-xs font-semibold", data.velocityDirection !== "declining" ? "text-green-600" : "text-red-400")}>
+                  {data.velocityDirection !== "declining" ? "+1" : "+0"}
+                </span>
+                {data.velocityDirection !== "declining"
+                  ? <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  : <X className="h-4 w-4 text-red-400" />}
+              </div>
+            </div>
+            {/* Open deals — 1 pt */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Target className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground truncate">Open deals in pipeline</span>
+                <span className="text-xs text-muted-foreground shrink-0">(1 pt)</span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className={cn("text-xs font-semibold", data.openCount > 0 ? "text-green-600" : "text-red-400")}>
+                  {data.openCount > 0 ? "+1" : "+0"}
+                </span>
+                {data.openCount > 0
+                  ? <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  : <X className="h-4 w-4 text-red-400" />}
+              </div>
             </div>
           </div>
         </CardContent>

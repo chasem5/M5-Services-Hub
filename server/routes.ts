@@ -5324,17 +5324,48 @@ Guidelines:
     return "flat";
   }
 
+  function computeInvoiceTrend(
+    monthlyAmounts: { month: string; total: number }[]
+  ): { invoiceTrend: "growing" | "flat" | "declining"; last3Avg: number; prior3Avg: number } {
+    const amountMap = new Map(monthlyAmounts.map(r => [r.month, r.total]));
+    const now = new Date();
+    const months: string[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+    const prior3 = months.slice(0, 3).map(m => amountMap.get(m) ?? 0);
+    const last3 = months.slice(3).map(m => amountMap.get(m) ?? 0);
+    const prior3Avg = prior3.reduce((a, b) => a + b, 0) / 3;
+    const last3Avg = last3.reduce((a, b) => a + b, 0) / 3;
+    let invoiceTrend: "growing" | "flat" | "declining";
+    if (prior3Avg === 0 && last3Avg === 0) {
+      invoiceTrend = "flat";
+    } else if (prior3Avg === 0) {
+      invoiceTrend = "growing";
+    } else {
+      const ratio = last3Avg / prior3Avg;
+      if (ratio >= 1.15) invoiceTrend = "growing";
+      else if (ratio <= 0.85) invoiceTrend = "declining";
+      else invoiceTrend = "flat";
+    }
+    return { invoiceTrend, last3Avg, prior3Avg };
+  }
+
   function computeHealthScoreV2(
     velocityDirection: string,
     openDeals: number,
     hasActiveSA: boolean,
     ltv: number,
+    invoiceTrend: "growing" | "flat" | "declining" = "flat",
   ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk" } {
     let healthScore = 0;
-    if (velocityDirection === "growing" || velocityDirection === "flat") healthScore++;
-    if (openDeals > 0 || ltv > 0) healthScore++;
-    if (hasActiveSA) healthScore++;
-    const healthStatus = healthScore >= 3 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+    if (hasActiveSA) healthScore += 2;
+    if (invoiceTrend === "growing") healthScore += 2;
+    else if (invoiceTrend === "flat") healthScore += 1;
+    if (velocityDirection === "growing" || velocityDirection === "flat") healthScore += 1;
+    if (openDeals > 0) healthScore += 1;
+    const healthStatus = healthScore >= 5 ? "healthy" : healthScore >= 3 ? "watch" : "at_risk";
     return { healthScore, healthStatus };
   }
 
@@ -5458,9 +5489,22 @@ Guidelines:
       }));
       const hasActiveSA = serviceAgreements.length > 0;
 
-      // ── Health score (3 signals) ─────────────────────────────────────────
+      // ── Invoice revenue trend (last 6 months, monthly buckets) ─────────────
+      const invoiceMonthRows = toRows(await db.execute(sql`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', COALESCE(issued_date, due_date, synced_at)), 'YYYY-MM') as month,
+          COALESCE(SUM(CAST(total_amount AS numeric)), 0) as total
+        FROM buildops_invoices
+        WHERE client_id = ${clientId}
+          AND COALESCE(issued_date, due_date, synced_at) >= NOW() - INTERVAL '6 months'
+        GROUP BY 1 ORDER BY 1
+      `));
+      const invoiceMonthly = invoiceMonthRows.map(r => ({ month: r.month as string, total: Number(r.total ?? 0) }));
+      const { invoiceTrend, last3Avg: invoiceLast3Avg, prior3Avg: invoicePrior3Avg } = computeInvoiceTrend(invoiceMonthly);
+
+      // ── Health score (6-point weighted system) ───────────────────────────
       const { healthScore, healthStatus } = computeHealthScoreV2(
-        velocityDirection, openCount, hasActiveSA, ltv
+        velocityDirection, openCount, hasActiveSA, ltv, invoiceTrend
       );
 
       res.json({
@@ -5480,6 +5524,10 @@ Guidelines:
         dealStages,
         // Revenue
         ltv,
+        // Invoice trend
+        invoiceTrend,
+        invoiceLast3Avg,
+        invoicePrior3Avg,
         // Jobs
         activeJobs,
         totalJobs,
@@ -5508,18 +5556,22 @@ Guidelines:
         healthStatus, healthScore,
         velocityLast90, velocityPrior90, velocityDirection, velocityChange,
         ltv, hitRate, wonCount, lostCount, totalJobs, openCount, hasActiveSA,
+        invoiceTrend, invoiceLast3Avg, invoicePrior3Avg,
       } = req.query as Record<string, string>;
+
+      const fmtAvg = (v: string | undefined) => v && !isNaN(Number(v)) ? `$${Math.round(Number(v)).toLocaleString()}` : "N/A";
 
       const prompt = `You are a concise B2B CRM analyst. Write a 2-3 sentence health summary for this customer account.
 Customer: ${client.name}
-Health Status: ${healthStatus ?? "unknown"} (score ${healthScore ?? "?"}/3)
-Job Velocity (last 90 days vs prior 90): ${velocityLast90 ?? "?"} vs ${velocityPrior90 ?? "?"} jobs (${velocityDirection ?? "stable"}, ${velocityChange ?? "0"}% change)
+Health Status: ${healthStatus ?? "unknown"} (score ${healthScore ?? "?"}/6)
+Active Service Agreement: ${hasActiveSA === "true" ? "Yes — consistent contracted work" : "No"}
+Invoice Revenue Trend (last 3 months avg vs prior 3 months avg): ${fmtAvg(invoiceLast3Avg)} vs ${fmtAvg(invoicePrior3Avg)} — ${invoiceTrend ?? "flat"}
+Job Velocity (last 90 days vs prior 90): ${velocityLast90 ?? "?"} vs ${velocityPrior90 ?? "?"} jobs (${velocityDirection ?? "stable"}, ${velocityChange ?? "0"} job change)
 Total Jobs Ever: ${totalJobs ?? "?"}
-LTV (won deal value): $${ltv ? Number(ltv).toLocaleString() : "0"}
+Total Invoice LTV: $${ltv ? Number(ltv).toLocaleString() : "0"}
 Open Deals: ${openCount ?? "0"} | Won: ${wonCount ?? "0"} | Lost: ${lostCount ?? "0"} | Hit Rate: ${hitRate ?? "?"}%
-Active Service Agreement: ${hasActiveSA === "true" ? "Yes" : "No"}
 
-Write a punchy, factual summary that highlights what's driving the health status. Focus on velocity trend and service agreement status. Do not use bullet points. 2-3 sentences max.`;
+Write a punchy, factual summary highlighting what's driving the health status. Lead with service agreement status and invoice revenue trend (these are the highest-weight signals). Mention job velocity only if notable. Do not use bullet points. 2-3 sentences max.`;
 
       const { openai } = await import("./openai");
       const completion = await openai.chat.completions.create({
@@ -5578,6 +5630,24 @@ Write a punchy, factual summary that highlights what's driving the health status
       `));
       const invoiceMap = new Map(invoicesByClient.map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
 
+      // Invoice monthly totals per client (last 6 months) for revenue trend
+      const invoiceMonthlyByClient = toRows(await db.execute(sql`
+        SELECT
+          client_id,
+          TO_CHAR(DATE_TRUNC('month', COALESCE(issued_date, due_date, synced_at)), 'YYYY-MM') as month,
+          COALESCE(SUM(CAST(total_amount AS numeric)), 0) as total
+        FROM buildops_invoices
+        WHERE client_id IS NOT NULL
+          AND COALESCE(issued_date, due_date, synced_at) >= NOW() - INTERVAL '6 months'
+        GROUP BY client_id, 2 ORDER BY client_id, 2
+      `));
+      const invoiceMonthlyMap = new Map<number, { month: string; total: number }[]>();
+      for (const r of invoiceMonthlyByClient) {
+        const cid = Number(r.client_id);
+        if (!invoiceMonthlyMap.has(cid)) invoiceMonthlyMap.set(cid, []);
+        invoiceMonthlyMap.get(cid)!.push({ month: r.month as string, total: Number(r.total ?? 0) });
+      }
+
       const jobsByClient = toRows(await db.execute(sql`
         SELECT client_id,
           COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active,
@@ -5624,6 +5694,9 @@ Write a punchy, factual summary that highlights what's driving the health status
         velocityPrior90: number;
         velocityDirection: "growing" | "flat" | "declining";
         hasActiveSA: boolean;
+        invoiceTrend: "growing" | "flat" | "declining";
+        invoiceLast3Avg: number;
+        invoicePrior3Avg: number;
         healthScore: number;
         healthStatus: "healthy" | "watch" | "at_risk";
       }
@@ -5646,8 +5719,10 @@ Write a punchy, factual summary that highlights what's driving the health status
 
         const hitRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 100) : null;
         const velocityDirection = computeVelocityDirection(jobs.last90, jobs.prior90);
+        const { invoiceTrend, last3Avg: invoiceLast3Avg, prior3Avg: invoicePrior3Avg } =
+          computeInvoiceTrend(invoiceMonthlyMap.get(client.id) ?? []);
         const { healthScore, healthStatus } = computeHealthScoreV2(
-          velocityDirection, openDeals, hasActiveSA, ltv
+          velocityDirection, openDeals, hasActiveSA, ltv, invoiceTrend
         );
 
         if (tierFilter && client.tier !== tierFilter) continue;
@@ -5670,6 +5745,9 @@ Write a punchy, factual summary that highlights what's driving the health status
           velocityPrior90: jobs.prior90,
           velocityDirection,
           hasActiveSA,
+          invoiceTrend,
+          invoiceLast3Avg,
+          invoicePrior3Avg,
           healthScore,
           healthStatus,
         });
