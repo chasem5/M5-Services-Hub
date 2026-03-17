@@ -4078,17 +4078,19 @@ Respond with this JSON:
       const { getToken, buildOpsHeaders, BASE_URL } = await import("./buildops") as any;
       const token = await getToken(creds.clientId, creds.clientSecret);
       const customerId = req.params.customerId;
-      const primaryUrl = `${BASE_URL}/v1/customers/${customerId}/representatives?page=1&limit=50`;
-      const fallbackUrl = `${BASE_URL}/v1/customers/representatives?customerId=${customerId}&page=1&limit=50`;
-      const r1 = await fetch(primaryUrl, { headers: buildOpsHeaders(token, creds.tenantId) });
+      // Test: top-level /v1/representatives (new approach)
+      const topLevelUrl = `${BASE_URL}/v1/representatives?page=1&limit=10`;
+      const r0 = await fetch(topLevelUrl, { headers: buildOpsHeaders(token, creds.tenantId) });
+      const body0 = await r0.json().catch(() => null);
+      // Test: old customer-scoped endpoint (for comparison)
+      const customerUrl = `${BASE_URL}/v1/customers/${customerId}/representatives?page=1&limit=50`;
+      const r1 = await fetch(customerUrl, { headers: buildOpsHeaders(token, creds.tenantId) });
       const body1 = await r1.json().catch(() => null);
-      const r2 = await fetch(fallbackUrl, { headers: buildOpsHeaders(token, creds.tenantId) });
-      const body2 = await r2.json().catch(() => null);
-      console.log("[debug-reps] primary status:", r1.status, "body:", JSON.stringify(body1)?.slice(0, 500));
-      console.log("[debug-reps] fallback status:", r2.status, "body:", JSON.stringify(body2)?.slice(0, 500));
+      console.log("[debug-reps] top-level status:", r0.status, "totalCount:", body0?.totalCount, "sample keys:", body0?.items?.[0] ? Object.keys(body0.items[0]) : "n/a");
+      console.log("[debug-reps] customer-scoped status:", r1.status);
       res.json({
-        primary: { status: r1.status, url: primaryUrl, body: body1 },
-        fallback: { status: r2.status, url: fallbackUrl, body: body2 },
+        topLevel: { status: r0.status, url: topLevelUrl, totalCount: body0?.totalCount, sampleItem: body0?.items?.[0] ?? null, body: body0 },
+        customerScoped: { status: r1.status, url: customerUrl, body: body1 },
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -4191,68 +4193,122 @@ Respond with this JSON:
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
-      const { getRepresentatives } = await import("./buildops");
+      const { getAllRepresentatives } = await import("./buildops");
       const { db } = await import("./db");
-      const { eq, and } = await import("drizzle-orm");
+      const { eq } = await import("drizzle-orm");
       const { clientContacts } = await import("@shared/schema");
 
+      // ── 1. Fetch ALL reps from the top-level endpoint (one call, paginated) ──
+      const allReps = await getAllRepresentatives(creds.clientId, creds.clientSecret, creds.tenantId);
+      console.log(`[sync-reps] fetched ${allReps.length} total representatives from BuildOps`);
+
+      if (allReps.length === 0) {
+        await storage.createBuildopsSyncLog({
+          entityType: "contact",
+          action: "pull",
+          message: "Synced representatives: 0 reps returned from BuildOps /v1/representatives",
+        });
+        return res.json({ ok: true, created: 0, updated: 0, skipped: 0, total: 0 });
+      }
+
+      // ── 2. Build lookup maps ──
       const allClients = await storage.listClients();
-      const syncedClients = allClients.filter(c => c.buildopsId);
+      const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      // Map by normalized name (for company field matching)
+      const clientByNormName = new Map(allClients.map(c => [normName(c.name), c]));
+
+      // Load all existing contacts for dedup by buildopsId or email
+      const allExistingContacts = await db.select().from(clientContacts);
+      const contactByBuildopsId = new Map(
+        allExistingContacts.filter(c => c.buildopsId).map(c => [c.buildopsId!, c])
+      );
 
       let created = 0;
       let updated = 0;
-      let errors = 0;
+      let skipped = 0;
 
-      for (const client of syncedClients) {
+      for (const rep of allReps) {
         try {
-          const reps = await getRepresentatives(creds.clientId, creds.clientSecret, creds.tenantId, client.buildopsId!);
-          const allContactsForClient = await db.select().from(clientContacts).where(eq(clientContacts.clientId, client.id));
-          for (const rep of reps) {
-            const fullName = rep.name || [rep.firstName, rep.middleName, rep.lastName].filter(Boolean).join(" ") || "Unknown";
-            const email = rep.email || null;
+          // ── 3. Match rep to a CRM client ──
+          const fullName = rep.name
+            || [rep.firstName, rep.middleName, rep.lastName].filter(Boolean).join(" ").trim()
+            || "Unknown";
+          const email = rep.email?.trim() || null;
+          const phone = rep.cellPhone?.trim() || rep.landlinePhone?.trim() || rep.phone?.trim() || null;
 
-            const normalizedEmail = email?.toLowerCase().trim();
-            const existingContact = allContactsForClient.find(c =>
-              (rep.id && c.buildopsId === rep.id) ||
-              (normalizedEmail && c.email?.toLowerCase().trim() === normalizedEmail)
-            );
-            const existing = existingContact ? [existingContact] : [];
+          let matchedClient = null;
 
-            if (existing.length > 0) {
-              await db.update(clientContacts).set({
-                name: fullName,
-                email,
-                phone: rep.phone || null,
-                title: rep.title || null,
-                buildopsId: rep.id,
-              }).where(eq(clientContacts.id, existing[0].id));
-              updated++;
-            } else {
-              await db.insert(clientContacts).values({
-                clientId: client.id,
-                buildopsId: rep.id,
-                name: fullName,
-                email,
-                phone: rep.phone || null,
-                title: rep.title || null,
-                isPrimary: false,
-              });
-              created++;
+          // Try matching via company field → client name
+          if (rep.company) {
+            const normCompany = normName(rep.company);
+            matchedClient = clientByNormName.get(normCompany) ?? null;
+            if (!matchedClient) {
+              // Try contains matching
+              matchedClient = allClients.find(c => {
+                const nc = normName(c.name);
+                return nc.includes(normCompany) || normCompany.includes(nc);
+              }) ?? null;
             }
           }
+
+          if (!matchedClient) {
+            skipped++;
+            continue; // can't match to a CRM client
+          }
+
+          // ── 4. Dedup: find existing contact by buildopsId or email ──
+          const existingByBuildops = contactByBuildopsId.get(rep.id);
+          const existingByEmail = email
+            ? allExistingContacts.find(c =>
+                c.clientId === matchedClient!.id &&
+                c.email?.toLowerCase() === email.toLowerCase() &&
+                !c.buildopsId
+              )
+            : undefined;
+          const existing = existingByBuildops ?? existingByEmail;
+
+          const contactPayload = {
+            name: fullName,
+            email,
+            phone,
+            title: rep.title || null,
+            buildopsId: rep.id,
+            profilePictureUrl: rep.profilePictureUrl || null,
+          };
+
+          if (existing) {
+            await db.update(clientContacts)
+              .set(contactPayload)
+              .where(eq(clientContacts.id, existing.id));
+            // Update cached map
+            contactByBuildopsId.set(rep.id, { ...existing, ...contactPayload });
+            updated++;
+          } else {
+            const inserted = await db.insert(clientContacts).values({
+              clientId: matchedClient.id,
+              buildopsId: rep.id,
+              name: fullName,
+              email,
+              phone,
+              title: rep.title || null,
+              profilePictureUrl: rep.profilePictureUrl || null,
+              isPrimary: false,
+            }).returning();
+            if (inserted[0]) contactByBuildopsId.set(rep.id, inserted[0]);
+            created++;
+          }
         } catch (repErr: any) {
-          console.warn(`[BuildOps sync-reps] Error for client ${client.id}: ${repErr.message}`);
-          errors++;
+          console.warn(`[sync-reps] Error processing rep ${rep.id} (${rep.name}): ${repErr.message}`);
+          skipped++;
         }
       }
 
-      await storage.createBuildopsSyncLog({
-        entityType: "contact",
-        action: "pull",
-        message: `Synced representatives: ${created} created, ${updated} updated, ${errors} client errors`,
-      });
+      const msg = `Synced representatives: ${created} created, ${updated} updated, ${skipped} skipped (no company match)`;
+      console.log(`[sync-reps] ${msg}`);
+      await storage.createBuildopsSyncLog({ entityType: "contact", action: "pull", message: msg });
 
-      res.json({ ok: true, created, updated, errors, clientsProcessed: syncedClients.length });
+      res.json({ ok: true, created, updated, skipped, total: allReps.length });
     } catch (err: any) {
       console.error("[BuildOps sync-representatives] Error:", err.message);
       await storage.createBuildopsSyncLog({ entityType: "contact", action: "error", message: err.message });

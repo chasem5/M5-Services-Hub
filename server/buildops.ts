@@ -101,9 +101,19 @@ export interface BuildOpsRepresentative {
   middleName?: string;
   nickName?: string;
   email?: string;
-  phone?: string;
+  phone?: string;           // legacy / generic
+  cellPhone?: string;
+  landlinePhone?: string;
   title?: string;
   salutation?: string;
+  company?: string;         // customer/company name for matching
+  contactType?: string;
+  status?: string;
+  isActive?: boolean;
+  isSmsOptOut?: boolean;
+  isEmailOptOut?: boolean;
+  isDoNotCall?: boolean;
+  profilePictureUrl?: string;
 }
 
 /** Map a BuildOps quote status to a CRM pipeline stage slug */
@@ -269,33 +279,48 @@ export function mapClientToCustomer(client: {
   };
 }
 
+/**
+ * Fetch ALL representatives from the top-level /v1/representatives endpoint (paginated).
+ * Each rep has a `company` field identifying which customer it belongs to.
+ */
+export async function getAllRepresentatives(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string
+): Promise<BuildOpsRepresentative[]> {
+  const token = await getToken(clientId, clientSecret);
+  const allReps: BuildOpsRepresentative[] = [];
+  let page = 1;
+  while (true) {
+    const url = `${BASE_URL}/v1/representatives?page=${page}&limit=100`;
+    const res = await fetch(url, { headers: buildOpsHeaders(token, tenantId) });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      console.warn(`[BuildOps getAllRepresentatives] HTTP ${res.status} page ${page}: ${body.message ?? JSON.stringify(body).slice(0, 200)}`);
+      break;
+    }
+    const data = await res.json();
+    const items: BuildOpsRepresentative[] = data.items ?? (Array.isArray(data) ? data : []);
+    console.log(`[BuildOps getAllRepresentatives] page ${page}: got ${items.length} reps, totalCount=${data.totalCount ?? "?"}`);
+    allReps.push(...items);
+    const totalCount: number = data.totalCount ?? items.length;
+    if (items.length === 0 || allReps.length >= totalCount) break;
+    page++;
+    if (page > 50) break; // safety
+  }
+  return allReps;
+}
+
+/**
+ * @deprecated Use getAllRepresentatives() instead — the per-customer endpoint returns 404.
+ */
 export async function getRepresentatives(
   clientId: string,
   clientSecret: string,
   tenantId: string,
-  customerId: string
+  _customerId: string
 ): Promise<BuildOpsRepresentative[]> {
-  try {
-    const token = await getToken(clientId, clientSecret);
-    // Try primary endpoint first; fall back to alternate query-param form on 404/405
-    const primaryUrl = `${BASE_URL}/v1/customers/${customerId}/representatives?page=1&limit=50`;
-    const fallbackUrl = `${BASE_URL}/v1/customers/representatives?customerId=${customerId}&page=1&limit=50`;
-    let res = await fetch(primaryUrl, { headers: buildOpsHeaders(token, tenantId) });
-    if (res.status === 404 || res.status === 405) {
-      res = await fetch(fallbackUrl, { headers: buildOpsHeaders(token, tenantId) });
-    }
-    if (!res.ok) {
-      if (res.status === 404) return [];
-      const body = await res.json().catch(() => ({}));
-      console.warn(`[BuildOps getRepresentatives] HTTP ${res.status} for customer ${customerId}: ${body.message ?? "unknown"}`);
-      return [];
-    }
-    const data = await res.json();
-    return data.items ?? data ?? [];
-  } catch (err: any) {
-    console.warn(`[BuildOps getRepresentatives] Error for customer ${customerId}: ${err.message}`);
-    return [];
-  }
+  return getAllRepresentatives(clientId, clientSecret, tenantId);
 }
 
 // ── Departments ───────────────────────────────────────────────────────────────
