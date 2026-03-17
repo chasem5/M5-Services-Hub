@@ -1023,8 +1023,22 @@ export class DatabaseStorage implements IStorage {
       if (lead.clientId == null) continue;
       clientValueMap[lead.clientId] = (clientValueMap[lead.clientId] || 0) + getLeadValue(lead);
     }
-    const allClients = await db.select({ id: clients.id, name: clients.name }).from(clients);
-    const topClientsRows = Object.entries(clientValueMap)
+    const allClients = await db.select({ id: clients.id, name: clients.name, parentClientId: clients.parentClientId }).from(clients);
+
+    // Build parent lookup
+    const clientParentMap = new Map<number, number>(); // childId → parentId
+    for (const c of allClients) {
+      if (c.parentClientId != null) clientParentMap.set(c.id, c.parentClientId);
+    }
+
+    // Roll up pipeline values: merge child values into parent
+    const rolledPipelineMap: Record<number, number> = {};
+    for (const [clientIdStr, value] of Object.entries(clientValueMap)) {
+      const cid = Number(clientIdStr);
+      const effectiveId = clientParentMap.get(cid) ?? cid;
+      rolledPipelineMap[effectiveId] = (rolledPipelineMap[effectiveId] ?? 0) + value;
+    }
+    const topClientsRows = Object.entries(rolledPipelineMap)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 5)
       .map(([clientId, value]) => {
@@ -1087,11 +1101,10 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    // Won deals by client — top 8 by total deal value (for horizontal bar chart)
+    // Won deals by client — fetch all, then roll up children into parent, take top 8
     const wonDealsByClientRows = await db
       .select({
         clientId: leads.clientId,
-        clientName: sql<string>`(SELECT name FROM clients WHERE id = ${leads.clientId})`,
         totalValue: sql<string>`SUM(CAST(${leads.value} AS numeric))`,
         dealCount: sql<string>`COUNT(*)`,
       })
@@ -1102,14 +1115,31 @@ export class DatabaseStorage implements IStorage {
         userFilter ?? sql`1=1`
       ))
       .groupBy(leads.clientId)
-      .orderBy(sql`SUM(CAST(${leads.value} AS numeric)) DESC`)
-      .limit(8);
-    const wonDealsByClient = wonDealsByClientRows.map(r => ({
-      clientId: r.clientId,
-      name: r.clientName ?? "Unknown",
-      totalValue: r.totalValue ?? "0",
-      dealCount: Number(r.dealCount ?? 0),
-    }));
+      .orderBy(sql`SUM(CAST(${leads.value} AS numeric)) DESC`);
+
+    // Roll up child won-deal totals into parent
+    const wonByParentMap = new Map<number, { name: string; totalValue: number; dealCount: number }>();
+    for (const r of wonDealsByClientRows) {
+      const cid = Number(r.clientId);
+      const effectiveId = clientParentMap.get(cid) ?? cid;
+      const clientRecord = allClients.find(c => c.id === effectiveId);
+      const effectiveName = clientRecord?.name ?? "Unknown";
+      const existing = wonByParentMap.get(effectiveId);
+      if (existing) {
+        existing.totalValue += parseFloat(r.totalValue ?? "0");
+        existing.dealCount += Number(r.dealCount ?? 0);
+      } else {
+        wonByParentMap.set(effectiveId, {
+          name: effectiveName,
+          totalValue: parseFloat(r.totalValue ?? "0"),
+          dealCount: Number(r.dealCount ?? 0),
+        });
+      }
+    }
+    const wonDealsByClient = Array.from(wonByParentMap.entries())
+      .map(([clientId, data]) => ({ clientId, name: data.name, totalValue: data.totalValue.toFixed(2), dealCount: data.dealCount }))
+      .sort((a, b) => parseFloat(b.totalValue) - parseFloat(a.totalValue))
+      .slice(0, 8);
 
     return {
       activeLeads: activeLeadRows.length,
