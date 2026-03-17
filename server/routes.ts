@@ -1780,11 +1780,8 @@ Respond ONLY with JSON — no markdown:
 
           const lineItems = await storage.listEstimateLineItems(estimate.id);
           const scopePartsAuto = lineItems.map(li => li.description).filter(Boolean);
-          const scopeOfWorkAuto = estimate.notes
-            ? estimate.notes
-            : scopePartsAuto.length > 0
-              ? scopePartsAuto.join("\n")
-              : undefined;
+          const lineItemScopeAuto = scopePartsAuto.length > 0 ? scopePartsAuto.join("\n") : null;
+          const scopeOfWorkAuto = [lineItemScopeAuto, estimate.notes].filter(Boolean).join("\n\n") || undefined;
           const totalAmountQuotedAuto = lineItems.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0);
 
           const quote = await createQuote(creds.clientId, creds.clientSecret, creds.tenantId, {
@@ -3745,11 +3742,8 @@ Respond with this JSON:
       }
 
       const scopeParts = lineItems.map(li => li.description).filter(Boolean);
-      const scopeOfWork = estimate.notes
-        ? estimate.notes
-        : scopeParts.length > 0
-          ? scopeParts.join("\n")
-          : undefined;
+      const lineItemScope = scopeParts.length > 0 ? scopeParts.join("\n") : null;
+      const scopeOfWork = [lineItemScope, estimate.notes].filter(Boolean).join("\n\n") || undefined;
       const totalAmountQuoted = lineItems.reduce((sum, li) => sum + (parseFloat(li.total) || 0), 0);
 
       const quote = await createQuote(creds.clientId, creds.clientSecret, creds.tenantId, {
