@@ -417,7 +417,7 @@ function ContactCard({
   });
 
   const { data: cardUsers = [] } = useQuery<any[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users/directory"],
   });
 
   const getUserInitials = (userId: string) => {
@@ -876,7 +876,7 @@ export default function ClientDetail() {
   });
 
   const { data: users = [] } = useQuery<{id: string; firstName: string|null; lastName: string|null; email: string|null}[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users/directory"],
   });
 
   const getUserDisplayName = (userId: string) => {
