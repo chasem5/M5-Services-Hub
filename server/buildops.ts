@@ -429,38 +429,23 @@ export async function getEmployees(
 ): Promise<{ employees: BuildOpsEmployee[]; debug?: Record<string, any> }> {
   const token = await getToken(clientId, clientSecret);
   const headers = buildOpsHeaders(token, tenantId);
-  const allEmployees: BuildOpsEmployee[] = [];
-  let debugInfo: Record<string, any> | undefined;
-  let page = 1;
 
-  while (true) {
-    const url = `${BASE_URL}/v1/employees?page=${page}&limit=100`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) {
-      const rawText = await res.text().catch(() => "");
-      debugInfo = { status: res.status, headers: Object.fromEntries(res.headers.entries()), bodyPreview: rawText.slice(0, 500) };
-      console.warn(`[BuildOps getEmployees] HTTP ${res.status} page ${page}: ${rawText.slice(0, 200)}`);
-      break;
-    }
-    const data = await res.json();
-    const items = extractEmployeeArray(data);
-    console.log(`[BuildOps getEmployees] page ${page}: got ${items.length} employees, totalCount=${data.totalCount ?? "?"}`);
-    allEmployees.push(...items);
-    const totalCount: number = data.totalCount ?? items.length;
-    if (items.length === 0 || allEmployees.length >= totalCount) break;
-    page++;
-    if (page > 50) break;
+  // The /v1/employees endpoint does NOT accept page/limit params (returns 400).
+  // Calling it without params returns all employees in a single response.
+  const url = `${BASE_URL}/v1/employees`;
+  const res = await fetch(url, { headers });
+
+  if (!res.ok) {
+    const rawText = await res.text().catch(() => "");
+    const debugInfo = { status: res.status, bodyPreview: rawText.slice(0, 500) };
+    console.warn(`[BuildOps getEmployees] HTTP ${res.status}: ${rawText.slice(0, 300)}`);
+    return { employees: [], debug: debugInfo };
   }
 
-  if (allEmployees.length === 0) {
-    const probeUrl = `${BASE_URL}/v1/employees?page=1&limit=5`;
-    const probeRes = await fetch(probeUrl, { headers });
-    const rawText = await probeRes.text().catch(() => "");
-    debugInfo = { status: probeRes.status, headers: Object.fromEntries(probeRes.headers.entries()), bodyPreview: rawText.slice(0, 500) };
-    console.warn(`[BuildOps getEmployees] 0 employees returned. Status=${probeRes.status}, body=${rawText.slice(0, 300)}`);
-  }
-
-  return { employees: allEmployees, debug: debugInfo };
+  const data = await res.json();
+  const employees = extractEmployeeArray(data);
+  console.log(`[BuildOps getEmployees] got ${employees.length} employees (totalCount=${data.totalCount ?? "?"})`);
+  return { employees };
 }
 
 // ── Departments ───────────────────────────────────────────────────────────────
