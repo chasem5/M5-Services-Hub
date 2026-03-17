@@ -244,7 +244,8 @@ export function mapClientToCustomer(client: {
   addressCity?: string | null;
   addressState?: string | null;
   addressZip?: string | null;
-}): { name: string; email?: string | null; phonePrimary?: string | null; phoneAlternate?: string | null; websiteUrl?: string | null; addresses?: BuildOpsAddress[] } {
+  buildopsCustomerType?: string | null;
+}): { name: string; email?: string | null; phonePrimary?: string | null; phoneAlternate?: string | null; websiteUrl?: string | null; customerType?: string | null; addresses?: BuildOpsAddress[] } {
   const addresses: BuildOpsAddress[] = [];
   if (client.addressStreet || client.addressCity || client.addressState || client.addressZip) {
     addresses.push({
@@ -261,6 +262,7 @@ export function mapClientToCustomer(client: {
     phonePrimary: client.phone || null,
     phoneAlternate: client.phoneAlternate || null,
     websiteUrl: client.website || null,
+    customerType: client.buildopsCustomerType || null,
     ...(addresses.length > 0 ? { addresses } : {}),
   };
 }

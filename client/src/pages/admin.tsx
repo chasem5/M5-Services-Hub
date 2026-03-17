@@ -454,7 +454,75 @@ function BuildOpsPanel() {
           </div>
         </CardContent>
       </Card>
+
+      <BuildOpsSyncAudit />
     </div>
+  );
+}
+
+function BuildOpsSyncAudit() {
+  const { data: clients } = useQuery<any[]>({ queryKey: ["/api/clients"] });
+  const linkedClients = (clients ?? [])
+    .filter((c: any) => c.buildopsId)
+    .sort((a: any, b: any) => {
+      const aTime = a.buildopsLastSyncedAt ? new Date(a.buildopsLastSyncedAt).getTime() : 0;
+      const bTime = b.buildopsLastSyncedAt ? new Date(b.buildopsLastSyncedAt).getTime() : 0;
+      return bTime - aTime;
+    });
+
+  if (linkedClients.length === 0) return null;
+
+  const activeCount = linkedClients.filter((c: any) => c.buildopsStatus !== "inactive").length;
+  const inactiveCount = linkedClients.filter((c: any) => c.buildopsStatus === "inactive").length;
+
+  return (
+    <Card className="border-none shadow-sm bg-card">
+      <CardHeader className="pb-4 border-b">
+        <div className="flex items-center gap-3">
+          <div className="bg-primary/10 p-2 rounded-full">
+            <Zap className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-heading">BuildOps Sync Audit</CardTitle>
+            <CardDescription className="text-xs">
+              {linkedClients.length} linked clients — {activeCount} active, {inactiveCount} inactive
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-6">
+        <div className="max-h-[400px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-card">
+              <tr className="border-b text-left text-xs text-muted-foreground">
+                <th className="pb-2 pr-4">Client</th>
+                <th className="pb-2 pr-4">BuildOps Status</th>
+                <th className="pb-2">Last Synced</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linkedClients.map((client: any) => (
+                <tr key={client.id} className="border-b last:border-0">
+                  <td className="py-2 pr-4 font-medium">{client.name}</td>
+                  <td className="py-2 pr-4">
+                    {client.buildopsStatus === "inactive" ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">Inactive</span>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-medium">Active</span>
+                    )}
+                  </td>
+                  <td className="py-2 text-muted-foreground text-xs">
+                    {client.buildopsLastSyncedAt
+                      ? new Date(client.buildopsLastSyncedAt).toLocaleString()
+                      : "Never"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

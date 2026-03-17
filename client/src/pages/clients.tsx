@@ -161,6 +161,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertClientSchema, insertClientContactSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate, type ContactStage, type User, type IndustryOption } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -389,6 +390,8 @@ const SERVICE_NEEDS = [
 
 export default function Customers() {
   const [, setLocation] = useLocation();
+  const { user: authUser } = useAuth();
+  const isAdminOrManager = authUser?.role === "super_admin" || authUser?.role === "admin" || authUser?.role === "manager";
   const [activeTab, setActiveTab] = useState("companies");
   const [searchTerm, setSearchTerm] = useState("");
   const [buildingSearch, setBuildingSearch] = useState("");
@@ -1474,7 +1477,7 @@ export default function Customers() {
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-base">{client.name}</span>
                                   {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
-                                  {(client as any).buildopsStatus === "inactive" && (
+                                  {isAdminOrManager && (client as any).buildopsStatus === "inactive" && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-${client.id}`}>Inactive</span>
                                   )}
                                 </div>
@@ -1607,7 +1610,7 @@ export default function Customers() {
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <h3 className="font-bold text-sm truncate">{client.name}</h3>
                                 {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
-                                {(client as any).buildopsStatus === "inactive" && (
+                                {isAdminOrManager && (client as any).buildopsStatus === "inactive" && (
                                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-card-${client.id}`}>Inactive</span>
                                 )}
                               </div>

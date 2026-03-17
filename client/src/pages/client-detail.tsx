@@ -147,6 +147,7 @@ import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { BuildingsMap } from "@/components/BuildingsMap";
 import { PortfolioManager } from "@/components/PortfolioManager";
 import { getStageBadgeClass } from "@/components/ContactStagesManager";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow, differenceInDays } from "date-fns";
 import { formatPhoneNumber } from "@/lib/phone";
@@ -370,9 +371,9 @@ function LinkedInSyncButton({
   return null;
 }
 
-function BuildOpsStatusBadge({ buildopsId, buildopsStatus }: { buildopsId?: string | null; buildopsStatus?: string | null }) {
+function BuildOpsStatusBadge({ buildopsId, buildopsStatus, showInactive }: { buildopsId?: string | null; buildopsStatus?: string | null; showInactive?: boolean }) {
   if (!buildopsId) return null;
-  if (buildopsStatus === "inactive") {
+  if (showInactive && buildopsStatus === "inactive") {
     return (
       <Badge variant="outline" className="h-6 text-xs gap-1 px-2 border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800" data-testid="badge-buildops-inactive">
         <Zap className="h-3 w-3" />
@@ -739,6 +740,8 @@ export default function ClientDetail() {
   const clientId = parseInt(id!);
   const [, setLocation] = useLocation();
   const searchParams = useSearch();
+  const { user: authUser } = useAuth();
+  const isAdminOrManager = authUser?.role === "super_admin" || authUser?.role === "admin" || authUser?.role === "manager";
   const { toast } = useToast();
   const [isAddSpendOpen, setIsAddSpendOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
@@ -1268,7 +1271,7 @@ export default function ClientDetail() {
           </div>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-muted-foreground">{client.industry || "No industry specified"}</p>
-            <BuildOpsStatusBadge buildopsId={(client as any).buildopsId} buildopsStatus={(client as any).buildopsStatus} />
+            <BuildOpsStatusBadge buildopsId={(client as any).buildopsId} buildopsStatus={(client as any).buildopsStatus} showInactive={isAdminOrManager} />
           </div>
         </div>
       </div>
@@ -2972,7 +2975,7 @@ export default function ClientDetail() {
                                 {(b as any).propertyType.replace(/_/g, " ")}
                               </span>
                             )}
-                            {(b as any).buildopsIsInactive && (
+                            {isAdminOrManager && (b as any).buildopsIsInactive && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium">
                                 Inactive
                               </span>

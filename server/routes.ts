@@ -3656,7 +3656,7 @@ Respond with this JSON:
       if (!client) return res.status(404).json({ message: "Client not found" });
 
       const { createCustomer, updateCustomer, mapClientToCustomer } = await import("./buildops");
-      const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone, phoneAlternate: client.phoneAlternate, website: client.website, addressStreet: client.addressStreet, addressCity: client.addressCity, addressState: client.addressState, addressZip: client.addressZip });
+      const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone, phoneAlternate: client.phoneAlternate, website: client.website, addressStreet: client.addressStreet, addressCity: client.addressCity, addressState: client.addressState, addressZip: client.addressZip, buildopsCustomerType: client.buildopsCustomerType });
 
       let buildopsCustomer: any;
       if (client.buildopsId) {
@@ -3688,7 +3688,7 @@ Respond with this JSON:
       let errors = 0;
       for (const client of withoutId) {
         try {
-          const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone, phoneAlternate: client.phoneAlternate, website: client.website, addressStreet: client.addressStreet, addressCity: client.addressCity, addressState: client.addressState, addressZip: client.addressZip });
+          const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone, phoneAlternate: client.phoneAlternate, website: client.website, addressStreet: client.addressStreet, addressCity: client.addressCity, addressState: client.addressState, addressZip: client.addressZip, buildopsCustomerType: client.buildopsCustomerType });
           const buildopsCustomer = await createCustomer(creds.clientId, creds.clientSecret, creds.tenantId, payload);
           await storage.updateClient(client.id, { buildopsId: buildopsCustomer.id });
           await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: buildopsCustomer.id, action: "push", message: "Bulk push" });
