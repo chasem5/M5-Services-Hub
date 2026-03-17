@@ -81,11 +81,39 @@ export interface BuildOpsQuote {
   name?: string;
   status?: string;
   totalAmount?: number;
+  totalAmountQuoted?: number;
   scopeOfWork?: string;
+  issueDescription?: string;
   billingCustomerId?: string;
   customerId?: string;
+  propertyId?: string;
+  billTo?: string;
+  expirationDate?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface BuildOpsRepresentative {
+  id: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  middleName?: string;
+  nickName?: string;
+  email?: string;
+  phone?: string;
+  title?: string;
+  salutation?: string;
+}
+
+/** Map a BuildOps quote status to a CRM pipeline stage slug */
+export function mapBuildOpsStatusToStage(status: string | null | undefined): string {
+  if (!status) return "proposal_sent";
+  const s = status.toLowerCase().replace(/\s+/g, "");
+  if (["approved", "jobadded", "projectadded", "won", "converted"].includes(s)) return "won";
+  if (["cancelled", "rejected", "expired", "declined", "lost"].includes(s)) return "lost";
+  if (["draft", "new", "open"].includes(s)) return "qualified";
+  return "proposal_sent"; // senttocustomer, customerviewed, sent, submitted, pending, review, awaitingapproval
 }
 
 export interface BuildOpsServiceAgreement {
@@ -210,12 +238,57 @@ export function mapClientToCustomer(client: {
   name: string;
   email?: string | null;
   phone?: string | null;
-}): { name: string; email?: string | null; phonePrimary?: string | null } {
+  phoneAlternate?: string | null;
+  website?: string | null;
+  addressStreet?: string | null;
+  addressCity?: string | null;
+  addressState?: string | null;
+  addressZip?: string | null;
+}): { name: string; email?: string | null; phonePrimary?: string | null; phoneAlternate?: string | null; websiteUrl?: string | null; addresses?: BuildOpsAddress[] } {
+  const addresses: BuildOpsAddress[] = [];
+  if (client.addressStreet || client.addressCity || client.addressState || client.addressZip) {
+    addresses.push({
+      street: client.addressStreet || undefined,
+      city: client.addressCity || undefined,
+      state: client.addressState || undefined,
+      zipCode: client.addressZip || undefined,
+      addressType: "billing",
+    });
+  }
   return {
     name: client.name,
     email: client.email || null,
     phonePrimary: client.phone || null,
+    phoneAlternate: client.phoneAlternate || null,
+    websiteUrl: client.website || null,
+    ...(addresses.length > 0 ? { addresses } : {}),
   };
+}
+
+export async function getRepresentatives(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  customerId: string
+): Promise<BuildOpsRepresentative[]> {
+  try {
+    const token = await getToken(clientId, clientSecret);
+    const res = await fetch(
+      `${BASE_URL}/v1/customers/${customerId}/representatives?page=0&page_size=50`,
+      { headers: buildOpsHeaders(token, tenantId) }
+    );
+    if (!res.ok) {
+      if (res.status === 404) return [];
+      const body = await res.json().catch(() => ({}));
+      console.warn(`[BuildOps getRepresentatives] HTTP ${res.status} for customer ${customerId}: ${body.message ?? "unknown"}`);
+      return [];
+    }
+    const data = await res.json();
+    return data.items ?? data ?? [];
+  } catch (err: any) {
+    console.warn(`[BuildOps getRepresentatives] Error for customer ${customerId}: ${err.message}`);
+    return [];
+  }
 }
 
 // ── Departments ───────────────────────────────────────────────────────────────

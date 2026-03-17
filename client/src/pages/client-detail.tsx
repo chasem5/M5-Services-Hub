@@ -370,8 +370,16 @@ function LinkedInSyncButton({
   return null;
 }
 
-function BuildOpsStatusBadge({ buildopsId }: { buildopsId?: string | null }) {
+function BuildOpsStatusBadge({ buildopsId, buildopsStatus }: { buildopsId?: string | null; buildopsStatus?: string | null }) {
   if (!buildopsId) return null;
+  if (buildopsStatus === "inactive") {
+    return (
+      <Badge variant="outline" className="h-6 text-xs gap-1 px-2 border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800" data-testid="badge-buildops-inactive">
+        <Zap className="h-3 w-3" />
+        Inactive in BuildOps
+      </Badge>
+    );
+  }
   return (
     <Badge variant="outline" className="h-6 text-xs gap-1 px-2 border-green-200 bg-green-50 text-green-700 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800" data-testid="badge-buildops-linked">
       <Zap className="h-3 w-3" />
@@ -1260,7 +1268,7 @@ export default function ClientDetail() {
           </div>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-muted-foreground">{client.industry || "No industry specified"}</p>
-            <BuildOpsStatusBadge buildopsId={(client as any).buildopsId} />
+            <BuildOpsStatusBadge buildopsId={(client as any).buildopsId} buildopsStatus={(client as any).buildopsStatus} />
           </div>
         </div>
       </div>
@@ -2959,6 +2967,16 @@ export default function ClientDetail() {
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${b.type === "office" ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"}`}>
                               {b.type === "office" ? "Office" : "Building"}
                             </span>
+                            {(b as any).propertyType && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300 font-medium capitalize">
+                                {(b as any).propertyType.replace(/_/g, " ")}
+                              </span>
+                            )}
+                            {(b as any).buildopsIsInactive && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium">
+                                Inactive
+                              </span>
+                            )}
                           </div>
                           {b.type === "building" && <p className="text-[11px] text-muted-foreground truncate">{b.contactName}</p>}
                           {b.address && <AddressLink address={b.address} className="text-xs text-muted-foreground mt-0.5 truncate" />}

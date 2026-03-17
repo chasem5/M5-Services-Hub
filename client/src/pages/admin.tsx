@@ -198,9 +198,25 @@ function BuildOpsPanel() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      toast({ title: "Sync complete", description: `${data.created} imported, ${data.updated} matched of ${data.total} BuildOps customers` });
+      const parts = [`${data.created} imported`, `${data.updated} updated`];
+      if (data.inactive > 0) parts.push(`${data.inactive} inactive`);
+      toast({ title: "Sync complete", description: `${parts.join(", ")} of ${data.total} BuildOps customers` });
     },
     onError: (err: any) => toast({ title: "Sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  const syncRepresentativesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/sync-representatives", {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({ title: "Representatives synced", description: `${data.created} created, ${data.updated} updated across ${data.clientsProcessed} clients` });
+    },
+    onError: (err: any) => toast({ title: "Representatives sync failed", description: err.message, variant: "destructive" }),
   });
 
   const pushAllMutation = useMutation({
@@ -362,13 +378,13 @@ function BuildOpsPanel() {
               Sync is locked until the connection is verified. Save credentials and click "Test Connection" above.
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="border rounded-lg p-4 space-y-2">
               <h4 className="text-sm font-medium flex items-center gap-2">
                 <RefreshCw className="h-4 w-4 text-primary" />
                 Pull Customers
               </h4>
-              <p className="text-xs text-muted-foreground">Import BuildOps customers into M5 CRM. Matches by BuildOps ID or name/email.</p>
+              <p className="text-xs text-muted-foreground">Import BuildOps customers and refresh all fields. Updates name, phone, address, status on every run.</p>
               <Button
                 variant="outline"
                 size="sm"
@@ -386,7 +402,7 @@ function BuildOpsPanel() {
                 <Building2 className="h-4 w-4 text-primary" />
                 Sync Properties
               </h4>
-              <p className="text-xs text-muted-foreground">Pull BuildOps properties into CRM buildings. Links each property to its customer for quote matching.</p>
+              <p className="text-xs text-muted-foreground">Pull BuildOps properties into CRM buildings. Stores property type and inactive status.</p>
               <Button
                 variant="outline"
                 size="sm"
@@ -397,6 +413,24 @@ function BuildOpsPanel() {
               >
                 {syncPropertiesMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Building2 className="h-3.5 w-3.5 mr-1.5" />}
                 {syncPropertiesMutation.isPending ? "Syncing..." : "Sync Properties"}
+              </Button>
+            </div>
+            <div className="border rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                Sync Representatives
+              </h4>
+              <p className="text-xs text-muted-foreground">Pull BuildOps customer representatives into CRM contacts. Deduplicates by BuildOps ID or email.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => syncRepresentativesMutation.mutate()}
+                disabled={syncRepresentativesMutation.isPending || connStatus !== "ok"}
+                data-testid="button-buildops-sync-representatives"
+              >
+                {syncRepresentativesMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Users className="h-3.5 w-3.5 mr-1.5" />}
+                {syncRepresentativesMutation.isPending ? "Syncing..." : "Sync Representatives"}
               </Button>
             </div>
             <div className="border rounded-lg p-4 space-y-2">

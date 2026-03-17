@@ -3591,6 +3591,29 @@ Respond with this JSON:
       const allClients = await storage.listClients();
       let created = 0;
       let updated = 0;
+      let inactive = 0;
+
+      const buildFieldsFromCustomer = (customer: any) => {
+        const billing = customer.addresses?.find((a: any) => a.addressType === "billing") ?? customer.addresses?.[0] ?? null;
+        const isInactive = customer.isActive === false || (customer.status && customer.status.toLowerCase() !== "active");
+        return {
+          name: customer.name || "Unnamed",
+          email: customer.email || null,
+          phone: customer.phonePrimary || null,
+          phoneAlternate: customer.phoneAlternate || null,
+          website: customer.websiteUrl || customer.website || null,
+          addressStreet: billing?.street || null,
+          addressCity: billing?.city || null,
+          addressState: billing?.state || null,
+          addressZip: billing?.zipCode || null,
+          buildopsCustomerType: customer.customerType || null,
+          buildopsStatus: isInactive ? "inactive" : "active",
+          buildopsAccountNumber: customer.accountNumber || null,
+          buildopsCustomerNumber: customer.customerNumber || null,
+          buildopsLastSyncedAt: new Date(),
+          buildopsId: customer.id,
+        };
+      };
 
       for (const customer of allCustomers) {
         const boName = (customer.name || "").toLowerCase().trim();
@@ -3599,25 +3622,24 @@ Respond with this JSON:
           (boEmail ? allClients.find(c => c.email && c.email.toLowerCase().trim() === boEmail && !c.buildopsId) : null) ||
           allClients.find(c => c.name.toLowerCase().trim() === boName && !c.buildopsId);
 
+        const fields = buildFieldsFromCustomer(customer);
+        const isInactive = fields.buildopsStatus === "inactive";
+
         if (existing) {
+          await storage.updateClient(existing.id, fields);
+          if (isInactive) inactive++;
+          else updated++;
           if (!existing.buildopsId) {
-            await storage.updateClient(existing.id, { buildopsId: customer.id });
-            await storage.createBuildopsSyncLog({ entityType: "client", entityId: existing.id, buildopsId: customer.id, action: "pull", message: `Matched by name: ${existing.name}` });
-            updated++;
+            await storage.createBuildopsSyncLog({ entityType: "client", entityId: existing.id, buildopsId: customer.id, action: "pull", message: `Matched and linked: ${existing.name}` });
           }
         } else {
-          const newClient = await storage.createClient({
-            name: customer.name || "Unnamed",
-            email: customer.email || null,
-            phone: customer.phonePrimary || null,
-            buildopsId: customer.id,
-          });
+          const newClient = await storage.createClient(fields);
           await storage.createBuildopsSyncLog({ entityType: "client", entityId: newClient.id, buildopsId: customer.id, action: "pull", message: `Imported from BuildOps` });
           created++;
         }
       }
 
-      res.json({ ok: true, created, updated, total: allCustomers.length });
+      res.json({ ok: true, created, updated, inactive, total: allCustomers.length });
     } catch (err: any) {
       await storage.createBuildopsSyncLog({ entityType: "client", action: "error", message: err.message });
       res.status(500).json({ message: err.message });
@@ -3634,7 +3656,7 @@ Respond with this JSON:
       if (!client) return res.status(404).json({ message: "Client not found" });
 
       const { createCustomer, updateCustomer, mapClientToCustomer } = await import("./buildops");
-      const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone });
+      const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone, phoneAlternate: client.phoneAlternate, website: client.website, addressStreet: client.addressStreet, addressCity: client.addressCity, addressState: client.addressState, addressZip: client.addressZip });
 
       let buildopsCustomer: any;
       if (client.buildopsId) {
@@ -3666,7 +3688,7 @@ Respond with this JSON:
       let errors = 0;
       for (const client of withoutId) {
         try {
-          const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone });
+          const payload = mapClientToCustomer({ name: client.name, email: client.email, phone: client.phone, phoneAlternate: client.phoneAlternate, website: client.website, addressStreet: client.addressStreet, addressCity: client.addressCity, addressState: client.addressState, addressZip: client.addressZip });
           const buildopsCustomer = await createCustomer(creds.clientId, creds.clientSecret, creds.tenantId, payload);
           await storage.updateClient(client.id, { buildopsId: buildopsCustomer.id });
           await storage.createBuildopsSyncLog({ entityType: "client", entityId: client.id, buildopsId: buildopsCustomer.id, action: "push", message: "Bulk push" });
@@ -4084,6 +4106,8 @@ Respond with this JSON:
           : null;
 
         const name = prop.companyName || `Property ${prop.id.slice(0, 8)}`;
+        const propertyType = prop.customerPropertyTypeValue || null;
+        const isInactive = prop.isActive === false;
 
         const existing = existingBuildings.find(b => b.buildopsId === prop.id);
 
@@ -4091,6 +4115,8 @@ Respond with this JSON:
           await db.update(contactBuildings).set({
             clientId: matchedClient?.id ?? existing.clientId,
             name,
+            propertyType,
+            buildopsIsInactive: isInactive,
           }).where(eq(contactBuildings.id, existing.id));
           updated++;
         } else {
@@ -4098,6 +4124,8 @@ Respond with this JSON:
             buildopsId: prop.id,
             clientId: matchedClient?.id ?? null,
             name,
+            propertyType,
+            buildopsIsInactive: isInactive,
           });
           created++;
         }
@@ -4118,11 +4146,85 @@ Respond with this JSON:
     }
   });
 
+  // ── Sync Representatives from BuildOps → CRM client contacts ──────────────
+  app.post("/api/buildops/sync-representatives", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getRepresentatives } = await import("./buildops");
+      const { db } = await import("./db");
+      const { eq, and } = await import("drizzle-orm");
+      const { clientContacts } = await import("@shared/schema");
+
+      const allClients = await storage.listClients();
+      const syncedClients = allClients.filter(c => c.buildopsId);
+
+      let created = 0;
+      let updated = 0;
+      let errors = 0;
+
+      for (const client of syncedClients) {
+        try {
+          const reps = await getRepresentatives(creds.clientId, creds.clientSecret, creds.tenantId, client.buildopsId!);
+          const allContactsForClient = await db.select().from(clientContacts).where(eq(clientContacts.clientId, client.id));
+          for (const rep of reps) {
+            const fullName = rep.name || [rep.firstName, rep.middleName, rep.lastName].filter(Boolean).join(" ") || "Unknown";
+            const email = rep.email || null;
+
+            const existingContact = allContactsForClient.find(c =>
+              (rep.id && c.buildopsId === rep.id) ||
+              (email && c.email === email) ||
+              c.name === fullName
+            );
+            const existing = existingContact ? [existingContact] : [];
+
+            if (existing.length > 0) {
+              await db.update(clientContacts).set({
+                name: fullName,
+                email,
+                phone: rep.phone || null,
+                title: rep.title || null,
+                buildopsId: rep.id,
+              }).where(eq(clientContacts.id, existing[0].id));
+              updated++;
+            } else {
+              await db.insert(clientContacts).values({
+                clientId: client.id,
+                buildopsId: rep.id,
+                name: fullName,
+                email,
+                phone: rep.phone || null,
+                title: rep.title || null,
+                isPrimary: false,
+              });
+              created++;
+            }
+          }
+        } catch (repErr: any) {
+          console.warn(`[BuildOps sync-reps] Error for client ${client.id}: ${repErr.message}`);
+          errors++;
+        }
+      }
+
+      await storage.createBuildopsSyncLog({
+        entityType: "contact",
+        action: "pull",
+        message: `Synced representatives: ${created} created, ${updated} updated, ${errors} client errors`,
+      });
+
+      res.json({ ok: true, created, updated, errors, clientsProcessed: syncedClients.length });
+    } catch (err: any) {
+      console.error("[BuildOps sync-representatives] Error:", err.message);
+      await storage.createBuildopsSyncLog({ entityType: "contact", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/buildops/sync-quotes", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
-      const { getQuotes } = await import("./buildops");
+      const { getQuotes, mapBuildOpsStatusToStage } = await import("./buildops");
       const { db } = await import("./db");
       const { eq } = await import("drizzle-orm");
       const { leads: leadsTable, contactBuildings } = await import("@shared/schema");
@@ -4137,7 +4239,7 @@ Respond with this JSON:
       }
 
       const extractTotal = (q: any): string | null => {
-        const raw = q.totalAmount ?? q.total ?? q.amount ?? q.grandTotal ?? q.quoteTotal ?? q.priceTotal ?? q.subtotal;
+        const raw = q.totalAmountQuoted ?? q.totalAmount ?? q.total ?? q.amount ?? q.grandTotal ?? q.quoteTotal ?? q.priceTotal ?? q.subtotal;
         return raw != null && raw !== "" ? String(raw) : null;
       };
 
@@ -4172,12 +4274,14 @@ Respond with this JSON:
         }
 
         let resolvedPropertyId: string | null = null;
+        let resolvedBuildingId: number | null = null;
         if (!matchedClient && quote.propertyId) {
           const building = allBuildings.find(b => b.buildopsId === quote.propertyId);
           if (building?.clientId) {
             matchedClient = allClients.find(c => c.id === building.clientId) ?? null;
             if (matchedClient) {
               resolvedPropertyId = quote.propertyId;
+              resolvedBuildingId = building.id;
               matchedViaProperty++;
               console.log(`[BuildOps sync-quotes] Property match: quote #${quote.quoteNumber} → property ${quote.propertyId} → client ${matchedClient.id} (${matchedClient.name})`);
             }
@@ -4187,6 +4291,8 @@ Respond with this JSON:
         const quoteTitle = quote.name ?? (quote.quoteNumber ? `Quote #${quote.quoteNumber}` : `BuildOps Quote ${quote.id}`);
         const total = extractTotal(quote);
         const status = normalizeStatus(quote.status);
+        const mappedStage = mapBuildOpsStatusToStage(status);
+        const expirationDate = quote.expirationDate ? new Date(quote.expirationDate) : null;
 
         const existingLead = allLeads.find((l: any) => l.buildopsQuoteId === quote.id);
 
@@ -4195,7 +4301,9 @@ Respond with this JSON:
             buildopsQuoteStatus: status,
             buildopsQuoteNumber: quote.quoteNumber ? String(quote.quoteNumber) : null,
             buildopsQuoteTotal: total,
+            buildopsExpirationDate: expirationDate,
             title: quoteTitle,
+            stage: mappedStage,
             value: total ?? existingLead.value,
             updatedAt: new Date(),
           };
@@ -4206,18 +4314,23 @@ Respond with this JSON:
           if (resolvedPropertyId) {
             updateFields.buildopsPropertyId = resolvedPropertyId;
           }
+          if (resolvedBuildingId && !existingLead.buildingId) {
+            updateFields.buildingId = resolvedBuildingId;
+          }
           await db.update(leadsTable).set(updateFields).where(eq(leadsTable.id, existingLead.id));
           updated++;
         } else {
           const [newLead] = await db.insert(leadsTable).values({
             title: quoteTitle,
             clientId: matchedClient?.id ?? null,
-            stage: "proposal_sent",
+            stage: mappedStage,
+            buildingId: resolvedBuildingId ?? null,
             buildopsQuoteId: quote.id,
             buildopsQuoteStatus: status,
             buildopsQuoteNumber: quote.quoteNumber ? String(quote.quoteNumber) : null,
             buildopsQuoteTotal: total,
             buildopsPropertyId: resolvedPropertyId,
+            buildopsExpirationDate: expirationDate,
             value: total ?? "0",
             contractType: "one_time",
             createdAt: new Date(),
