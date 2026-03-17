@@ -443,6 +443,8 @@ export default function Customers() {
   const [isBulkCompanyEditOpen, setIsBulkCompanyEditOpen] = useState(false);
   const [isBulkContactEditOpen, setIsBulkContactEditOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
+  const [isEditClientOpen, setIsEditClientOpen] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
 
   const bulkDeleteClientsMutation = useMutation({
     mutationFn: (ids: number[]) => apiRequest("DELETE", "/api/clients/bulk", { ids }),
@@ -600,6 +602,28 @@ export default function Customers() {
     },
   });
 
+  const updateClientMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await apiRequest("PUT", `/api/clients/${id}`, data);
+      return res.json();
+    },
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      const prevParent = editingClient?.parentClientId ?? null;
+      const newParent = variables.data.parentClientId ?? null;
+      let desc = "Company details updated.";
+      if (newParent !== prevParent) {
+        desc = newParent ? "Parent company set successfully." : "Parent company removed.";
+      }
+      toast({ title: "Saved", description: desc });
+      setIsEditClientOpen(false);
+      setEditingClient(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error saving company", description: error.message, variant: "destructive" });
+    },
+  });
+
   const deleteClientMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/clients/${id}`);
@@ -750,6 +774,16 @@ export default function Customers() {
       website: "",
       logoUrl: "",
       annualRevenue: null as string | null,
+      parentClientId: null as number | null,
+    },
+  });
+
+  const editClientForm = useForm({
+    resolver: zodResolver(insertClientSchema.partial()),
+    defaultValues: {
+      name: "",
+      industry: "",
+      tier: null as string | null,
       parentClientId: null as number | null,
     },
   });
@@ -1399,6 +1433,126 @@ export default function Customers() {
           </DialogContent>
         </Dialog>
 
+        {/* Edit Company Dialog */}
+        <Dialog open={isEditClientOpen} onOpenChange={(open) => { setIsEditClientOpen(open); if (!open) setEditingClient(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Company</DialogTitle>
+              <DialogDescription>
+                Update company details. Changes save immediately.
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...editClientForm}>
+              <form
+                onSubmit={editClientForm.handleSubmit((data) => {
+                  if (!editingClient) return;
+                  updateClientMutation.mutate({ id: editingClient.id, data });
+                })}
+                className="space-y-4 pt-2"
+              >
+                <FormField
+                  control={editClientForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Company Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter company name" {...field} data-testid="input-edit-client-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editClientForm.control}
+                  name="industry"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Industry</FormLabel>
+                      <Select
+                        value={field.value || "__none__"}
+                        onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
+                      >
+                        <SelectTrigger data-testid="select-edit-client-industry">
+                          <SelectValue placeholder="Select industry..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— None —</SelectItem>
+                          {industryOptionLabels.map(v => (
+                            <SelectItem key={v} value={v}>{v}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editClientForm.control}
+                  name="tier"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Customer Tier</FormLabel>
+                      <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-client-tier">
+                            <SelectValue placeholder="No Tier" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No Tier</SelectItem>
+                          <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                          <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                          <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editClientForm.control}
+                  name="parentClientId"
+                  render={({ field }) => {
+                    const childrenOfEditing = editingClient
+                      ? (clients ?? []).filter(c => c.parentClientId === editingClient.id)
+                      : [];
+                    const isAlreadyParent = childrenOfEditing.length > 0;
+                    const parentOptions = (clients ?? [])
+                      .filter(c => c.id !== editingClient?.id && !c.parentClientId)
+                      .map(c => ({ value: String(c.id), label: c.name }));
+                    return (
+                      <FormItem>
+                        <FormLabel>Parent Company</FormLabel>
+                        <FormControl>
+                          <SearchableSelect
+                            options={[{ value: "__none__", label: "— None (top-level) —" }, ...parentOptions]}
+                            value={field.value ? String(field.value) : "__none__"}
+                            onChange={(v) => field.onChange(v === "__none__" ? null : parseInt(v))}
+                            placeholder="Search for a parent company..."
+                            data-testid="select-edit-client-parent-list"
+                            disabled={isAlreadyParent}
+                          />
+                        </FormControl>
+                        {isAlreadyParent
+                          ? <FormDescription className="text-amber-600">This company has sub-companies and cannot be assigned a parent.</FormDescription>
+                          : <FormDescription>Optionally link this company under a parent group.</FormDescription>}
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
+                />
+                <DialogFooter>
+                  <Button variant="outline" type="button" onClick={() => { setIsEditClientOpen(false); setEditingClient(null); }}>Cancel</Button>
+                  <Button type="submit" disabled={updateClientMutation.isPending} data-testid="button-save-edit-client">
+                    {updateClientMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4">
           <TabsTrigger value="companies" className="flex items-center gap-2" data-testid="tab-companies">
@@ -1575,7 +1729,7 @@ export default function Customers() {
                                       )}
                                       {!isChild && hasChildren && (
                                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium border border-primary/20" data-testid={`badge-children-count-${c.id}`}>
-                                          {children!.length} sub
+                                          {children!.length} {children!.length === 1 ? "sub-company" : "sub-companies"}
                                         </span>
                                       )}
                                     </div>
@@ -1657,6 +1811,23 @@ export default function Customers() {
                                       <ExternalLink className="mr-2 h-4 w-4" />
                                       View Details
                                     </Link>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    data-testid={`button-edit-customer-${c.id}`}
+                                    onClick={() => {
+                                      setEditingClient(c);
+                                      editClientForm.reset({
+                                        name: c.name,
+                                        industry: c.industry || "",
+                                        tier: c.tier ?? null,
+                                        parentClientId: c.parentClientId ?? null,
+                                      });
+                                      setIsEditClientOpen(true);
+                                    }}
+                                  >
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Edit Company
                                   </DropdownMenuItem>
                                   <DropdownMenuItem 
                                     className="text-destructive focus:text-destructive cursor-pointer"

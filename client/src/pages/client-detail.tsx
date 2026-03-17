@@ -946,11 +946,17 @@ export default function ClientDetail() {
       const res = await apiRequest("PUT", `/api/clients/${clientId}`, data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "children"] });
-      toast({ title: "Success", description: "Client updated successfully" });
+      const prevParent = client?.parentClientId ?? null;
+      const newParent = variables?.parentClientId ?? null;
+      let desc = "Company details saved.";
+      if (newParent !== prevParent) {
+        desc = newParent ? "Parent company set successfully." : "Parent company removed.";
+      }
+      toast({ title: "Saved", description: desc });
       setIsEditCompanyOpen(false);
     },
     onError: (error: Error) => {
