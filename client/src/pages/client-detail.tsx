@@ -3571,6 +3571,8 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
                   <th className="py-2 px-3 font-medium">Type</th>
                   <th className="py-2 px-3 font-medium">Status</th>
                   <th className="py-2 px-3 font-medium text-right">Revenue</th>
+                  <th className="py-2 px-3 font-medium text-right">Labor</th>
+                  <th className="py-2 px-3 font-medium text-right">Material</th>
                   <th className="py-2 px-3 font-medium text-right">Cost</th>
                   <th className="py-2 px-3 font-medium text-right">Margin</th>
                   <th className="py-2 px-3 font-medium">Property</th>
@@ -3592,6 +3594,8 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
                         <Badge variant="outline" className={cn("text-xs", statusColor(job.status))}>{job.status || "Unknown"}</Badge>
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono">{fmt(job.totalAmount ?? job.amountQuoted)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{fmt(job.laborCost)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{fmt(job.materialCost)}</td>
                       <td className="py-2.5 px-3 text-right font-mono">{fmt(job.costAmount)}</td>
                       <td className={cn("py-2.5 px-3 text-right font-mono", margin > 0 ? "text-green-600" : margin < 0 ? "text-red-600" : "")}>{fmt(margin)}</td>
                       <td className="py-2.5 px-3 text-xs max-w-[150px] truncate">{job.customerPropertyName || "—"}</td>
@@ -3722,6 +3726,7 @@ function BuildOpsInvoicesTab({ clientId }: { clientId: number }) {
 }
 
 function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
+  const [showAll, setShowAll] = useState(false);
   const { data: agreements, isLoading } = useQuery<any[]>({
     queryKey: ["/api/clients", clientId, "buildops-agreements"],
     queryFn: async () => {
@@ -3756,17 +3761,29 @@ function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
 
   if (isLoading) return <Card className="border-none shadow-sm bg-card"><CardContent className="p-6"><Skeleton className="h-40 w-full" /></CardContent></Card>;
 
-  const sorted = [...(agreements ?? [])].sort((a, b) => {
+  const allSorted = [...(agreements ?? [])].sort((a, b) => {
     const aDate = a.startDate ? new Date(a.startDate).getTime() : 0;
     const bDate = b.startDate ? new Date(b.startDate).getTime() : 0;
     return bDate - aDate;
   });
+  const sorted = showAll ? allSorted : allSorted.filter(a => {
+    const s = deriveAgrStatus(a);
+    return s === "active" || s === "draft" || s === "confirmed";
+  });
+  const activeCount = allSorted.filter(a => deriveAgrStatus(a) === "active").length;
 
   return (
     <Card className="border-none shadow-sm bg-card">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><FileSignature className="h-5 w-5" /> Service Agreements</CardTitle>
-        <CardDescription>{sorted.length} agreements synced from BuildOps</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2"><FileSignature className="h-5 w-5" /> Service Agreements</CardTitle>
+            <CardDescription>{activeCount} active of {allSorted.length} total agreements</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setShowAll(!showAll)} data-testid="button-toggle-agreements-filter">
+            {showAll ? "Show Active" : "Show All"}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {sorted.length === 0 ? (
