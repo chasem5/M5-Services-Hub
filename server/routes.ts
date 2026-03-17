@@ -4095,7 +4095,7 @@ Respond with this JSON:
       const { contactBuildings } = await import("@shared/schema");
 
       let allProperties: any[] = [];
-      let page = 0;
+      let page = 1;
       while (true) {
         const batch = await getProperties(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
         allProperties = allProperties.concat(batch.items);

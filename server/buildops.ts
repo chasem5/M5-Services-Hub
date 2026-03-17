@@ -276,7 +276,7 @@ export async function getRepresentatives(
   try {
     const token = await getToken(clientId, clientSecret);
     const res = await fetch(
-      `${BASE_URL}/v1/customers/${customerId}/representatives?page=0&page_size=50`,
+      `${BASE_URL}/v1/customers/${customerId}/representatives?page=1&limit=50`,
       { headers: buildOpsHeaders(token, tenantId) }
     );
     if (!res.ok) {
@@ -404,12 +404,12 @@ export async function getProperties(
   clientId: string,
   clientSecret: string,
   tenantId: string,
-  page = 0,
+  page = 1,
   pageSize = 100
 ): Promise<{ items: BuildOpsProperty[]; totalCount: number }> {
   const token = await getToken(clientId, clientSecret);
   const res = await fetch(
-    `${BASE_URL}/v1/properties?page=${page}&page_size=${pageSize}`,
+    `${BASE_URL}/v1/properties?page=${page}&limit=${pageSize}`,
     { headers: buildOpsHeaders(token, tenantId) }
   );
   if (!res.ok) {
