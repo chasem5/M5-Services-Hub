@@ -527,7 +527,8 @@ export default function Customers() {
   });
 
   const { data: users = [] } = useQuery<Pick<User, "id" | "firstName" | "lastName" | "email">[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users/directory"],
+    enabled: isAdminOrManager,
   });
 
   const { data: allBuildings = [], isLoading: isLoadingBuildings } = useQuery<ContactBuilding[]>({

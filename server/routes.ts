@@ -336,12 +336,29 @@ export async function registerRoutes(
     const r = req as any;
     const currentUserId = r.user?.claims?.sub;
     const filter = String(req.query.filter || "all");
+
+    // Load caller role from DB to enforce scope
+    const callerUser = currentUserId ? await storage.getUser(currentUserId) : null;
+    const isAdminOrManager = callerUser && ["super_admin", "admin", "manager"].includes(callerUser.role ?? "");
+
     let filterUserId: string | undefined;
     if (filter === "mine") {
       filterUserId = currentUserId;
     } else if (filter !== "all") {
-      filterUserId = filter;
+      if (isAdminOrManager) {
+        // Only admins/managers may request other users' data
+        filterUserId = filter;
+      } else {
+        // Non-privileged users: always scope to own data
+        filterUserId = currentUserId;
+      }
+    } else {
+      // filter === "all": only admins/managers see full team data
+      if (!isAdminOrManager) {
+        filterUserId = currentUserId;
+      }
     }
+
     const stats = await storage.getDashboardStats(filterUserId);
     res.json(stats);
   });
