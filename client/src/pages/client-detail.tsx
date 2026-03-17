@@ -3528,15 +3528,15 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
     const n = typeof v === "string" ? parseFloat(v) : v;
     return isNaN(n) ? "—" : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
-  // Parse dates without timezone drift for date-only strings
-  const fmtDate = (d: string | null | undefined) => {
+  // Parse dates without timezone drift — date-only YYYY-MM-DD as local date
+  const fmtDate = (d: string | Date | null | undefined) => {
     if (!d) return "—";
-    // date-only string: parse as local date
-    if (/^\d{4}-\d{2}-\d{2}T/.test(d) || /^\d{4}-\d{2}-\d{2}$/.test(d)) {
-      const parsed = new Date(d);
-      return isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString();
+    if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      const [y, m, day] = d.split("-").map(Number);
+      return new Date(y, m - 1, day).toLocaleDateString();
     }
-    return new Date(d).toLocaleDateString();
+    const parsed = new Date(d as string);
+    return isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString();
   };
 
   const statusColor = (s: string | null | undefined) => {
@@ -3552,7 +3552,14 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
   if (isLoading) return <Card className="border-none shadow-sm bg-card"><CardContent className="p-6"><Skeleton className="h-40 w-full" /></CardContent></Card>;
 
   const sorted = [...(jobs ?? [])].sort((a, b) => (b.jobNumber || "").localeCompare(a.jobNumber || "", undefined, { numeric: true }));
-  const totalRevenue = sorted.reduce((sum, j) => sum + (parseFloat(j.totalAmount) || parseFloat(j.amountQuoted) || 0), 0);
+  const getJobRevenue = (j: any) => {
+    const invoiced = j.invoicedRevenue ?? 0;
+    const total = parseFloat(j.totalAmount) || 0;
+    const quoted = parseFloat(j.amountQuoted) || 0;
+    // Use invoiced amount if available (covers T&M jobs), else totalAmount, else amountQuoted
+    return invoiced > 0 ? invoiced : total > 0 ? total : quoted;
+  };
+  const totalRevenue = sorted.reduce((sum, j) => sum + getJobRevenue(j), 0);
   const totalCost = sorted.reduce((sum, j) => sum + (parseFloat(j.costAmount) || 0), 0);
   const saJobCount = sorted.filter(j => j.isServiceAgreementJob).length;
 
@@ -3605,11 +3612,12 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
               </thead>
               <tbody>
                 {sorted.map((job: any) => {
-                  const revenue = parseFloat(job.totalAmount) || parseFloat(job.amountQuoted) || 0;
+                  const revenue = getJobRevenue(job);
                   const cost = parseFloat(job.costAmount) || 0;
                   const margin = revenue - cost;
                   const isSA = job.isServiceAgreementJob;
                   const isTM = (job.billingType || "").toLowerCase().includes("time") || (job.billingType || "").toLowerCase() === "t&m";
+                  const hasInvoicedRevenue = (job.invoicedRevenue ?? 0) > 0;
                   return (
                     <tr key={job.id} className="border-b hover:bg-muted/50" data-testid={`row-job-${job.id}`}>
                       <td className="py-2.5 px-3 font-mono font-medium">
@@ -3633,7 +3641,10 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
                         <Badge variant="outline" className={cn("text-xs", statusColor(job.status))}>{job.status || "Unknown"}</Badge>
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono">
-                        {isTM && revenue === 0 ? <span className="text-muted-foreground text-xs italic">T&M</span> : fmt(revenue)}
+                        {isTM && !hasInvoicedRevenue
+                          ? <span className="text-muted-foreground text-xs italic" title="T&M — invoiced revenue not yet available">T&M</span>
+                          : <span title={hasInvoicedRevenue ? "Actual invoiced revenue" : undefined}>{fmt(revenue)}</span>
+                        }
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{fmt(job.laborCost)}</td>
                       <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{fmt(job.materialCost)}</td>

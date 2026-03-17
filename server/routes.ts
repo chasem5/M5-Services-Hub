@@ -4449,9 +4449,12 @@ Respond with this JSON:
         if (!job.id) { skipped++; continue; }
         const matchedClient = job.customerId ? clientByBuildopsId.get(job.customerId) : null;
 
-        // scheduled date: try multiple field names from the API
+        // scheduled date: try multiple field names from the API, including nested visits array
         const rawJob = job as any;
-        const scheduledDateRaw = job.scheduledDate ?? job.scheduledStart ?? rawJob.scheduledStartDate ?? rawJob.firstVisitDate ?? rawJob.visitDate ?? null;
+        const visitsScheduled = Array.isArray(rawJob.visits) && rawJob.visits.length > 0
+          ? (rawJob.visits[0].scheduledDate ?? rawJob.visits[0].scheduledStart ?? rawJob.visits[0].start ?? null)
+          : null;
+        const scheduledDateRaw = job.scheduledDate ?? job.scheduledStart ?? rawJob.scheduledStartDate ?? rawJob.firstVisitDate ?? rawJob.visitDate ?? visitsScheduled ?? null;
 
         // SA job: has a serviceAgreementId or job number contains "SA"
         const isSAJob = !!(job.serviceAgreementId) || /SA/i.test(job.jobNumber ?? "");
@@ -4655,10 +4658,23 @@ Respond with this JSON:
       if (!client) return res.status(404).json({ message: "Client not found" });
       if (!client.buildopsId) return res.json([]);
       const { db } = await import("./db");
-      const { eq } = await import("drizzle-orm");
+      const { eq, sql } = await import("drizzle-orm");
       const { buildopsJobs } = await import("@shared/schema");
       const jobs = await db.select().from(buildopsJobs).where(eq(buildopsJobs.clientId, clientId));
-      res.json(jobs);
+      // Enrich each job with actual invoiced revenue (sum of linked invoices)
+      const enriched = await Promise.all(jobs.map(async (job) => {
+        try {
+          const [row] = await db.execute(sql`
+            SELECT COALESCE(SUM(CAST(total_amount AS numeric)), 0) as invoiced_revenue
+            FROM buildops_invoices
+            WHERE buildops_job_id = ${job.buildopsId}
+          `);
+          return { ...job, invoicedRevenue: Number((row as any).invoiced_revenue ?? 0) };
+        } catch {
+          return { ...job, invoicedRevenue: 0 };
+        }
+      }));
+      res.json(enriched);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -5424,6 +5440,39 @@ Guidelines:
         trendDirection, openCount, avgMonthlyJobs, globalAvgMonthly, hitRate
       );
 
+      // SA rows: contract value vs actual invoiced revenue per agreement
+      const saRows = await db.execute(sql`
+        SELECT
+          a.buildops_id,
+          a.agreement_number,
+          a.agreement_name,
+          a.status,
+          a.start_date,
+          a.end_date,
+          a.frequency,
+          CAST(a.contract_value AS numeric) as contract_value,
+          COALESCE(SUM(CAST(i.total_amount AS numeric)), 0) as total_invoiced
+        FROM buildops_agreements a
+        LEFT JOIN buildops_jobs j ON j.buildops_service_agreement_id = a.buildops_id
+          AND j.client_id = ${clientId}
+        LEFT JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
+        WHERE a.client_id = ${clientId}
+        GROUP BY a.buildops_id, a.agreement_number, a.agreement_name, a.status,
+                 a.start_date, a.end_date, a.frequency, a.contract_value
+        ORDER BY a.start_date DESC
+      `);
+      const serviceAgreements = (saRows as any[]).map(r => ({
+        buildopsId: r.buildops_id as string,
+        agreementNumber: r.agreement_number as string,
+        agreementName: r.agreement_name as string,
+        status: r.status as string,
+        startDate: r.start_date,
+        endDate: r.end_date,
+        frequency: r.frequency as string,
+        contractValue: r.contract_value != null ? Number(r.contract_value) : null,
+        totalInvoiced: Number(r.total_invoiced ?? 0),
+      }));
+
       res.json({
         hitRate,
         wonCount,
@@ -5441,6 +5490,7 @@ Guidelines:
         healthStatus,
         dealStages,
         jobsAboveAvg,
+        serviceAgreements,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
