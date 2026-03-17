@@ -137,6 +137,8 @@ export interface BuildOpsServiceAgreement {
   startDate?: string;
   endDate?: string;
   totalAmount?: number;
+  contractValue?: number;
+  frequency?: string;
   customerId?: string;
   advancedSchedulingState?: string;
 }
@@ -527,6 +529,7 @@ export async function getProperties(
 export interface BuildOpsJob {
   id: string;
   jobNumber?: string;
+  title?: string;
   issueDescription?: string;
   status?: string;
   priority?: string;
@@ -534,8 +537,13 @@ export interface BuildOpsJob {
   customerName?: string;
   customerPropertyName?: string;
   amountQuoted?: number;
+  totalAmount?: number;
   costAmount?: number;
+  laborCost?: number;
+  materialCost?: number;
+  grossProfit?: number;
   billingStatus?: string;
+  scheduledDate?: string;
   dueDate?: string;
   completedDate?: string;
   customerId?: string;
