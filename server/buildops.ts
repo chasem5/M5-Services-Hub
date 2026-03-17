@@ -572,6 +572,46 @@ export interface BuildOpsInvoice {
   jobId?: string;
 }
 
+export interface BuildOpsTimeEntry {
+  id: string;
+  jobId?: string;
+  jobNumber?: string;
+  technicianId?: string;
+  technicianName?: string;
+  date?: string;
+  workDate?: string;
+  startTime?: string;
+  endTime?: string;
+  duration?: number;
+  durationHours?: number;
+  hours?: number;
+  laborRate?: number;
+  rate?: number;
+  totalCost?: number;
+  totalLaborCost?: number;
+  laborCost?: number;
+  description?: string;
+  type?: string;
+  entryType?: string;
+  customerId?: string;
+}
+
+export interface BuildOpsPurchaseOrder {
+  id: string;
+  poNumber?: string;
+  jobId?: string;
+  jobNumber?: string;
+  status?: string;
+  vendorName?: string;
+  vendor?: string;
+  totalAmount?: number;
+  total?: number;
+  taxAmount?: number;
+  submittedDate?: string;
+  approvedDate?: string;
+  customerId?: string;
+}
+
 export async function getJobs(
   clientId: string,
   clientSecret: string,
@@ -689,6 +729,66 @@ export async function getServiceAgreements(
     if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
     page++;
     if (page > 50) break;
+  }
+  return all;
+}
+
+export async function getTimeEntries(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  jobId?: string,
+): Promise<BuildOpsTimeEntry[]> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+  const all: BuildOpsTimeEntry[] = [];
+  let page = 1;
+  const limit = 100;
+  while (true) {
+    let url = `${BASE_URL}/v1/time-entries?page=${page}&limit=${limit}`;
+    if (jobId) url += `&jobId=${encodeURIComponent(jobId)}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message ?? `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const items: BuildOpsTimeEntry[] = data.items ?? data ?? [];
+    const totalCount: number = data.totalCount ?? data.total ?? 0;
+    all.push(...items);
+    if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
+    page++;
+    if (page > 500) break;
+  }
+  return all;
+}
+
+export async function getPurchaseOrders(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  jobId?: string,
+): Promise<BuildOpsPurchaseOrder[]> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+  const all: BuildOpsPurchaseOrder[] = [];
+  let page = 1;
+  const limit = 100;
+  while (true) {
+    let url = `${BASE_URL}/v1/purchase-orders?page=${page}&limit=${limit}`;
+    if (jobId) url += `&jobId=${encodeURIComponent(jobId)}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message ?? `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const items: BuildOpsPurchaseOrder[] = data.items ?? data ?? [];
+    const totalCount: number = data.totalCount ?? data.total ?? 0;
+    all.push(...items);
+    if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
+    page++;
+    if (page > 500) break;
   }
   return all;
 }

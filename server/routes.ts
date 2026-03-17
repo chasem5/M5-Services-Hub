@@ -4115,6 +4115,44 @@ Respond with this JSON:
         }
       } catch {}
 
+      // Time Entries — first page sample
+      let timeEntries: any[] = [];
+      let timeEntryCount = 0;
+      let timeEntryDetail: any = null;
+      let timeEntriesError: string | null = null;
+      try {
+        const token = await getToken(creds.clientId, creds.clientSecret);
+        const headers = buildOpsHeaders(token, creds.tenantId);
+        const teRes = await fetch(`${BASE_URL}/v1/time-entries?page=1&limit=10`, { headers });
+        if (teRes.ok) {
+          const teData = await teRes.json();
+          timeEntries = teData.items ?? (Array.isArray(teData) ? teData : []);
+          timeEntryCount = teData.totalCount ?? teData.total ?? timeEntries.length;
+          if (timeEntries.length > 0) timeEntryDetail = timeEntries[0];
+        } else {
+          timeEntriesError = `HTTP ${teRes.status}: ${await teRes.text().catch(() => "")}`;
+        }
+      } catch (e: any) { timeEntriesError = e.message; }
+
+      // Purchase Orders — first page sample
+      let purchaseOrders: any[] = [];
+      let purchaseOrderCount = 0;
+      let purchaseOrderDetail: any = null;
+      let purchaseOrdersError: string | null = null;
+      try {
+        const token = await getToken(creds.clientId, creds.clientSecret);
+        const headers = buildOpsHeaders(token, creds.tenantId);
+        const poRes = await fetch(`${BASE_URL}/v1/purchase-orders?page=1&limit=10`, { headers });
+        if (poRes.ok) {
+          const poData = await poRes.json();
+          purchaseOrders = poData.items ?? (Array.isArray(poData) ? poData : []);
+          purchaseOrderCount = poData.totalCount ?? poData.total ?? purchaseOrders.length;
+          if (purchaseOrders.length > 0) purchaseOrderDetail = purchaseOrders[0];
+        } else {
+          purchaseOrdersError = `HTTP ${poRes.status}: ${await poRes.text().catch(() => "")}`;
+        }
+      } catch (e: any) { purchaseOrdersError = e.message; }
+
       res.json({
         customers,
         customerDetail,
@@ -4130,6 +4168,14 @@ Respond with this JSON:
         invoices,
         invoiceCount,
         invoiceDetail,
+        timeEntries,
+        timeEntryCount,
+        timeEntryDetail,
+        timeEntriesError,
+        purchaseOrders,
+        purchaseOrderCount,
+        purchaseOrderDetail,
+        purchaseOrdersError,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -4649,6 +4695,149 @@ Respond with this JSON:
     }
   });
 
+  app.post("/api/buildops/sync-time-entries", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getTimeEntries } = await import("./buildops");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsTimeEntries, buildopsJobs } = await import("@shared/schema");
+
+      // Build job→client map from already-synced jobs
+      const allJobs = await db.select({ buildopsId: buildopsJobs.buildopsId, clientId: buildopsJobs.clientId }).from(buildopsJobs);
+      const jobClientMap = new Map(allJobs.map(j => [j.buildopsId, j.clientId]));
+
+      const entries = await getTimeEntries(creds.clientId, creds.clientSecret, creds.tenantId);
+      let created = 0, updated = 0, skipped = 0;
+
+      const parseDate = (d?: string | null): Date | null => {
+        if (!d) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          const [y, m, day] = d.split("-").map(Number);
+          return new Date(y, m - 1, day);
+        }
+        const parsed = new Date(d);
+        return isNaN(parsed.getTime()) ? null : parsed;
+      };
+
+      for (const entry of entries) {
+        if (!entry.id) { skipped++; continue; }
+        const raw = entry as any;
+        const buildopsJobId = entry.jobId ?? raw.job_id ?? raw.jobId ?? null;
+        const clientId = buildopsJobId ? (jobClientMap.get(buildopsJobId) ?? null) : null;
+
+        const durationHours = entry.durationHours ?? entry.duration ?? entry.hours ?? raw.totalHours ?? null;
+        const laborRate = entry.laborRate ?? entry.rate ?? raw.hourlyRate ?? null;
+        const totalLaborCost = entry.totalLaborCost ?? entry.totalCost ?? entry.laborCost ?? raw.totalCost ?? (durationHours && laborRate ? durationHours * laborRate : null);
+
+        const payload = {
+          buildopsId: entry.id,
+          clientId: clientId ?? null,
+          buildopsJobId: buildopsJobId ?? null,
+          jobNumber: entry.jobNumber ?? raw.jobNumber ?? null,
+          technicianName: entry.technicianName ?? raw.technicianName ?? raw.employeeName ?? raw.workerName ?? null,
+          technicianId: entry.technicianId ?? raw.technicianId ?? raw.employeeId ?? null,
+          workDate: parseDate(entry.workDate ?? entry.date ?? raw.serviceDate ?? raw.workDate ?? null),
+          startTime: entry.startTime ?? raw.startTime ?? null,
+          endTime: entry.endTime ?? raw.endTime ?? null,
+          durationHours: durationHours != null ? String(durationHours) : null,
+          laborRate: laborRate != null ? String(laborRate) : null,
+          totalLaborCost: totalLaborCost != null ? String(totalLaborCost) : null,
+          description: entry.description ?? raw.notes ?? null,
+          entryType: entry.type ?? entry.entryType ?? raw.type ?? raw.laborType ?? null,
+          syncedAt: new Date(),
+        };
+
+        const [existing] = await db.select().from(buildopsTimeEntries).where(eq(buildopsTimeEntries.buildopsId, entry.id));
+        if (existing) {
+          await db.update(buildopsTimeEntries).set(payload).where(eq(buildopsTimeEntries.buildopsId, entry.id));
+          updated++;
+        } else {
+          await db.insert(buildopsTimeEntries).values(payload);
+          created++;
+        }
+      }
+
+      const msg = `Time entries sync: ${created} created, ${updated} updated, ${skipped} skipped of ${entries.length} total`;
+      console.log(`[sync-time-entries] ${msg}`);
+      await storage.createBuildopsSyncLog({ entityType: "time_entry", action: "pull", message: msg });
+      res.json({ ok: true, created, updated, skipped, total: entries.length });
+    } catch (err: any) {
+      console.error("[BuildOps sync-time-entries] Error:", err.message);
+      await storage.createBuildopsSyncLog({ entityType: "time_entry", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/buildops/sync-purchase-orders", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getPurchaseOrders } = await import("./buildops");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsPurchaseOrders, buildopsJobs } = await import("@shared/schema");
+
+      // Build job→client map from already-synced jobs
+      const allJobs = await db.select({ buildopsId: buildopsJobs.buildopsId, clientId: buildopsJobs.clientId }).from(buildopsJobs);
+      const jobClientMap = new Map(allJobs.map(j => [j.buildopsId, j.clientId]));
+
+      const orders = await getPurchaseOrders(creds.clientId, creds.clientSecret, creds.tenantId);
+      let created = 0, updated = 0, skipped = 0;
+
+      const parseDate = (d?: string | null): Date | null => {
+        if (!d) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          const [y, m, day] = d.split("-").map(Number);
+          return new Date(y, m - 1, day);
+        }
+        const parsed = new Date(d);
+        return isNaN(parsed.getTime()) ? null : parsed;
+      };
+
+      for (const po of orders) {
+        if (!po.id) { skipped++; continue; }
+        const raw = po as any;
+        const buildopsJobId = po.jobId ?? raw.job_id ?? raw.jobId ?? null;
+        const clientId = buildopsJobId ? (jobClientMap.get(buildopsJobId) ?? null) : null;
+
+        const payload = {
+          buildopsId: po.id,
+          clientId: clientId ?? null,
+          buildopsJobId: buildopsJobId ?? null,
+          jobNumber: po.jobNumber ?? raw.jobNumber ?? null,
+          poNumber: po.poNumber ?? raw.poNumber ?? raw.purchaseOrderNumber ?? null,
+          status: po.status ?? null,
+          vendorName: po.vendorName ?? po.vendor ?? raw.vendorName ?? raw.supplierName ?? null,
+          totalAmount: (po.totalAmount ?? po.total ?? raw.totalAmount ?? null) != null ? String(po.totalAmount ?? po.total ?? raw.totalAmount) : null,
+          taxAmount: po.taxAmount != null ? String(po.taxAmount) : null,
+          submittedDate: parseDate(po.submittedDate ?? raw.submittedDate ?? raw.createdDate ?? null),
+          approvedDate: parseDate(po.approvedDate ?? raw.approvedDate ?? null),
+          syncedAt: new Date(),
+        };
+
+        const [existing] = await db.select().from(buildopsPurchaseOrders).where(eq(buildopsPurchaseOrders.buildopsId, po.id));
+        if (existing) {
+          await db.update(buildopsPurchaseOrders).set(payload).where(eq(buildopsPurchaseOrders.buildopsId, po.id));
+          updated++;
+        } else {
+          await db.insert(buildopsPurchaseOrders).values(payload);
+          created++;
+        }
+      }
+
+      const msg = `Purchase orders sync: ${created} created, ${updated} updated, ${skipped} skipped of ${orders.length} total`;
+      console.log(`[sync-purchase-orders] ${msg}`);
+      await storage.createBuildopsSyncLog({ entityType: "purchase_order", action: "pull", message: msg });
+      res.json({ ok: true, created, updated, skipped, total: orders.length });
+    } catch (err: any) {
+      console.error("[BuildOps sync-purchase-orders] Error:", err.message);
+      await storage.createBuildopsSyncLog({ entityType: "purchase_order", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ── Read routes for client BuildOps data ──────────────────────────────────
   app.get("/api/clients/:id/buildops-jobs", isAuthenticated, async (req, res) => {
     try {
@@ -4697,6 +4886,40 @@ Respond with this JSON:
     }
   });
 
+
+  app.get("/api/clients/:id/buildops-time-entries", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+      if (!client.buildopsId) return res.json([]);
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsTimeEntries } = await import("@shared/schema");
+      const entries = await db.select().from(buildopsTimeEntries).where(eq(buildopsTimeEntries.clientId, clientId));
+      res.json(entries);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/clients/:id/buildops-purchase-orders", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+      if (!client.buildopsId) return res.json([]);
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsPurchaseOrders } = await import("@shared/schema");
+      const orders = await db.select().from(buildopsPurchaseOrders).where(eq(buildopsPurchaseOrders.clientId, clientId));
+      res.json(orders);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 
   // Unified quotes list: BuildOps quotes enriched with CRM estimate linkage
   app.get("/api/buildops/quotes-list", isAuthenticated, async (req, res) => {
