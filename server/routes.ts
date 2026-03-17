@@ -3799,16 +3799,24 @@ Respond with this JSON:
   app.get("/api/clients/:id/buildops-agreements", isAuthenticated, async (req, res) => {
     try {
       const clientId = parseInt(req.params.id as string);
+      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
       const client = await storage.getClient(clientId);
       if (!client) return res.status(404).json({ message: "Client not found" });
       if (!client.buildopsId) return res.json([]);
 
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsAgreements } = await import("@shared/schema");
+      const agreements = await db.select().from(buildopsAgreements).where(eq(buildopsAgreements.clientId, clientId));
+      if (agreements.length > 0) {
+        return res.json(agreements);
+      }
+
       const creds = await getBuildOpsCreds();
       if (!creds) return res.json([]);
-
       const { getServiceAgreements } = await import("./buildops");
-      const agreements = await getServiceAgreements(creds.clientId, creds.clientSecret, creds.tenantId, client.buildopsId);
-      res.json(agreements);
+      const liveAgreements = await getServiceAgreements(creds.clientId, creds.clientSecret, creds.tenantId, client.buildopsId);
+      res.json(liveAgreements);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -4356,7 +4364,7 @@ Respond with this JSON:
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
-      const { getAllJobs } = await import("./buildops");
+      const { getJobs } = await import("./buildops");
       const { db } = await import("./db");
       const { eq } = await import("drizzle-orm");
       const { buildopsJobs, clients } = await import("@shared/schema");
@@ -4364,7 +4372,7 @@ Respond with this JSON:
       const allClients = await storage.listClients();
       const clientByBuildopsId = new Map(allClients.filter(c => c.buildopsId).map(c => [c.buildopsId!, c]));
 
-      const jobs = await getAllJobs(creds.clientId, creds.clientSecret, creds.tenantId);
+      const jobs = await getJobs(creds.clientId, creds.clientSecret, creds.tenantId);
       let created = 0, updated = 0, skipped = 0;
 
       for (const job of jobs) {
@@ -4425,7 +4433,7 @@ Respond with this JSON:
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
-      const { getAllInvoices } = await import("./buildops");
+      const { getInvoices } = await import("./buildops");
       const { db } = await import("./db");
       const { eq } = await import("drizzle-orm");
       const { buildopsInvoices } = await import("@shared/schema");
@@ -4433,7 +4441,7 @@ Respond with this JSON:
       const allClients = await storage.listClients();
       const clientByBuildopsId = new Map(allClients.filter(c => c.buildopsId).map(c => [c.buildopsId!, c]));
 
-      const invoices = await getAllInvoices(creds.clientId, creds.clientSecret, creds.tenantId);
+      const invoices = await getInvoices(creds.clientId, creds.clientSecret, creds.tenantId);
       let created = 0, updated = 0, skipped = 0;
 
       for (const inv of invoices) {
@@ -4583,22 +4591,6 @@ Respond with this JSON:
     }
   });
 
-  app.get("/api/clients/:id/buildops-agreements-synced", isAuthenticated, async (req, res) => {
-    try {
-      const clientId = parseInt(req.params.id as string);
-      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
-      const client = await storage.getClient(clientId);
-      if (!client) return res.status(404).json({ message: "Client not found" });
-      if (!client.buildopsId) return res.json([]);
-      const { db } = await import("./db");
-      const { eq } = await import("drizzle-orm");
-      const { buildopsAgreements } = await import("@shared/schema");
-      const agreements = await db.select().from(buildopsAgreements).where(eq(buildopsAgreements.clientId, clientId));
-      res.json(agreements);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
 
   // Unified quotes list: BuildOps quotes enriched with CRM estimate linkage
   app.get("/api/buildops/quotes-list", isAuthenticated, async (req, res) => {

@@ -561,10 +561,11 @@ export interface BuildOpsInvoice {
   jobId?: string;
 }
 
-export async function getAllJobs(
+export async function getJobs(
   clientId: string,
   clientSecret: string,
   tenantId: string,
+  customerId?: string,
 ): Promise<BuildOpsJob[]> {
   const token = await getToken(clientId, clientSecret);
   const headers = buildOpsHeaders(token, tenantId);
@@ -572,10 +573,9 @@ export async function getAllJobs(
   let page = 1;
   const limit = 100;
   while (true) {
-    const res = await fetch(
-      `${BASE_URL}/v1/jobs?page=${page}&limit=${limit}`,
-      { headers }
-    );
+    let url = `${BASE_URL}/v1/jobs?page=${page}&limit=${limit}`;
+    if (customerId) url += `&customer_id=${encodeURIComponent(customerId)}`;
+    const res = await fetch(url, { headers });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.message ?? `HTTP ${res.status}`);
@@ -589,10 +589,11 @@ export async function getAllJobs(
   return allJobs;
 }
 
-export async function getAllInvoices(
+export async function getInvoices(
   clientId: string,
   clientSecret: string,
   tenantId: string,
+  customerId?: string,
 ): Promise<BuildOpsInvoice[]> {
   const token = await getToken(clientId, clientSecret);
   const headers = buildOpsHeaders(token, tenantId);
@@ -600,10 +601,9 @@ export async function getAllInvoices(
   let page = 1;
   const limit = 100;
   while (true) {
-    const res = await fetch(
-      `${BASE_URL}/v1/invoices?page=${page}&limit=${limit}`,
-      { headers }
-    );
+    let url = `${BASE_URL}/v1/invoices?page=${page}&limit=${limit}`;
+    if (customerId) url += `&customer_id=${encodeURIComponent(customerId)}`;
+    const res = await fetch(url, { headers });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.message ?? `HTTP ${res.status}`);

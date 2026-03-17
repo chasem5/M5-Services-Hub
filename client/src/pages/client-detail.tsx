@@ -3629,12 +3629,24 @@ function BuildOpsInvoicesTab({ clientId }: { clientId: number }) {
     return new Date(d).toLocaleDateString();
   };
 
-  const statusColor = (s: string | null | undefined) => {
-    if (!s) return "bg-gray-100 text-gray-700";
-    const sl = s.toLowerCase();
-    if (sl === "exported" || sl === "paid" || sl === "closed") return "bg-green-100 text-green-700";
-    if (sl === "draft" || sl === "open") return "bg-blue-100 text-blue-700";
-    if (sl === "overdue" || sl === "void" || sl === "voided") return "bg-red-100 text-red-700";
+  const deriveStatus = (inv: any) => {
+    const raw = (inv.status || "").toLowerCase();
+    if (raw === "void" || raw === "voided") return "void";
+    if (raw === "draft") return "draft";
+    if (inv.closedDate) return "paid";
+    if (inv.dueDate) {
+      const due = new Date(inv.dueDate);
+      due.setHours(23, 59, 59, 999);
+      if (due < new Date()) return "overdue";
+    }
+    return "unpaid";
+  };
+
+  const statusColor = (s: string) => {
+    if (s === "paid") return "bg-green-100 text-green-700";
+    if (s === "draft") return "bg-blue-100 text-blue-700";
+    if (s === "overdue") return "bg-red-100 text-red-700";
+    if (s === "void") return "bg-gray-100 text-gray-500";
     return "bg-amber-100 text-amber-700";
   };
 
@@ -3682,11 +3694,13 @@ function BuildOpsInvoicesTab({ clientId }: { clientId: number }) {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((inv: any) => (
+                {sorted.map((inv: any) => {
+                  const displayStatus = deriveStatus(inv);
+                  return (
                   <tr key={inv.id} className="border-b hover:bg-muted/50" data-testid={`row-invoice-${inv.id}`}>
                     <td className="py-2.5 px-3 font-mono font-medium">{inv.invoiceNumber || "—"}</td>
                     <td className="py-2.5 px-3">
-                      <Badge variant="outline" className={cn("text-xs", statusColor(inv.status))}>{inv.status || "Unknown"}</Badge>
+                      <Badge variant="outline" className={cn("text-xs", statusColor(displayStatus))}>{displayStatus}</Badge>
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono">{fmt(inv.totalAmount)}</td>
                     <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{fmt(inv.taxAmount)}</td>
@@ -3696,7 +3710,8 @@ function BuildOpsInvoicesTab({ clientId }: { clientId: number }) {
                     <td className="py-2.5 px-3 text-xs">{fmtDate(inv.closedDate)}</td>
                     <td className="py-2.5 px-3 text-xs">{inv.isFinalInvoice ? <Badge variant="outline" className="bg-green-100 text-green-700 text-xs">Final</Badge> : "—"}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -3708,9 +3723,9 @@ function BuildOpsInvoicesTab({ clientId }: { clientId: number }) {
 
 function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
   const { data: agreements, isLoading } = useQuery<any[]>({
-    queryKey: ["/api/clients", clientId, "buildops-agreements-synced"],
+    queryKey: ["/api/clients", clientId, "buildops-agreements"],
     queryFn: async () => {
-      const res = await fetch(`/api/clients/${clientId}/buildops-agreements-synced`, { credentials: "include" });
+      const res = await fetch(`/api/clients/${clientId}/buildops-agreements`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch agreements");
       return res.json();
     },
