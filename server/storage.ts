@@ -43,6 +43,7 @@ import {
   buildopsSyncLog,
   buildopsAgreements,
   buildopsInvoices,
+  buildopsJobs,
   aiFeedback,
   type BuildopsSyncLog,
   type AiFeedback,
@@ -136,6 +137,14 @@ export interface IStorage {
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: number, client: Partial<InsertClient>): Promise<Client>;
   deleteClient(id: number): Promise<void>;
+  listClientChildren(parentId: number, userId?: string): Promise<Client[]>;
+  getClientGroupRollup(parentId: number, childIds: number[], children: Client[]): Promise<{
+    combinedLtv: number;
+    combinedActiveJobs: number;
+    combinedTotalJobs: number;
+    combinedAnnualRevenue: number;
+  }>;
+  migrateParentClientColumn(): Promise<void>;
 
   // Client Offices
   listClientOffices(clientId: number): Promise<ClientOffice[]>;
@@ -467,6 +476,73 @@ export class DatabaseStorage implements IStorage {
 
   async deleteClient(id: number): Promise<void> {
     await db.delete(clients).where(eq(clients.id, id));
+  }
+
+  async listClientChildren(parentId: number, userId?: string): Promise<Client[]> {
+    if (userId) {
+      return await db.select().from(clients)
+        .where(and(eq(clients.parentClientId, parentId), eq(clients.createdBy, userId)))
+        .orderBy(clients.name);
+    }
+    return await db.select().from(clients).where(eq(clients.parentClientId, parentId)).orderBy(clients.name);
+  }
+
+  async getClientGroupRollup(parentId: number, childIds: number[], children: Client[]): Promise<{
+    combinedLtv: number;
+    combinedActiveJobs: number;
+    combinedTotalJobs: number;
+    combinedAnnualRevenue: number;
+  }> {
+    const allIds = [parentId, ...childIds];
+
+    const [ltvRow] = await db
+      .select({ total: sql<string>`COALESCE(SUM(CAST(total_amount AS numeric)), 0)` })
+      .from(buildopsInvoices)
+      .where(inArray(buildopsInvoices.clientId, allIds));
+    const combinedLtv = Number(ltvRow?.total ?? 0);
+
+    const [jobRow] = await db
+      .select({
+        active: sql<string>`COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled'))`,
+        total: sql<string>`COUNT(*)`,
+      })
+      .from(buildopsJobs)
+      .where(inArray(buildopsJobs.clientId, allIds));
+    const combinedActiveJobs = Number(jobRow?.active ?? 0);
+    const combinedTotalJobs = Number(jobRow?.total ?? 0);
+
+    const parentClient = await this.getClient(parentId);
+    const allClients = [parentClient, ...children].filter(Boolean) as Client[];
+    const combinedAnnualRevenue = allClients.reduce(
+      (sum, c) => sum + (c.annualRevenue ? parseFloat(c.annualRevenue) : 0),
+      0
+    );
+
+    return { combinedLtv, combinedActiveJobs, combinedTotalJobs, combinedAnnualRevenue };
+  }
+
+  async migrateParentClientColumn(): Promise<void> {
+    // Step 1: Add column if it doesn't exist (without FK to avoid conflict if column exists)
+    try {
+      await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS parent_client_id integer`);
+    } catch (e) {
+      console.error("migrateParentClientColumn: add column error:", e);
+    }
+    // Step 2: Always attempt to add FK constraint if not present
+    try {
+      await db.execute(sql`DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints
+          WHERE constraint_name = 'clients_parent_client_id_fkey'
+          AND table_name = 'clients'
+        ) THEN
+          ALTER TABLE clients ADD CONSTRAINT clients_parent_client_id_fkey
+            FOREIGN KEY (parent_client_id) REFERENCES clients(id) ON DELETE SET NULL;
+        END IF;
+      END $$`);
+    } catch (e) {
+      console.error("migrateParentClientColumn: FK constraint error:", e);
+    }
   }
 
   // Client Contacts

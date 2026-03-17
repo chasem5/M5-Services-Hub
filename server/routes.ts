@@ -154,6 +154,7 @@ export async function registerRoutes(
   await storage.migrateDashboardFilter();
   await storage.migrateBuildopsClientColumns();
   await storage.migrateBuildopsPropertyColumns();
+  await storage.migrateParentClientColumn();
   // Seed default value tier settings
   await storage.getValueTierSettings();
   // Seed default contact stages on startup
@@ -483,6 +484,15 @@ export async function registerRoutes(
   app.post("/api/clients", isAuthenticated, async (req, res) => {
     const userId = (req as any).user.claims.sub;
     const clientData = insertClientSchema.parse({ ...req.body, createdBy: userId });
+    // Validate parentClientId is not set to a child of the proposed parent (create: no self-ref possible yet)
+    if (clientData.parentClientId != null) {
+      const proposedParent = await storage.getClient(clientData.parentClientId);
+      if (!proposedParent) return res.status(400).json({ message: "Parent company not found" });
+      // Prevent setting parent to a client whose parent is the proposed parent (one level check)
+      if (proposedParent.parentClientId != null) {
+        return res.status(400).json({ message: "Cannot nest more than one level: the selected parent already has a parent" });
+      }
+    }
     const client = await storage.createClient(clientData);
     await logActivity(req, "client", client.id, "created");
     res.json(client);
@@ -498,6 +508,27 @@ export async function registerRoutes(
   app.put("/api/clients/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     const clientData = insertClientSchema.partial().parse(req.body);
+    if (clientData.parentClientId != null) {
+      // Prevent self-parenting
+      if (clientData.parentClientId === id) {
+        return res.status(400).json({ message: "A company cannot be its own parent" });
+      }
+      // Prevent a parent (client with children) from becoming a child — enforces two-level limit
+      const existingChildren = await storage.listClientChildren(id);
+      if (existingChildren.length > 0) {
+        return res.status(400).json({ message: "Cannot assign a parent to this company because it already has sub-companies. Remove all sub-companies first." });
+      }
+      const proposedParent = await storage.getClient(clientData.parentClientId);
+      if (!proposedParent) return res.status(400).json({ message: "Parent company not found" });
+      // Prevent direct cycle: proposed parent must not itself be a child of this client
+      if (proposedParent.parentClientId === id) {
+        return res.status(400).json({ message: "Circular relationship: the selected parent is already a sub-company of this company" });
+      }
+      // Prevent nesting beyond one level: proposed parent must not itself have a parent
+      if (proposedParent.parentClientId != null) {
+        return res.status(400).json({ message: "Cannot nest more than one level: the selected parent already has a parent" });
+      }
+    }
     const client = await storage.updateClient(id, clientData);
     await logActivity(req, "client", client.id, "updated", clientData);
     res.json(client);
@@ -522,6 +553,48 @@ export async function registerRoutes(
     const id = parseInt(req.params.id as string);
     await storage.deleteClient(id);
     res.sendStatus(204);
+  });
+
+  app.get("/api/clients/:id/children", isAuthenticated, async (req, res) => {
+    if (!(await hasModuleAccess(req, "customers"))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const id = parseInt(req.params.id as string);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid client ID" });
+    const scopedUserId = await getScopedUserId(req, "customers");
+    const children = await storage.listClientChildren(id, scopedUserId);
+    res.json(children);
+  });
+
+  app.get("/api/clients/:id/group-rollup", isAuthenticated, async (req, res) => {
+    try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const parentId = parseInt(req.params.id as string);
+      if (isNaN(parentId)) return res.status(400).json({ message: "Invalid client ID" });
+
+      const scopedUserId = await getScopedUserId(req, "customers");
+      const parent = await storage.getClient(parentId);
+      if (!parent) return res.status(404).json({ message: "Client not found" });
+      if (scopedUserId && parent.createdBy !== scopedUserId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const children = await storage.listClientChildren(parentId, scopedUserId);
+      const childIds = children.map(c => c.id);
+      const rollup = await storage.getClientGroupRollup(parentId, childIds, children);
+
+      res.json({
+        parentId,
+        childCount: children.length,
+        totalEntities: childIds.length + 1,
+        ...rollup,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "An error occurred";
+      res.status(500).json({ message: msg });
+    }
   });
 
   // Client Contacts

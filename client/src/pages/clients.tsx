@@ -1,4 +1,4 @@
-import { useState, useRef, lazy, Suspense, useMemo, useEffect } from "react";
+import { useState, useRef, lazy, Suspense, useMemo, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   Plus, 
@@ -27,7 +27,7 @@ import {
   Landmark,
   Target,
   ChevronRight,
-  Map,
+  Map as MapIcon,
   LayoutGrid,
   Layers,
   HardHat,
@@ -403,6 +403,7 @@ export default function Customers() {
   const [contactSortDir, setContactSortDir] = useState<"asc" | "desc">("asc");
   const [companySortField, setCompanySortField] = useState<"name" | "tier" | "industry" | "revenue" | "spend">("name");
   const [companySortDir, setCompanySortDir] = useState<"asc" | "desc">("asc");
+  const [expandedParents, setExpandedParents] = useState<Set<number>>(new Set());
   const { data: industryOptionsList } = useQuery<IndustryOption[]>({ queryKey: ["/api/industry-options"] });
   const industryOptionLabels = industryOptionsList?.map(o => o.label) ?? [];
   const [industryFilter, setIndustryFilter] = useState("all");
@@ -749,6 +750,7 @@ export default function Customers() {
       website: "",
       logoUrl: "",
       annualRevenue: null as string | null,
+      parentClientId: null as number | null,
     },
   });
 
@@ -850,7 +852,45 @@ export default function Customers() {
   const spendByContactId = Object.fromEntries(contactSpendTotals.map(t => [t.contactId, parseFloat(t.total)]));
 
   const tierOrder: Record<string, number> = { tier_1: 0, tier_2: 1, tier_3: 2 };
-  const sortedClients = filteredClients ? [...filteredClients].sort((a, b) => {
+
+  const childrenByParent = useMemo(() => {
+    const map = new Map<number, typeof filteredClients>();
+    if (!filteredClients) return map;
+    for (const c of filteredClients) {
+      if (c.parentClientId) {
+        const existing = map.get(c.parentClientId) ?? [];
+        existing.push(c);
+        map.set(c.parentClientId, existing);
+      }
+    }
+    return map;
+  }, [filteredClients]);
+
+  const childMatchedParentIds = useMemo(() => {
+    const ids = new Set<number>();
+    if (!filteredClients || !clients) return ids;
+    for (const c of filteredClients) {
+      if (c.parentClientId) {
+        ids.add(c.parentClientId);
+      }
+    }
+    return ids;
+  }, [filteredClients, clients]);
+
+  const topLevelClients = useMemo(() => {
+    if (!filteredClients || !clients) return [];
+    const filtered = filteredClients.filter(c => !c.parentClientId);
+    const parentIdsWithMatchedChildren = new Set<number>();
+    for (const c of filteredClients) {
+      if (c.parentClientId) parentIdsWithMatchedChildren.add(c.parentClientId);
+    }
+    const missingParents = clients.filter(
+      c => !c.parentClientId && parentIdsWithMatchedChildren.has(c.id) && !filtered.some(f => f.id === c.id)
+    );
+    return [...filtered, ...missingParents];
+  }, [filteredClients, clients]);
+
+  const sortClients = (list: typeof topLevelClients) => [...list].sort((a, b) => {
     let cmp = 0;
     if (companySortField === "name") {
       cmp = a.name.localeCompare(b.name);
@@ -864,7 +904,18 @@ export default function Customers() {
       cmp = (spendByClientId[a.id] ?? 0) - (spendByClientId[b.id] ?? 0);
     }
     return companySortDir === "asc" ? cmp : -cmp;
-  }) : [];
+  });
+
+  const sortedClients = sortClients(topLevelClients);
+
+  const toggleParentExpand = (parentId: number) => {
+    setExpandedParents(prev => {
+      const next = new Set(prev);
+      if (next.has(parentId)) next.delete(parentId);
+      else next.add(parentId);
+      return next;
+    });
+  };
 
   const formatMoney = (v: number | null | undefined) =>
     v != null && v > 0 ? `$${v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—";
@@ -1195,6 +1246,26 @@ export default function Customers() {
                 />
                 <FormField
                   control={form.control}
+                  name="parentClientId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Parent Company (optional)</FormLabel>
+                      <SearchableSelect
+                        options={[
+                          { value: "__none__", label: "— None (standalone company) —" },
+                          ...(clients ?? []).filter(c => !c.parentClientId).map(c => ({ value: String(c.id), label: c.name }))
+                        ]}
+                        value={field.value != null ? String(field.value) : "__none__"}
+                        onChange={(v) => field.onChange(v === "__none__" ? null : parseInt(v))}
+                        placeholder="Search for parent company..."
+                        data-testid="select-customer-parent"
+                      />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="website"
                   render={({ field }) => (
                     <FormItem>
@@ -1443,194 +1514,256 @@ export default function Customers() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sortedClients.map((client) => (
-                        <TableRow key={client.id} className="hover:bg-muted/30 transition-colors">
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedCompanies.includes(client.id)}
-                              onCheckedChange={(checked) => {
-                                if (checked) setSelectedCompanies(prev => [...prev, client.id]);
-                                else setSelectedCompanies(prev => prev.filter(id => id !== client.id));
-                              }}
-                              data-testid={`checkbox-select-company-${client.id}`}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            <Link 
-                              href={`/customers/${client.id}`}
-                              className="flex items-center gap-3 text-primary hover:underline group"
-                              data-testid={`link-customer-detail-${client.id}`}
-                            >
-                              <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors shrink-0 overflow-hidden">
-                                {client.logoUrl ? (
-                                  <img 
-                                    src={client.logoUrl.startsWith("https://storage.googleapis.com/") ? `/api/clients/${client.id}/logo-img` : client.logoUrl} 
-                                    alt={client.name}
-                                    className="h-full w-full object-cover"
-                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                  />
-                                ) : (
-                                  <Building2 className="h-5 w-5" />
-                                )}
-                              </div>
-                              <div className="flex flex-col gap-1 min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-base">{client.name}</span>
-                                  {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
-                                  {isAdminOrManager && (client as any).buildopsStatus === "inactive" && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-${client.id}`}>Inactive in BuildOps</span>
-                                  )}
-                                </div>
-                                {(client.serviceNeeds ?? []).length > 0 && (
-                                  <div className="flex flex-wrap gap-1">
-                                    {(client.serviceNeeds ?? []).map(need => {
-                                      const labels: Record<string, string> = {
-                                        building_engineering: "Building Eng.",
-                                        facility_solutions: "Facility Sol.",
-                                        janitorial: "Janitorial",
-                                        special_projects: "Special Proj.",
-                                        property_assessment: "Prop. Assessment",
-                                      };
-                                      return (
-                                        <span
-                                          key={need}
-                                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20"
-                                          data-testid={`badge-service-need-${client.id}-${need}`}
-                                        >
-                                          {labels[need] ?? need}
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            </Link>
-                          </TableCell>
-                          <TableCell>
-                            <TierBadge tier={client.tier} data-testid={`badge-tier-${client.id}`} />
-                          </TableCell>
-                          <TableCell>
-                            {client.industry ? (
-                              <Badge variant="secondary" className="font-medium px-2.5 py-0.5">
-                                {client.industry}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground italic text-sm">Not specified</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm font-medium" data-testid={`text-revenue-${client.id}`}>
-                              {client.annualRevenue && parseFloat(client.annualRevenue) > 0
-                                ? `$${parseFloat(client.annualRevenue).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/yr`
-                                : <span className="text-muted-foreground italic text-xs">Not set</span>}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            {(() => {
-                              const spend = spendByClientId[client.id] ?? 0;
-                              const roi = getRoiBadge(client.annualRevenue, spend);
-                              return (
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-sm font-medium" data-testid={`text-spend-${client.id}`}>
-                                    {formatMoney(spend)}
-                                  </span>
-                                  {roi && (
-                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${roi.color}`} data-testid={`badge-roi-${client.id}`}>
-                                      {roi.label}
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </TableCell>
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-customer-actions-${client.id}`}>
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-[160px]">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem asChild>
-                                  <Link href={`/customers/${client.id}`} className="cursor-pointer">
-                                    <ExternalLink className="mr-2 h-4 w-4" />
-                                    View Details
-                                  </Link>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  className="text-destructive focus:text-destructive cursor-pointer"
-                                  onClick={() => {
-                                    setDeleteConfirm({
-                                      label: "Delete company",
-                                      description: `Delete "${client.name}"? This will permanently remove the company and cannot be undone.`,
-                                      onConfirm: () => deleteClientMutation.mutate(client.id),
-                                    });
+                      {sortedClients.map((client) => {
+                        const children = childrenByParent.get(client.id);
+                        const hasChildren = children && children.length > 0;
+                        const isExpanded = expandedParents.has(client.id);
+                        const sortedChildren = hasChildren ? sortClients(children) : [];
+
+                        const renderClientRow = (c: typeof client, isChild: boolean) => (
+                          <TableRow key={c.id} className={`hover:bg-muted/30 transition-colors ${isChild ? "bg-muted/20" : ""}`}>
+                            <TableCell>
+                              <div className={isChild ? "pl-4" : ""}>
+                                <Checkbox
+                                  checked={selectedCompanies.includes(c.id)}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) setSelectedCompanies(prev => [...prev, c.id]);
+                                    else setSelectedCompanies(prev => prev.filter(id => id !== c.id));
                                   }}
-                                  data-testid={`button-delete-customer-${client.id}`}
+                                  data-testid={`checkbox-select-company-${c.id}`}
+                                />
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              <div className={`flex items-center gap-3 ${isChild ? "pl-6" : ""}`}>
+                                {!isChild && hasChildren && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); toggleParentExpand(client.id); }}
+                                    className="shrink-0 p-0.5 rounded hover:bg-muted transition-colors"
+                                    data-testid={`button-expand-parent-${client.id}`}
+                                  >
+                                    {isExpanded
+                                      ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                      : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                                  </button>
+                                )}
+                                {isChild && <span className="w-5 shrink-0 border-l-2 border-b-2 border-border/50 h-4 ml-1 rounded-bl-sm" />}
+                                <Link 
+                                  href={`/customers/${c.id}`}
+                                  className="flex items-center gap-3 text-primary hover:underline group"
+                                  data-testid={`link-customer-detail-${c.id}`}
                                 >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                                  <div className={`${isChild ? "h-7 w-7" : "h-9 w-9"} rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors shrink-0 overflow-hidden`}>
+                                    {c.logoUrl ? (
+                                      <img 
+                                        src={c.logoUrl.startsWith("https://storage.googleapis.com/") ? `/api/clients/${c.id}/logo-img` : c.logoUrl} 
+                                        alt={c.name}
+                                        className="h-full w-full object-cover"
+                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                      />
+                                    ) : (
+                                      <Building2 className={isChild ? "h-4 w-4" : "h-5 w-5"} />
+                                    )}
+                                  </div>
+                                  <div className="flex flex-col gap-1 min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={isChild ? "text-sm" : "text-base"}>{c.name}</span>
+                                      {(c as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
+                                      {isAdminOrManager && (c as any).buildopsStatus === "inactive" && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-${c.id}`}>Inactive in BuildOps</span>
+                                      )}
+                                      {!isChild && hasChildren && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium border border-primary/20" data-testid={`badge-children-count-${c.id}`}>
+                                          {children!.length} sub
+                                        </span>
+                                      )}
+                                    </div>
+                                    {(c.serviceNeeds ?? []).length > 0 && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {(c.serviceNeeds ?? []).map(need => {
+                                          const labels: Record<string, string> = {
+                                            building_engineering: "Building Eng.",
+                                            facility_solutions: "Facility Sol.",
+                                            janitorial: "Janitorial",
+                                            special_projects: "Special Proj.",
+                                            property_assessment: "Prop. Assessment",
+                                          };
+                                          return (
+                                            <span
+                                              key={need}
+                                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20"
+                                              data-testid={`badge-service-need-${c.id}-${need}`}
+                                            >
+                                              {labels[need] ?? need}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </Link>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <TierBadge tier={c.tier} data-testid={`badge-tier-${c.id}`} />
+                            </TableCell>
+                            <TableCell>
+                              {c.industry ? (
+                                <Badge variant="secondary" className="font-medium px-2.5 py-0.5">
+                                  {c.industry}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground italic text-sm">Not specified</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-sm font-medium" data-testid={`text-revenue-${c.id}`}>
+                                {c.annualRevenue && parseFloat(c.annualRevenue) > 0
+                                  ? `$${parseFloat(c.annualRevenue).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/yr`
+                                  : <span className="text-muted-foreground italic text-xs">Not set</span>}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {(() => {
+                                const spend = spendByClientId[c.id] ?? 0;
+                                const roi = getRoiBadge(c.annualRevenue, spend);
+                                return (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-medium" data-testid={`text-spend-${c.id}`}>
+                                      {formatMoney(spend)}
+                                    </span>
+                                    {roi && (
+                                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${roi.color}`} data-testid={`badge-roi-${c.id}`}>
+                                        {roi.label}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-customer-actions-${c.id}`}>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-[160px]">
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/customers/${c.id}`} className="cursor-pointer">
+                                      <ExternalLink className="mr-2 h-4 w-4" />
+                                      View Details
+                                    </Link>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    className="text-destructive focus:text-destructive cursor-pointer"
+                                    onClick={() => {
+                                      setDeleteConfirm({
+                                        label: "Delete company",
+                                        description: `Delete "${c.name}"? This will permanently remove the company and cannot be undone.`,
+                                        onConfirm: () => deleteClientMutation.mutate(c.id),
+                                      });
+                                    }}
+                                    data-testid={`button-delete-customer-${c.id}`}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+
+                        return (
+                          <Fragment key={client.id}>{renderClientRow(client, false)}{isExpanded && sortedChildren.map(child => renderClientRow(child, true))}</Fragment>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
 
                 {/* Mobile Company Card Stack */}
                 <div className="grid grid-cols-1 gap-3 md:hidden">
-                  {sortedClients.map((client) => (
-                    <Link 
-                      key={client.id}
-                      href={`/customers/${client.id}`}
-                      className="block group"
-                      data-testid={`card-company-mobile-${client.id}`}
-                    >
-                      <Card className="hover-elevate transition-shadow overflow-hidden border-border/50">
-                        <CardContent className="p-4 flex items-center gap-4">
-                          <div className="h-12 w-12 rounded bg-primary/10 flex items-center justify-center text-primary shrink-0 overflow-hidden border">
-                            {client.logoUrl ? (
-                              <img 
-                                src={client.logoUrl.startsWith("https://storage.googleapis.com/") ? `/api/clients/${client.id}/logo-img` : client.logoUrl} 
-                                alt={client.name}
-                                className="h-full w-full object-cover"
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            ) : (
-                              <Building2 className="h-6 w-6" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2 mb-1">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <h3 className="font-bold text-sm truncate">{client.name}</h3>
-                                {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
-                                {isAdminOrManager && (client as any).buildopsStatus === "inactive" && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-card-${client.id}`}>Inactive in BuildOps</span>
-                                )}
+                  {sortedClients.map((client) => {
+                    const children = childrenByParent.get(client.id);
+                    const hasChildren = children && children.length > 0;
+                    const isExpanded = expandedParents.has(client.id);
+                    const sortedChildren = hasChildren ? sortClients(children) : [];
+
+                    const renderMobileCard = (c: typeof client, isChild: boolean) => (
+                      <Link 
+                        key={c.id}
+                        href={`/customers/${c.id}`}
+                        className="block group"
+                        data-testid={`card-company-mobile-${c.id}`}
+                      >
+                        <Card className={`hover-elevate transition-shadow overflow-hidden border-border/50 ${isChild ? "ml-6 border-l-2 border-l-primary/30" : ""}`}>
+                          <CardContent className="p-4 flex items-center gap-4">
+                            <div className={`${isChild ? "h-10 w-10" : "h-12 w-12"} rounded bg-primary/10 flex items-center justify-center text-primary shrink-0 overflow-hidden border`}>
+                              {c.logoUrl ? (
+                                <img 
+                                  src={c.logoUrl.startsWith("https://storage.googleapis.com/") ? `/api/clients/${c.id}/logo-img` : c.logoUrl} 
+                                  alt={c.name}
+                                  className="h-full w-full object-cover"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                              ) : (
+                                <Building2 className={isChild ? "h-5 w-5" : "h-6 w-6"} />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <h3 className={`font-bold truncate ${isChild ? "text-xs" : "text-sm"}`}>{c.name}</h3>
+                                  {(c as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
+                                  {isAdminOrManager && (c as any).buildopsStatus === "inactive" && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-card-${c.id}`}>Inactive in BuildOps</span>
+                                  )}
+                                </div>
+                                <TierBadge tier={c.tier} size="xs" />
                               </div>
-                              <TierBadge tier={client.tier} size="xs" />
+                              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                                {c.industry && <span className="truncate">{c.industry}</span>}
+                                {c.industry && <span>•</span>}
+                                <span className="font-medium text-primary">
+                                  {c.annualRevenue && parseFloat(c.annualRevenue) > 0
+                                    ? `$${(parseFloat(c.annualRevenue) / 1000).toFixed(0)}k/yr`
+                                    : "No revenue"}
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                              {client.industry && <span className="truncate">{client.industry}</span>}
-                              {client.industry && <span>•</span>}
-                              <span className="font-medium text-primary">
-                                {client.annualRevenue && parseFloat(client.annualRevenue) > 0
-                                  ? `$${(parseFloat(client.annualRevenue) / 1000).toFixed(0)}k/yr`
-                                  : "No revenue"}
-                              </span>
-                            </div>
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
-                        </CardContent>
-                      </Card>
-                    </Link>
-                  ))}
+                            <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+                          </CardContent>
+                        </Card>
+                      </Link>
+                    );
+
+                    return (
+                      <div key={client.id}>
+                        <div className="relative">
+                          {renderMobileCard(client, false)}
+                          {hasChildren && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleParentExpand(client.id); }}
+                              className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-background border shadow-sm hover:bg-muted transition-colors"
+                              data-testid={`button-expand-parent-mobile-${client.id}`}
+                            >
+                              {isExpanded
+                                ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                              <span className="sr-only">{children!.length} sub-companies</span>
+                            </button>
+                          )}
+                        </div>
+                        {isExpanded && sortedChildren.map(child => renderMobileCard(child, true))}
+                      </div>
+                    );
+                  })}
                 </div>
 
               {selectedCompanies.length > 0 && (
@@ -2606,7 +2739,7 @@ export default function Customers() {
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${buildingViewMode === "map" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                     data-testid="button-view-map"
                   >
-                    <Map className="h-3.5 w-3.5" />
+                    <MapIcon className="h-3.5 w-3.5" />
                     Map
                   </button>
                 </div>

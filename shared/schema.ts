@@ -30,6 +30,7 @@ export const clients = pgTable("clients", {
   buildopsAccountNumber: varchar("buildops_account_number"),
   buildopsCustomerNumber: varchar("buildops_customer_number"),
   buildopsLastSyncedAt: timestamp("buildops_last_synced_at"),
+  parentClientId: integer("parent_client_id"),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -453,6 +454,7 @@ export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   annualRevenue: z.coerce.string().optional().nullable(),
   tier: z.enum(["tier_1", "tier_2", "tier_3"]).optional().nullable(),
+  parentClientId: z.number().int().positive().optional().nullable(),
 });
 export const insertBdSpendEntrySchema = createInsertSchema(bdSpendEntries).omit({ id: true, createdAt: true }).extend({
   date: z.coerce.date(),

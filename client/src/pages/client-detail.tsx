@@ -849,6 +849,15 @@ export default function ClientDetail() {
     queryKey: ["/api/clients"],
   });
 
+  const { data: childClients = [] } = useQuery<Client[]>({
+    queryKey: ["/api/clients", clientId, "children"],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/children`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch sub-companies");
+      return res.json();
+    },
+  });
+
   const { data: clientPortfolios = [] } = useQuery<BuildingPortfolio[]>({
     queryKey: ["/api/portfolios", { clientId }],
     queryFn: async () => {
@@ -939,6 +948,7 @@ export default function ClientDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       toast({ title: "Success", description: "Client updated successfully" });
       setIsEditCompanyOpen(false);
     },
@@ -1123,9 +1133,10 @@ export default function ClientDetail() {
       email: client.email || "",
       website: client.website || "",
       notes: client.notes || "",
-      tier: (client as any).tier ?? null,
-      annualRevenue: (client as any).annualRevenue ?? null,
-      logoUrl: (client as any).logoUrl ?? "",
+      tier: client.tier ?? null,
+      annualRevenue: client.annualRevenue ?? null,
+      logoUrl: client.logoUrl ?? "",
+      parentClientId: client.parentClientId ?? null,
     } : {
       name: "",
       industry: "",
@@ -1137,6 +1148,7 @@ export default function ClientDetail() {
       tier: null,
       annualRevenue: null,
       logoUrl: "",
+      parentClientId: null,
     },
   });
 
@@ -1276,6 +1288,17 @@ export default function ClientDetail() {
                 </Tooltip>
               </TooltipProvider>
             )}
+            {client.parentClientId && (() => {
+              const parent = allClients.find(c => c.id === client.parentClientId);
+              return parent ? (
+                <Link href={`/customers/${parent.id}`} data-testid="badge-parent-company">
+                  <Badge variant="secondary" className="h-6 gap-1 text-xs font-medium hover:bg-secondary/80 cursor-pointer">
+                    <Folders className="h-3 w-3" />
+                    Part of {parent.name}
+                  </Badge>
+                </Link>
+              ) : null;
+            })()}
           </div>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-muted-foreground">{client.industry || "No industry specified"}</p>
@@ -1587,6 +1610,35 @@ export default function ClientDetail() {
                   />
                   <FormField
                     control={clientForm.control}
+                    name="parentClientId"
+                    render={({ field }) => {
+                      const isAlreadyParent = childClients.length > 0;
+                      const parentOptions = (allClients ?? [])
+                        .filter(c => c.id !== clientId && !(childClients ?? []).some(ch => ch.id === c.id) && !c.parentClientId)
+                        .map(c => ({ value: String(c.id), label: c.name }));
+                      return (
+                        <FormItem>
+                          <FormLabel>Parent Company</FormLabel>
+                          <FormControl>
+                            <SearchableSelect
+                              options={[{ value: "__none__", label: "— None (top-level) —" }, ...parentOptions]}
+                              value={field.value ? String(field.value) : "__none__"}
+                              onChange={(v) => field.onChange(v === "__none__" ? null : parseInt(v))}
+                              placeholder="Search for a parent company..."
+                              data-testid="select-edit-client-parent"
+                              disabled={isAlreadyParent}
+                            />
+                          </FormControl>
+                          {isAlreadyParent
+                            ? <FormDescription className="text-amber-600">This company has sub-companies and cannot be assigned a parent.</FormDescription>
+                            : <FormDescription>Optionally link this company under a parent group.</FormDescription>}
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
+                  />
+                  <FormField
+                    control={clientForm.control}
                     name="notes"
                     render={({ field }) => (
                       <FormItem>
@@ -1674,6 +1726,50 @@ export default function ClientDetail() {
             {/* ── BuildOps Service Agreements ── */}
             {(client as any).buildopsId && (
               <BuildOpsAgreementsSection clientId={clientId} />
+            )}
+
+            {/* ── Sub-Companies section (parent view) ── */}
+            {childClients.length > 0 && (
+              <Card className="shadow-sm border-border/40 bg-card" data-testid="card-sub-companies">
+                <CardHeader className="flex flex-row items-center gap-3 pb-3">
+                  <Folders className="h-5 w-5 shrink-0 text-primary" />
+                  <CardTitle className="text-base font-semibold">Sub-Companies ({childClients.length})</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="divide-y divide-border/50">
+                    {childClients.map(child => (
+                      <div key={child.id} className="flex items-center justify-between gap-4 px-6 py-3 hover:bg-muted/30 transition-colors" data-testid={`row-subcompany-${child.id}`}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0 overflow-hidden">
+                            {child.logoUrl ? (
+                              <img src={child.logoUrl.startsWith("https://storage.googleapis.com/") ? `/api/clients/${child.id}/logo-img` : child.logoUrl} alt={child.name} className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                            ) : child.name[0].toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <Link href={`/customers/${child.id}`} className="font-medium text-sm hover:underline text-primary truncate block" data-testid={`link-subcompany-${child.id}`}>
+                              {child.name}
+                            </Link>
+                            {child.industry && <p className="text-xs text-muted-foreground truncate">{child.industry}</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {child.tier && <TierBadge tier={child.tier} size="xs" />}
+                          {child.annualRevenue && parseFloat(child.annualRevenue) > 0 && (
+                            <span className="text-sm font-medium text-muted-foreground" data-testid={`text-subcompany-revenue-${child.id}`}>
+                              ${parseFloat(child.annualRevenue).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/yr
+                            </span>
+                          )}
+                          <Link href={`/customers/${child.id}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`button-view-subcompany-${child.id}`}>
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             )}
 
             {/* ── Two-column section ── */}
@@ -3096,7 +3192,7 @@ export default function ClientDetail() {
             </>
           )}
           <TabsContent value="intelligence" className="m-0">
-            <IntelligenceTab clientId={clientId} />
+            <IntelligenceTab clientId={clientId} childClients={childClients} />
           </TabsContent>
         </div>
       </Tabs>
@@ -3936,7 +4032,17 @@ interface IntelData {
 const fmtCur = (v: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 
-function IntelligenceTab({ clientId }: { clientId: number }) {
+interface GroupRollupData {
+  parentId: number;
+  childCount: number;
+  totalEntities: number;
+  combinedLtv: number;
+  combinedActiveJobs: number;
+  combinedTotalJobs: number;
+  combinedAnnualRevenue: number;
+}
+
+function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; childClients?: Client[] }) {
   const { data, isLoading, isError } = useQuery<IntelData>({
     queryKey: ["/api/clients", clientId, "intelligence"],
     queryFn: async () => {
@@ -3944,6 +4050,17 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
       if (!res.ok) throw new Error("Failed to load intelligence data");
       return res.json();
     },
+  });
+
+  const isParent = childClients.length > 0;
+  const { data: groupRollup } = useQuery<GroupRollupData>({
+    queryKey: ["/api/clients", clientId, "group-rollup"],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/group-rollup`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load group rollup data");
+      return res.json();
+    },
+    enabled: isParent,
   });
 
   const [healthHoverOpen, setHealthHoverOpen] = useState(false);
@@ -4221,6 +4338,53 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
                   {sa.endDate && (
                     <p className="text-xs text-muted-foreground mt-1">Expires {new Date(sa.endDate).toLocaleDateString()}</p>
                   )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Sub-company revenue rollup ── */}
+      {childClients.length > 0 && groupRollup && (
+        <Card className="shadow-sm bg-card border-primary/20" data-testid="card-group-rollup">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Folders className="h-4 w-4 text-primary" />
+              <p className="text-sm font-semibold">Group Rollup — {groupRollup.totalEntities} companies</p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Combined LTV</p>
+                <p className="text-2xl font-heading font-bold mt-1" data-testid="text-group-combined-ltv">{fmtCur(groupRollup.combinedLtv)}</p>
+                <p className="text-xs text-muted-foreground">invoiced across all entities</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Jobs</p>
+                <p className="text-2xl font-heading font-bold mt-1" data-testid="text-group-total-jobs">{groupRollup.combinedTotalJobs}</p>
+                <p className="text-xs text-muted-foreground">{groupRollup.combinedActiveJobs} active</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Annual Revenue</p>
+                <p className="text-2xl font-heading font-bold mt-1" data-testid="text-group-annual-revenue">{fmtCur(groupRollup.combinedAnnualRevenue)}</p>
+                <p className="text-xs text-muted-foreground">from client records</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sub-Company Breakdown</p>
+              {childClients.map(child => (
+                <div key={child.id} className="flex items-center justify-between gap-2 text-sm py-1 border-t border-border/40" data-testid={`row-rollup-${child.id}`}>
+                  <Link href={`/customers/${child.id}`} className="font-medium hover:underline text-primary truncate">
+                    {child.name}
+                  </Link>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {child.tier && <TierBadge tier={child.tier} size="xs" />}
+                    <span className="text-muted-foreground">
+                      {child.annualRevenue && parseFloat(child.annualRevenue) > 0
+                        ? fmtCur(parseFloat(child.annualRevenue))
+                        : "—"}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
