@@ -603,34 +603,32 @@ export async function getJobs(
   return allJobs;
 }
 
-export async function getInvoices(
-  clientId: string,
-  clientSecret: string,
-  tenantId: string,
-  customerId?: string,
+async function fetchInvoicePages(
+  headers: Record<string, string>,
+  customerId: string | undefined,
+  statusFilter: string | null,
 ): Promise<BuildOpsInvoice[]> {
-  const token = await getToken(clientId, clientSecret);
-  const headers = buildOpsHeaders(token, tenantId);
-  const allInvoices: BuildOpsInvoice[] = [];
+  const results: BuildOpsInvoice[] = [];
   let page = 1;
   const limit = 100;
   while (true) {
     let url = `${BASE_URL}/v1/invoices?page=${page}&limit=${limit}`;
     if (customerId) url += `&customer_id=${encodeURIComponent(customerId)}`;
+    if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
     const res = await fetch(url, { headers });
     if (!res.ok) {
+      // If the status filter param is not supported, the API may return 400 — skip gracefully
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.message ?? `HTTP ${res.status}`);
+      console.warn(`[BuildOps invoices] HTTP ${res.status} for status=${statusFilter ?? "none"}: ${body.message ?? "error"}`);
+      break;
     }
     const data = await res.json();
-    // Debug: log response shape on first page to understand pagination structure
     if (page === 1) {
       const keys = Object.keys(data);
       const totalCount = data.totalCount ?? data.total ?? data.count ?? data.totalItems ?? "?";
-      const itemsKey = ["items","data","results","invoices"].find(k => Array.isArray(data[k])) ?? "(none)";
-      console.log(`[BuildOps getInvoices] page=1 keys=${JSON.stringify(keys)} totalCount=${totalCount} itemsKey=${itemsKey}`);
+      const itemsKey = ["items","data","results","invoices"].find(k => Array.isArray((data as any)[k])) ?? "(none)";
+      console.log(`[BuildOps invoices] status=${statusFilter ?? "none"} page=1 keys=${JSON.stringify(keys)} totalCount=${totalCount} itemsKey=${itemsKey}`);
     }
-    // Try multiple possible array field names
     const items: BuildOpsInvoice[] = (
       Array.isArray(data.items) ? data.items :
       Array.isArray(data.data) ? data.data :
@@ -639,14 +637,58 @@ export async function getInvoices(
       Array.isArray(data) ? data : []
     );
     const totalCount: number = data.totalCount ?? data.total ?? data.count ?? data.totalItems ?? 0;
-    allInvoices.push(...items);
-    console.log(`[BuildOps getInvoices] page=${page} got=${items.length} total=${totalCount} accumulated=${allInvoices.length}`);
+    results.push(...items);
+    console.log(`[BuildOps invoices] status=${statusFilter ?? "none"} page=${page} got=${items.length} total=${totalCount} accumulated=${results.length}`);
     if (items.length === 0) break;
-    if (totalCount > 0 && allInvoices.length >= totalCount) break;
-    if (items.length < limit && totalCount === 0) break; // only early-exit if no totalCount signal
+    if (totalCount > 0 && results.length >= totalCount) break;
+    if (items.length < limit && totalCount === 0) break;
     page++;
     if (page > 200) break;
   }
+  return results;
+}
+
+export async function getInvoices(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  customerId?: string,
+): Promise<BuildOpsInvoice[]> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+
+  // BuildOps may default to a single status (e.g. "exported"). Sweep all
+  // common statuses to ensure we capture the full invoice history.
+  const statusesToTry = [
+    null,         // unfiltered — whatever the API default is
+    "exported",
+    "paid",
+    "sent",
+    "approved",
+    "pending",
+    "draft",
+    "void",
+    "voided",
+    "cancelled",
+  ];
+
+  const seen = new Set<string>();
+  const allInvoices: BuildOpsInvoice[] = [];
+
+  for (const status of statusesToTry) {
+    const batch = await fetchInvoicePages(headers, customerId, status);
+    let added = 0;
+    for (const inv of batch) {
+      if (inv.id && !seen.has(inv.id)) {
+        seen.add(inv.id);
+        allInvoices.push(inv);
+        added++;
+      }
+    }
+    console.log(`[BuildOps invoices] status=${status ?? "none"} → ${added} new unique invoices (running total: ${allInvoices.length})`);
+  }
+
+  console.log(`[BuildOps invoices] TOTAL unique invoices fetched: ${allInvoices.length}`);
   return allInvoices;
 }
 

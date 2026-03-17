@@ -5385,18 +5385,12 @@ Guidelines:
       `));
       const dealStages = dealsByStage.map(r => ({ stage: r.stage as string, count: Number(r.cnt) }));
 
-      // ── Revenue: won deal value (primary) + invoice total (secondary) ────
-      const [dealLtvRow] = toRows(await db.execute(sql`
-        SELECT COALESCE(SUM(CAST(value AS numeric)), 0) as ltv
-        FROM leads WHERE client_id = ${clientId} AND stage = 'won'
-      `));
+      // ── Revenue (invoice totals = actual billed amount) ─────────────────
       const [invoiceLtvRow] = toRows(await db.execute(sql`
         SELECT COALESCE(SUM(CAST(total_amount AS numeric)), 0) as ltv
         FROM buildops_invoices WHERE client_id = ${clientId}
       `));
-      const dealLtv = Number(dealLtvRow?.ltv ?? 0);
-      const invoiceLtv = Number(invoiceLtvRow?.ltv ?? 0);
-      const ltv = Math.max(dealLtv, invoiceLtv);
+      const ltv = Number(invoiceLtvRow?.ltv ?? 0);
 
       // ── Job counts ───────────────────────────────────────────────────────
       const [jobStats] = toRows(await db.execute(sql`
@@ -5577,14 +5571,7 @@ Write a punchy, factual summary that highlights what's driving the health status
       `));
       const dealMap = new Map(dealsByClient.map(r => [Number(r.client_id), r]));
 
-      // Won deal LTV per client (primary signal)
-      const wonDealsByClient = toRows(await db.execute(sql`
-        SELECT client_id, COALESCE(SUM(CAST(value AS numeric)), 0) as ltv
-        FROM leads WHERE client_id IS NOT NULL AND stage = 'won' GROUP BY client_id
-      `));
-      const wonDealMap = new Map(wonDealsByClient.map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
-
-      // Invoice LTV per client (use if higher than deal LTV after full sync)
+      // Invoice LTV per client (actual billed amount)
       const invoicesByClient = toRows(await db.execute(sql`
         SELECT client_id, COALESCE(SUM(CAST(total_amount AS numeric)), 0) as ltv
         FROM buildops_invoices WHERE client_id IS NOT NULL GROUP BY client_id
@@ -5648,7 +5635,7 @@ Write a punchy, factual summary that highlights what's driving the health status
         const lost = Number(deals?.lost ?? 0);
         const openDeals = Number(deals?.open_deals ?? 0);
         const pipeline = Number(deals?.pipeline ?? 0);
-        const ltv = Math.max(wonDealMap.get(client.id) ?? 0, invoiceMap.get(client.id) ?? 0);
+        const ltv = invoiceMap.get(client.id) ?? 0;
         const jobs = jobMap.get(client.id) ?? { active: 0, total: 0, last90: 0, prior90: 0 };
         const contractTotal = agrMap.get(client.id) ?? 0;
         const mrr = contractTotal / 12;

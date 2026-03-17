@@ -91,7 +91,7 @@ function HealthBadgeHover({ client }: { client: ClientIntel }) {
 
   return (
     <HoverCard open={open} onOpenChange={handleOpen} openDelay={400}>
-      <HoverCardTrigger asChild>{badgeEl}</HoverCardTrigger>
+      <HoverCardTrigger asChild><span className="inline-block cursor-pointer">{badgeEl}</span></HoverCardTrigger>
       <HoverCardContent className="w-72 text-sm" side="right">
         <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
