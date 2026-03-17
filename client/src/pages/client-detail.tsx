@@ -949,8 +949,12 @@ export default function ClientDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "children"] });
       toast({ title: "Success", description: "Client updated successfully" });
       setIsEditCompanyOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error saving company", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1123,7 +1127,7 @@ export default function ClientDetail() {
 
   // Forms
   const clientForm = useForm({
-    resolver: zodResolver(insertClientSchema),
+    resolver: zodResolver(insertClientSchema.partial()),
     resetOptions: { keepDirtyValues: true },
     values: client ? {
       name: client.name,
@@ -1137,6 +1141,7 @@ export default function ClientDetail() {
       annualRevenue: client.annualRevenue ?? null,
       logoUrl: client.logoUrl ?? "",
       parentClientId: client.parentClientId ?? null,
+      serviceNeeds: (client.serviceNeeds as string[] | null) ?? [],
     } : {
       name: "",
       industry: "",
@@ -1148,6 +1153,7 @@ export default function ClientDetail() {
       tier: null,
       annualRevenue: null,
       logoUrl: "",
+      serviceNeeds: [],
       parentClientId: null,
     },
   });
