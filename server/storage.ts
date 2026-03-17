@@ -228,6 +228,7 @@ export interface IStorage {
   migrateIndustryOptions(): Promise<void>;
   migrateDashboardFilter(): Promise<void>;
   migrateBuildopsClientColumns(): Promise<void>;
+  migrateBuildopsPropertyColumns(): Promise<void>;
 
   // Industry Options
   listIndustryOptions(): Promise<IndustryOption[]>;
@@ -1106,6 +1107,17 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS buildops_quote_total decimal(12,2)`);
     } catch (e) {
       console.error("migrateBuildopsClientColumns error:", e);
+    }
+  }
+
+  async migrateBuildopsPropertyColumns(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE contact_buildings ADD COLUMN IF NOT EXISTS property_type varchar`);
+      await db.execute(sql`ALTER TABLE contact_buildings ADD COLUMN IF NOT EXISTS buildops_is_inactive boolean DEFAULT false`);
+      await db.execute(sql`ALTER TABLE client_contacts ADD COLUMN IF NOT EXISTS buildops_id varchar`);
+      await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS building_id integer`);
+    } catch (e) {
+      console.error("migrateBuildopsPropertyColumns error:", e);
     }
   }
 

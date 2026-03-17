@@ -2977,7 +2977,7 @@ export default function ClientDetail() {
                             )}
                             {isAdminOrManager && (b as any).buildopsIsInactive && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium">
-                                Inactive
+                                Inactive in BuildOps
                               </span>
                             )}
                           </div>

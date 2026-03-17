@@ -153,6 +153,7 @@ export async function registerRoutes(
   await storage.migrateIndustryOptions();
   await storage.migrateDashboardFilter();
   await storage.migrateBuildopsClientColumns();
+  await storage.migrateBuildopsPropertyColumns();
   // Seed default value tier settings
   await storage.getValueTierSettings();
   // Seed default contact stages on startup
