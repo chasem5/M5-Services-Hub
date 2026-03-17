@@ -922,10 +922,10 @@ export class DatabaseStorage implements IStorage {
     const totalLost = lost + Number(boLost?.count ?? 0);
     const winRate = (totalWon + totalLost) > 0 ? Math.round((totalWon / (totalWon + totalLost)) * 100) : null;
 
-    // Revenue by month — last 6 months (CRM won deals by won_at + BuildOps invoices by issued_date)
+    // Revenue by month — last 12 months (BuildOps invoices primary; CRM won deals supplementary)
     const wonRevenueWhere = userFilter
-      ? and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${sixMonthsAgo}`, userFilter)
-      : and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${sixMonthsAgo}`);
+      ? and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${twelveMonthsAgo}`, userFilter)
+      : and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${twelveMonthsAgo}`);
     const revenueRows = await db
       .select({
         month: sql<string>`TO_CHAR(COALESCE(${leads.wonAt}, ${leads.updatedAt}), 'YYYY-MM')`,
@@ -936,7 +936,7 @@ export class DatabaseStorage implements IStorage {
       .groupBy(sql`TO_CHAR(COALESCE(${leads.wonAt}, ${leads.updatedAt}), 'YYYY-MM')`)
       .orderBy(sql`TO_CHAR(COALESCE(${leads.wonAt}, ${leads.updatedAt}), 'YYYY-MM')`);
 
-    // BuildOps invoice revenue by month (last 6 months)
+    // BuildOps invoice revenue by month (last 12 months — includes T&M work)
     const boInvoiceRevenueRows = await db
       .select({
         month: sql<string>`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`,
@@ -944,14 +944,14 @@ export class DatabaseStorage implements IStorage {
       })
       .from(buildopsInvoices)
       .where(and(
-        sql`${buildopsInvoices.issuedDate} >= ${sixMonthsAgo}`,
+        sql`${buildopsInvoices.issuedDate} >= ${twelveMonthsAgo}`,
         sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
       ))
       .groupBy(sql`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`)
       .orderBy(sql`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`);
 
     const revenueByMonth: { month: string; revenue: string }[] = [];
-    for (let i = 5; i >= 0; i--) {
+    for (let i = 11; i >= 0; i--) {
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const foundCRM = revenueRows.find(r => r.month === key);
@@ -982,43 +982,21 @@ export class DatabaseStorage implements IStorage {
         return { clientId: Number(clientId), name: client?.name ?? "Unknown", pipelineValue: value.toString() };
       });
 
-    // MRR — CRM recurring leads (tier-aware) + BuildOps active agreements
-    const recurringLeads = activeLeadRows.filter(l => l.contractType === "recurring");
-    const crmMrr = recurringLeads.reduce((acc, lead) => {
-      const value = getLeadValue(lead);
-      let monthlyValue = 0;
-      if (lead.recurringFrequency === "monthly") monthlyValue = value;
-      else if (lead.recurringFrequency === "quarterly") monthlyValue = value / 3;
-      else if (lead.recurringFrequency === "annual") monthlyValue = value / 12;
-      return acc + monthlyValue;
-    }, 0);
-
-    // BuildOps agreements MRR: prorate contract_value over duration or divide by 12 for annual
-    const bOmrr = buildopsActiveAgreements.reduce((acc, agr) => {
-      const contractValue = parseFloat(agr.contractValue || "0");
-      if (!contractValue) return acc;
-      const freq = (agr.frequency || "").toLowerCase();
-      let monthly = 0;
-      if (freq.includes("month")) {
-        monthly = contractValue;
-      } else if (freq.includes("quarter")) {
-        monthly = contractValue / 3;
-      } else if (freq.includes("annual") || freq.includes("year")) {
-        monthly = contractValue / 12;
-      } else if (agr.startDate && agr.endDate) {
-        // Prorate over active duration in months
-        const startMs = new Date(agr.startDate).getTime();
-        const endMs = new Date(agr.endDate).getTime();
-        const durationMonths = Math.max((endMs - startMs) / (1000 * 60 * 60 * 24 * 30.44), 1);
-        monthly = contractValue / durationMonths;
-      } else {
-        // Default: assume annual
-        monthly = contractValue / 12;
-      }
-      return acc + monthly;
-    }, 0);
-
-    const mrr = crmMrr + bOmrr;
+    // Avg Monthly Revenue — rolling 12-month invoice total divided by the number of
+    // months that actually had invoices (avoids deflating quarterly or new contracts)
+    const [mrrRow] = await db
+      .select({
+        totalInvoiced: sql<string>`COALESCE(SUM(CAST(${buildopsInvoices.totalAmount} AS numeric)), 0)`,
+        monthsWithData: sql<string>`COUNT(DISTINCT TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM'))`,
+      })
+      .from(buildopsInvoices)
+      .where(and(
+        sql`${buildopsInvoices.issuedDate} >= ${twelveMonthsAgo}`,
+        sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
+      ));
+    const mrrTotal = parseFloat(mrrRow?.totalInvoiced ?? "0");
+    const mrrMonths = Math.max(Number(mrrRow?.monthsWithData ?? 0), 1);
+    const mrr = mrrTotal / mrrMonths;
 
     // Estimate pipeline: include leads with buildopsQuoteId as extra "buildops_quote" entries
     const boQuoteLeads = await db.select({

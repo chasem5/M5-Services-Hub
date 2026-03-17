@@ -489,12 +489,13 @@ export default function Dashboard() {
         </Card>
 
         <MetricCard
-          title="Estimated MRR"
+          title="Avg Monthly Revenue"
           value={stats ? formatCurrency(stats.mrr) : undefined}
           icon={TrendingUp}
           loading={statsLoading}
           dataTestId="text-estimated-mrr"
           accentColor="text-blue-600"
+          subtitle="12-mo invoice avg"
         />
         <MetricCard
           title="Monthly Revenue"
@@ -1369,6 +1370,7 @@ function MetricCard({
   iconColor,
   className,
   large,
+  subtitle,
 }: {
   title: string;
   value?: string | number;
@@ -1379,6 +1381,7 @@ function MetricCard({
   iconColor?: string;
   className?: string;
   large?: boolean;
+  subtitle?: string;
 }) {
   return (
     <Card className={cn("shadow-sm border-border/40 bg-card", className)}>
@@ -1392,16 +1395,19 @@ function MetricCard({
         {loading ? (
           <Skeleton className={cn("h-7 w-20", large && "h-8 w-28")} />
         ) : (
-          <div
-            className={cn(
-              "font-heading font-bold leading-tight break-words min-w-0",
-              large ? "text-2xl" : "text-xl",
-              accentColor
-            )}
-            data-testid={dataTestId}
-          >
-            {value ?? 0}
-          </div>
+          <>
+            <div
+              className={cn(
+                "font-heading font-bold leading-tight break-words min-w-0",
+                large ? "text-2xl" : "text-xl",
+                accentColor
+              )}
+              data-testid={dataTestId}
+            >
+              {value ?? 0}
+            </div>
+            {subtitle && <div className="text-[11px] text-muted-foreground mt-1">{subtitle}</div>}
+          </>
         )}
       </CardContent>
     </Card>
