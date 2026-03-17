@@ -3423,7 +3423,7 @@ export default function Leads() {
                               )}
                               {(selectedLead as any).buildopsExpirationDate && (
                                 <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-quote-expiration">
-                                  <CalendarIcon className="h-3 w-3" /> Expires {new Date((selectedLead as any).buildopsExpirationDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                  <CalendarIcon className="h-3 w-3" /> Quote Expires {new Date((selectedLead as any).buildopsExpirationDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                 </span>
                               )}
                             </div>
