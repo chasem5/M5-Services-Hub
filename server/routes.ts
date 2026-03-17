@@ -5368,72 +5368,74 @@ Guidelines:
       const pipelineValue = Number(dealStats.pipeline_value ?? 0);
       const hitRate = (wonCount + lostCount) > 0 ? Math.round((wonCount / (wonCount + lostCount)) * 100) : null;
 
-      const dealsByStage = await db.execute(sql`
+      const toRows = (r: any): any[] => Array.isArray(r) ? r : Array.from(r as Iterable<any>);
+
+      const dealsByStage = toRows(await db.execute(sql`
         SELECT stage, COUNT(*) as cnt
         FROM leads WHERE client_id = ${clientId}
         GROUP BY stage ORDER BY cnt DESC
-      `);
-      const dealStages = (dealsByStage as any[]).map(r => ({ stage: r.stage as string, count: Number(r.cnt) }));
+      `));
+      const dealStages = dealsByStage.map(r => ({ stage: r.stage as string, count: Number(r.cnt) }));
 
-      const [invoiceStats] = await db.execute(sql`
+      const [invoiceStats] = toRows(await db.execute(sql`
         SELECT COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
         FROM buildops_invoices WHERE client_id = ${clientId}
-      `);
-      const ltv = Number(invoiceStats.ltv ?? 0);
+      `));
+      const ltv = Number(invoiceStats?.ltv ?? 0);
 
-      const [agrStats] = await db.execute(sql`
+      const [agrStats] = toRows(await db.execute(sql`
         SELECT COALESCE(SUM(CAST(contract_value AS numeric)), 0) as total_contract
         FROM buildops_agreements
         WHERE client_id = ${clientId}
           AND (end_date IS NULL OR end_date > NOW())
           AND (advanced_scheduling_state IS NULL OR LOWER(advanced_scheduling_state) NOT IN ('canceled', 'cancelled'))
-      `);
-      const mrr = Number(agrStats.total_contract ?? 0) / 12;
+      `));
+      const mrr = Number(agrStats?.total_contract ?? 0) / 12;
 
-      const [jobStats] = await db.execute(sql`
+      const [jobStats] = toRows(await db.execute(sql`
         SELECT
           COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active_jobs,
           COUNT(*) FILTER (WHERE LOWER(status) IN ('closed', 'complete', 'completed')) as completed_jobs,
           COUNT(*) as total_jobs
         FROM buildops_jobs WHERE client_id = ${clientId}
-      `);
-      const activeJobs = Number(jobStats.active_jobs ?? 0);
-      const completedJobs = Number(jobStats.completed_jobs ?? 0);
+      `));
+      const activeJobs = Number(jobStats?.active_jobs ?? 0);
+      const completedJobs = Number(jobStats?.completed_jobs ?? 0);
 
-      const monthlyJobRows = await db.execute(sql`
+      const monthlyJobRows = toRows(await db.execute(sql`
         SELECT TO_CHAR(completed_date, 'YYYY-MM') as month, COUNT(*) as cnt
         FROM buildops_jobs
         WHERE client_id = ${clientId} AND completed_date >= NOW() - INTERVAL '12 months'
         GROUP BY 1 ORDER BY 1
-      `);
-      const monthlyJobCounts = (monthlyJobRows as any[]).map(r => ({ month: r.month, count: Number(r.cnt) }));
+      `));
+      const monthlyJobCounts = monthlyJobRows.map(r => ({ month: r.month, count: Number(r.cnt) }));
       const completedJobsLast12 = monthlyJobCounts.reduce((s, m) => s + m.count, 0);
       const avgMonthlyJobs = completedJobsLast12 / 12;
 
-      const invoiceByMonth = await db.execute(sql`
+      const invoiceByMonth = toRows(await db.execute(sql`
         SELECT TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
                SUM(CAST(total_amount AS numeric)) as revenue
         FROM buildops_invoices
         WHERE client_id = ${clientId}
           AND COALESCE(closed_date, issued_date) >= NOW() - INTERVAL '12 months'
         GROUP BY 1 ORDER BY 1
-      `);
-      const sparseRevenue = (invoiceByMonth as any[]).map(r => ({
+      `));
+      const sparseRevenue = invoiceByMonth.map(r => ({
         month: r.month as string,
         revenue: Number(r.revenue ?? 0),
       }));
       const revenueTrend = zeroFillTrend(sparseRevenue);
       const trendDirection = computeTrendDirection(revenueTrend);
 
-      const [globalAvgRow] = await db.execute(sql`
+      const [globalAvgRow] = toRows(await db.execute(sql`
         SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
           SELECT client_id, COUNT(*) / 12.0 as cnt
           FROM buildops_jobs
           WHERE completed_date >= NOW() - INTERVAL '12 months'
           GROUP BY client_id
         ) sub
-      `);
-      const globalAvgMonthly = Number(globalAvgRow.global_avg ?? 0);
+      `));
+      const globalAvgMonthly = Number(globalAvgRow?.global_avg ?? 0);
 
       const jobsAboveAvg = globalAvgMonthly > 0 ? avgMonthlyJobs > globalAvgMonthly : avgMonthlyJobs > 0;
       const { healthScore, healthStatus } = computeHealthScore(
@@ -5441,7 +5443,7 @@ Guidelines:
       );
 
       // SA rows: active agreements with contract value vs actual invoiced revenue
-      const saRows = await db.execute(sql`
+      const saRows = toRows(await db.execute(sql`
         SELECT
           a.buildops_id,
           a.agreement_number,
@@ -5462,8 +5464,8 @@ Guidelines:
         GROUP BY a.buildops_id, a.agreement_number, a.agreement_name, a.status,
                  a.start_date, a.end_date, a.frequency, a.contract_value
         ORDER BY a.start_date DESC
-      `);
-      const serviceAgreements = (saRows as any[]).map(r => ({
+      `));
+      const serviceAgreements = saRows.map(r => ({
         buildopsId: r.buildops_id as string,
         agreementNumber: r.agreement_number as string,
         agreementName: r.agreement_name as string,
