@@ -48,7 +48,7 @@ A full-featured CRM and operations management app for M5 Services, a facility ma
 
 ## Database Schema
 
-Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`, `role_configs`, `role_permissions`, `invites`, `building_portfolios`, `portfolio_buildings`, `portfolio_contacts`, `value_tier_settings`, `meetings`, `meeting_actions`
+Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `contact_buildings`, `bd_spend_entries`, `leads`, `tasks`, `reminders`, `service_catalog`, `estimates`, `estimate_line_items`, `proposals`, `activity_logs`, `pipeline_stages`, `role_configs`, `role_permissions`, `invites`, `building_portfolios`, `portfolio_buildings`, `portfolio_contacts`, `value_tier_settings`, `meetings`, `meeting_actions`, `buildops_jobs`, `buildops_invoices`, `buildops_agreements`
 
 - `value_tier_settings` — stores estimated dollar values for deal tiers (`$`, `$$`, `$$$`, `$$$$`); seeded with defaults ($25k, $75k, $200k, $500k); admin-configurable via Admin → Configuration tab; used in pipeline value calculations and Kanban card sorting
 - `users.dashboard_filter` — persists the user's selected dashboard scope (`all`, `mine`, or a specific userId)
@@ -65,17 +65,20 @@ Tables: `users`, `sessions`, `clients`, `client_contacts`, `client_offices`, `co
 
 - `server/buildops.ts` — BuildOps API service layer; base URL `https://public-api.live.buildops.com`
 - **Auth**: Client credentials flow — POST `/v1/auth/token` with `clientId` + `clientSecret`; token cached 55min in-memory; `tenantId` sent as request header
-- Functions: `testConnection`, `getCustomers`, `getCustomerById`, `createCustomer`, `updateCustomer`, `mapClientToCustomer`, `getDepartments`, `createQuote`, `getProperties`, `getServiceAgreements`
+- Functions: `testConnection`, `getCustomers`, `getCustomerById`, `createCustomer`, `updateCustomer`, `mapClientToCustomer`, `getDepartments`, `createQuote`, `getProperties`, `getServiceAgreements`, `getAllJobs`, `getAllInvoices`, `getAllServiceAgreements`
 - Credentials stored in `app_settings` as `buildopsClientId` + `buildopsClientSecret` + `buildopsTenantId` + `buildopsDefaultDepartmentId`
-- Routes: `POST /api/buildops/test`, `GET /api/buildops/departments`, `POST /api/buildops/sync-pull`, `POST /api/buildops/sync-properties`, `POST /api/buildops/sync-quotes`, `POST /api/buildops/push-client/:id`, `POST /api/buildops/push-all`, `POST /api/buildops/push-estimate/:estimateId`, `GET /api/clients/:id/buildops-agreements`, `GET /api/buildops/last-sync`, `GET /api/buildops/audit-data`
+- Routes: `POST /api/buildops/test`, `GET /api/buildops/departments`, `POST /api/buildops/sync-pull`, `POST /api/buildops/sync-properties`, `POST /api/buildops/sync-quotes`, `POST /api/buildops/sync-jobs`, `POST /api/buildops/sync-invoices`, `POST /api/buildops/sync-agreements`, `POST /api/buildops/push-client/:id`, `POST /api/buildops/push-all`, `POST /api/buildops/push-estimate/:estimateId`, `GET /api/clients/:id/buildops-agreements`, `GET /api/clients/:id/buildops-jobs`, `GET /api/clients/:id/buildops-invoices`, `GET /api/clients/:id/buildops-agreements-synced`, `GET /api/buildops/last-sync`, `GET /api/buildops/audit-data`
 - `clients.buildopsId` — BuildOps customer UUID; `estimates.buildopsQuoteId` — BuildOps quote UUID (set after push)
 - `contact_buildings.buildopsId` — BuildOps property/location UUID; used for property→client matching in quote sync
 - `leads.buildopsPropertyId` — BuildOps property UUID; set when a quote's client was resolved via property→client lookup
-- `buildops_sync_log` table — audit trail of all pull/push operations (`entityType` can be `client`, `estimate`, `property`, or `lead`)
+- `buildops_jobs` table — synced BuildOps jobs with `jobNumber`, `status`, `amountQuoted`, `costAmount`, `billingStatus`, `completedDate`, `customerPropertyName`; FK to `clients` via `clientId`; matched by `buildopsCustomerId`
+- `buildops_invoices` table — synced BuildOps invoices with `invoiceNumber`, `status`, `totalAmount`, `subtotal`, `taxAmount`, `jobNumber`, `issuedDate`, `dueDate`, `closedDate`; FK to `clients`
+- `buildops_agreements` table — synced BuildOps service agreements with `agreementName`, `agreementNumber`, `advancedSchedulingState`, `startDate`, `endDate`; FK to `clients`
+- `buildops_sync_log` table — audit trail of all pull/push operations (`entityType` can be `client`, `estimate`, `property`, `lead`, `job`, `invoice`, or `agreement`)
 - **Quote sync matching tiers** (in order): 1) `billingCustomerId` UUID → `clients.buildopsId`, 2) `billTo` text → fuzzy client name match, 3) `propertyId` → `contact_buildings.buildopsId` → `contact_buildings.clientId` (zero API calls, DB lookup only)
 - **Auto-trigger**: When pushing an estimate to BuildOps, if the client has no `buildopsId`, the system auto-creates a BuildOps customer first, then pushes the quote. Any associated leads in the relationship track are auto-advanced to `proposal_sent` (deal track).
 - Admin → BuildOps tab: Client ID + Client Secret (masked) + Tenant ID; Test Connection; Default Department dropdown (loads after successful test); pull/push sync controls
-- Client detail: BuildOpsIcon tooltip badge when synced; "BuildOps Linked" badge (replaced manual push button); BuildOps Service Agreements section on overview tab (loads when client has `buildopsId`)
+- Client detail: BuildOpsIcon tooltip badge when synced; "BuildOps Linked" badge (replaced manual push button); BuildOps Service Agreements section on overview tab (loads when client has `buildopsId`); Jobs tab (job#, description, type, status, priority, quoted/cost/margin, property, completed date with totals); Invoices tab (invoice#, status, amount, tax, job#, issued/due/closed dates with total); Agreements tab (agreement#, name, scheduling state, start/end dates)
 - Estimate detail: "AI Generate Scope" (GPT-4o), "Push to BuildOps" button (only shown when not yet linked; auto-creates customer if needed); BuildOpsIcon badge when linked
 - `client/src/components/BuildOpsIcon.tsx` — reusable orange "B" SVG icon, shown on clients list (table+card), client-detail header, estimate-detail header
 - **Estimates Hub → BuildOps Quotes tab** (`/buildops-quotes`) — unified view of all BuildOps quotes; `GET /api/buildops/quotes-list` enriches each quote with CRM client name and linked estimate; filters by status/linked state; "Sync to CRM" button; external link to BuildOps per row

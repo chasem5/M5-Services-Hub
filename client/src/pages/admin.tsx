@@ -51,6 +51,9 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  Briefcase,
+  Receipt,
+  FileSignature,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -244,6 +247,45 @@ function BuildOpsPanel() {
       toast({ title: "Properties synced", description: `${data.total} properties: ${data.created} created, ${data.updated} updated` });
     },
     onError: (err: any) => toast({ title: "Property sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  const syncJobsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/sync-jobs", {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
+      toast({ title: "Jobs synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
+    },
+    onError: (err: any) => toast({ title: "Jobs sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  const syncInvoicesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/sync-invoices", {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
+      toast({ title: "Invoices synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
+    },
+    onError: (err: any) => toast({ title: "Invoices sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  const syncAgreementsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/sync-agreements", {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
+      toast({ title: "Agreements synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
+    },
+    onError: (err: any) => toast({ title: "Agreements sync failed", description: err.message, variant: "destructive" }),
   });
 
   return (
@@ -449,6 +491,60 @@ function BuildOpsPanel() {
               >
                 {pushAllMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
                 {pushAllMutation.isPending ? "Pushing..." : "Push Customers"}
+              </Button>
+            </div>
+            <div className="border rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Briefcase className="h-4 w-4 text-primary" />
+                Sync Jobs
+              </h4>
+              <p className="text-xs text-muted-foreground">Pull all BuildOps jobs with revenue, costs, and status into the CRM.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => syncJobsMutation.mutate()}
+                disabled={syncJobsMutation.isPending || connStatus !== "ok"}
+                data-testid="button-buildops-sync-jobs"
+              >
+                {syncJobsMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Briefcase className="h-3.5 w-3.5 mr-1.5" />}
+                {syncJobsMutation.isPending ? "Syncing..." : "Sync Jobs"}
+              </Button>
+            </div>
+            <div className="border rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Receipt className="h-4 w-4 text-primary" />
+                Sync Invoices
+              </h4>
+              <p className="text-xs text-muted-foreground">Pull all BuildOps invoices with amounts, status, and due dates.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => syncInvoicesMutation.mutate()}
+                disabled={syncInvoicesMutation.isPending || connStatus !== "ok"}
+                data-testid="button-buildops-sync-invoices"
+              >
+                {syncInvoicesMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Receipt className="h-3.5 w-3.5 mr-1.5" />}
+                {syncInvoicesMutation.isPending ? "Syncing..." : "Sync Invoices"}
+              </Button>
+            </div>
+            <div className="border rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <FileSignature className="h-4 w-4 text-primary" />
+                Sync Agreements
+              </h4>
+              <p className="text-xs text-muted-foreground">Pull BuildOps service agreements with contract dates and scheduling state.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => syncAgreementsMutation.mutate()}
+                disabled={syncAgreementsMutation.isPending || connStatus !== "ok"}
+                data-testid="button-buildops-sync-agreements"
+              >
+                {syncAgreementsMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <FileSignature className="h-3.5 w-3.5 mr-1.5" />}
+                {syncAgreementsMutation.isPending ? "Syncing..." : "Sync Agreements"}
               </Button>
             </div>
           </div>

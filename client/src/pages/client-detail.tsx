@@ -45,6 +45,9 @@ import {
   Copy,
   MoreHorizontal,
   Folders,
+  Briefcase,
+  Receipt,
+  FileSignature,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import { BuildOpsIcon } from "@/components/BuildOpsIcon";
@@ -1314,6 +1317,22 @@ export default function ClientDetail() {
             <Paperclip className="h-4 w-4 md:mr-2" />
             <span className="hidden md:inline">Files</span>
           </TabsTrigger>
+          {client?.buildopsId && (
+            <>
+              <TabsTrigger value="buildops-jobs" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-jobs">
+                <Briefcase className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Jobs</span>
+              </TabsTrigger>
+              <TabsTrigger value="buildops-invoices" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-invoices">
+                <Receipt className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Invoices</span>
+              </TabsTrigger>
+              <TabsTrigger value="buildops-agreements" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-agreements">
+                <FileSignature className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Agreements</span>
+              </TabsTrigger>
+            </>
+          )}
         </TabsList>
 
         <div className="py-6">
@@ -3053,6 +3072,20 @@ export default function ClientDetail() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {client?.buildopsId && (
+            <>
+              <TabsContent value="buildops-jobs" className="m-0">
+                <BuildOpsJobsTab clientId={clientId} />
+              </TabsContent>
+              <TabsContent value="buildops-invoices" className="m-0">
+                <BuildOpsInvoicesTab clientId={clientId} />
+              </TabsContent>
+              <TabsContent value="buildops-agreements" className="m-0">
+                <BuildOpsAgreementsTab clientId={clientId} />
+              </TabsContent>
+            </>
+          )}
         </div>
       </Tabs>
 
@@ -3466,5 +3499,288 @@ export default function ClientDetail() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function BuildOpsJobsTab({ clientId }: { clientId: number }) {
+  const { data: jobs, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/clients", clientId, "buildops-jobs"],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/buildops-jobs`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch jobs");
+      return res.json();
+    },
+  });
+
+  const fmt = (v: string | number | null | undefined) => {
+    if (v == null) return "—";
+    const n = typeof v === "string" ? parseFloat(v) : v;
+    return isNaN(n) ? "—" : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  const fmtDate = (d: string | null | undefined) => {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString();
+  };
+
+  const statusColor = (s: string | null | undefined) => {
+    if (!s) return "bg-gray-100 text-gray-700";
+    const sl = s.toLowerCase();
+    if (sl === "open") return "bg-blue-100 text-blue-700";
+    if (sl === "closed" || sl === "complete") return "bg-green-100 text-green-700";
+    if (sl === "canceled" || sl === "cancelled") return "bg-red-100 text-red-700";
+    return "bg-gray-100 text-gray-700";
+  };
+
+  if (isLoading) return <Card className="border-none shadow-sm bg-card"><CardContent className="p-6"><Skeleton className="h-40 w-full" /></CardContent></Card>;
+
+  const sorted = [...(jobs ?? [])].sort((a, b) => (b.jobNumber || "").localeCompare(a.jobNumber || "", undefined, { numeric: true }));
+  const totalQuoted = sorted.reduce((sum, j) => sum + (parseFloat(j.amountQuoted) || 0), 0);
+  const totalCost = sorted.reduce((sum, j) => sum + (parseFloat(j.costAmount) || 0), 0);
+
+  return (
+    <Card className="border-none shadow-sm bg-card">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2"><Briefcase className="h-5 w-5" /> BuildOps Jobs</CardTitle>
+            <CardDescription>{sorted.length} jobs synced from BuildOps</CardDescription>
+          </div>
+          {sorted.length > 0 && (
+            <div className="flex gap-4 text-sm">
+              <div><span className="text-muted-foreground">Total Quoted:</span> <span className="font-semibold">{fmt(totalQuoted)}</span></div>
+              <div><span className="text-muted-foreground">Total Cost:</span> <span className="font-semibold">{fmt(totalCost)}</span></div>
+              <div><span className="text-muted-foreground">Margin:</span> <span className="font-semibold">{fmt(totalQuoted - totalCost)}</span></div>
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {sorted.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <Briefcase className="h-12 w-12 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">No jobs synced yet</p>
+            <p className="text-sm">Run "Sync Jobs" from Admin → BuildOps to pull job data.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="table-buildops-jobs">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 px-3 font-medium">Job #</th>
+                  <th className="py-2 px-3 font-medium">Description</th>
+                  <th className="py-2 px-3 font-medium">Type</th>
+                  <th className="py-2 px-3 font-medium">Status</th>
+                  <th className="py-2 px-3 font-medium">Priority</th>
+                  <th className="py-2 px-3 font-medium text-right">Quoted</th>
+                  <th className="py-2 px-3 font-medium text-right">Cost</th>
+                  <th className="py-2 px-3 font-medium text-right">Margin</th>
+                  <th className="py-2 px-3 font-medium">Property</th>
+                  <th className="py-2 px-3 font-medium">Completed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((job: any) => {
+                  const quoted = parseFloat(job.amountQuoted) || 0;
+                  const cost = parseFloat(job.costAmount) || 0;
+                  const margin = quoted - cost;
+                  return (
+                    <tr key={job.id} className="border-b hover:bg-muted/50" data-testid={`row-job-${job.id}`}>
+                      <td className="py-2.5 px-3 font-mono font-medium">{job.jobNumber || "—"}</td>
+                      <td className="py-2.5 px-3 max-w-[250px] truncate">{job.issueDescription || "—"}</td>
+                      <td className="py-2.5 px-3 text-xs">{job.jobTypeName || "—"}</td>
+                      <td className="py-2.5 px-3">
+                        <Badge variant="outline" className={cn("text-xs", statusColor(job.status))}>{job.status || "Unknown"}</Badge>
+                      </td>
+                      <td className="py-2.5 px-3 text-xs">{job.priority || "—"}</td>
+                      <td className="py-2.5 px-3 text-right font-mono">{fmt(job.amountQuoted)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono">{fmt(job.costAmount)}</td>
+                      <td className={cn("py-2.5 px-3 text-right font-mono", margin > 0 ? "text-green-600" : margin < 0 ? "text-red-600" : "")}>{fmt(margin)}</td>
+                      <td className="py-2.5 px-3 text-xs max-w-[150px] truncate">{job.customerPropertyName || "—"}</td>
+                      <td className="py-2.5 px-3 text-xs">{fmtDate(job.completedDate)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function BuildOpsInvoicesTab({ clientId }: { clientId: number }) {
+  const { data: invoices, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/clients", clientId, "buildops-invoices"],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/buildops-invoices`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch invoices");
+      return res.json();
+    },
+  });
+
+  const fmt = (v: string | number | null | undefined) => {
+    if (v == null) return "—";
+    const n = typeof v === "string" ? parseFloat(v) : v;
+    return isNaN(n) ? "—" : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  const fmtDate = (d: string | null | undefined) => {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString();
+  };
+
+  const statusColor = (s: string | null | undefined) => {
+    if (!s) return "bg-gray-100 text-gray-700";
+    const sl = s.toLowerCase();
+    if (sl === "exported" || sl === "paid" || sl === "closed") return "bg-green-100 text-green-700";
+    if (sl === "draft" || sl === "open") return "bg-blue-100 text-blue-700";
+    if (sl === "overdue" || sl === "void" || sl === "voided") return "bg-red-100 text-red-700";
+    return "bg-amber-100 text-amber-700";
+  };
+
+  if (isLoading) return <Card className="border-none shadow-sm bg-card"><CardContent className="p-6"><Skeleton className="h-40 w-full" /></CardContent></Card>;
+
+  const sorted = [...(invoices ?? [])].sort((a, b) => (b.invoiceNumber || "").localeCompare(a.invoiceNumber || "", undefined, { numeric: true }));
+  const totalAmount = sorted.reduce((sum, inv) => sum + (parseFloat(inv.totalAmount) || 0), 0);
+
+  return (
+    <Card className="border-none shadow-sm bg-card">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" /> BuildOps Invoices</CardTitle>
+            <CardDescription>{sorted.length} invoices synced from BuildOps</CardDescription>
+          </div>
+          {sorted.length > 0 && (
+            <div className="text-sm">
+              <span className="text-muted-foreground">Total Invoiced:</span> <span className="font-semibold">{fmt(totalAmount)}</span>
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {sorted.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <Receipt className="h-12 w-12 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">No invoices synced yet</p>
+            <p className="text-sm">Run "Sync Invoices" from Admin → BuildOps to pull invoice data.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="table-buildops-invoices">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 px-3 font-medium">Invoice #</th>
+                  <th className="py-2 px-3 font-medium">Status</th>
+                  <th className="py-2 px-3 font-medium text-right">Amount</th>
+                  <th className="py-2 px-3 font-medium text-right">Tax</th>
+                  <th className="py-2 px-3 font-medium">Job #</th>
+                  <th className="py-2 px-3 font-medium">Issued</th>
+                  <th className="py-2 px-3 font-medium">Due</th>
+                  <th className="py-2 px-3 font-medium">Closed</th>
+                  <th className="py-2 px-3 font-medium">Final</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((inv: any) => (
+                  <tr key={inv.id} className="border-b hover:bg-muted/50" data-testid={`row-invoice-${inv.id}`}>
+                    <td className="py-2.5 px-3 font-mono font-medium">{inv.invoiceNumber || "—"}</td>
+                    <td className="py-2.5 px-3">
+                      <Badge variant="outline" className={cn("text-xs", statusColor(inv.status))}>{inv.status || "Unknown"}</Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono">{fmt(inv.totalAmount)}</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{fmt(inv.taxAmount)}</td>
+                    <td className="py-2.5 px-3 font-mono text-xs">{inv.jobNumber || "—"}</td>
+                    <td className="py-2.5 px-3 text-xs">{fmtDate(inv.issuedDate)}</td>
+                    <td className="py-2.5 px-3 text-xs">{fmtDate(inv.dueDate)}</td>
+                    <td className="py-2.5 px-3 text-xs">{fmtDate(inv.closedDate)}</td>
+                    <td className="py-2.5 px-3 text-xs">{inv.isFinalInvoice ? <Badge variant="outline" className="bg-green-100 text-green-700 text-xs">Final</Badge> : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
+  const { data: agreements, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/clients", clientId, "buildops-agreements-synced"],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/buildops-agreements-synced`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch agreements");
+      return res.json();
+    },
+  });
+
+  const fmtDate = (d: string | null | undefined) => {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString();
+  };
+
+  const stateColor = (s: string | null | undefined) => {
+    if (!s) return "bg-gray-100 text-gray-700";
+    const sl = s.toLowerCase();
+    if (sl === "active" || sl === "confirmed") return "bg-green-100 text-green-700";
+    if (sl === "canceled" || sl === "cancelled") return "bg-red-100 text-red-700";
+    if (sl === "draft" || sl === "pending") return "bg-blue-100 text-blue-700";
+    if (sl === "expired") return "bg-amber-100 text-amber-700";
+    return "bg-gray-100 text-gray-700";
+  };
+
+  if (isLoading) return <Card className="border-none shadow-sm bg-card"><CardContent className="p-6"><Skeleton className="h-40 w-full" /></CardContent></Card>;
+
+  const sorted = [...(agreements ?? [])].sort((a, b) => {
+    const aDate = a.startDate ? new Date(a.startDate).getTime() : 0;
+    const bDate = b.startDate ? new Date(b.startDate).getTime() : 0;
+    return bDate - aDate;
+  });
+
+  return (
+    <Card className="border-none shadow-sm bg-card">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><FileSignature className="h-5 w-5" /> Service Agreements</CardTitle>
+        <CardDescription>{sorted.length} agreements synced from BuildOps</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {sorted.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <FileSignature className="h-12 w-12 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">No service agreements synced yet</p>
+            <p className="text-sm">Run "Sync Agreements" from Admin → BuildOps to pull agreement data.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="table-buildops-agreements">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 px-3 font-medium">Agreement #</th>
+                  <th className="py-2 px-3 font-medium">Name</th>
+                  <th className="py-2 px-3 font-medium">State</th>
+                  <th className="py-2 px-3 font-medium">Start Date</th>
+                  <th className="py-2 px-3 font-medium">End Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((agr: any) => (
+                  <tr key={agr.id} className="border-b hover:bg-muted/50" data-testid={`row-agreement-${agr.id}`}>
+                    <td className="py-2.5 px-3 font-mono font-medium">{agr.agreementNumber || "—"}</td>
+                    <td className="py-2.5 px-3">{agr.agreementName || "—"}</td>
+                    <td className="py-2.5 px-3">
+                      <Badge variant="outline" className={cn("text-xs", stateColor(agr.advancedSchedulingState))}>{agr.advancedSchedulingState || "Unknown"}</Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-xs">{fmtDate(agr.startDate)}</td>
+                    <td className="py-2.5 px-3 text-xs">{fmtDate(agr.endDate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

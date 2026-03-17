@@ -4351,6 +4351,255 @@ Respond with this JSON:
     }
   });
 
+  // ── Sync Jobs from BuildOps ────────────────────────────────────────────────
+  app.post("/api/buildops/sync-jobs", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getAllJobs } = await import("./buildops");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsJobs, clients } = await import("@shared/schema");
+
+      const allClients = await storage.listClients();
+      const clientByBuildopsId = new Map(allClients.filter(c => c.buildopsId).map(c => [c.buildopsId!, c]));
+
+      const jobs = await getAllJobs(creds.clientId, creds.clientSecret, creds.tenantId);
+      let created = 0, updated = 0, skipped = 0;
+
+      for (const job of jobs) {
+        if (!job.id) { skipped++; continue; }
+        const matchedClient = job.customerId ? clientByBuildopsId.get(job.customerId) : null;
+
+        const parseDate = (d?: string | null) => {
+          if (!d) return null;
+          const parsed = new Date(d);
+          return isNaN(parsed.getTime()) ? null : parsed;
+        };
+
+        const payload = {
+          buildopsId: job.id,
+          clientId: matchedClient?.id ?? null,
+          jobNumber: job.jobNumber ?? null,
+          issueDescription: job.issueDescription ?? null,
+          status: job.status ?? null,
+          priority: job.priority ?? null,
+          jobTypeName: job.jobTypeName ?? null,
+          customerName: job.customerName ?? null,
+          customerPropertyName: job.customerPropertyName ?? null,
+          amountQuoted: job.amountQuoted != null ? String(job.amountQuoted) : null,
+          costAmount: job.costAmount != null ? String(job.costAmount) : null,
+          billingStatus: job.billingStatus ?? null,
+          dueDate: parseDate(job.dueDate),
+          completedDate: parseDate(job.completedDate),
+          buildopsCustomerId: job.customerId ?? null,
+          buildopsPropertyId: job.customerPropertyId ?? null,
+          buildopsQuoteId: job.quoteId ?? null,
+          buildopsServiceAgreementId: job.serviceAgreementId ?? null,
+          syncedAt: new Date(),
+        };
+
+        const [existing] = await db.select().from(buildopsJobs).where(eq(buildopsJobs.buildopsId, job.id));
+        if (existing) {
+          await db.update(buildopsJobs).set(payload).where(eq(buildopsJobs.buildopsId, job.id));
+          updated++;
+        } else {
+          await db.insert(buildopsJobs).values(payload);
+          created++;
+        }
+      }
+
+      const msg = `Jobs sync: ${created} created, ${updated} updated, ${skipped} skipped of ${jobs.length} total`;
+      console.log(`[sync-jobs] ${msg}`);
+      await storage.createBuildopsSyncLog({ entityType: "job", action: "pull", message: msg });
+      res.json({ ok: true, created, updated, skipped, total: jobs.length });
+    } catch (err: any) {
+      console.error("[BuildOps sync-jobs] Error:", err.message);
+      await storage.createBuildopsSyncLog({ entityType: "job", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Sync Invoices from BuildOps ──────────────────────────────────────────────
+  app.post("/api/buildops/sync-invoices", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getAllInvoices } = await import("./buildops");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsInvoices } = await import("@shared/schema");
+
+      const allClients = await storage.listClients();
+      const clientByBuildopsId = new Map(allClients.filter(c => c.buildopsId).map(c => [c.buildopsId!, c]));
+
+      const invoices = await getAllInvoices(creds.clientId, creds.clientSecret, creds.tenantId);
+      let created = 0, updated = 0, skipped = 0;
+
+      for (const inv of invoices) {
+        if (!inv.id) { skipped++; continue; }
+        const matchedClient = inv.customerId ? clientByBuildopsId.get(inv.customerId) : null;
+
+        const parseDate = (d?: string | null) => {
+          if (!d) return null;
+          const parsed = new Date(d);
+          return isNaN(parsed.getTime()) ? null : parsed;
+        };
+
+        const payload = {
+          buildopsId: inv.id,
+          clientId: matchedClient?.id ?? null,
+          invoiceNumber: inv.invoiceNumber ?? null,
+          status: inv.status ?? null,
+          totalAmount: inv.totalAmount != null ? String(inv.totalAmount) : null,
+          subtotal: inv.subtotal != null ? String(inv.subtotal) : null,
+          taxAmount: inv.taxAmount != null ? String(inv.taxAmount) : null,
+          customerName: inv.customerName ?? null,
+          jobNumber: inv.jobNumber ?? null,
+          isFinalInvoice: inv.isFinalInvoice ?? false,
+          issuedDate: parseDate(inv.issuedDate),
+          dueDate: parseDate(inv.dueDate),
+          closedDate: parseDate(inv.closedDate),
+          buildopsCustomerId: inv.customerId ?? null,
+          buildopsJobId: inv.jobId ?? null,
+          syncedAt: new Date(),
+        };
+
+        const [existing] = await db.select().from(buildopsInvoices).where(eq(buildopsInvoices.buildopsId, inv.id));
+        if (existing) {
+          await db.update(buildopsInvoices).set(payload).where(eq(buildopsInvoices.buildopsId, inv.id));
+          updated++;
+        } else {
+          await db.insert(buildopsInvoices).values(payload);
+          created++;
+        }
+      }
+
+      const msg = `Invoices sync: ${created} created, ${updated} updated, ${skipped} skipped of ${invoices.length} total`;
+      console.log(`[sync-invoices] ${msg}`);
+      await storage.createBuildopsSyncLog({ entityType: "invoice", action: "pull", message: msg });
+      res.json({ ok: true, created, updated, skipped, total: invoices.length });
+    } catch (err: any) {
+      console.error("[BuildOps sync-invoices] Error:", err.message);
+      await storage.createBuildopsSyncLog({ entityType: "invoice", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Sync Service Agreements from BuildOps ─────────────────────────────────
+  app.post("/api/buildops/sync-agreements", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
+      const { getAllServiceAgreements } = await import("./buildops");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsAgreements } = await import("@shared/schema");
+
+      const allClients = await storage.listClients();
+      const clientByBuildopsId = new Map(allClients.filter(c => c.buildopsId).map(c => [c.buildopsId!, c]));
+
+      const agreements = await getAllServiceAgreements(creds.clientId, creds.clientSecret, creds.tenantId);
+      let created = 0, updated = 0, skipped = 0;
+
+      for (const agr of agreements) {
+        if (!agr.id) { skipped++; continue; }
+        const matchedClient = agr.customerId ? clientByBuildopsId.get(agr.customerId) : null;
+
+        const parseDate = (d?: string | null) => {
+          if (!d) return null;
+          const parsed = new Date(d);
+          return isNaN(parsed.getTime()) ? null : parsed;
+        };
+
+        const payload = {
+          buildopsId: agr.id,
+          clientId: matchedClient?.id ?? null,
+          agreementName: agr.agreementName ?? agr.name ?? null,
+          agreementNumber: agr.agreementNumber != null ? String(agr.agreementNumber) : null,
+          customerName: null as string | null,
+          startDate: parseDate(agr.startDate),
+          endDate: parseDate(agr.endDate),
+          advancedSchedulingState: agr.advancedSchedulingState ?? null,
+          buildopsCustomerId: agr.customerId ?? null,
+          syncedAt: new Date(),
+        };
+
+        if (matchedClient) payload.customerName = matchedClient.name;
+
+        const [existing] = await db.select().from(buildopsAgreements).where(eq(buildopsAgreements.buildopsId, agr.id));
+        if (existing) {
+          await db.update(buildopsAgreements).set(payload).where(eq(buildopsAgreements.buildopsId, agr.id));
+          updated++;
+        } else {
+          await db.insert(buildopsAgreements).values(payload);
+          created++;
+        }
+      }
+
+      const msg = `Agreements sync: ${created} created, ${updated} updated, ${skipped} skipped of ${agreements.length} total`;
+      console.log(`[sync-agreements] ${msg}`);
+      await storage.createBuildopsSyncLog({ entityType: "agreement", action: "pull", message: msg });
+      res.json({ ok: true, created, updated, skipped, total: agreements.length });
+    } catch (err: any) {
+      console.error("[BuildOps sync-agreements] Error:", err.message);
+      await storage.createBuildopsSyncLog({ entityType: "agreement", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Read routes for client BuildOps data ──────────────────────────────────
+  app.get("/api/clients/:id/buildops-jobs", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+      if (!client.buildopsId) return res.json([]);
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsJobs } = await import("@shared/schema");
+      const jobs = await db.select().from(buildopsJobs).where(eq(buildopsJobs.clientId, clientId));
+      res.json(jobs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/clients/:id/buildops-invoices", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+      if (!client.buildopsId) return res.json([]);
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsInvoices } = await import("@shared/schema");
+      const invoices = await db.select().from(buildopsInvoices).where(eq(buildopsInvoices.clientId, clientId));
+      res.json(invoices);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/clients/:id/buildops-agreements-synced", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+      if (!client.buildopsId) return res.json([]);
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsAgreements } = await import("@shared/schema");
+      const agreements = await db.select().from(buildopsAgreements).where(eq(buildopsAgreements.clientId, clientId));
+      res.json(agreements);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Unified quotes list: BuildOps quotes enriched with CRM estimate linkage
   app.get("/api/buildops/quotes-list", isAuthenticated, async (req, res) => {
     try {

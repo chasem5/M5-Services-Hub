@@ -653,6 +653,69 @@ export const insertAiFeedbackSchema = createInsertSchema(aiFeedback).omit({ id: 
 export type InsertAiFeedback = z.infer<typeof insertAiFeedbackSchema>;
 export type AiFeedback = typeof aiFeedback.$inferSelect;
 
+// BuildOps Jobs (synced from BuildOps)
+export const buildopsJobs = pgTable("buildops_jobs", {
+  id: serial("id").primaryKey(),
+  buildopsId: varchar("buildops_id").notNull().unique(),
+  clientId: integer("client_id").references(() => clients.id),
+  jobNumber: varchar("job_number"),
+  issueDescription: text("issue_description"),
+  status: varchar("status"),
+  priority: varchar("priority"),
+  jobTypeName: varchar("job_type_name"),
+  customerName: varchar("customer_name"),
+  customerPropertyName: varchar("customer_property_name"),
+  amountQuoted: decimal("amount_quoted", { precision: 12, scale: 2 }),
+  costAmount: decimal("cost_amount", { precision: 12, scale: 2 }),
+  billingStatus: varchar("billing_status"),
+  dueDate: timestamp("due_date"),
+  completedDate: timestamp("completed_date"),
+  buildopsCustomerId: varchar("buildops_customer_id"),
+  buildopsPropertyId: varchar("buildops_property_id"),
+  buildopsQuoteId: varchar("buildops_quote_id"),
+  buildopsServiceAgreementId: varchar("buildops_service_agreement_id"),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+});
+export type BuildopsJob = typeof buildopsJobs.$inferSelect;
+
+// BuildOps Invoices (synced from BuildOps)
+export const buildopsInvoices = pgTable("buildops_invoices", {
+  id: serial("id").primaryKey(),
+  buildopsId: varchar("buildops_id").notNull().unique(),
+  clientId: integer("client_id").references(() => clients.id),
+  invoiceNumber: varchar("invoice_number"),
+  status: varchar("status"),
+  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }),
+  subtotal: decimal("subtotal", { precision: 12, scale: 2 }),
+  taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }),
+  customerName: varchar("customer_name"),
+  jobNumber: varchar("job_number"),
+  isFinalInvoice: boolean("is_final_invoice").default(false),
+  issuedDate: timestamp("issued_date"),
+  dueDate: timestamp("due_date"),
+  closedDate: timestamp("closed_date"),
+  buildopsCustomerId: varchar("buildops_customer_id"),
+  buildopsJobId: varchar("buildops_job_id"),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+});
+export type BuildopsInvoice = typeof buildopsInvoices.$inferSelect;
+
+// BuildOps Service Agreements (synced from BuildOps)
+export const buildopsAgreements = pgTable("buildops_agreements", {
+  id: serial("id").primaryKey(),
+  buildopsId: varchar("buildops_id").notNull().unique(),
+  clientId: integer("client_id").references(() => clients.id),
+  agreementName: varchar("agreement_name"),
+  agreementNumber: varchar("agreement_number"),
+  customerName: varchar("customer_name"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  advancedSchedulingState: varchar("advanced_scheduling_state"),
+  buildopsCustomerId: varchar("buildops_customer_id"),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+});
+export type BuildopsAgreement = typeof buildopsAgreements.$inferSelect;
+
 // BuildOps Sync Log
 export const buildopsSyncLog = pgTable("buildops_sync_log", {
   id: serial("id").primaryKey(),

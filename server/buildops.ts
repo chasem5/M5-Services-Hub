@@ -131,12 +131,14 @@ export function mapBuildOpsStatusToStage(status: string | null | undefined): str
 export interface BuildOpsServiceAgreement {
   id: string;
   agreementNumber?: number | string;
+  agreementName?: string;
   name?: string;
   status?: string;
   startDate?: string;
   endDate?: string;
   totalAmount?: number;
   customerId?: string;
+  advancedSchedulingState?: string;
 }
 
 interface BuildOpsListResponse<T> {
@@ -521,6 +523,127 @@ export async function getProperties(
 }
 
 // ── Service Agreements ────────────────────────────────────────────────────────
+
+export interface BuildOpsJob {
+  id: string;
+  jobNumber?: string;
+  issueDescription?: string;
+  status?: string;
+  priority?: string;
+  jobTypeName?: string;
+  customerName?: string;
+  customerPropertyName?: string;
+  amountQuoted?: number;
+  costAmount?: number;
+  billingStatus?: string;
+  dueDate?: string;
+  completedDate?: string;
+  customerId?: string;
+  customerPropertyId?: string;
+  quoteId?: string;
+  serviceAgreementId?: string;
+}
+
+export interface BuildOpsInvoice {
+  id: string;
+  invoiceNumber?: string;
+  status?: string;
+  totalAmount?: number;
+  subtotal?: number;
+  taxAmount?: number;
+  customerName?: string;
+  jobNumber?: string;
+  isFinalInvoice?: boolean;
+  issuedDate?: string;
+  dueDate?: string;
+  closedDate?: string;
+  customerId?: string;
+  jobId?: string;
+}
+
+export async function getAllJobs(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+): Promise<BuildOpsJob[]> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+  const allJobs: BuildOpsJob[] = [];
+  let page = 1;
+  const limit = 100;
+  while (true) {
+    const res = await fetch(
+      `${BASE_URL}/v1/jobs?page=${page}&limit=${limit}`,
+      { headers }
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message ?? `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const items: BuildOpsJob[] = data.items ?? [];
+    allJobs.push(...items);
+    if (items.length < limit) break;
+    page++;
+  }
+  return allJobs;
+}
+
+export async function getAllInvoices(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+): Promise<BuildOpsInvoice[]> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+  const allInvoices: BuildOpsInvoice[] = [];
+  let page = 1;
+  const limit = 100;
+  while (true) {
+    const res = await fetch(
+      `${BASE_URL}/v1/invoices?page=${page}&limit=${limit}`,
+      { headers }
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message ?? `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const items: BuildOpsInvoice[] = data.items ?? [];
+    allInvoices.push(...items);
+    if (items.length < limit) break;
+    page++;
+  }
+  return allInvoices;
+}
+
+export async function getAllServiceAgreements(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+): Promise<BuildOpsServiceAgreement[]> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+  const all: BuildOpsServiceAgreement[] = [];
+  let page = 1;
+  const limit = 100;
+  while (true) {
+    const res = await fetch(
+      `${BASE_URL}/v1/service-agreements?page=${page}&limit=${limit}`,
+      { headers }
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message ?? `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const items: BuildOpsServiceAgreement[] = data.items ?? [];
+    all.push(...items);
+    if (items.length < limit) break;
+    page++;
+  }
+  return all;
+}
 
 export async function getServiceAgreements(
   clientId: string,
