@@ -609,7 +609,16 @@ export async function registerRoutes(
       ids: z.array(z.number()),
       data: z.record(z.unknown())
     }).parse(req.body);
-    await storage.bulkUpdateClients(ids, data as any);
+    // Block protected fields for non-admin callers
+    if ("accountManagerUserId" in data) {
+      const callerId = (req.user as any)?.claims?.sub;
+      const callerUser = callerId ? await storage.getUser(callerId) : null;
+      if (!callerUser || !["super_admin", "admin"].includes(callerUser.role ?? "")) {
+        return res.status(403).json({ message: "Only admins can assign account managers" });
+      }
+    }
+    const safeData = insertClientSchema.partial().parse(data);
+    await storage.bulkUpdateClients(ids, safeData);
     res.sendStatus(204);
   });
 
@@ -4615,7 +4624,7 @@ Respond with this JSON:
         clientIds: z.array(z.number()),
         userId: z.string().nullable(),
       }).parse(req.body);
-      await storage.bulkUpdateClients(clientIds, { accountManagerUserId: userId } as any);
+      await storage.bulkUpdateClients(clientIds, { accountManagerUserId: userId });
       res.json({ ok: true, updated: clientIds.length });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -5886,8 +5895,6 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const scopedUserId = await getScopedUserId(req, "customers");
-
       const { db } = await import("./db");
       const { sql, eq: eqDrizzle } = await import("drizzle-orm");
       const tierFilter = req.query.tier as string | undefined;
@@ -5896,6 +5903,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const dateTo = req.query.dateTo as string | undefined;
 
       // Account-manager filter: admins/managers can pass ?userId=mine|<id>
+      // For non-admin users, always scope by their accountManagerUserId (not createdBy)
       const userIdParam = req.query.userId as string | undefined;
       const requestingUserId = (req as any).user?.claims?.sub;
       const requestingUser = requestingUserId ? await storage.getUser(requestingUserId) : null;
@@ -5904,10 +5912,12 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       if (userIdParam && isAdminRole) {
         amFilterUserId = userIdParam === "mine" ? requestingUserId : userIdParam;
       } else if (!isAdminRole && requestingUserId) {
+        // Members see only clients where they are the assigned account manager
         amFilterUserId = requestingUserId;
       }
 
-      const allClients = await storage.listClients(scopedUserId ?? undefined);
+      // Always fetch all clients; scoping is handled exclusively by amFilterUserId/amScopedClientIds
+      const allClients = await storage.listClients(undefined);
 
       const hasDateRange = dateFrom && dateTo;
 
