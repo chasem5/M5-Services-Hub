@@ -6,7 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, GripVertical, Pencil, Check, X } from "lucide-react";
+import { Plus, Trash2, GripVertical, Pencil, Check, X, MoreVertical } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   DndContext,
   closestCenter,
@@ -73,20 +80,23 @@ function SortableStageRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 p-2 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
+      className="flex items-center gap-2 py-1.5 px-2 rounded-lg border bg-card hover:bg-muted/20 transition-colors"
       data-testid={`pipeline-stage-row-${stage.id}`}
     >
+      {/* Drag handle */}
       <button
         {...attributes}
         {...listeners}
-        className="p-0.5 rounded cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none shrink-0"
+        className="p-0.5 rounded cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground touch-none shrink-0"
         data-testid={`drag-handle-pipeline-stage-${stage.id}`}
       >
-        <GripVertical className="h-4 w-4" />
+        <GripVertical className="h-3.5 w-3.5" />
       </button>
 
-      <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${getStageColors(stage.color).dot}`} />
+      {/* Color dot */}
+      <div className={`h-2 w-2 rounded-full shrink-0 ${getStageColors(stage.color).dot}`} />
 
+      {/* Track badge */}
       <button
         onClick={() => updateMutation.mutate({ id: stage.id, data: { track: stage.track === "deal" ? "relationship" : "deal" } })}
         title={stage.track === "deal" ? "Move to Relationship track" : "Move to Deal track"}
@@ -101,7 +111,8 @@ function SortableStageRow({
         {stage.track === "deal" ? "Deal" : "Rel"}
       </button>
 
-      <div className="flex items-center shrink-0 gap-0.5" title="Win probability for this stage">
+      {/* Probability input */}
+      <div className="flex items-center shrink-0 gap-0.5" title="Win probability">
         <input
           type="number"
           min="0"
@@ -113,87 +124,99 @@ function SortableStageRow({
             setLocalProb(String(val));
             updateMutation.mutate({ id: stage.id, data: { defaultProbability: val } });
           }}
-          className="w-10 h-7 text-xs text-center border rounded bg-background px-1"
+          className="w-9 h-6 text-xs text-center border rounded bg-background px-0.5"
           data-testid={`input-stage-probability-${stage.id}`}
         />
         <span className="text-[10px] text-muted-foreground">%</span>
       </div>
 
+      {/* Label (or inline edit) */}
       {isEditing ? (
-        <Input
-          autoFocus
-          value={editingLabel}
-          onChange={(e) => setEditingLabel(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") updateMutation.mutate({ id: stage.id, data: { label: editingLabel } });
-            if (e.key === "Escape") setEditingId(null);
-          }}
-          className="h-7 text-sm flex-1 min-w-0"
-          data-testid={`input-pipeline-stage-label-${stage.id}`}
-        />
+        <div className="flex items-center gap-1 flex-1 min-w-0">
+          <Input
+            autoFocus
+            value={editingLabel}
+            onChange={(e) => setEditingLabel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") updateMutation.mutate({ id: stage.id, data: { label: editingLabel } });
+              if (e.key === "Escape") setEditingId(null);
+            }}
+            className="h-6 text-sm flex-1 min-w-0"
+            data-testid={`input-pipeline-stage-label-${stage.id}`}
+          />
+          <Button
+            size="icon"
+            variant="default"
+            className="h-6 w-6 shrink-0"
+            onClick={() => updateMutation.mutate({ id: stage.id, data: { label: editingLabel } })}
+            disabled={updateMutation.isPending}
+            data-testid={`button-save-pipeline-stage-${stage.id}`}
+          >
+            <Check className="h-3 w-3" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6 shrink-0 text-muted-foreground"
+            onClick={() => setEditingId(null)}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
       ) : (
         <span className="flex-1 text-sm font-medium truncate min-w-0">{stage.label}</span>
       )}
 
-      <select
-        value={stage.color ?? "default"}
-        onChange={(e) => {
-          const val = e.target.value === "default" ? null : e.target.value;
-          updateMutation.mutate({ id: stage.id, data: { color: val } });
-        }}
-        className="text-xs border rounded px-1 py-0.5 bg-background h-7 shrink-0 w-[72px]"
-        data-testid={`select-pipeline-stage-color-${stage.id}`}
-      >
-        <option value="default">Default</option>
-        <option value="green">Green</option>
-        <option value="red">Red</option>
-      </select>
+      {/* Color select */}
+      {!isEditing && (
+        <select
+          value={stage.color ?? "default"}
+          onChange={(e) => {
+            const val = e.target.value === "default" ? null : e.target.value;
+            updateMutation.mutate({ id: stage.id, data: { color: val } });
+          }}
+          className="text-xs border rounded px-1 py-0.5 bg-background h-6 shrink-0 w-[72px] text-muted-foreground"
+          data-testid={`select-pipeline-stage-color-${stage.id}`}
+        >
+          <option value="default">Default</option>
+          <option value="green">Green</option>
+          <option value="red">Red</option>
+        </select>
+      )}
 
-      <div className="flex items-center shrink-0">
-        {isEditing ? (
-          <>
-            <Button
-              size="icon"
-              variant="default"
-              className="h-7 w-7"
-              onClick={() => updateMutation.mutate({ id: stage.id, data: { label: editingLabel } })}
-              disabled={updateMutation.isPending}
-              data-testid={`button-save-pipeline-stage-${stage.id}`}
-            >
-              <Check className="h-3 w-3" />
-            </Button>
+      {/* Kebab menu */}
+      {!isEditing && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
               size="icon"
               variant="ghost"
-              className="h-7 w-7 text-muted-foreground"
-              onClick={() => setEditingId(null)}
+              className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+              data-testid={`button-stage-menu-${stage.id}`}
             >
-              <X className="h-3 w-3" />
+              <MoreVertical className="h-3.5 w-3.5" />
             </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-36">
+            <DropdownMenuItem
               onClick={() => { setEditingId(stage.id); setEditingLabel(stage.label); }}
               data-testid={`button-edit-pipeline-stage-${stage.id}`}
             >
-              <Pencil className="h-3 w-3" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 text-destructive hover:text-destructive"
+              <Pencil className="h-3.5 w-3.5 mr-2" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
               onClick={() => deleteMutation.mutate(stage.id)}
+              className="text-destructive focus:text-destructive"
               data-testid={`button-delete-pipeline-stage-${stage.id}`}
             >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </>
-        )}
-      </div>
+              <Trash2 className="h-3.5 w-3.5 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }
