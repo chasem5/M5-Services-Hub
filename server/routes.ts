@@ -5284,6 +5284,35 @@ Respond with this JSON:
         });
       }
 
+      // Add expired-stage CRM leads to the pipeline
+      const expiredLeads = await db.select({
+        id: leadsTable.id,
+        title: leadsTable.title,
+        clientId: leadsTable.clientId,
+        value: leadsTable.value,
+        buildopsQuoteId: leadsTable.buildopsQuoteId,
+        updatedAt: leadsTable.updatedAt,
+        createdAt: leadsTable.createdAt,
+      }).from(leadsTable)
+        .where(sql`${leadsTable.stage} = 'expired'`);
+
+      for (const lead of expiredLeads) {
+        pipeline.push({
+          id: `expired-lead-${lead.id}`,
+          title: lead.title,
+          status: "expired",
+          total: lead.value ?? "0",
+          clientId: lead.clientId,
+          clientName: clientMap.get(lead.clientId ?? 0) ?? "Unknown",
+          leadId: lead.id,
+          buildopsQuoteId: lead.buildopsQuoteId,
+          updatedAt: lead.updatedAt,
+          createdAt: lead.createdAt,
+          daysOld: Math.floor((Date.now() - new Date(lead.updatedAt ?? Date.now()).getTime()) / 86400000),
+          source: "crm",
+        });
+      }
+
       res.json(pipeline);
     } catch (err: any) {
       res.status(500).json({ message: err.message });

@@ -81,6 +81,7 @@ interface DashboardStats {
   bdSpendThisMonth: string;
   topClients: { clientId: number; name: string; pipelineValue: string }[];
   mrr: string;
+  wonDealsByClient: { clientId: number | null; name: string; totalValue: string; dealCount: number }[];
 }
 
 interface PulseAlert {
@@ -303,6 +304,12 @@ export default function Dashboard() {
   const chartData = (stats?.revenueByMonth ?? []).map((r) => ({
     month: monthLabel(r.month),
     revenue: Number(r.revenue),
+  }));
+
+  const wonDealsChartData = (stats?.wonDealsByClient ?? []).map(c => ({
+    name: c.name.length > 22 ? c.name.slice(0, 21) + "…" : c.name,
+    value: Number(c.totalValue),
+    dealCount: c.dealCount,
   }));
 
   const pieData = (stats?.estimateStatusCounts ?? []).map((e) => ({
@@ -804,7 +811,7 @@ export default function Dashboard() {
                   <FileText className="h-4 w-4 text-primary" />
                   Quotes Pipeline
                 </CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">All active estimates — draft &amp; sent</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Active estimates + expired quotes</p>
               </div>
               <Button
                 variant="ghost"
@@ -818,9 +825,10 @@ export default function Dashboard() {
             </div>
 
             {pipelineCollapsed && !pipelineLoading && quotesPipeline.length > 0 && (
-              <div className="flex gap-3 mt-2">
-                {(["draft", "sent"] as const).map(status => {
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {(["draft", "sent", "expired"] as const).map(status => {
                   const count = quotesPipeline.filter(q => q.status === status).length;
+                  if (count === 0) return null;
                   const total = quotesPipeline.filter(q => q.status === status).reduce((s, q) => s + Number(q.total ?? 0), 0);
                   return (
                     <button
@@ -831,10 +839,12 @@ export default function Dashboard() {
                         "text-xs px-2.5 py-1 rounded-full font-semibold",
                         status === "draft"
                           ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                          : status === "expired"
+                          ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
                           : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
                       )}
                     >
-                      {status === "draft" ? "Draft" : "Sent"} {count} · {formatCurrency(total)}
+                      {status === "draft" ? "Draft" : status === "expired" ? "Expired" : "Sent"} {count} · {formatCurrency(total)}
                     </button>
                   );
                 })}
@@ -848,23 +858,28 @@ export default function Dashboard() {
                 {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
             ) : (
-              <div className="grid grid-cols-2 divide-x divide-border/40">
-                {(["draft","sent"] as const).map(status => {
+              <div className="grid grid-cols-3 divide-x divide-border/40">
+                {(["draft","sent","expired"] as const).map(status => {
                   const items = quotesPipeline.filter((q) => q.status === status);
                   return (
                     <div key={status}>
-                      <div className="px-4 py-2 bg-muted/30 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                        {status === "draft" ? <FileText className="h-3 w-3" /> : <Send className="h-3 w-3" />}
-                        {status === "draft" ? "Draft" : "Sent"} ({items.length})
+                      <div className={cn(
+                        "px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5",
+                        status === "expired" ? "bg-orange-50 dark:bg-orange-950/20" : "bg-muted/30"
+                      )}>
+                        {status === "draft" ? <FileText className="h-3 w-3" /> : status === "expired" ? <TriangleAlert className="h-3 w-3 text-orange-500" /> : <Send className="h-3 w-3" />}
+                        {status === "draft" ? "Draft" : status === "expired" ? "Expired" : "Sent"} ({items.length})
                       </div>
                       {items.length === 0 ? (
                         <p className="px-4 py-4 text-xs text-muted-foreground italic">None</p>
                       ) : (
                         <div className="divide-y divide-border/40">
                           {items.map((q) => {
-                            const href = q.source === "buildops" && q.leadId
+                            const href = q.leadId
                               ? `/leads/${q.leadId}`
-                              : `/estimates/${q.id}`;
+                              : q.source === "crm"
+                              ? `/estimates/${q.id}`
+                              : `/leads/${q.leadId}`;
                             return (
                               <Link key={q.id} href={href}>
                                 <div
@@ -910,7 +925,7 @@ export default function Dashboard() {
         <Card className="col-span-4 shadow-sm border-border/40 bg-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-heading">Revenue Trend</CardTitle>
-            <p className="text-xs text-muted-foreground">Won deals — last 6 months</p>
+            <p className="text-xs text-muted-foreground">Invoice revenue — last 12 months</p>
           </CardHeader>
           <CardContent>
             {statsLoading ? (
@@ -1231,6 +1246,71 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Won Deals by Client */}
+      <Card className="shadow-sm border-border/40 bg-card">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg font-heading flex items-center gap-2">
+                <Trophy className="h-4 w-4 text-primary" />
+                Won Deals by Client
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Top 8 clients by total closed deal value</p>
+            </div>
+            <Button variant="ghost" size="sm" asChild className="no-default-hover-elevate">
+              <Link href="/leads?stage=won">
+                <ArrowRight className="h-3.5 w-3.5 mr-1" /> View All
+              </Link>
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {statsLoading ? (
+            <Skeleton className="h-52 w-full" />
+          ) : wonDealsChartData.length === 0 ? (
+            <div className="text-center py-8 text-sm text-muted-foreground italic">No won deals yet</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(200, wonDealsChartData.length * 36)}>
+              <BarChart
+                data={wonDealsChartData}
+                layout="vertical"
+                margin={{ top: 4, right: 60, left: 8, bottom: 4 }}
+              >
+                <XAxis
+                  type="number"
+                  tickFormatter={formatShortCurrency}
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={160}
+                  tick={{ fontSize: 12, fill: "var(--foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  formatter={(v: number, _name: string, props: any) => [
+                    `${formatCurrency(v)} · ${props.payload.dealCount} deal${props.payload.dealCount !== 1 ? "s" : ""}`,
+                    "Won Value",
+                  ]}
+                  contentStyle={{
+                    fontSize: 12,
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    background: "var(--background)",
+                    color: "var(--foreground)",
+                  }}
+                />
+                <Bar dataKey="value" fill="#BE1916" radius={[0, 4, 4, 0]} maxBarSize={28} label={{ position: "right", formatter: (v: number) => formatShortCurrency(v), fontSize: 11, fill: "var(--muted-foreground)" }} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Team Performance Section */}
       {isAdminOrManager && (

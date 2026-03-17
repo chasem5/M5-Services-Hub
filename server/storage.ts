@@ -816,11 +816,6 @@ export class DatabaseStorage implements IStorage {
       ? and(eq(leads.stage, 'lost'), sql`${leads.updatedAt} >= ${twelveMonthsAgo}`, userFilter)
       : and(eq(leads.stage, 'lost'), sql`${leads.updatedAt} >= ${twelveMonthsAgo}`);
 
-    // Monthly revenue: won deals this month using won_at (fall back to updated_at)
-    const monthlyWonWhere = userFilter
-      ? and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${firstDayOfMonth}`, userFilter)
-      : and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${firstDayOfMonth}`);
-
     const openTasksWhere = taskUserFilter
       ? and(sql`${tasks.status} != 'done'`, taskUserFilter)
       : sql`${tasks.status} != 'done'`;
@@ -883,19 +878,14 @@ export class DatabaseStorage implements IStorage {
     }, 0);
     const pipelineValue = pipelineValueCRM + pipelineValueBO;
 
-    // Monthly revenue — won CRM deals this month using won_at
-    const monthlyRevenueLeads = await db.select({ value: leads.value }).from(leads).where(monthlyWonWhere);
-    const crmMonthlyRevenue = monthlyRevenueLeads.reduce((sum, l) => sum + parseFloat(l.value || "0"), 0);
-
-    // BuildOps invoices revenue this month
+    // Monthly revenue — BuildOps invoices only (CRM won_at dates are unreliable: all stamped at import time)
     const buildopsInvoiceRows = await db.select({ totalAmount: buildopsInvoices.totalAmount })
       .from(buildopsInvoices)
       .where(and(
         sql`${buildopsInvoices.issuedDate} >= ${firstDayOfMonth}`,
         sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
       ));
-    const buildopsMonthlyRevenue = buildopsInvoiceRows.reduce((sum, inv) => sum + parseFloat(inv.totalAmount || "0"), 0);
-    const monthlyRevenue = crmMonthlyRevenue + buildopsMonthlyRevenue;
+    const monthlyRevenue = buildopsInvoiceRows.reduce((sum, inv) => sum + parseFloat(inv.totalAmount || "0"), 0);
 
     // Win rate: last 12 months, include BuildOps quote wins/losses
     const won = Number(wonLeads[0].count);
@@ -922,21 +912,7 @@ export class DatabaseStorage implements IStorage {
     const totalLost = lost + Number(boLost?.count ?? 0);
     const winRate = (totalWon + totalLost) > 0 ? Math.round((totalWon / (totalWon + totalLost)) * 100) : null;
 
-    // Revenue by month — last 12 months (BuildOps invoices primary; CRM won deals supplementary)
-    const wonRevenueWhere = userFilter
-      ? and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${twelveMonthsAgo}`, userFilter)
-      : and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${twelveMonthsAgo}`);
-    const revenueRows = await db
-      .select({
-        month: sql<string>`TO_CHAR(COALESCE(${leads.wonAt}, ${leads.updatedAt}), 'YYYY-MM')`,
-        revenue: sql<string>`sum(${leads.value})`,
-      })
-      .from(leads)
-      .where(wonRevenueWhere)
-      .groupBy(sql`TO_CHAR(COALESCE(${leads.wonAt}, ${leads.updatedAt}), 'YYYY-MM')`)
-      .orderBy(sql`TO_CHAR(COALESCE(${leads.wonAt}, ${leads.updatedAt}), 'YYYY-MM')`);
-
-    // BuildOps invoice revenue by month (last 12 months — includes T&M work)
+    // Revenue by month — last 12 months, invoice-only (CRM won_at dates unreliable)
     const boInvoiceRevenueRows = await db
       .select({
         month: sql<string>`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`,
@@ -954,10 +930,8 @@ export class DatabaseStorage implements IStorage {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const foundCRM = revenueRows.find(r => r.month === key);
       const foundBO = boInvoiceRevenueRows.find(r => r.month === key);
-      const combined = parseFloat(foundCRM?.revenue || "0") + parseFloat(foundBO?.revenue || "0");
-      revenueByMonth.push({ month: key, revenue: combined.toString() });
+      revenueByMonth.push({ month: key, revenue: foundBO?.revenue ?? "0" });
     }
 
     // Top 5 clients by open pipeline value (tier-aware)
@@ -1037,6 +1011,30 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
+    // Won deals by client — top 8 by total deal value (for horizontal bar chart)
+    const wonDealsByClientRows = await db
+      .select({
+        clientId: leads.clientId,
+        clientName: sql<string>`(SELECT name FROM clients WHERE id = ${leads.clientId})`,
+        totalValue: sql<string>`SUM(CAST(${leads.value} AS numeric))`,
+        dealCount: sql<string>`COUNT(*)`,
+      })
+      .from(leads)
+      .where(and(
+        eq(leads.stage, 'won'),
+        sql`${leads.clientId} IS NOT NULL`,
+        userFilter ?? sql`1=1`
+      ))
+      .groupBy(leads.clientId)
+      .orderBy(sql`SUM(CAST(${leads.value} AS numeric)) DESC`)
+      .limit(8);
+    const wonDealsByClient = wonDealsByClientRows.map(r => ({
+      clientId: r.clientId,
+      name: r.clientName ?? "Unknown",
+      totalValue: r.totalValue ?? "0",
+      dealCount: Number(r.dealCount ?? 0),
+    }));
+
     return {
       activeLeads: activeLeadRows.length,
       activeLeadsCRM: crmActiveLeads.length,
@@ -1055,6 +1053,7 @@ export class DatabaseStorage implements IStorage {
       bdSpendThisMonth: bdSpendThisMonth[0].total || "0",
       topClients: topClientsRows,
       mrr: mrr.toString(),
+      wonDealsByClient,
     };
   }
 
