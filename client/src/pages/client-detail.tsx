@@ -1836,6 +1836,30 @@ export default function ClientDetail() {
                       <span className="text-xs font-medium text-muted-foreground w-28 shrink-0 pt-0.5">Tier</span>
                       {client.tier ? <TierBadge tier={client.tier} /> : <span className="text-sm text-muted-foreground italic">Not set</span>}
                     </div>
+                    {/* Account Manager */}
+                    {isAdminOrManager && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-medium text-muted-foreground w-28 shrink-0">Acct Manager</span>
+                        <Select
+                          value={(client as any).accountManagerUserId ?? "__none__"}
+                          onValueChange={(val) => {
+                            updateClientMutation.mutate({ accountManagerUserId: val === "__none__" ? null : val });
+                          }}
+                        >
+                          <SelectTrigger className="h-7 text-xs w-40 border-dashed" data-testid="select-detail-acct-mgr">
+                            <SelectValue placeholder="Unassigned" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">— Unassigned —</SelectItem>
+                            {users.map(u => (
+                              <SelectItem key={u.id} value={u.id}>
+                                {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                     {/* Notes */}
                     {client.notes && (
                       <div className="flex items-start gap-3">

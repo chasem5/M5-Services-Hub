@@ -377,6 +377,10 @@ export interface IStorage {
   // User Profile Self-Edit
   updateUserProfile(id: string, data: { firstName?: string; lastName?: string; phone?: string; profileImageUrl?: string; dashboardFilter?: string }): Promise<User>;
 
+  // BuildOps Rep Matching
+  getBuildOpsRepsForMatching(): Promise<{ buildopsId: string; name: string; email: string | null }[]>;
+  updateUserBuildopsRep(userId: string, buildopsRepId: string | null): Promise<User>;
+
   // Bulk Operations
   deleteBulkClients(ids: number[]): Promise<void>;
   deleteBulkClientContacts(ids: number[]): Promise<void>;
@@ -880,6 +884,16 @@ export class DatabaseStorage implements IStorage {
     const userFilter = filterUserId ? eq(leads.assignedTo, filterUserId) : undefined;
     const taskUserFilter = filterUserId ? eq(tasks.assignedTo, filterUserId) : undefined;
 
+    // Build client-ID set for account manager scoping (used for BuildOps invoice/job data)
+    let managedClientIds: Set<number> | null = null;
+    if (filterUserId) {
+      const managed = await db
+        .select({ id: clients.id })
+        .from(clients)
+        .where(eq(clients.accountManagerUserId, filterUserId));
+      managedClientIds = new Set(managed.map(c => c.id));
+    }
+
     const activeleadsWhere = userFilter
       ? and(sql`${leads.stage} NOT IN ('won', 'lost')`, userFilter)
       : sql`${leads.stage} NOT IN ('won', 'lost')`;
@@ -955,12 +969,19 @@ export class DatabaseStorage implements IStorage {
     const pipelineValue = pipelineValueCRM + pipelineValueBO;
 
     // Monthly revenue — BuildOps invoices only (CRM won_at dates are unreliable: all stamped at import time)
+    const invoiceBaseWhere = managedClientIds
+      ? and(
+          sql`${buildopsInvoices.issuedDate} >= ${firstDayOfMonth}`,
+          sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`,
+          sql`${buildopsInvoices.clientId} = ANY(ARRAY[${sql.raw(managedClientIds.size > 0 ? [...managedClientIds].join(',') : '0')}]::int[])`
+        )
+      : and(
+          sql`${buildopsInvoices.issuedDate} >= ${firstDayOfMonth}`,
+          sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
+        );
     const buildopsInvoiceRows = await db.select({ totalAmount: buildopsInvoices.totalAmount })
       .from(buildopsInvoices)
-      .where(and(
-        sql`${buildopsInvoices.issuedDate} >= ${firstDayOfMonth}`,
-        sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
-      ));
+      .where(invoiceBaseWhere);
     const monthlyRevenue = buildopsInvoiceRows.reduce((sum, inv) => sum + parseFloat(inv.totalAmount || "0"), 0);
 
     // Win rate: last 12 months, include BuildOps quote wins/losses
@@ -989,16 +1010,23 @@ export class DatabaseStorage implements IStorage {
     const winRate = (totalWon + totalLost) > 0 ? Math.round((totalWon / (totalWon + totalLost)) * 100) : null;
 
     // Revenue by month — last 12 months, invoice-only (CRM won_at dates unreliable)
+    const invoiceLast12BaseWhere = managedClientIds
+      ? and(
+          sql`${buildopsInvoices.issuedDate} >= ${twelveMonthsAgo}`,
+          sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`,
+          sql`${buildopsInvoices.clientId} = ANY(ARRAY[${sql.raw(managedClientIds.size > 0 ? [...managedClientIds].join(',') : '0')}]::int[])`
+        )
+      : and(
+          sql`${buildopsInvoices.issuedDate} >= ${twelveMonthsAgo}`,
+          sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
+        );
     const boInvoiceRevenueRows = await db
       .select({
         month: sql<string>`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`,
         revenue: sql<string>`sum(${buildopsInvoices.totalAmount})`,
       })
       .from(buildopsInvoices)
-      .where(and(
-        sql`${buildopsInvoices.issuedDate} >= ${twelveMonthsAgo}`,
-        sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
-      ))
+      .where(invoiceLast12BaseWhere)
       .groupBy(sql`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`)
       .orderBy(sql`TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM')`);
 
@@ -1023,7 +1051,7 @@ export class DatabaseStorage implements IStorage {
       if (lead.clientId == null) continue;
       clientValueMap[lead.clientId] = (clientValueMap[lead.clientId] || 0) + getLeadValue(lead);
     }
-    const allClients = await db.select({ id: clients.id, name: clients.name, parentClientId: clients.parentClientId }).from(clients);
+    const allClients = await db.select({ id: clients.id, name: clients.name, parentClientId: clients.parentClientId, accountManagerUserId: clients.accountManagerUserId }).from(clients);
 
     // Build parent lookup
     const clientParentMap = new Map<number, number>(); // childId → parentId
@@ -1054,10 +1082,7 @@ export class DatabaseStorage implements IStorage {
         monthsWithData: sql<string>`COUNT(DISTINCT TO_CHAR(${buildopsInvoices.issuedDate}, 'YYYY-MM'))`,
       })
       .from(buildopsInvoices)
-      .where(and(
-        sql`${buildopsInvoices.issuedDate} >= ${twelveMonthsAgo}`,
-        sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
-      ));
+      .where(invoiceLast12BaseWhere);
     const mrrTotal = parseFloat(mrrRow?.totalInvoiced ?? "0");
     const mrrMonths = Math.max(Number(mrrRow?.monthsWithData ?? 0), 1);
     const mrr = mrrTotal / mrrMonths;
@@ -2280,6 +2305,33 @@ export class DatabaseStorage implements IStorage {
       .update(users)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  // BuildOps Rep Matching
+  async getBuildOpsRepsForMatching(): Promise<{ buildopsId: string; name: string; email: string | null }[]> {
+    const rows = await db
+      .select({ buildopsId: clientContacts.buildopsId, name: clientContacts.name, email: clientContacts.email })
+      .from(clientContacts)
+      .where(sql`${clientContacts.buildopsId} IS NOT NULL`);
+    const seen = new Set<string>();
+    const result: { buildopsId: string; name: string; email: string | null }[] = [];
+    for (const r of rows) {
+      const key = r.email?.toLowerCase() ?? r.buildopsId!;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ buildopsId: r.buildopsId!, name: r.name, email: r.email ?? null });
+      }
+    }
+    return result;
+  }
+
+  async updateUserBuildopsRep(userId: string, buildopsRepId: string | null): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ buildopsRepId, updatedAt: new Date() })
+      .where(eq(users.id, userId))
       .returning();
     return user;
   }

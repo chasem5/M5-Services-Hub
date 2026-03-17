@@ -392,6 +392,7 @@ export default function Customers() {
   const [, setLocation] = useLocation();
   const { user: authUser } = useAuth();
   const isAdminOrManager = authUser?.role === "super_admin" || authUser?.role === "admin" || authUser?.role === "manager";
+  const canEditAccountManager = authUser?.role === "super_admin" || authUser?.role === "admin";
   const [activeTab, setActiveTab] = useState("companies");
   const [searchTerm, setSearchTerm] = useState("");
   const [buildingSearch, setBuildingSearch] = useState("");
@@ -640,6 +641,18 @@ export default function Customers() {
       queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
       toast({ title: "Contact deleted" });
     },
+  });
+
+  const setAccountManagerMutation = useMutation({
+    mutationFn: async ({ clientId, userId }: { clientId: number; userId: string | null }) => {
+      const res = await apiRequest("PUT", `/api/clients/${clientId}`, { accountManagerUserId: userId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({ title: "Account manager updated" });
+    },
+    onError: (err: Error) => toast({ title: "Failed to update", description: err.message, variant: "destructive" }),
   });
 
   const exportCompanies = () => {
@@ -1664,6 +1677,9 @@ export default function Customers() {
                             </TableHead>
                           );
                         })}
+                        {isAdminOrManager && (
+                          <TableHead className="font-bold min-w-[140px]">Acct Mgr</TableHead>
+                        )}
                         <TableHead className="w-[80px]"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1796,6 +1812,44 @@ export default function Customers() {
                                 );
                               })()}
                             </TableCell>
+                            {isAdminOrManager && (
+                              <TableCell>
+                                {(() => {
+                                  const mgr = users.find(u => u.id === (c as any).accountManagerUserId);
+                                  const mgrName = mgr
+                                    ? (mgr.firstName || mgr.lastName ? `${mgr.firstName ?? ""} ${mgr.lastName ?? ""}`.trim() : mgr.email)
+                                    : null;
+                                  if (canEditAccountManager) {
+                                    return (
+                                      <Select
+                                        value={(c as any).accountManagerUserId ?? "__none__"}
+                                        onValueChange={(val) => {
+                                          setAccountManagerMutation.mutate({
+                                            clientId: c.id,
+                                            userId: val === "__none__" ? null : val,
+                                          });
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-7 text-xs w-36 border-dashed" data-testid={`select-acct-mgr-${c.id}`}>
+                                          <SelectValue placeholder="Unassigned" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="__none__">— Unassigned —</SelectItem>
+                                          {users.map(u => (
+                                            <SelectItem key={u.id} value={u.id}>
+                                              {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    );
+                                  }
+                                  return mgrName
+                                    ? <span className="text-xs font-medium" data-testid={`text-acct-mgr-${c.id}`}>{mgrName}</span>
+                                    : <span className="text-xs text-muted-foreground italic">Unassigned</span>;
+                                })()}
+                              </TableCell>
+                            )}
                             <TableCell>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

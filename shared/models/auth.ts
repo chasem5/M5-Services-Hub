@@ -34,6 +34,7 @@ export const users = pgTable("users", {
   calendarEmail: varchar("calendar_email"),
   calendarConnected: boolean("calendar_connected").default(false).notNull(),
   dashboardFilter: varchar("dashboard_filter").default("all"),
+  buildopsRepId: varchar("buildops_rep_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

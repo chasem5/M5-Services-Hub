@@ -134,20 +134,26 @@ const tierLabel = (t: string | null) => {
 export default function CustomerReport() {
   const [tierFilter, setTierFilter] = useState("all");
   const [healthFilterState, setHealthFilterState] = useState("all");
+  const [filterUserId, setFilterUserId] = useState("all");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("ltv");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  const { data: users = [] } = useQuery<{id: string; firstName: string|null; lastName: string|null; email: string|null; role: string|null}[]>({
+    queryKey: ["/api/users"],
+  });
+
   const queryParams = new URLSearchParams();
   if (tierFilter !== "all") queryParams.set("tier", tierFilter);
   if (healthFilterState !== "all") queryParams.set("health", healthFilterState);
   if (dateFrom) queryParams.set("dateFrom", dateFrom);
   if (dateTo) queryParams.set("dateTo", dateTo);
+  if (filterUserId !== "all") queryParams.set("userId", filterUserId);
 
   const { data: clients, isLoading, isError } = useQuery<ClientIntel[]>({
-    queryKey: ["/api/reports/customer-intelligence", tierFilter, healthFilterState, dateFrom, dateTo],
+    queryKey: ["/api/reports/customer-intelligence", tierFilter, healthFilterState, dateFrom, dateTo, filterUserId],
     queryFn: async () => {
       const res = await fetch(`/api/reports/customer-intelligence?${queryParams.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load report");
@@ -271,6 +277,21 @@ export default function CustomerReport() {
         </Select>
         <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" placeholder="From" data-testid="input-date-from" />
         <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" placeholder="To" data-testid="input-date-to" />
+        {users.length > 0 && (
+          <Select value={filterUserId} onValueChange={setFilterUserId}>
+            <SelectTrigger className="w-40" data-testid="select-user-filter">
+              <SelectValue placeholder="All Reps" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Reps</SelectItem>
+              {users.map(u => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email ?? u.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <span className="text-sm text-muted-foreground ml-auto">{sorted.length} customers</span>
       </div>
 

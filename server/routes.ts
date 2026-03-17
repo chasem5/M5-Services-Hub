@@ -4497,6 +4497,67 @@ Respond with this JSON:
     }
   });
 
+  // ── BuildOps Rep Matching — list synced reps available for user linking ──
+  app.get("/api/buildops/reps-for-matching", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const reps = await storage.getBuildOpsRepsForMatching();
+      res.json(reps);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Auto-match CRM users to BuildOps reps by email ─────────────────────
+  app.post("/api/buildops/auto-match-reps", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const allUsers = await storage.listUsers();
+      const reps = await storage.getBuildOpsRepsForMatching();
+      const repByEmail = new Map(
+        reps.filter(r => r.email).map(r => [r.email!.toLowerCase(), r])
+      );
+      let matched = 0;
+      let unmatched = 0;
+      for (const user of allUsers) {
+        if (!user.email) { unmatched++; continue; }
+        const rep = repByEmail.get(user.email.toLowerCase());
+        if (rep) {
+          await storage.updateUserBuildopsRep(user.id, rep.buildopsId);
+          matched++;
+        } else {
+          unmatched++;
+        }
+      }
+      res.json({ matched, unmatched });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Manually link/unlink a CRM user to a BuildOps rep ──────────────────
+  app.patch("/api/users/:id/buildops-rep", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const { buildopsRepId } = z.object({ buildopsRepId: z.string().nullable() }).parse(req.body);
+      const user = await storage.updateUserBuildopsRep(req.params.id, buildopsRepId);
+      res.json(user);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Bulk-assign account manager to a set of clients ────────────────────
+  app.patch("/api/clients/bulk-assign-manager", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const { clientIds, userId } = z.object({
+        clientIds: z.array(z.number()),
+        userId: z.string().nullable(),
+      }).parse(req.body);
+      await storage.bulkUpdateClients(clientIds, { accountManagerUserId: userId } as any);
+      res.json({ ok: true, updated: clientIds.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ── Sync Jobs from BuildOps ────────────────────────────────────────────────
   app.post("/api/buildops/sync-jobs", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
@@ -5764,11 +5825,23 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const scopedUserId = await getScopedUserId(req, "customers");
 
       const { db } = await import("./db");
-      const { sql } = await import("drizzle-orm");
+      const { sql, eq: eqDrizzle } = await import("drizzle-orm");
       const tierFilter = req.query.tier as string | undefined;
       const healthFilter = req.query.health as string | undefined;
       const dateFrom = req.query.dateFrom as string | undefined;
       const dateTo = req.query.dateTo as string | undefined;
+
+      // Account-manager filter: admins/managers can pass ?userId=mine|<id>
+      const userIdParam = req.query.userId as string | undefined;
+      const requestingUserId = (req as any).user?.claims?.sub;
+      const requestingUser = requestingUserId ? await storage.getUser(requestingUserId) : null;
+      const isAdminRole = requestingUser && ["super_admin", "admin", "manager"].includes(requestingUser.role);
+      let amFilterUserId: string | undefined;
+      if (userIdParam && isAdminRole) {
+        amFilterUserId = userIdParam === "mine" ? requestingUserId : userIdParam;
+      } else if (!isAdminRole && requestingUserId) {
+        amFilterUserId = requestingUserId;
+      }
 
       const allClients = await storage.listClients(scopedUserId ?? undefined);
 
@@ -5878,10 +5951,26 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         }
       }
 
+      // Build a set of account-manager-scoped client IDs (parent IDs only after rollup)
+      const amScopedClientIds: Set<number> | null = amFilterUserId ? (() => {
+        const ownedIds = new Set<number>();
+        for (const c of allClients) {
+          if (c.accountManagerUserId === amFilterUserId) ownedIds.add(c.id);
+        }
+        // also include parents of owned children
+        for (const c of allClients) {
+          if (c.parentClientId != null && ownedIds.has(c.id)) ownedIds.add(c.parentClientId);
+        }
+        return ownedIds;
+      })() : null;
+
       const results: ReportRow[] = [];
       for (const client of allClients) {
         // Skip sub-companies — their data is rolled up into the parent row
         if (client.parentClientId != null) continue;
+
+        // Account manager filter — only show clients this user manages
+        if (amScopedClientIds && !amScopedClientIds.has(client.id)) continue;
 
         const childIds = parentChildrenMap.get(client.id) ?? [];
         const groupIds = [client.id, ...childIds];

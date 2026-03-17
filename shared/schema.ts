@@ -31,6 +31,7 @@ export const clients = pgTable("clients", {
   buildopsCustomerNumber: varchar("buildops_customer_number"),
   buildopsLastSyncedAt: timestamp("buildops_last_synced_at"),
   parentClientId: integer("parent_client_id"),
+  accountManagerUserId: varchar("account_manager_user_id").references(() => users.id),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

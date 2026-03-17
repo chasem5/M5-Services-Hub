@@ -54,6 +54,9 @@ import {
   Briefcase,
   Receipt,
   FileSignature,
+  UserCheck,
+  Unlink,
+  Link2,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -1506,6 +1509,149 @@ function BuildOpsAuditPanel() {
   );
 }
 
+function AccountManagerMappingPanel() {
+  const { toast } = useToast();
+
+  const { data: allUsers = [], isLoading: usersLoading } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+  const { data: buildopsReps = [], isLoading: repsLoading } = useQuery<{ buildopsId: string; name: string; email: string | null }[]>({
+    queryKey: ["/api/buildops/reps-for-matching"],
+  });
+
+  const autoMatchMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/auto-match-reps", {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json() as Promise<{ matched: number; unmatched: number }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "Auto-match complete", description: `${data.matched} user${data.matched !== 1 ? "s" : ""} matched by email.` });
+    },
+    onError: (err: any) => toast({ title: "Auto-match failed", description: err.message, variant: "destructive" }),
+  });
+
+  const linkRepMutation = useMutation({
+    mutationFn: async ({ userId, buildopsRepId }: { userId: string; buildopsRepId: string | null }) => {
+      const res = await apiRequest("PATCH", `/api/users/${userId}/buildops-rep`, { buildopsRepId });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "Rep assignment saved" });
+    },
+    onError: (err: any) => toast({ title: "Failed to update", description: err.message, variant: "destructive" }),
+  });
+
+  const repById = new Map(buildopsReps.map(r => [r.buildopsId, r]));
+
+  const isLoading = usersLoading || repsLoading;
+
+  return (
+    <Card className="border-none shadow-sm bg-card">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <UserCheck className="h-4 w-4 text-primary" />
+            <CardTitle className="text-base font-semibold">Account Manager Mapping</CardTitle>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => autoMatchMutation.mutate()}
+            disabled={autoMatchMutation.isPending || isLoading}
+            data-testid="button-auto-match-reps"
+          >
+            {autoMatchMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5 mr-1.5" />}
+            Auto-Match by Email
+          </Button>
+        </div>
+        <CardDescription className="text-xs">
+          Link each CRM user to their BuildOps rep account. Once linked, dashboards and reports can be filtered by account manager.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        ) : buildopsReps.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2">
+            No BuildOps reps synced yet. Run "Sync Representatives" above first.
+          </p>
+        ) : (
+          <div className="border rounded-md overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="text-left font-semibold px-3 py-2">CRM User</th>
+                  <th className="text-left font-semibold px-3 py-2 hidden sm:table-cell">Email</th>
+                  <th className="text-left font-semibold px-3 py-2">BuildOps Rep</th>
+                  <th className="w-[90px] px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {allUsers.map(user => {
+                  const linkedRep = user.buildopsRepId ? repById.get(user.buildopsRepId) : undefined;
+                  const displayName = user.firstName || user.lastName
+                    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
+                    : user.email ?? "—";
+                  return (
+                    <tr key={user.id} className="hover:bg-muted/20 transition-colors">
+                      <td className="px-3 py-2 font-medium">{displayName}</td>
+                      <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell text-xs">{user.email ?? "—"}</td>
+                      <td className="px-3 py-2">
+                        {linkedRep ? (
+                          <span className="flex items-center gap-1.5 text-green-700 dark:text-green-400 text-xs font-medium">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {linkedRep.name}
+                          </span>
+                        ) : (
+                          <Select
+                            value=""
+                            onValueChange={(val) => linkRepMutation.mutate({ userId: user.id, buildopsRepId: val || null })}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-48" data-testid={`select-rep-${user.id}`}>
+                              <SelectValue placeholder="— not linked —" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {buildopsReps.map(r => (
+                                <SelectItem key={r.buildopsId} value={r.buildopsId}>
+                                  {r.name}{r.email ? ` (${r.email})` : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {linkedRep && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-muted-foreground hover:text-destructive"
+                            onClick={() => linkRepMutation.mutate({ userId: user.id, buildopsRepId: null })}
+                            disabled={linkRepMutation.isPending}
+                            data-testid={`button-unlink-rep-${user.id}`}
+                          >
+                            <Unlink className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminPage() {
   const [, setLocation] = useLocation();
   const { user: currentUser } = useAuth();
@@ -2454,6 +2600,7 @@ export default function AdminPage() {
             <>
               <BuildOpsAuditPanel />
               <BuildOpsMatchingPanel />
+              <AccountManagerMappingPanel />
             </>
           ) : (
             <p className="text-sm text-muted-foreground px-1">
