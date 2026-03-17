@@ -976,6 +976,7 @@ export default function Leads() {
   const [activeViewId, setActiveViewId] = useState<number | null>(null);
   const [buildopsView, setBuildopsView] = useState(false);
   const [tagFilter, setTagFilter] = useState<string>("all");
+  const [dateFilter, setDateFilter] = useState<string>(() => localStorage.getItem("kanban-date-filter") ?? "all");
   const [activeDragId, setActiveDragId] = useState<number | null>(null);
   const [isManageViewsOpen, setIsManageViewsOpen] = useState(false);
   const [newViewName, setNewViewName] = useState("");
@@ -983,6 +984,7 @@ export default function Leads() {
   const [newViewServiceTypes, setNewViewServiceTypes] = useState<string[]>([]);
   const [newViewTiers, setNewViewTiers] = useState<string[]>([]);
   const [newViewTags, setNewViewTags] = useState<string[]>([]);
+  const [newViewDateRange, setNewViewDateRange] = useState<string>("all");
   const [editingView, setEditingView] = useState<PipelineView | null>(null);
   // AI summaries cache: leadId -> structured analysis
   interface AiSummaryData { healthLabel: string; headline: string; observation: string; nextStep: string; }
@@ -1108,7 +1110,8 @@ export default function Leads() {
         setPendingDealMove({ leadId, stage: newStage, clientName: client?.name ?? "this client" });
         return;
       }
-      updateLeadStageMutation.mutate({ id: leadId, stage: newStage });
+      const prob = (targetStageObj as any)?.defaultProbability;
+      updateLeadStageMutation.mutate({ id: leadId, stage: newStage, confidenceScore: prob ?? undefined });
     }
   };
 
@@ -1200,9 +1203,13 @@ export default function Leads() {
   });
 
   const updateLeadStageMutation = useMutation({
-    mutationFn: async ({ id, stage }: { id: number; stage: string }) => {
+    mutationFn: async ({ id, stage, confidenceScore }: { id: number; stage: string; confidenceScore?: number }) => {
       const res = await apiRequest("PATCH", `/api/leads/${id}/stage`, { stage });
-      return res.json();
+      const updated = await res.json();
+      if (confidenceScore !== undefined) {
+        await apiRequest("PUT", `/api/leads/${id}`, { confidenceScore });
+      }
+      return updated;
     },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
@@ -1396,8 +1403,10 @@ export default function Leads() {
 
   const getStageWeightedValue = (slug: string) => {
     const stageLeads = filteredLeads?.filter((l) => l.stage === slug) ?? [];
+    const stageObj = stages.find(s => s.slug === slug);
+    const stageProb = (stageObj as any)?.defaultProbability ?? 50;
     return stageLeads.reduce((sum, lead) => {
-      const weight = (lead.confidenceScore ?? 50) / 100;
+      const weight = stageProb / 100;
       return sum + getLeadNumericValue(lead, tierMap) * weight;
     }, 0);
   };
@@ -1460,7 +1469,54 @@ export default function Leads() {
   });
 
   const activeView = pipelineViews.find(v => v.id === activeViewId) ?? null;
-  const activeFilters = activeView ? (activeView.filters as { stages?: string[]; serviceTypes?: string[]; tiers?: string[]; tags?: string[] }) : null;
+  const activeFilters = activeView ? (activeView.filters as { stages?: string[]; serviceTypes?: string[]; tiers?: string[]; tags?: string[]; dateRange?: string }) : null;
+
+  const DATE_PRESETS: { value: string; label: string }[] = [
+    { value: "all", label: "All Time" },
+    { value: "month", label: "This Month" },
+    { value: "30d", label: "Last 30 Days" },
+    { value: "90d", label: "Last 90 Days" },
+    { value: "quarter", label: "This Quarter" },
+    { value: "year", label: "This Year" },
+    { value: "last_year", label: "Last Year" },
+  ];
+
+  const getDateFilterStart = (preset: string): Date | null => {
+    const now = new Date();
+    switch (preset) {
+      case "month": {
+        return new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+      case "30d": {
+        const d = new Date(now); d.setDate(d.getDate() - 30); return d;
+      }
+      case "90d": {
+        const d = new Date(now); d.setDate(d.getDate() - 90); return d;
+      }
+      case "quarter": {
+        const q = Math.floor(now.getMonth() / 3);
+        return new Date(now.getFullYear(), q * 3, 1);
+      }
+      case "year": {
+        return new Date(now.getFullYear(), 0, 1);
+      }
+      case "last_year": {
+        const y = now.getFullYear() - 1;
+        return new Date(y, 0, 1);
+      }
+      default: return null;
+    }
+  };
+
+  const getDateFilterEnd = (preset: string): Date | null => {
+    if (preset !== "last_year") return null;
+    const y = new Date().getFullYear() - 1;
+    return new Date(y, 11, 31, 23, 59, 59);
+  };
+
+  const effectiveDateFilter = activeFilters?.dateRange ?? dateFilter;
+  const dateFilterStart = getDateFilterStart(effectiveDateFilter);
+  const dateFilterEnd = getDateFilterEnd(effectiveDateFilter);
 
   const filteredLeads = leads?.filter((lead) => {
     const matchesSearch = lead.title.toLowerCase().includes(search.toLowerCase());
@@ -1474,7 +1530,9 @@ export default function Leads() {
     const matchesViewTag = !activeFilters?.tags?.length || (lead.tags && activeFilters.tags.some(t => lead.tags!.includes(t)));
     const matchesTier = tierFilter === "all" || lead.tier === tierFilter;
     const matchesTag = tagFilter === "all" || (lead.tags && lead.tags.includes(tagFilter));
-    return matchesSearch && matchesStage && matchesViewStage && matchesViewService && matchesViewTier && matchesViewTag && matchesTier && matchesTag;
+    const leadDate = new Date(lead.createdAt);
+    const matchesDate = !dateFilterStart || (leadDate >= dateFilterStart && (!dateFilterEnd || leadDate <= dateFilterEnd));
+    return matchesSearch && matchesStage && matchesViewStage && matchesViewService && matchesViewTier && matchesViewTag && matchesTier && matchesTag && matchesDate;
   });
 
   const getClientName = (clientId: number | null) => {
@@ -1657,6 +1715,7 @@ export default function Leads() {
                   setNewViewServiceTypes([]);
                   setNewViewTiers([]);
                   setNewViewTags([]);
+                  setNewViewDateRange("all");
                   setIsManageViewsOpen(true);
                 }} data-testid="option-new-view-mobile">
                   <BookmarkPlus className="h-4 w-4 mr-2" />
@@ -1734,6 +1793,7 @@ export default function Leads() {
             setNewViewServiceTypes([]);
             setNewViewTiers([]);
             setNewViewTags([]);
+            setNewViewDateRange("all");
             setIsManageViewsOpen(true);
           }} data-testid="button-manage-views">
             <BookmarkPlus className="h-3.5 w-3.5" />
@@ -1785,6 +1845,24 @@ export default function Leads() {
               <SelectItem value="all">All Tags</SelectItem>
               {dealTags.map((tag) => (
                 <SelectItem key={tag.id} value={tag.name}>{tag.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={dateFilter}
+            onValueChange={(v) => {
+              setDateFilter(v);
+              localStorage.setItem("kanban-date-filter", v);
+            }}
+          >
+            <SelectTrigger className="w-[145px]" data-testid="select-date-filter">
+              <CalendarDays className="h-4 w-4 mr-2 shrink-0" />
+              <SelectValue placeholder="All Time" />
+            </SelectTrigger>
+            <SelectContent>
+              {DATE_PRESETS.map(p => (
+                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -4246,13 +4324,46 @@ export default function Leads() {
               <p className="text-xs text-muted-foreground">Leave blank to include all tags.</p>
             </div>
 
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Date Range</Label>
+              <div className="flex flex-wrap gap-2">
+                {DATE_PRESETS.map((preset) => {
+                  const currentVal = editingView
+                    ? (((editingView.filters as any)?.dateRange) ?? "all") as string
+                    : newViewDateRange;
+                  const selected = currentVal === preset.value;
+                  return (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      onClick={() => {
+                        if (editingView) {
+                          setEditingView({ ...editingView, filters: { ...(editingView.filters as any), dateRange: preset.value } });
+                        } else {
+                          setNewViewDateRange(preset.value);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md border transition-colors font-medium ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+                      data-testid={`button-view-date-${preset.value}`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">Filter to deals created within this time window.</p>
+            </div>
+
             {/* Existing views list */}
             {!editingView && pipelineViews.length > 0 && (
               <div className="space-y-1.5 border-t pt-3">
                 <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Saved Views</Label>
                 <div className="space-y-1.5">
                   {pipelineViews.map((v) => {
-                    const filters = v.filters as { stages?: string[]; serviceTypes?: string[]; tiers?: string[]; tags?: string[] };
+                    const filters = v.filters as { stages?: string[]; serviceTypes?: string[]; tiers?: string[]; tags?: string[]; dateRange?: string };
+                    const dateLabel = filters.dateRange && filters.dateRange !== "all"
+                      ? DATE_PRESETS.find(p => p.value === filters.dateRange)?.label ?? null
+                      : null;
                     return (
                       <div key={v.id} className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted/50">
                         <div className="flex-1 min-w-0">
@@ -4263,6 +4374,7 @@ export default function Leads() {
                               filters.serviceTypes?.length ? `${filters.serviceTypes.length} service(s)` : null,
                               filters.tiers?.length ? `${filters.tiers.length} tier(s)` : null,
                               filters.tags?.length ? `${filters.tags.length} tag(s)` : null,
+                              dateLabel ? `Date: ${dateLabel}` : null,
                             ].filter(Boolean).join(" · ") || "No filters"}
                           </p>
                         </div>
@@ -4321,6 +4433,7 @@ export default function Leads() {
                       serviceTypes: newViewServiceTypes,
                       tiers: newViewTiers,
                       tags: newViewTags,
+                      dateRange: newViewDateRange !== "all" ? newViewDateRange : undefined,
                     },
                   })}
                   disabled={createViewMutation.isPending || !newViewName.trim()}

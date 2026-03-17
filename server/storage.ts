@@ -1155,6 +1155,7 @@ export class DatabaseStorage implements IStorage {
     const existing = await db.select().from(pipelineStages);
     if (existing.length > 0) {
       await this.migratePipelineStageTracks();
+      await this.seedStageProbabilities();
       return;
     }
     const defaults = [
@@ -1292,6 +1293,33 @@ export class DatabaseStorage implements IStorage {
     for (let i = 0; i < sorted.length; i++) {
       if (sorted[i].sortOrder !== i) {
         await db.update(pipelineStages).set({ sortOrder: i }).where(eq(pipelineStages.id, sorted[i].id));
+      }
+    }
+
+    // Seed defaultProbability for known stage slugs (only if still at 50 — the schema default)
+    await this.seedStageProbabilities();
+  }
+
+  async seedStageProbabilities(): Promise<void> {
+    await db.execute(sql`ALTER TABLE pipeline_stages ADD COLUMN IF NOT EXISTS default_probability INTEGER DEFAULT 50`);
+    const probabilityMap: Record<string, number> = {
+      met_introduced: 5,
+      new_lead: 5,
+      in_conversation: 10,
+      qualified: 20,
+      draft: 5,
+      proposal_sent: 30,
+      expired: 0,
+      canceled: 0,
+      cancelled: 0,
+      won: 100,
+      lost: 0,
+    };
+    const allStages = await db.select().from(pipelineStages);
+    for (const stage of allStages) {
+      const canonical = probabilityMap[stage.slug];
+      if (canonical !== undefined && (stage.defaultProbability === null || stage.defaultProbability === 50)) {
+        await db.update(pipelineStages).set({ defaultProbability: canonical }).where(eq(pipelineStages.id, stage.id));
       }
     }
   }

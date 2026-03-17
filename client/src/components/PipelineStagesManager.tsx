@@ -47,9 +47,10 @@ function SortableStageRow({
   editingLabel: string;
   setEditingId: (id: number | null) => void;
   setEditingLabel: (label: string) => void;
-  updateMutation: { mutate: (args: { id: number; data: { label?: string; color?: string | null; track?: string } }) => void; isPending: boolean };
+  updateMutation: { mutate: (args: { id: number; data: { label?: string; color?: string | null; track?: string; defaultProbability?: number } }) => void; isPending: boolean };
   deleteMutation: any;
 }) {
+  const [localProb, setLocalProb] = useState<string>(String((stage as any).defaultProbability ?? 50));
   const {
     attributes,
     listeners,
@@ -99,6 +100,24 @@ function SortableStageRow({
       >
         {stage.track === "deal" ? "Deal" : "Rel"}
       </button>
+
+      <div className="flex items-center shrink-0 gap-0.5" title="Win probability for this stage">
+        <input
+          type="number"
+          min="0"
+          max="100"
+          value={localProb}
+          onChange={(e) => setLocalProb(e.target.value)}
+          onBlur={() => {
+            const val = Math.min(100, Math.max(0, parseInt(localProb) || 0));
+            setLocalProb(String(val));
+            updateMutation.mutate({ id: stage.id, data: { defaultProbability: val } });
+          }}
+          className="w-10 h-7 text-xs text-center border rounded bg-background px-1"
+          data-testid={`input-stage-probability-${stage.id}`}
+        />
+        <span className="text-[10px] text-muted-foreground">%</span>
+      </div>
 
       {isEditing ? (
         <Input
@@ -208,7 +227,7 @@ export function PipelineStagesManager() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { label?: string; color?: string | null; track?: string } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { label?: string; color?: string | null; track?: string; defaultProbability?: number } }) =>
       apiRequest("PUT", `/api/pipeline-stages/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/pipeline-stages"] });

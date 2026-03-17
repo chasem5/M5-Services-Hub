@@ -108,6 +108,7 @@ export const pipelineStages = pgTable("pipeline_stages", {
   sortOrder: integer("sort_order").notNull().default(0),
   color: varchar("color"), // 'green' | 'red' | null (default)
   track: varchar("track", { length: 20 }).default("relationship"), // 'relationship' | 'deal'
+  defaultProbability: integer("default_probability").default(50),
 });
 
 export const leads = pgTable("leads", {
