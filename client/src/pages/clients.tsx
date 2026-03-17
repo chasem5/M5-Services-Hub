@@ -1474,6 +1474,9 @@ export default function Customers() {
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-base">{client.name}</span>
                                   {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
+                                  {(client as any).buildopsStatus === "inactive" && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-${client.id}`}>Inactive</span>
+                                  )}
                                 </div>
                                 {(client.serviceNeeds ?? []).length > 0 && (
                                   <div className="flex flex-wrap gap-1">
@@ -1604,6 +1607,9 @@ export default function Customers() {
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <h3 className="font-bold text-sm truncate">{client.name}</h3>
                                 {(client as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
+                                {(client as any).buildopsStatus === "inactive" && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-card-${client.id}`}>Inactive</span>
+                                )}
                               </div>
                               <TierBadge tier={client.tier} size="xs" />
                             </div>
