@@ -199,7 +199,7 @@ export async function createCustomer(
   clientId: string,
   clientSecret: string,
   tenantId: string,
-  data: { name: string; email?: string | null; phonePrimary?: string | null; status?: string }
+  data: { name: string; email?: string | null; phonePrimary?: string | null; phoneAlternate?: string | null; websiteUrl?: string | null; customerType?: string | null; addresses?: BuildOpsAddress[]; status?: string }
 ): Promise<BuildOpsCustomer> {
   const token = await getToken(clientId, clientSecret);
   const res = await fetch(`${BASE_URL}/v1/customers`, {
@@ -219,7 +219,7 @@ export async function updateCustomer(
   clientSecret: string,
   tenantId: string,
   id: string,
-  data: { name?: string; email?: string | null; phonePrimary?: string | null }
+  data: { name?: string; email?: string | null; phonePrimary?: string | null; phoneAlternate?: string | null; websiteUrl?: string | null; customerType?: string | null; addresses?: BuildOpsAddress[] }
 ): Promise<BuildOpsCustomer> {
   const token = await getToken(clientId, clientSecret);
   const res = await fetch(`${BASE_URL}/v1/customers/${id}`, {
