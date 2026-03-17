@@ -565,6 +565,39 @@ export async function registerRoutes(
     res.json(client);
   });
 
+  // PATCH alias for PUT /api/clients/:id — supports partial updates via PATCH verb
+  app.patch("/api/clients/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const clientData = insertClientSchema.partial().parse(req.body);
+    if ("accountManagerUserId" in clientData) {
+      const callerId = (req.user as any)?.claims?.sub;
+      const callerUser = callerId ? await storage.getUser(callerId) : null;
+      if (!callerUser || !["super_admin", "admin"].includes(callerUser.role ?? "")) {
+        return res.status(403).json({ message: "Only admins can assign account managers" });
+      }
+    }
+    if (clientData.parentClientId != null) {
+      if (clientData.parentClientId === id) {
+        return res.status(400).json({ message: "A company cannot be its own parent" });
+      }
+      const existingChildren = await storage.listClientChildren(id);
+      if (existingChildren.length > 0) {
+        return res.status(400).json({ message: "Cannot assign a parent to this company because it already has sub-companies. Remove all sub-companies first." });
+      }
+      const proposedParent = await storage.getClient(clientData.parentClientId);
+      if (!proposedParent) return res.status(400).json({ message: "Parent company not found" });
+      if (proposedParent.parentClientId === id) {
+        return res.status(400).json({ message: "Circular relationship: the selected parent is already a sub-company of this company" });
+      }
+      if (proposedParent.parentClientId != null) {
+        return res.status(400).json({ message: "Cannot nest more than one level: the selected parent already has a parent" });
+      }
+    }
+    const client = await storage.updateClient(id, clientData);
+    await logActivity(req, "client", client.id, "updated", clientData);
+    res.json(client);
+  });
+
   app.delete("/api/clients/bulk", isAuthenticated, async (req, res) => {
     const { ids } = z.object({ ids: z.array(z.number()) }).parse(req.body);
     await storage.deleteBulkClients(ids);
@@ -6089,6 +6122,12 @@ Write a punchy, factual summary highlighting what's driving the health status. L
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
+  });
+
+  // Alias: GET /api/customer-intelligence → /api/reports/customer-intelligence
+  app.get("/api/customer-intelligence", isAuthenticated, (req, res) => {
+    const qs = new URLSearchParams(req.query as Record<string, string>).toString();
+    res.redirect(307, `/api/reports/customer-intelligence${qs ? `?${qs}` : ""}`);
   });
 
   return httpServer;

@@ -1839,7 +1839,7 @@ export default function ClientDetail() {
                     {/* Account Manager */}
                     {isAdminOrManager && (() => {
                       const canAssignAM = authUser?.role === "super_admin" || authUser?.role === "admin";
-                      const amUser = users.find(u => u.id === (client as any).accountManagerUserId);
+                      const amUser = users.find(u => u.id === client.accountManagerUserId);
                       const amName = amUser
                         ? (amUser.firstName || amUser.lastName ? `${amUser.firstName ?? ""} ${amUser.lastName ?? ""}`.trim() : amUser.email)
                         : null;
@@ -1848,7 +1848,7 @@ export default function ClientDetail() {
                           <span className="text-xs font-medium text-muted-foreground w-28 shrink-0">Acct Manager</span>
                           {canAssignAM ? (
                             <Select
-                              value={(client as any).accountManagerUserId ?? "__none__"}
+                              value={client.accountManagerUserId ?? "__none__"}
                               onValueChange={(val) => {
                                 updateClientMutation.mutate({ accountManagerUserId: val === "__none__" ? null : val });
                               }}

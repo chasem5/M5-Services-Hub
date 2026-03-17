@@ -1816,14 +1816,14 @@ export default function Customers() {
                             {isAdminOrManager && (
                               <TableCell>
                                 {(() => {
-                                  const mgr = users.find(u => u.id === (c as any).accountManagerUserId);
+                                  const mgr = users.find(u => u.id === c.accountManagerUserId);
                                   const mgrName = mgr
                                     ? (mgr.firstName || mgr.lastName ? `${mgr.firstName ?? ""} ${mgr.lastName ?? ""}`.trim() : mgr.email)
                                     : null;
                                   if (canEditAccountManager) {
                                     return (
                                       <Select
-                                        value={(c as any).accountManagerUserId ?? "__none__"}
+                                        value={c.accountManagerUserId ?? "__none__"}
                                         onValueChange={(val) => {
                                           setAccountManagerMutation.mutate({
                                             clientId: c.id,
