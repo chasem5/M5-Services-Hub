@@ -5880,6 +5880,9 @@ Write a punchy, factual summary highlighting what's driving the health status. L
 
       const results: ReportRow[] = [];
       for (const client of allClients) {
+        // Skip sub-companies — their data is rolled up into the parent row
+        if (client.parentClientId != null) continue;
+
         const childIds = parentChildrenMap.get(client.id) ?? [];
         const groupIds = [client.id, ...childIds];
 
