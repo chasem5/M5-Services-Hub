@@ -1039,11 +1039,17 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Top 5 clients by open pipeline value (tier-aware)
+    // When account-manager filter is active, scope by client ownership (managedClientIds), not lead assignee
+    const managedIdsClause = managedClientIds && managedClientIds.size > 0
+      ? sql`${leads.clientId} = ANY(ARRAY[${sql.raw([...managedClientIds].join(','))}]::int[])`
+      : managedClientIds && managedClientIds.size === 0
+        ? sql`1=0`
+        : null;
     const allActiveLeadsWithClient = await db
       .select({ clientId: leads.clientId, value: leads.value, valueType: leads.valueType, valueTier: leads.valueTier })
       .from(leads)
-      .where(userFilter
-        ? and(sql`${leads.stage} NOT IN ('won', 'lost')`, sql`${leads.clientId} IS NOT NULL`, userFilter)
+      .where(managedClientIds
+        ? and(sql`${leads.stage} NOT IN ('won', 'lost')`, sql`${leads.clientId} IS NOT NULL`, managedIdsClause!)
         : and(sql`${leads.stage} NOT IN ('won', 'lost')`, sql`${leads.clientId} IS NOT NULL`));
 
     const clientValueMap: Record<number, number> = {};
@@ -1127,6 +1133,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Won deals by client — fetch all, then roll up children into parent, take top 8
+    // When account-manager filter is active, scope by client ownership (managedClientIds)
     const wonDealsByClientRows = await db
       .select({
         clientId: leads.clientId,
@@ -1137,7 +1144,11 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(leads.stage, 'won'),
         sql`${leads.clientId} IS NOT NULL`,
-        userFilter ?? sql`1=1`
+        managedClientIds
+          ? (managedClientIds.size > 0
+              ? sql`${leads.clientId} = ANY(ARRAY[${sql.raw([...managedClientIds].join(','))}]::int[])`
+              : sql`1=0`)
+          : sql`1=1`
       ))
       .groupBy(leads.clientId)
       .orderBy(sql`SUM(CAST(${leads.value} AS numeric)) DESC`);

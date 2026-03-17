@@ -363,6 +363,12 @@ export async function registerRoutes(
     res.json(users);
   });
 
+  // Lightweight user directory for role-scoped views (admin, manager)
+  app.get("/api/users/directory", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (_req, res) => {
+    const all = await storage.listUsers();
+    res.json(all.map(u => ({ id: u.id, firstName: u.firstName, lastName: u.lastName, email: u.email, role: u.role })));
+  });
+
   app.put("/api/users/:id/role", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const id = req.params.id as string;
     const { role } = z.object({ role: z.string().min(1) }).parse(req.body);
@@ -508,6 +514,13 @@ export async function registerRoutes(
   app.put("/api/clients/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     const clientData = insertClientSchema.partial().parse(req.body);
+    // Only super_admin/admin may change accountManagerUserId
+    if ("accountManagerUserId" in clientData) {
+      const callerRole = (req.user as any)?.role;
+      if (!["super_admin", "admin"].includes(callerRole)) {
+        return res.status(403).json({ message: "Only admins can assign account managers" });
+      }
+    }
     if (clientData.parentClientId != null) {
       // Prevent self-parenting
       if (clientData.parentClientId === id) {

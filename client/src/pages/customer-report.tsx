@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -132,6 +133,9 @@ const tierLabel = (t: string | null) => {
 };
 
 export default function CustomerReport() {
+  const { user: authUser } = useAuth();
+  const isAdminOrManager = authUser?.role === "super_admin" || authUser?.role === "admin" || authUser?.role === "manager";
+
   const [tierFilter, setTierFilter] = useState("all");
   const [healthFilterState, setHealthFilterState] = useState("all");
   const [filterUserId, setFilterUserId] = useState("all");
@@ -141,8 +145,9 @@ export default function CustomerReport() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  const { data: users = [] } = useQuery<{id: string; firstName: string|null; lastName: string|null; email: string|null; role: string|null}[]>({
-    queryKey: ["/api/users"],
+  const { data: directoryUsers = [] } = useQuery<{id: string; firstName: string|null; lastName: string|null; email: string|null; role: string|null}[]>({
+    queryKey: ["/api/users/directory"],
+    enabled: isAdminOrManager,
   });
 
   const queryParams = new URLSearchParams();
@@ -277,18 +282,23 @@ export default function CustomerReport() {
         </Select>
         <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" placeholder="From" data-testid="input-date-from" />
         <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" placeholder="To" data-testid="input-date-to" />
-        {users.length > 0 && (
+        {isAdminOrManager && (
           <Select value={filterUserId} onValueChange={setFilterUserId}>
             <SelectTrigger className="w-40" data-testid="select-user-filter">
               <SelectValue placeholder="All Reps" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Reps</SelectItem>
-              {users.map(u => (
-                <SelectItem key={u.id} value={u.id}>
-                  {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email ?? u.id}
-                </SelectItem>
-              ))}
+              {authUser?.id && (
+                <SelectItem value={authUser.id}>My Data</SelectItem>
+              )}
+              {directoryUsers
+                .filter(u => u.id !== authUser?.id)
+                .map(u => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email ?? u.id}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         )}

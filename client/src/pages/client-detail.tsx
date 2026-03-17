@@ -1837,29 +1837,42 @@ export default function ClientDetail() {
                       {client.tier ? <TierBadge tier={client.tier} /> : <span className="text-sm text-muted-foreground italic">Not set</span>}
                     </div>
                     {/* Account Manager */}
-                    {isAdminOrManager && (
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-medium text-muted-foreground w-28 shrink-0">Acct Manager</span>
-                        <Select
-                          value={(client as any).accountManagerUserId ?? "__none__"}
-                          onValueChange={(val) => {
-                            updateClientMutation.mutate({ accountManagerUserId: val === "__none__" ? null : val });
-                          }}
-                        >
-                          <SelectTrigger className="h-7 text-xs w-40 border-dashed" data-testid="select-detail-acct-mgr">
-                            <SelectValue placeholder="Unassigned" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">— Unassigned —</SelectItem>
-                            {users.map(u => (
-                              <SelectItem key={u.id} value={u.id}>
-                                {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
+                    {isAdminOrManager && (() => {
+                      const canAssignAM = authUser?.role === "super_admin" || authUser?.role === "admin";
+                      const amUser = users.find(u => u.id === (client as any).accountManagerUserId);
+                      const amName = amUser
+                        ? (amUser.firstName || amUser.lastName ? `${amUser.firstName ?? ""} ${amUser.lastName ?? ""}`.trim() : amUser.email)
+                        : null;
+                      return (
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-medium text-muted-foreground w-28 shrink-0">Acct Manager</span>
+                          {canAssignAM ? (
+                            <Select
+                              value={(client as any).accountManagerUserId ?? "__none__"}
+                              onValueChange={(val) => {
+                                updateClientMutation.mutate({ accountManagerUserId: val === "__none__" ? null : val });
+                              }}
+                            >
+                              <SelectTrigger className="h-7 text-xs w-40 border-dashed" data-testid="select-detail-acct-mgr">
+                                <SelectValue placeholder="Unassigned" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">— Unassigned —</SelectItem>
+                                {users.map(u => (
+                                  <SelectItem key={u.id} value={u.id}>
+                                    {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            amName
+                              ? <span className="text-sm font-medium" data-testid="text-detail-acct-mgr">{amName}</span>
+                              : <span className="text-sm text-muted-foreground italic">Unassigned</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {/* Notes */}
                     {client.notes && (
                       <div className="flex items-start gap-3">
