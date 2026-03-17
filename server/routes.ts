@@ -514,10 +514,11 @@ export async function registerRoutes(
   app.put("/api/clients/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     const clientData = insertClientSchema.partial().parse(req.body);
-    // Only super_admin/admin may change accountManagerUserId
+    // Only super_admin/admin may change accountManagerUserId; load role from DB (req.user does not carry it)
     if ("accountManagerUserId" in clientData) {
-      const callerRole = (req.user as any)?.role;
-      if (!["super_admin", "admin"].includes(callerRole)) {
+      const callerId = (req.user as any)?.claims?.sub;
+      const callerUser = callerId ? await storage.getUser(callerId) : null;
+      if (!callerUser || !["super_admin", "admin"].includes(callerUser.role ?? "")) {
         return res.status(403).json({ message: "Only admins can assign account managers" });
       }
     }
