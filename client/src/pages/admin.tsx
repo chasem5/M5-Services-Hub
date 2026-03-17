@@ -57,6 +57,7 @@ import {
   UserCheck,
   Unlink,
   Link2,
+  Search,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -227,6 +228,17 @@ function BuildOpsPanel() {
       }
     },
     onError: (err: any) => toast({ title: "Employee sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  const [diagResult, setDiagResult] = useState<any>(null);
+  const diagnoseMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("GET", "/api/buildops/diagnose-employees");
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || e.message); }
+      return res.json();
+    },
+    onSuccess: (data) => setDiagResult(data),
+    onError: (err: any) => toast({ title: "Diagnostic failed", description: err.message, variant: "destructive" }),
   });
 
   const pushAllMutation = useMutation({
@@ -481,6 +493,40 @@ function BuildOpsPanel() {
                 {syncRepresentativesMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Users className="h-3.5 w-3.5 mr-1.5" />}
                 {syncRepresentativesMutation.isPending ? "Syncing..." : "Sync Employees"}
               </Button>
+            </div>
+            <div className="border rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <Search className="h-4 w-4 text-primary" />
+                Diagnose Employee API
+              </h4>
+              <p className="text-xs text-muted-foreground">Probes 6 potential BuildOps endpoints and shows the raw HTTP status and response body — helps identify the correct API path for M5 employee data.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => { setDiagResult(null); diagnoseMutation.mutate(); }}
+                disabled={diagnoseMutation.isPending || connStatus !== "ok"}
+                data-testid="button-buildops-diagnose"
+              >
+                {diagnoseMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Search className="h-3.5 w-3.5 mr-1.5" />}
+                {diagnoseMutation.isPending ? "Probing endpoints…" : "Run Diagnostics"}
+              </Button>
+              {diagResult && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-muted-foreground font-medium">Tenant ID: <span className="font-mono">{diagResult.tenantId}</span></p>
+                  {diagResult.probes?.map((p: any) => (
+                    <div key={p.endpoint} className={`rounded border p-2 text-xs font-mono space-y-1 ${p.status === 200 ? "border-green-500 bg-green-50 dark:bg-green-950/20" : "border-muted"}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground truncate">{p.endpoint}</span>
+                        <span className={`font-bold shrink-0 ${p.status === 200 ? "text-green-600" : p.status === 404 ? "text-orange-500" : p.status === 403 ? "text-red-500" : "text-muted-foreground"}`}>
+                          {p.status} {p.statusText} <span className="text-muted-foreground font-normal">({p.elapsed}ms)</span>
+                        </span>
+                      </div>
+                      <pre className="whitespace-pre-wrap break-all text-[10px] text-muted-foreground max-h-24 overflow-y-auto bg-muted/50 rounded p-1">{p.bodyPreview}</pre>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="border rounded-lg p-4 space-y-2">
               <h4 className="text-sm font-medium flex items-center gap-2">

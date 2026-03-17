@@ -4496,6 +4496,53 @@ Respond with this JSON:
     }
   });
 
+  // ── BuildOps Employee API Diagnostic ─────────────────────────────────────
+  app.get("/api/buildops/diagnose-employees", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ error: "BuildOps credentials not configured" });
+      const { getBuildOpsToken, buildOpsHeaders, BASE_URL } = await import("./buildops");
+      const token = await getBuildOpsToken(creds.clientId, creds.clientSecret);
+
+      const endpoints = [
+        "/v1/employees?page=1&limit=5",
+        "/v1/employees",
+        "/v2/employees?page=1&limit=5",
+        "/v1/technicians?page=1&limit=5",
+        "/v1/users?page=1&limit=5",
+        "/v1/representatives?page=1&limit=5",
+      ];
+
+      const probes = await Promise.all(
+        endpoints.map(async (path) => {
+          const url = `${BASE_URL}${path}`;
+          const start = Date.now();
+          try {
+            const r = await fetch(url, { headers: buildOpsHeaders(token, creds.tenantId) });
+            const rawBody = await r.text();
+            let parsedPreview: any = null;
+            try { parsedPreview = JSON.parse(rawBody); } catch {}
+            const elapsed = Date.now() - start;
+            return {
+              endpoint: path,
+              status: r.status,
+              statusText: r.statusText,
+              elapsed,
+              bodyPreview: rawBody.length > 500 ? rawBody.slice(0, 500) + "…" : rawBody,
+              parsed: parsedPreview,
+            };
+          } catch (fetchErr: any) {
+            return { endpoint: path, status: 0, statusText: "fetch error", elapsed: Date.now() - start, bodyPreview: fetchErr.message, parsed: null };
+          }
+        })
+      );
+
+      res.json({ tenantId: creds.tenantId, probes });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Auto-match CRM users to BuildOps reps by email ─────────────────────
   app.post("/api/buildops/auto-match-reps", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
     try {
