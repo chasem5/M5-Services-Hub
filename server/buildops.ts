@@ -345,23 +345,36 @@ export async function getRepresentativesForCustomer(
   customerId: string
 ): Promise<BuildOpsRepresentative[]> {
   const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
   const reps: BuildOpsRepresentative[] = [];
-  let page = 1;
-  while (true) {
-    const url = `${BASE_URL}/v1/customers/${customerId}/representatives?page=${page}&limit=100`;
-    const res = await fetch(url, { headers: buildOpsHeaders(token, tenantId) });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      console.warn(`[BuildOps getRepresentativesForCustomer] HTTP ${res.status} customer=${customerId} page ${page}: ${body.message ?? JSON.stringify(body).slice(0, 200)}`);
-      break;
+
+  const endpoints = [
+    { label: "contacts", urlFn: (p: number) => `${BASE_URL}/v1/contacts?customerId=${customerId}&page=${p}&limit=100` },
+    { label: "representatives", urlFn: (p: number) => `${BASE_URL}/v1/customers/${customerId}/representatives?page=${p}&limit=100` },
+  ];
+
+  for (const ep of endpoints) {
+    let page = 1;
+    let succeeded = false;
+    while (true) {
+      const url = ep.urlFn(page);
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        const preview = body.slice(0, 200);
+        console.warn(`[BuildOps getRepresentativesForCustomer] ${ep.label} HTTP ${res.status} customer=${customerId} page ${page}: ${preview}`);
+        break;
+      }
+      succeeded = true;
+      const data = await res.json();
+      const items = extractRepArray(data);
+      reps.push(...items);
+      const totalCount: number = data.totalCount ?? items.length;
+      if (items.length === 0 || reps.length >= totalCount) break;
+      page++;
+      if (page > 20) break;
     }
-    const data = await res.json();
-    const items = extractRepArray(data);
-    reps.push(...items);
-    const totalCount: number = data.totalCount ?? items.length;
-    if (items.length === 0 || reps.length >= totalCount) break;
-    page++;
-    if (page > 20) break;
+    if (succeeded || reps.length > 0) break;
   }
   return reps;
 }

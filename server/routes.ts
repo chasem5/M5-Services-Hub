@@ -4078,19 +4078,25 @@ Respond with this JSON:
       const { getToken, buildOpsHeaders, BASE_URL } = await import("./buildops") as any;
       const token = await getToken(creds.clientId, creds.clientSecret);
       const customerId = req.params.customerId;
-      // Test: top-level /v1/representatives (new approach)
-      const topLevelUrl = `${BASE_URL}/v1/representatives?page=1&limit=10`;
-      const r0 = await fetch(topLevelUrl, { headers: buildOpsHeaders(token, creds.tenantId) });
-      const body0 = await r0.json().catch(() => null);
-      // Test: old customer-scoped endpoint (for comparison)
-      const customerUrl = `${BASE_URL}/v1/customers/${customerId}/representatives?page=1&limit=50`;
-      const r1 = await fetch(customerUrl, { headers: buildOpsHeaders(token, creds.tenantId) });
-      const body1 = await r1.json().catch(() => null);
-      console.log("[debug-reps] top-level status:", r0.status, "totalCount:", body0?.totalCount, "sample keys:", body0?.items?.[0] ? Object.keys(body0.items[0]) : "n/a");
-      console.log("[debug-reps] customer-scoped status:", r1.status);
+      const hdrs = buildOpsHeaders(token, creds.tenantId);
+
+      const contactsUrl = `${BASE_URL}/v1/contacts?customerId=${customerId}&page=1&limit=10`;
+      const r0 = await fetch(contactsUrl, { headers: hdrs });
+      const body0 = await r0.text().catch(() => "");
+
+      const repsUrl = `${BASE_URL}/v1/customers/${customerId}/representatives?page=1&limit=50`;
+      const r1 = await fetch(repsUrl, { headers: hdrs });
+      const body1 = await r1.text().catch(() => "");
+
+      const topUrl = `${BASE_URL}/v1/representatives?page=1&limit=10`;
+      const r2 = await fetch(topUrl, { headers: hdrs });
+      const body2 = await r2.text().catch(() => "");
+
+      console.log(`[debug-reps] contacts=${r0.status}, customer-reps=${r1.status}, top-level=${r2.status}`);
       res.json({
-        topLevel: { status: r0.status, url: topLevelUrl, totalCount: body0?.totalCount, sampleItem: body0?.items?.[0] ?? null, body: body0 },
-        customerScoped: { status: r1.status, url: customerUrl, body: body1 },
+        contacts: { status: r0.status, url: contactsUrl, body: body0.slice(0, 500) },
+        customerScoped: { status: r1.status, url: repsUrl, body: body1.slice(0, 500) },
+        topLevel: { status: r2.status, url: topUrl, body: body2.slice(0, 500) },
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -4270,7 +4276,7 @@ Respond with this JSON:
           const reps = await getRepresentativesForCustomer(
             creds.clientId, creds.clientSecret, creds.tenantId, client.buildopsId!
           );
-          console.log(`[sync-reps] customer ${client.name} (${client.buildopsId}): ${reps.length} reps`);
+          if (reps.length > 0) console.log(`[sync-reps] customer ${client.name} (${client.buildopsId}): ${reps.length} reps`);
           for (const rep of reps) {
             if (!rep.id || seenRepIds.has(rep.id)) continue;
             seenRepIds.add(rep.id);
