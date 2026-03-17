@@ -1293,10 +1293,10 @@ export default function Dashboard() {
                   tickLine={false}
                 />
                 <Tooltip
-                  formatter={(v: number, _name: string, props: any) => [
-                    `${formatCurrency(v)} · ${props.payload.dealCount} deal${props.payload.dealCount !== 1 ? "s" : ""}`,
-                    "Won Value",
-                  ]}
+                  formatter={(v: number, _name: string, entry: { payload?: { dealCount?: number } }) => {
+                    const count = entry?.payload?.dealCount ?? 0;
+                    return [`${formatCurrency(v)} · ${count} deal${count !== 1 ? "s" : ""}`, "Won Value"];
+                  }}
                   contentStyle={{
                     fontSize: 12,
                     border: "1px solid var(--border)",
