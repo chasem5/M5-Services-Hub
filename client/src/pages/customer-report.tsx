@@ -43,6 +43,7 @@ interface ClientIntel {
   invoicePrior3Avg: number;
   healthScore: number;
   healthStatus: "healthy" | "watch" | "at_risk";
+  groupChildCount: number;
 }
 
 type SortKey = "ltv" | "hitRate" | "pipelineValue" | "velocityLast90" | "activeJobs" | "healthScore" | "name";
@@ -310,8 +311,19 @@ export default function CustomerReport() {
                 <tbody>
                   {sorted.map(c => (
                     <tr key={c.clientId} className="border-b hover:bg-muted/50" data-testid={`row-client-${c.clientId}`}>
-                      <td className="py-2.5 px-3 font-medium max-w-[200px] truncate">
-                        <Link href={`/customers/${c.clientId}`} className="hover:text-primary hover:underline">{c.name}</Link>
+                      <td className="py-2.5 px-3 font-medium max-w-[220px]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Link href={`/customers/${c.clientId}`} className="hover:text-primary hover:underline truncate">{c.name}</Link>
+                          {c.groupChildCount > 0 && (
+                            <span
+                              className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium border border-primary/20 whitespace-nowrap"
+                              title={`Includes data from ${c.groupChildCount} sub-${c.groupChildCount === 1 ? "company" : "companies"}`}
+                              data-testid={`badge-group-${c.clientId}`}
+                            >
+                              +{c.groupChildCount} sub
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2.5 px-3">{tierLabel(c.tier)}</td>
                       <td className="py-2.5 px-3"><HealthBadgeHover client={c} /></td>

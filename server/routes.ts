@@ -5866,20 +5866,60 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         invoicePrior3Avg: number;
         healthScore: number;
         healthStatus: "healthy" | "watch" | "at_risk";
+        groupChildCount: number;
+      }
+
+      // Build parent → child IDs map for rollup
+      const parentChildrenMap = new Map<number, number[]>();
+      for (const c of allClients) {
+        if (c.parentClientId != null) {
+          if (!parentChildrenMap.has(c.parentClientId)) parentChildrenMap.set(c.parentClientId, []);
+          parentChildrenMap.get(c.parentClientId)!.push(c.id);
+        }
       }
 
       const results: ReportRow[] = [];
       for (const client of allClients) {
-        const deals = dealMap.get(client.id);
-        const won = Number(deals?.won ?? 0);
-        const lost = Number(deals?.lost ?? 0);
-        const openDeals = Number(deals?.open_deals ?? 0);
-        const pipeline = Number(deals?.pipeline ?? 0);
-        const ltv = invoiceMap.get(client.id) ?? 0;
-        const jobs = jobMap.get(client.id) ?? { active: 0, total: 0, last90: 0, prior90: 0 };
-        const contractTotal = agrMap.get(client.id) ?? 0;
+        const childIds = parentChildrenMap.get(client.id) ?? [];
+        const groupIds = [client.id, ...childIds];
+
+        // Aggregate deals across parent + children
+        let won = 0, lost = 0, openDeals = 0, pipeline = 0;
+        for (const gid of groupIds) {
+          const d = dealMap.get(gid);
+          won += Number(d?.won ?? 0);
+          lost += Number(d?.lost ?? 0);
+          openDeals += Number(d?.open_deals ?? 0);
+          pipeline += Number(d?.pipeline ?? 0);
+        }
+
+        // Aggregate invoice LTV across group
+        const ltv = groupIds.reduce((s, gid) => s + (invoiceMap.get(gid) ?? 0), 0);
+
+        // Aggregate jobs across group
+        const jobs = groupIds.reduce(
+          (acc, gid) => {
+            const j = jobMap.get(gid) ?? { active: 0, total: 0, last90: 0, prior90: 0 };
+            return { active: acc.active + j.active, total: acc.total + j.total, last90: acc.last90 + j.last90, prior90: acc.prior90 + j.prior90 };
+          },
+          { active: 0, total: 0, last90: 0, prior90: 0 }
+        );
+
+        // Aggregate service agreements across group
+        const contractTotal = groupIds.reduce((s, gid) => s + (agrMap.get(gid) ?? 0), 0);
+        const hasActiveSA = groupIds.some(gid => agrClientIds.has(gid));
         const mrr = contractTotal / 12;
-        const hasActiveSA = agrClientIds.has(client.id);
+
+        // Merge monthly invoice data across group (combine totals for the same month)
+        const mergedMonthlyMap = new Map<string, number>();
+        for (const gid of groupIds) {
+          for (const { month, total } of invoiceMonthlyMap.get(gid) ?? []) {
+            mergedMonthlyMap.set(month, (mergedMonthlyMap.get(month) ?? 0) + total);
+          }
+        }
+        const groupMonthlyData = Array.from(mergedMonthlyMap.entries())
+          .map(([month, total]) => ({ month, total }))
+          .sort((a, b) => a.month.localeCompare(b.month));
 
         const hasData = won > 0 || lost > 0 || openDeals > 0 || ltv > 0 || jobs.total > 0 || hasActiveSA;
         if (!hasData) continue;
@@ -5887,7 +5927,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         const hitRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 100) : null;
         const velocityDirection = computeVelocityDirection(jobs.last90, jobs.prior90);
         const { invoiceTrend, last3Avg: invoiceLast3Avg, prior3Avg: invoicePrior3Avg } =
-          computeInvoiceTrend(invoiceMonthlyMap.get(client.id) ?? []);
+          computeInvoiceTrend(groupMonthlyData);
         const { healthScore, healthStatus } = computeHealthScoreV2(
           velocityDirection, openDeals, hasActiveSA, ltv, invoiceTrend
         );
@@ -5917,6 +5957,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           invoicePrior3Avg,
           healthScore,
           healthStatus,
+          groupChildCount: childIds.length,
         });
       }
 
