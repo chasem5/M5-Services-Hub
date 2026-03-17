@@ -3897,22 +3897,35 @@ function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
 }
 
 interface IntelData {
+  velocityLast90: number;
+  velocityPrior90: number;
+  velocityDirection: "growing" | "flat" | "declining";
+  velocityChange: number;
+  jobTrend: { month: string; count: number }[];
   hitRate: number | null;
   wonCount: number;
   lostCount: number;
   openCount: number;
   pipelineValue: number;
+  dealStages: { stage: string; count: number }[];
   ltv: number;
-  mrr: number;
   activeJobs: number;
-  completedJobs: number;
-  avgMonthlyJobs: number;
-  revenueTrend: { month: string; revenue: number }[];
-  trendDirection: "growing" | "flat" | "declining";
+  totalJobs: number;
+  hasActiveSA: boolean;
+  serviceAgreements: {
+    buildopsId: string;
+    agreementNumber: string;
+    agreementName: string;
+    status: string;
+    startDate: string | null;
+    endDate: string | null;
+    frequency: string;
+    contractValue: number | null;
+    totalInvoiced: number;
+    jobCount: number;
+  }[];
   healthScore: number;
   healthStatus: "healthy" | "watch" | "at_risk";
-  dealStages: { stage: string; count: number }[];
-  jobsAboveAvg: boolean;
 }
 
 const fmtCur = (v: number) =>
@@ -3944,23 +3957,51 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
   const healthColor = data.healthStatus === "healthy" ? "text-green-600" : data.healthStatus === "watch" ? "text-amber-600" : "text-red-600";
   const healthBg = data.healthStatus === "healthy" ? "bg-green-100" : data.healthStatus === "watch" ? "bg-amber-100" : "bg-red-100";
   const healthLabel = data.healthStatus === "healthy" ? "Healthy" : data.healthStatus === "watch" ? "Watch" : "At Risk";
-  const trendLabel = data.trendDirection === "growing" ? "Growing" : data.trendDirection === "declining" ? "Declining" : "Stable";
+  const velocityIcon = data.velocityDirection === "growing"
+    ? <TrendingUp className="h-4 w-4 text-green-600" />
+    : data.velocityDirection === "declining"
+    ? <TrendingDown className="h-4 w-4 text-red-600" />
+    : <Minus className="h-4 w-4 text-muted-foreground" />;
+  const velocityLabel = data.velocityDirection === "growing" ? "Accelerating" : data.velocityDirection === "declining" ? "Slowing" : "Steady";
+  const velocityColor = data.velocityDirection === "growing" ? "text-green-600" : data.velocityDirection === "declining" ? "text-red-600" : "text-muted-foreground";
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-2">
+      {/* ── Header row ── */}
+      <div className="flex flex-wrap items-center gap-3">
         <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold", healthBg, healthColor)} data-testid="badge-client-health">
           <HeartPulse className="h-4 w-4" />
-          {healthLabel} ({data.healthScore}/4)
+          {healthLabel} ({data.healthScore}/3)
         </div>
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          {data.trendDirection === "growing" && <TrendingUp className="h-4 w-4 text-green-600" />}
-          {data.trendDirection === "declining" && <TrendingDown className="h-4 w-4 text-red-600" />}
-          {data.trendDirection === "flat" && <Minus className="h-4 w-4" />}
-          Revenue: {trendLabel}
+        <div className={cn("flex items-center gap-1.5 text-sm font-medium", velocityColor)}>
+          {velocityIcon}
+          Activity: {velocityLabel}
         </div>
       </div>
 
+      {/* ── Velocity callout ── */}
+      <Card className="shadow-sm bg-card border-l-4" style={{ borderLeftColor: data.velocityDirection === "growing" ? "#16a34a" : data.velocityDirection === "declining" ? "#dc2626" : "#94a3b8" }}>
+        <CardContent className="p-4 flex flex-wrap items-center gap-6">
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Last 90 Days</p>
+            <p className="text-3xl font-heading font-bold mt-0.5" data-testid="text-velocity-last90">{data.velocityLast90}</p>
+            <p className="text-xs text-muted-foreground">jobs completed</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Prior 90 Days</p>
+            <p className="text-3xl font-heading font-bold mt-0.5 text-muted-foreground" data-testid="text-velocity-prior90">{data.velocityPrior90}</p>
+            <p className="text-xs text-muted-foreground">jobs completed</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {velocityIcon}
+            <span className={cn("text-lg font-semibold", velocityColor)}>
+              {data.velocityChange > 0 ? "+" : ""}{data.velocityChange} jobs
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── KPI row 1: revenue & pipeline ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="shadow-sm bg-card">
           <CardContent className="p-4">
@@ -3972,12 +4013,7 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Pipeline Value</p>
             <p className="text-2xl font-heading font-bold mt-1" data-testid="text-pipeline">{fmtCur(data.pipelineValue)}</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm bg-card">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Monthly Recurring</p>
-            <p className="text-2xl font-heading font-bold mt-1" data-testid="text-mrr">{fmtCur(data.mrr)}</p>
+            <p className="text-xs text-muted-foreground">{data.openCount} open deal{data.openCount !== 1 ? "s" : ""}</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm bg-card">
@@ -3989,52 +4025,33 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
             <p className="text-xs text-muted-foreground">{data.wonCount}W / {data.lostCount}L</p>
           </CardContent>
         </Card>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="shadow-sm bg-card">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Open Deals</p>
-            <p className="text-2xl font-heading font-bold mt-1" data-testid="text-open-deals">{data.openCount}</p>
-          </CardContent>
-        </Card>
         <Card className="shadow-sm bg-card">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Active Jobs</p>
             <p className="text-2xl font-heading font-bold mt-1" data-testid="text-active-jobs">{data.activeJobs}</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm bg-card">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Completed Jobs</p>
-            <p className="text-2xl font-heading font-bold mt-1" data-testid="text-completed-jobs">{data.completedJobs}</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm bg-card">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Avg Monthly Jobs</p>
-            <p className="text-2xl font-heading font-bold mt-1" data-testid="text-avg-jobs">{data.avgMonthlyJobs}</p>
+            <p className="text-xs text-muted-foreground">{data.totalJobs} total</p>
           </CardContent>
         </Card>
       </div>
 
-      {data.revenueTrend.length > 0 && (
+      {/* ── 12-month job activity chart ── */}
+      {data.jobTrend && data.jobTrend.some(m => m.count > 0) && (
         <Card className="shadow-sm bg-card">
           <CardContent className="p-4">
-            <p className="text-sm font-semibold mb-3">Revenue Trend (12 months)</p>
-            <div className="h-48" data-testid="chart-revenue-trend">
+            <p className="text-sm font-semibold mb-3">Job Activity — Last 12 Months</p>
+            <div className="h-48" data-testid="chart-job-trend">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data.revenueTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                <AreaChart data={data.jobTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#BE1916" stopOpacity={0.2} />
+                    <linearGradient id="jobGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#BE1916" stopOpacity={0.25} />
                       <stop offset="95%" stopColor="#BE1916" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} tickFormatter={(v: string) => v.slice(5)} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`} />
-                  <ReTooltip formatter={(v: number) => [fmtCur(v), "Revenue"]} labelFormatter={(l: string) => `Month: ${l}`} />
-                  <Area type="monotone" dataKey="revenue" stroke="#BE1916" fill="url(#revenueGrad)" strokeWidth={2} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <ReTooltip formatter={(v: number) => [v, "Jobs Completed"]} labelFormatter={(l: string) => `Month: ${l}`} />
+                  <Area type="monotone" dataKey="count" stroke="#BE1916" fill="url(#jobGrad)" strokeWidth={2} dot={{ r: 3, fill: "#BE1916" }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -4042,37 +4059,59 @@ function IntelligenceTab({ clientId }: { clientId: number }) {
         </Card>
       )}
 
+      {/* ── Health score breakdown ── */}
       <Card className="shadow-sm bg-card">
         <CardContent className="p-4">
-          <p className="text-sm font-semibold mb-2">Health Score Breakdown</p>
-          <div className="space-y-2 text-sm">
+          <p className="text-sm font-semibold mb-3">Health Score (3 signals)</p>
+          <div className="space-y-2.5 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Revenue trend positive</span>
-              {data.trendDirection === "growing"
+              <span className="text-muted-foreground">Job activity not declining</span>
+              {data.velocityDirection !== "declining"
                 ? <CheckCircle2 className="h-4 w-4 text-green-600" />
                 : <X className="h-4 w-4 text-red-400" />}
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Active pipeline deals</span>
-              {data.openCount > 0
+              <span className="text-muted-foreground">Has revenue or open deals</span>
+              {data.openCount > 0 || data.ltv > 0
                 ? <CheckCircle2 className="h-4 w-4 text-green-600" />
                 : <X className="h-4 w-4 text-red-400" />}
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Jobs above average ({data.avgMonthlyJobs}/mo)</span>
-              {data.jobsAboveAvg
-                ? <CheckCircle2 className="h-4 w-4 text-green-600" />
-                : <X className="h-4 w-4 text-red-400" />}
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Hit rate above 50%</span>
-              {data.hitRate !== null && data.hitRate > 50
+              <span className="text-muted-foreground">Active service agreement</span>
+              {data.hasActiveSA
                 ? <CheckCircle2 className="h-4 w-4 text-green-600" />
                 : <X className="h-4 w-4 text-red-400" />}
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Service agreements ── */}
+      {data.serviceAgreements && data.serviceAgreements.length > 0 && (
+        <Card className="shadow-sm bg-card">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold mb-3">Active Service Agreements ({data.serviceAgreements.length})</p>
+            <div className="space-y-3">
+              {data.serviceAgreements.map(sa => (
+                <div key={sa.buildopsId} className="border rounded-lg p-3 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium">{sa.agreementName || sa.agreementNumber}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{sa.frequency} · {sa.jobCount} job{sa.jobCount !== 1 ? "s" : ""}</p>
+                    </div>
+                    {sa.contractValue != null && (
+                      <p className="text-sm font-semibold whitespace-nowrap">{fmtCur(sa.contractValue)}/yr</p>
+                    )}
+                  </div>
+                  {sa.endDate && (
+                    <p className="text-xs text-muted-foreground mt-1">Expires {new Date(sa.endDate).toLocaleDateString()}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

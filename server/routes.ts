@@ -4434,14 +4434,17 @@ Respond with this JSON:
       const jobs = await getJobs(creds.clientId, creds.clientSecret, creds.tenantId);
       let created = 0, updated = 0, skipped = 0;
 
-      const parseDate = (d?: string | null): Date | null => {
-        if (!d) return null;
-        // Handle date-only strings (YYYY-MM-DD) as local dates to avoid UTC midnight shift
-        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-          const [y, m, day] = d.split("-").map(Number);
+      const parseDate = (d?: any): Date | null => {
+        if (d === null || d === undefined || d === "") return null;
+        // Numeric Unix timestamp — BuildOps returns completedDate as Unix seconds
+        const n = typeof d === "number" ? d : (/^\d{9,11}$/.test(String(d)) ? Number(d) : null);
+        if (n !== null) return new Date(n > 9e8 && n < 4e9 ? n * 1000 : n);
+        const s = String(d);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+          const [y, m, day] = s.split("-").map(Number);
           return new Date(y, m - 1, day);
         }
-        const parsed = new Date(d);
+        const parsed = new Date(s);
         return isNaN(parsed.getTime()) ? null : parsed;
       };
 
@@ -4526,13 +4529,16 @@ Respond with this JSON:
       const invoices = await getInvoices(creds.clientId, creds.clientSecret, creds.tenantId);
       let created = 0, updated = 0, skipped = 0;
 
-      const parseDate = (d?: string | null): Date | null => {
-        if (!d) return null;
-        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-          const [y, m, day] = d.split("-").map(Number);
+      const parseDate = (d?: any): Date | null => {
+        if (d === null || d === undefined || d === "") return null;
+        const n = typeof d === "number" ? d : (/^\d{9,11}$/.test(String(d)) ? Number(d) : null);
+        if (n !== null) return new Date(n > 9e8 && n < 4e9 ? n * 1000 : n);
+        const s = String(d);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+          const [y, m, day] = s.split("-").map(Number);
           return new Date(y, m - 1, day);
         }
-        const parsed = new Date(d);
+        const parsed = new Date(s);
         return isNaN(parsed.getTime()) ? null : parsed;
       };
 
@@ -4551,11 +4557,11 @@ Respond with this JSON:
           customerName: inv.customerName ?? null,
           jobNumber: inv.jobNumber ?? null,
           isFinalInvoice: inv.isFinalInvoice ?? false,
-          issuedDate: parseDate(inv.issuedDate),
-          dueDate: parseDate(inv.dueDate),
-          closedDate: parseDate(inv.closedDate),
+          issuedDate: parseDate((inv as any).issuedDate ?? (inv as any).invoicedDate ?? (inv as any).invoiceDate ?? (inv as any).sentDate ?? (inv as any).createdDate ?? null),
+          dueDate: parseDate((inv as any).dueDate ?? (inv as any).paymentDueDate ?? null),
+          closedDate: parseDate((inv as any).closedDate ?? (inv as any).paidDate ?? (inv as any).closedAt ?? (inv as any).exportedDate ?? null),
           buildopsCustomerId: inv.customerId ?? null,
-          buildopsJobId: inv.jobId ?? null,
+          buildopsJobId: (inv as any).jobId ?? (inv as any).job?.id ?? null,
           syncedAt: new Date(),
         };
 
@@ -4596,13 +4602,16 @@ Respond with this JSON:
       const agreements = await getAllServiceAgreements(creds.clientId, creds.clientSecret, creds.tenantId);
       let created = 0, updated = 0, skipped = 0;
 
-      const parseDate = (d?: string | null): Date | null => {
-        if (!d) return null;
-        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-          const [y, m, day] = d.split("-").map(Number);
+      const parseDate = (d?: any): Date | null => {
+        if (d === null || d === undefined || d === "") return null;
+        const n = typeof d === "number" ? d : (/^\d{9,11}$/.test(String(d)) ? Number(d) : null);
+        if (n !== null) return new Date(n > 9e8 && n < 4e9 ? n * 1000 : n);
+        const s = String(d);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+          const [y, m, day] = s.split("-").map(Number);
           return new Date(y, m - 1, day);
         }
-        const parsed = new Date(d);
+        const parsed = new Date(s);
         return isNaN(parsed.getTime()) ? null : parsed;
       };
 
@@ -5300,36 +5309,32 @@ Guidelines:
     return months;
   }
 
-  function zeroFillTrend(sparse: { month: string; revenue: number }[]): { month: string; revenue: number }[] {
+  function zeroFillJobTrend(sparse: { month: string; count: number }[]): { month: string; count: number }[] {
     const months12 = generateLast12Months();
-    const map = new Map(sparse.map(r => [r.month, r.revenue]));
-    return months12.map(m => ({ month: m, revenue: map.get(m) ?? 0 }));
+    const map = new Map(sparse.map(r => [r.month, r.count]));
+    return months12.map(m => ({ month: m, count: map.get(m) ?? 0 }));
   }
 
-  function computeTrendDirection(trend: { revenue: number }[]): "growing" | "flat" | "declining" {
-    const nonZero = trend.filter(t => t.revenue > 0);
-    if (nonZero.length < 3) return "flat";
-    const half = Math.floor(trend.length / 2);
-    const firstAvg = trend.slice(0, half).reduce((s, m) => s + m.revenue, 0) / half;
-    const secondAvg = trend.slice(half).reduce((s, m) => s + m.revenue, 0) / (trend.length - half);
-    if (secondAvg > firstAvg * 1.1) return "growing";
-    if (secondAvg < firstAvg * 0.9) return "declining";
+  function computeVelocityDirection(last90: number, prior90: number): "growing" | "flat" | "declining" {
+    if (prior90 === 0 && last90 === 0) return "flat";
+    if (prior90 === 0) return "growing";
+    const ratio = last90 / prior90;
+    if (ratio >= 1.15) return "growing";
+    if (ratio <= 0.85) return "declining";
     return "flat";
   }
 
-  function computeHealthScore(
-    trendDirection: string,
+  function computeHealthScoreV2(
+    velocityDirection: string,
     openDeals: number,
-    clientMonthlyJobAvg: number,
-    globalMonthlyJobAvg: number,
-    hitRate: number | null
+    hasActiveSA: boolean,
+    ltv: number,
   ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk" } {
     let healthScore = 0;
-    if (trendDirection === "growing") healthScore++;
-    if (openDeals > 0) healthScore++;
-    if (globalMonthlyJobAvg > 0 ? clientMonthlyJobAvg > globalMonthlyJobAvg : clientMonthlyJobAvg > 0) healthScore++;
-    if (hitRate !== null && hitRate > 50) healthScore++;
-    const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+    if (velocityDirection === "growing" || velocityDirection === "flat") healthScore++;
+    if (openDeals > 0 || ltv > 0) healthScore++;
+    if (hasActiveSA) healthScore++;
+    const healthStatus = healthScore >= 3 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
     return { healthScore, healthStatus };
   }
 
@@ -5359,6 +5364,7 @@ Guidelines:
         return [];
       };
 
+      // ── CRM signals ──────────────────────────────────────────────────────
       const [dealStats] = toRows(await db.execute(sql`
         SELECT
           COUNT(*) FILTER (WHERE stage = 'won') as won_count,
@@ -5367,7 +5373,6 @@ Guidelines:
           COALESCE(SUM(CAST(value AS numeric)) FILTER (WHERE stage NOT IN ('won', 'lost', 'canceled')), 0) as pipeline_value
         FROM leads WHERE client_id = ${clientId}
       `));
-
       const wonCount = Number(dealStats?.won_count ?? 0);
       const lostCount = Number(dealStats?.lost_count ?? 0);
       const openCount = Number(dealStats?.open_count ?? 0);
@@ -5375,89 +5380,59 @@ Guidelines:
       const hitRate = (wonCount + lostCount) > 0 ? Math.round((wonCount / (wonCount + lostCount)) * 100) : null;
 
       const dealsByStage = toRows(await db.execute(sql`
-        SELECT stage, COUNT(*) as cnt
-        FROM leads WHERE client_id = ${clientId}
+        SELECT stage, COUNT(*) as cnt FROM leads WHERE client_id = ${clientId}
         GROUP BY stage ORDER BY cnt DESC
       `));
       const dealStages = dealsByStage.map(r => ({ stage: r.stage as string, count: Number(r.cnt) }));
 
+      // ── Revenue (best-effort — invoice dates may be null) ────────────────
       const [invoiceStats] = toRows(await db.execute(sql`
-        SELECT COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
+        SELECT COALESCE(SUM(CAST(total_amount AS numeric)), 0) as ltv
         FROM buildops_invoices WHERE client_id = ${clientId}
       `));
       const ltv = Number(invoiceStats?.ltv ?? 0);
 
-      const [agrStats] = toRows(await db.execute(sql`
-        SELECT COALESCE(SUM(CAST(contract_value AS numeric)), 0) as total_contract
-        FROM buildops_agreements
-        WHERE client_id = ${clientId}
-          AND (end_date IS NULL OR end_date > NOW())
-          AND (advanced_scheduling_state IS NULL OR LOWER(advanced_scheduling_state) NOT IN ('canceled', 'cancelled'))
-      `));
-      const mrr = Number(agrStats?.total_contract ?? 0) / 12;
-
+      // ── Job counts ───────────────────────────────────────────────────────
       const [jobStats] = toRows(await db.execute(sql`
         SELECT
           COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active_jobs,
-          COUNT(*) FILTER (WHERE LOWER(status) IN ('closed', 'complete', 'completed')) as completed_jobs,
           COUNT(*) as total_jobs
         FROM buildops_jobs WHERE client_id = ${clientId}
       `));
       const activeJobs = Number(jobStats?.active_jobs ?? 0);
-      const completedJobs = Number(jobStats?.completed_jobs ?? 0);
+      const totalJobs = Number(jobStats?.total_jobs ?? 0);
 
+      // ── Job velocity: last 90d vs prior 90d ──────────────────────────────
+      const [velocityRow] = toRows(await db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '90 days') as last_90,
+          COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '180 days'
+                           AND completed_date < NOW() - INTERVAL '90 days') as prior_90
+        FROM buildops_jobs WHERE client_id = ${clientId} AND completed_date IS NOT NULL
+      `));
+      const velocityLast90 = Number(velocityRow?.last_90 ?? 0);
+      const velocityPrior90 = Number(velocityRow?.prior_90 ?? 0);
+      const velocityDirection = computeVelocityDirection(velocityLast90, velocityPrior90);
+      const velocityChange = velocityLast90 - velocityPrior90;
+
+      // ── 12-month job activity trend ───────────────────────────────────────
       const monthlyJobRows = toRows(await db.execute(sql`
         SELECT TO_CHAR(completed_date, 'YYYY-MM') as month, COUNT(*) as cnt
         FROM buildops_jobs
         WHERE client_id = ${clientId} AND completed_date >= NOW() - INTERVAL '12 months'
         GROUP BY 1 ORDER BY 1
       `));
-      const monthlyJobCounts = monthlyJobRows.map(r => ({ month: r.month, count: Number(r.cnt) }));
-      const completedJobsLast12 = monthlyJobCounts.reduce((s, m) => s + m.count, 0);
-      const avgMonthlyJobs = completedJobsLast12 / 12;
+      const sparseJobTrend = monthlyJobRows.map(r => ({ month: r.month as string, count: Number(r.cnt) }));
+      const jobTrend = zeroFillJobTrend(sparseJobTrend);
 
-      const invoiceByMonth = toRows(await db.execute(sql`
-        SELECT TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
-               SUM(CAST(total_amount AS numeric)) as revenue
-        FROM buildops_invoices
-        WHERE client_id = ${clientId}
-          AND COALESCE(closed_date, issued_date) >= NOW() - INTERVAL '12 months'
-        GROUP BY 1 ORDER BY 1
-      `));
-      const sparseRevenue = invoiceByMonth.map(r => ({
-        month: r.month as string,
-        revenue: Number(r.revenue ?? 0),
-      }));
-      const revenueTrend = zeroFillTrend(sparseRevenue);
-      const trendDirection = computeTrendDirection(revenueTrend);
-
-      const [globalAvgRow] = toRows(await db.execute(sql`
-        SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
-          SELECT client_id, COUNT(*) / 12.0 as cnt
-          FROM buildops_jobs
-          WHERE completed_date >= NOW() - INTERVAL '12 months'
-          GROUP BY client_id
-        ) sub
-      `));
-      const globalAvgMonthly = Number(globalAvgRow?.global_avg ?? 0);
-
-      const jobsAboveAvg = globalAvgMonthly > 0 ? avgMonthlyJobs > globalAvgMonthly : avgMonthlyJobs > 0;
-      const { healthScore, healthStatus } = computeHealthScore(
-        trendDirection, openCount, avgMonthlyJobs, globalAvgMonthly, hitRate
-      );
-
-      // SA rows: active agreements with contract value vs actual invoiced revenue
+      // ── Service agreements ───────────────────────────────────────────────
       const saRows = toRows(await db.execute(sql`
         SELECT
-          a.buildops_id,
-          a.agreement_number,
-          a.agreement_name,
-          a.status,
-          a.start_date,
-          a.end_date,
-          a.frequency,
+          a.buildops_id, a.agreement_number, a.agreement_name, a.status,
+          a.start_date, a.end_date, a.frequency,
           CAST(a.contract_value AS numeric) as contract_value,
-          COALESCE(SUM(CAST(i.total_amount AS numeric)), 0) as total_invoiced
+          COALESCE(SUM(CAST(i.total_amount AS numeric)), 0) as total_invoiced,
+          COUNT(DISTINCT j.buildops_id) as job_count
         FROM buildops_agreements a
         LEFT JOIN buildops_jobs j ON j.buildops_service_agreement_id = a.buildops_id
           AND j.client_id = ${clientId}
@@ -5479,26 +5454,41 @@ Guidelines:
         frequency: r.frequency as string,
         contractValue: r.contract_value != null ? Number(r.contract_value) : null,
         totalInvoiced: Number(r.total_invoiced ?? 0),
+        jobCount: Number(r.job_count ?? 0),
       }));
+      const hasActiveSA = serviceAgreements.length > 0;
+
+      // ── Health score (3 signals) ─────────────────────────────────────────
+      const { healthScore, healthStatus } = computeHealthScoreV2(
+        velocityDirection, openCount, hasActiveSA, ltv
+      );
 
       res.json({
+        // Velocity (primary signal)
+        velocityLast90,
+        velocityPrior90,
+        velocityDirection,
+        velocityChange,
+        // Job trend (12 months)
+        jobTrend,
+        // CRM
         hitRate,
         wonCount,
         lostCount,
         openCount,
         pipelineValue,
+        dealStages,
+        // Revenue
         ltv,
-        mrr,
+        // Jobs
         activeJobs,
-        completedJobs,
-        avgMonthlyJobs: Math.round(avgMonthlyJobs * 10) / 10,
-        revenueTrend,
-        trendDirection,
+        totalJobs,
+        // SA
+        hasActiveSA,
+        serviceAgreements,
+        // Health
         healthScore,
         healthStatus,
-        dealStages,
-        jobsAboveAvg,
-        serviceAgreements,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -5540,45 +5530,27 @@ Guidelines:
       `));
       const dealMap = new Map(dealsByClient.map(r => [Number(r.client_id), r]));
 
-      const invoicesByClient = toRows(hasDateRange
-        ? await db.execute(sql`
-            SELECT client_id,
-              COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
-            FROM buildops_invoices
-            WHERE client_id IS NOT NULL
-              AND COALESCE(closed_date, issued_date) >= ${dateFrom}::timestamp
-              AND COALESCE(closed_date, issued_date) <= ${dateTo}::timestamp
-            GROUP BY client_id
-          `)
-        : await db.execute(sql`
-            SELECT client_id,
-              COALESCE(SUM(CAST(total_amount AS numeric)) FILTER (WHERE closed_date IS NOT NULL), 0) as ltv
-            FROM buildops_invoices WHERE client_id IS NOT NULL GROUP BY client_id
-          `));
+      const invoicesByClient = toRows(await db.execute(sql`
+        SELECT client_id, COALESCE(SUM(CAST(total_amount AS numeric)), 0) as ltv
+        FROM buildops_invoices WHERE client_id IS NOT NULL GROUP BY client_id
+      `));
       const invoiceMap = new Map(invoicesByClient.map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
 
       const jobsByClient = toRows(await db.execute(sql`
         SELECT client_id,
           COUNT(*) FILTER (WHERE LOWER(status) NOT IN ('closed', 'complete', 'completed', 'canceled', 'cancelled')) as active,
-          COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '12 months') as completed_12m,
-          COUNT(*) as total
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '90 days') as last_90,
+          COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '180 days'
+                           AND completed_date < NOW() - INTERVAL '90 days') as prior_90
         FROM buildops_jobs WHERE client_id IS NOT NULL GROUP BY client_id
       `));
       const jobMap = new Map(jobsByClient.map(r => [Number(r.client_id), {
         active: Number(r.active ?? 0),
-        completed12m: Number(r.completed_12m ?? 0),
         total: Number(r.total ?? 0),
-      }]));
-
-      const [globalAvgRow] = toRows(await db.execute(sql`
-        SELECT COALESCE(AVG(cnt), 0) as global_avg FROM (
-          SELECT client_id, COUNT(*) / 12.0 as cnt
-          FROM buildops_jobs
-          WHERE completed_date >= NOW() - INTERVAL '12 months'
-          GROUP BY client_id
-        ) sub
-      `));
-      const globalAvgMonthly = Number(globalAvgRow?.global_avg ?? 0);
+        last90: Number(r.last_90 ?? 0),
+        prior90: Number(r.prior_90 ?? 0),
+      }] as [number, { active: number; total: number; last90: number; prior90: number }]));
 
       const agrByClient = toRows(await db.execute(sql`
         SELECT client_id,
@@ -5593,33 +5565,6 @@ Guidelines:
 
       const agrClientIds = new Set(agrByClient.map(r => Number(r.client_id)));
 
-      const trendByClient = toRows(hasDateRange
-        ? await db.execute(sql`
-            SELECT client_id,
-              TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
-              SUM(CAST(total_amount AS numeric)) as revenue
-            FROM buildops_invoices
-            WHERE client_id IS NOT NULL
-              AND COALESCE(closed_date, issued_date) >= ${dateFrom}::timestamp
-              AND COALESCE(closed_date, issued_date) <= ${dateTo}::timestamp
-            GROUP BY client_id, month ORDER BY client_id, month
-          `)
-        : await db.execute(sql`
-            SELECT client_id,
-              TO_CHAR(COALESCE(closed_date, issued_date), 'YYYY-MM') as month,
-              SUM(CAST(total_amount AS numeric)) as revenue
-            FROM buildops_invoices
-            WHERE client_id IS NOT NULL
-              AND COALESCE(closed_date, issued_date) >= NOW() - INTERVAL '12 months'
-            GROUP BY client_id, month ORDER BY client_id, month
-          `));
-      const trendMap = new Map<number, { month: string; revenue: number }[]>();
-      for (const r of trendByClient) {
-        const cid = Number(r.client_id);
-        if (!trendMap.has(cid)) trendMap.set(cid, []);
-        trendMap.get(cid)!.push({ month: r.month, revenue: Number(r.revenue ?? 0) });
-      }
-
       interface ReportRow {
         clientId: number;
         name: string;
@@ -5633,7 +5578,10 @@ Guidelines:
         mrr: number;
         activeJobs: number;
         totalJobs: number;
-        trendDirection: "growing" | "flat" | "declining";
+        velocityLast90: number;
+        velocityPrior90: number;
+        velocityDirection: "growing" | "flat" | "declining";
+        hasActiveSA: boolean;
         healthScore: number;
         healthStatus: "healthy" | "watch" | "at_risk";
       }
@@ -5646,21 +5594,18 @@ Guidelines:
         const openDeals = Number(deals?.open_deals ?? 0);
         const pipeline = Number(deals?.pipeline ?? 0);
         const ltv = invoiceMap.get(client.id) ?? 0;
-        const jobs = jobMap.get(client.id) ?? { active: 0, completed12m: 0, total: 0 };
+        const jobs = jobMap.get(client.id) ?? { active: 0, total: 0, last90: 0, prior90: 0 };
         const contractTotal = agrMap.get(client.id) ?? 0;
         const mrr = contractTotal / 12;
+        const hasActiveSA = agrClientIds.has(client.id);
 
-        const hasData = won > 0 || lost > 0 || openDeals > 0 || ltv > 0 || jobs.total > 0 || agrClientIds.has(client.id);
+        const hasData = won > 0 || lost > 0 || openDeals > 0 || ltv > 0 || jobs.total > 0 || hasActiveSA;
         if (!hasData) continue;
 
         const hitRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 100) : null;
-
-        const sparseTrend = trendMap.get(client.id) ?? [];
-        const filledTrend = zeroFillTrend(sparseTrend);
-        const trendDirection = computeTrendDirection(filledTrend);
-        const clientMonthlyAvg = jobs.completed12m / 12;
-        const { healthScore, healthStatus } = computeHealthScore(
-          trendDirection, openDeals, clientMonthlyAvg, globalAvgMonthly, hitRate
+        const velocityDirection = computeVelocityDirection(jobs.last90, jobs.prior90);
+        const { healthScore, healthStatus } = computeHealthScoreV2(
+          velocityDirection, openDeals, hasActiveSA, ltv
         );
 
         if (tierFilter && client.tier !== tierFilter) continue;
@@ -5679,7 +5624,10 @@ Guidelines:
           mrr,
           activeJobs: jobs.active,
           totalJobs: jobs.total,
-          trendDirection,
+          velocityLast90: jobs.last90,
+          velocityPrior90: jobs.prior90,
+          velocityDirection,
+          hasActiveSA,
           healthScore,
           healthStatus,
         });

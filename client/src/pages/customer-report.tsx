@@ -32,12 +32,15 @@ interface ClientIntel {
   mrr: number;
   activeJobs: number;
   totalJobs: number;
-  trendDirection: "growing" | "flat" | "declining";
+  velocityLast90: number;
+  velocityPrior90: number;
+  velocityDirection: "growing" | "flat" | "declining";
+  hasActiveSA: boolean;
   healthScore: number;
   healthStatus: "healthy" | "watch" | "at_risk";
 }
 
-type SortKey = "ltv" | "hitRate" | "pipelineValue" | "mrr" | "activeJobs" | "healthScore" | "name";
+type SortKey = "ltv" | "hitRate" | "pipelineValue" | "velocityLast90" | "activeJobs" | "healthScore" | "name";
 
 const fmt = (v: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
@@ -102,7 +105,7 @@ export default function CustomerReport() {
         case "ltv": return c.ltv;
         case "hitRate": return c.hitRate ?? -1;
         case "pipelineValue": return c.pipelineValue;
-        case "mrr": return c.mrr;
+        case "velocityLast90": return c.velocityLast90;
         case "activeJobs": return c.activeJobs;
         case "healthScore": return c.healthScore;
         default: return 0;
@@ -228,12 +231,12 @@ export default function CustomerReport() {
                     <SortHeader label="Customer" field="name" />
                     <th className="py-2 px-3 font-medium">Tier</th>
                     <SortHeader label="Health" field="healthScore" />
-                    <th className="py-2 px-3 font-medium">Trend</th>
                     <SortHeader label="LTV" field="ltv" className="text-right" />
                     <SortHeader label="Pipeline" field="pipelineValue" className="text-right" />
-                    <SortHeader label="MRR" field="mrr" className="text-right" />
+                    <SortHeader label="Velocity (90d)" field="velocityLast90" className="text-right" />
                     <SortHeader label="Hit Rate" field="hitRate" className="text-right" />
                     <SortHeader label="Active Jobs" field="activeJobs" className="text-right" />
+                    <th className="py-2 px-3 font-medium">Activity</th>
                     <th className="py-2 px-3 font-medium text-right">Deals (W/L/O)</th>
                     <th className="py-2 px-3 font-medium w-8"></th>
                   </tr>
@@ -246,12 +249,12 @@ export default function CustomerReport() {
                       </td>
                       <td className="py-2.5 px-3">{tierLabel(c.tier)}</td>
                       <td className="py-2.5 px-3">{healthBadge(c.healthStatus)}</td>
-                      <td className="py-2.5 px-3">{trendIcon(c.trendDirection)}</td>
                       <td className="py-2.5 px-3 text-right font-mono">{fmt(c.ltv)}</td>
                       <td className="py-2.5 px-3 text-right font-mono">{fmt(c.pipelineValue)}</td>
-                      <td className="py-2.5 px-3 text-right font-mono">{fmt(c.mrr)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums">{c.velocityLast90}</td>
                       <td className="py-2.5 px-3 text-right">{c.hitRate !== null ? `${c.hitRate}%` : "—"}</td>
                       <td className="py-2.5 px-3 text-right">{c.activeJobs}</td>
+                      <td className="py-2.5 px-3">{trendIcon(c.velocityDirection)}</td>
                       <td className="py-2.5 px-3 text-right text-xs text-muted-foreground">{c.wonCount}/{c.lostCount}/{c.openDeals}</td>
                       <td className="py-2.5 px-3">
                         <Link href={`/customers/${c.clientId}`}>
