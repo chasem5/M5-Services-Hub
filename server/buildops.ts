@@ -596,7 +596,6 @@ export async function getJobs(
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     allJobs.push(...items);
     if (items.length === 0 || (totalCount > 0 && allJobs.length >= totalCount)) break;
-    if (items.length < limit) break;
     page++;
     if (page > 200) break;
   }
@@ -627,7 +626,6 @@ export async function getInvoices(
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     allInvoices.push(...items);
     if (items.length === 0 || (totalCount > 0 && allInvoices.length >= totalCount)) break;
-    if (items.length < limit) break;
     page++;
     if (page > 200) break;
   }
@@ -658,7 +656,6 @@ export async function getAllServiceAgreements(
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     all.push(...items);
     if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
-    if (items.length < limit) break;
     page++;
     if (page > 200) break;
   }
@@ -690,7 +687,6 @@ export async function getServiceAgreements(
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     all.push(...items);
     if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
-    if (items.length < limit) break;
     page++;
     if (page > 50) break;
   }
