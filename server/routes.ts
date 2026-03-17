@@ -5046,7 +5046,7 @@ Respond with this JSON:
           type: "B",
           leadId: lead.id,
           clientId: lead.clientId,
-          clientName: clientMap.get(lead.clientId) ?? "Unknown",
+          clientName: clientMap.get(lead.clientId ?? 0) ?? "Unknown",
           title: lead.title,
           daysSince,
           priority: "medium",
@@ -5097,7 +5097,7 @@ Respond with this JSON:
           type: "C",
           leadId: lead.id,
           clientId: lead.clientId,
-          clientName: clientMap.get(lead.clientId) ?? "Unknown",
+          clientName: clientMap.get(lead.clientId ?? 0) ?? "Unknown",
           title: lead.title,
           daysSince: Math.floor((now.getTime() - new Date(lead.updatedAt).getTime()) / 86400000),
           priority: "medium",
@@ -5180,7 +5180,7 @@ Respond with this JSON:
           type: "F",
           leadId: lead.id,
           clientId: lead.clientId,
-          clientName: clientMap.get(lead.clientId) ?? "Unknown",
+          clientName: clientMap.get(lead.clientId ?? 0) ?? "Unknown",
           title: lead.title,
           daysSince: Math.floor((now.getTime() - new Date(lead.updatedAt).getTime()) / 86400000),
           priority: "high",
@@ -5262,7 +5262,7 @@ Respond with this JSON:
         .where(and(
           sql`${leadsTable.buildopsQuoteId} IS NOT NULL`,
           sql`${leadsTable.buildopsQuoteStatus} IN ('draft', 'sent')`,
-          sql`${leadsTable.stage} NOT IN ('won', 'lost')`
+          sql`${leadsTable.stage} NOT IN ('won', 'lost', 'expired')`
         ));
 
       for (const lead of boLeads) {
