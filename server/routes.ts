@@ -4342,6 +4342,30 @@ Respond with this JSON:
           }
           await db.update(leadsTable).set(updateFields).where(eq(leadsTable.id, existingLead.id));
           updated++;
+
+          // Auto-create follow-up task when a lead transitions into "expired"
+          if (existingLead.stage !== "expired" && mappedStage === "expired") {
+            const { tasks: tasksTable } = await import("@shared/schema");
+            const existingExpiredTasks = await db.select().from(tasksTable)
+              .where(eq(tasksTable.relatedLeadId, existingLead.id));
+            const hasExpiredTask = existingExpiredTasks.some((t: any) =>
+              t.status !== "done" && t.title?.toLowerCase().includes("expired quote")
+            );
+            if (!hasExpiredTask) {
+              const clientName = matchedClient?.name ?? (allClients.find((c: any) => c.id === existingLead.clientId)?.name) ?? "Client";
+              const tomorrow = new Date();
+              tomorrow.setDate(tomorrow.getDate() + 1);
+              await storage.createTask({
+                title: `Follow up on expired quote – ${clientName}`,
+                description: `Quote "${quoteTitle}" has expired. Reach out to re-engage and discuss next steps.`,
+                priority: "high",
+                status: "todo",
+                assignedTo: existingLead.assignedTo ?? null,
+                relatedLeadId: existingLead.id,
+                dueDate: tomorrow,
+              });
+            }
+          }
         } else {
           const [newLead] = await db.insert(leadsTable).values({
             title: quoteTitle,
@@ -4362,6 +4386,22 @@ Respond with this JSON:
           }).returning();
           await storage.createBuildopsSyncLog({ entityType: "lead", entityId: newLead.id, buildopsId: quote.id, action: "pull", message: `Imported BuildOps quote #${quote.quoteNumber ?? quote.id}` });
           created++;
+
+          // Auto-create follow-up task when a brand-new lead is already expired
+          if (mappedStage === "expired" && newLead.clientId) {
+            const clientName = matchedClient?.name ?? "Client";
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            await storage.createTask({
+              title: `Follow up on expired quote – ${clientName}`,
+              description: `Quote "${quoteTitle}" has expired. Reach out to re-engage and discuss next steps.`,
+              priority: "high",
+              status: "todo",
+              assignedTo: null,
+              relatedLeadId: newLead.id,
+              dueDate: tomorrow,
+            });
+          }
         }
       }
 
@@ -4580,8 +4620,35 @@ Respond with this JSON:
         });
       }
 
-      // Sort: E first, then A, then others
-      const typeOrder: Record<string, number> = { E: 0, A: 1, B: 2, C: 3, D: 4 };
+      // ── Section F: Expired quotes needing follow-up ────────────────────────
+      const { tasks: tasksTable } = await import("@shared/schema");
+      const allOpenTasks = await db.select().from(tasksTable);
+      const expiredLeads = allLeads.filter((l: any) => l.stage === "expired" && l.clientId);
+
+      for (const lead of expiredLeads) {
+        const snoozed = lead.followUpSnoozedUntil && new Date(lead.followUpSnoozedUntil) > now;
+        if (snoozed) continue;
+
+        const hasOpenExpiredTask = allOpenTasks.some((t: any) =>
+          t.relatedLeadId === lead.id &&
+          t.status !== "done" &&
+          t.title?.toLowerCase().includes("expired quote")
+        );
+        if (hasOpenExpiredTask) continue;
+
+        results.push({
+          type: "F",
+          leadId: lead.id,
+          clientId: lead.clientId,
+          clientName: clientMap.get(lead.clientId) ?? "Unknown",
+          title: lead.title,
+          daysSince: Math.floor((now.getTime() - new Date(lead.updatedAt).getTime()) / 86400000),
+          priority: "high",
+        });
+      }
+
+      // Sort: F first (expired), then E (expiring soon), then A, then others
+      const typeOrder: Record<string, number> = { F: 0, E: 1, A: 2, B: 3, C: 4, D: 5 };
       results.sort((a, b) => (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9));
 
       res.json(results);

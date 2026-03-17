@@ -1164,7 +1164,8 @@ export class DatabaseStorage implements IStorage {
       { label: "Ready for Proposal", slug: "qualified", sortOrder: 3, color: null, track: "relationship" },
       { label: "Proposal Sent", slug: "proposal_sent", sortOrder: 4, color: null, track: "deal" },
       { label: "Won", slug: "won", sortOrder: 5, color: "green", track: "deal" },
-      { label: "Lost", slug: "lost", sortOrder: 6, color: "red", track: "deal" },
+      { label: "Expired", slug: "expired", sortOrder: 6, color: "orange", track: "deal" },
+      { label: "Lost", slug: "lost", sortOrder: 7, color: "red", track: "deal" },
     ];
     await db.insert(pipelineStages).values(defaults);
   }
@@ -1172,7 +1173,7 @@ export class DatabaseStorage implements IStorage {
   async migratePipelineStageTracks(): Promise<void> {
     await db.execute(sql`ALTER TABLE pipeline_stages ADD COLUMN IF NOT EXISTS track VARCHAR(20) DEFAULT 'relationship'`);
     const existing = await db.select().from(pipelineStages);
-    const dealSlugs = ["proposal_sent", "won", "lost"];
+    const dealSlugs = ["proposal_sent", "won", "lost", "expired", "canceled", "draft"];
     const allDealStagesCorrect = existing
       .filter(s => dealSlugs.includes(s.slug))
       .every(s => s.track === "deal");
@@ -1237,6 +1238,31 @@ export class DatabaseStorage implements IStorage {
 
     if (existingSlugs.includes("qualified")) {
       await db.update(pipelineStages).set({ label: "Ready for Proposal" }).where(eq(pipelineStages.slug, "qualified"));
+    }
+
+    // Migrate: add "Expired" stage to deal track if missing
+    const freshStages2 = await db.select().from(pipelineStages);
+    if (!freshStages2.some(s => s.slug === "expired")) {
+      const lostStage = freshStages2.find(s => s.slug === "lost");
+      const wonStage = freshStages2.find(s => s.slug === "won");
+      const insertOrder = lostStage ? lostStage.sortOrder : (wonStage ? wonStage.sortOrder + 1 : 10);
+      // Push lost (and anything >= insertOrder in deal track) up
+      if (lostStage) {
+        await db.update(pipelineStages).set({ sortOrder: lostStage.sortOrder + 1 }).where(eq(pipelineStages.id, lostStage.id));
+      }
+      await db.insert(pipelineStages).values({
+        label: "Expired",
+        slug: "expired",
+        sortOrder: insertOrder,
+        color: "orange",
+        track: "deal",
+      });
+    } else {
+      // Ensure existing "Expired" stage is on deal track with correct color
+      const expiredStage = freshStages2.find(s => s.slug === "expired");
+      if (expiredStage && (expiredStage.track !== "deal" || expiredStage.color !== "orange")) {
+        await db.update(pipelineStages).set({ track: "deal", color: "orange" }).where(eq(pipelineStages.id, expiredStage.id));
+      }
     }
 
     const canonicalRelOrder = ["met_introduced", "new_lead", "in_conversation", "qualified"];

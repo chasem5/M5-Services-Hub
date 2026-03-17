@@ -137,7 +137,7 @@ export default function Dashboard() {
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [quickAction, setQuickAction] = useState<"deal" | "contact" | "company" | "task" | "activity" | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>(user?.dashboardFilter ?? "all");
-  const [pulseTab, setPulseTab] = useState<"all" | "E" | "A" | "B" | "C" | "D">("all");
+  const [pulseTab, setPulseTab] = useState<"all" | "F" | "E" | "A" | "B" | "C" | "D">("all");
 
   const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -481,8 +481,9 @@ export default function Dashboard() {
             </div>
             {/* Tab bar */}
             {!pulseLoading && clientPulse.length > 0 && (() => {
-              const tabDefs: { key: "all"|"E"|"A"|"B"|"C"|"D"; label: string; activeClass: string }[] = [
+              const tabDefs: { key: "all"|"F"|"E"|"A"|"B"|"C"|"D"; label: string; activeClass: string }[] = [
                 { key: "all", label: "All",        activeClass: "bg-primary text-white" },
+                { key: "F",   label: "Expired",    activeClass: "bg-orange-600 text-white" },
                 { key: "A",   label: "Acknowledge", activeClass: "bg-amber-500 text-white" },
                 { key: "B",   label: "Price",       activeClass: "bg-blue-600 text-white" },
                 { key: "C",   label: "Draft",       activeClass: "bg-orange-500 text-white" },
@@ -532,16 +533,20 @@ export default function Dashboard() {
               </div>
             ) : (() => {
               const sectionMeta: Record<string, { icon: any; label: string; color: string; desc: string }> = {
-                E: { icon: TriangleAlert, label: "Expiring Soon",                    color: "text-red-600",    desc: "Sent quote approaching its 30-day window — act before it lapses" },
-                A: { icon: Mail,         label: "Acknowledge Client Request", color: "text-amber-600",  desc: "Inbound email received — client is waiting on a reply for 24+ hours" },
-                B: { icon: FileText,     label: "Price Not Sent",                   color: "text-blue-600",   desc: "Active deal with no estimate started — client hasn't seen any pricing yet" },
-                C: { icon: FileText,     label: "Draft Quote Stale",                color: "text-orange-600", desc: "Estimate created but never sent — sitting as a draft for 2+ days" },
-                D: { icon: Send,         label: "Follow Up Sent Quote",             color: "text-purple-600", desc: "Quote sent 7+ days ago with no response — time to check back in" },
+                F: { icon: TriangleAlert, label: "Expired Quote",              color: "text-orange-600",  desc: "Quote has expired — reach out to re-engage this client" },
+                E: { icon: TriangleAlert, label: "Expiring Soon",              color: "text-red-600",    desc: "Sent quote approaching its 30-day window — act before it lapses" },
+                A: { icon: Mail,         label: "Acknowledge Client Request",  color: "text-amber-600",  desc: "Inbound email received — client is waiting on a reply for 24+ hours" },
+                B: { icon: FileText,     label: "Price Not Sent",              color: "text-blue-600",   desc: "Active deal with no estimate started — client hasn't seen any pricing yet" },
+                C: { icon: FileText,     label: "Draft Quote Stale",           color: "text-orange-600", desc: "Estimate created but never sent — sitting as a draft for 2+ days" },
+                D: { icon: Send,         label: "Follow Up Sent Quote",        color: "text-purple-600", desc: "Quote sent 7+ days ago with no response — time to check back in" },
               };
 
               const PulseRow = ({ item, idx, showCategory }: { item: any; idx: number; showCategory?: boolean }) => {
                 const isExpiring = item.type === "E";
-                const pillColor = isExpiring
+                const isExpired = item.type === "F";
+                const pillColor = isExpired
+                  ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
+                  : isExpiring
                   ? (item.daysLeft <= 3 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300")
                   : (item.priority === "high" || item.daysSince >= 3
                       ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
@@ -561,7 +566,9 @@ export default function Dashboard() {
                       <p className="text-xs text-muted-foreground truncate">{item.title}</p>
                     </div>
                     <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${pillColor}`}>
-                      {isExpiring
+                      {isExpired
+                        ? "Expired"
+                        : isExpiring
                         ? `Exp. in ${item.daysLeft}d`
                         : item.hoursSince != null && item.hoursSince < 48
                           ? `${item.hoursSince}h`
@@ -615,7 +622,7 @@ export default function Dashboard() {
 
               return (
                 <div className="divide-y divide-border/40">
-                  {(["E","A","B","C","D"] as const).map(type => {
+                  {(["F","E","A","B","C","D"] as const).map(type => {
                     const section = clientPulse.filter((p: any) => p.type === type);
                     if (!section.length) return null;
                     const meta = sectionMeta[type];
