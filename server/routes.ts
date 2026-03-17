@@ -565,9 +565,50 @@ export async function registerRoutes(
     res.json(client);
   });
 
+  app.delete("/api/clients/bulk", isAuthenticated, async (req, res) => {
+    const { ids } = z.object({ ids: z.array(z.number()) }).parse(req.body);
+    await storage.deleteBulkClients(ids);
+    res.sendStatus(204);
+  });
+
+  // Named PATCH routes must be registered BEFORE /api/clients/:id to avoid wildcard capture
+  app.patch("/api/clients/bulk", isAuthenticated, async (req, res) => {
+    const { ids, data } = z.object({
+      ids: z.array(z.number()),
+      data: z.record(z.unknown())
+    }).parse(req.body);
+    // Block protected fields for non-admin callers
+    if ("accountManagerUserId" in data) {
+      const callerId = (req.user as any)?.claims?.sub;
+      const callerUser = callerId ? await storage.getUser(callerId) : null;
+      if (!callerUser || !["super_admin", "admin"].includes(callerUser.role ?? "")) {
+        return res.status(403).json({ message: "Only admins can assign account managers" });
+      }
+    }
+    const safeData = insertClientSchema.partial().parse(data);
+    await storage.bulkUpdateClients(ids, safeData);
+    res.sendStatus(204);
+  });
+
+  // Bulk-assign account manager — must be before /api/clients/:id wildcard
+  app.patch("/api/clients/bulk-assign-manager", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const { clientIds, userId } = z.object({
+        clientIds: z.array(z.number()),
+        userId: z.string().nullable(),
+      }).parse(req.body);
+      await storage.bulkUpdateClients(clientIds, { accountManagerUserId: userId });
+      res.json({ ok: true, updated: clientIds.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // PATCH alias for PUT /api/clients/:id — supports partial updates via PATCH verb
+  // NOTE: must be registered AFTER all named PATCH /api/clients/<name> routes
   app.patch("/api/clients/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid client ID" });
     const clientData = insertClientSchema.partial().parse(req.body);
     if ("accountManagerUserId" in clientData) {
       const callerId = (req.user as any)?.claims?.sub;
@@ -596,30 +637,6 @@ export async function registerRoutes(
     const client = await storage.updateClient(id, clientData);
     await logActivity(req, "client", client.id, "updated", clientData);
     res.json(client);
-  });
-
-  app.delete("/api/clients/bulk", isAuthenticated, async (req, res) => {
-    const { ids } = z.object({ ids: z.array(z.number()) }).parse(req.body);
-    await storage.deleteBulkClients(ids);
-    res.sendStatus(204);
-  });
-
-  app.patch("/api/clients/bulk", isAuthenticated, async (req, res) => {
-    const { ids, data } = z.object({
-      ids: z.array(z.number()),
-      data: z.record(z.unknown())
-    }).parse(req.body);
-    // Block protected fields for non-admin callers
-    if ("accountManagerUserId" in data) {
-      const callerId = (req.user as any)?.claims?.sub;
-      const callerUser = callerId ? await storage.getUser(callerId) : null;
-      if (!callerUser || !["super_admin", "admin"].includes(callerUser.role ?? "")) {
-        return res.status(403).json({ message: "Only admins can assign account managers" });
-      }
-    }
-    const safeData = insertClientSchema.partial().parse(data);
-    await storage.bulkUpdateClients(ids, safeData);
-    res.sendStatus(204);
   });
 
   app.delete("/api/clients/:id", isAuthenticated, async (req, res) => {
@@ -4612,20 +4629,6 @@ Respond with this JSON:
       const { buildopsRepId } = z.object({ buildopsRepId: z.string().nullable() }).parse(req.body);
       const user = await storage.updateUserBuildopsRep(req.params.id, buildopsRepId);
       res.json(user);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  // ── Bulk-assign account manager to a set of clients ────────────────────
-  app.patch("/api/clients/bulk-assign-manager", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
-    try {
-      const { clientIds, userId } = z.object({
-        clientIds: z.array(z.number()),
-        userId: z.string().nullable(),
-      }).parse(req.body);
-      await storage.bulkUpdateClients(clientIds, { accountManagerUserId: userId });
-      res.json({ ok: true, updated: clientIds.length });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
