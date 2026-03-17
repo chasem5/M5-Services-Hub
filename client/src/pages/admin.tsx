@@ -54,7 +54,6 @@ import {
   Briefcase,
   Receipt,
   FileSignature,
-  ShoppingCart,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -287,36 +286,6 @@ function BuildOpsPanel() {
       toast({ title: "Agreements synced", description: `${data.created} created, ${data.updated} updated, ${data.skipped || (data.total - data.created - data.updated)} skipped of ${data.total} total` });
     },
     onError: (err: any) => toast({ title: "Agreements sync failed", description: err.message, variant: "destructive" }),
-  });
-
-  const syncTimeEntriesMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/buildops/sync-time-entries", {});
-      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
-      if (data.available === false) {
-        toast({ title: "Time entries not available", description: data.message, variant: "destructive" });
-      } else {
-        toast({ title: "Time entries synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
-      }
-    },
-    onError: (err: any) => toast({ title: "Time entries sync failed", description: err.message, variant: "destructive" }),
-  });
-
-  const syncPurchaseOrdersMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/buildops/sync-purchase-orders", {});
-      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
-      toast({ title: "Purchase orders synced", description: `${data.created} created, ${data.updated} updated of ${data.total} total` });
-    },
-    onError: (err: any) => toast({ title: "Purchase orders sync failed", description: err.message, variant: "destructive" }),
   });
 
   return (
@@ -576,44 +545,6 @@ function BuildOpsPanel() {
               >
                 {syncAgreementsMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <FileSignature className="h-3.5 w-3.5 mr-1.5" />}
                 {syncAgreementsMutation.isPending ? "Syncing..." : "Sync Agreements"}
-              </Button>
-            </div>
-            <div className="border rounded-lg p-4 space-y-2 border-amber-200 bg-amber-50/30">
-              <h4 className="text-sm font-medium flex items-center gap-2">
-                <Clock className="h-4 w-4 text-amber-600" />
-                Sync Time Entries
-                <Badge variant="outline" className="text-[10px] px-1.5 bg-amber-100 text-amber-700 border-amber-300 ml-auto">T&M Costing</Badge>
-              </h4>
-              <p className="text-xs text-muted-foreground">Pull technician time entries with labor hours, rates, and costs — essential for T&M job profitability.</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full mt-2"
-                onClick={() => syncTimeEntriesMutation.mutate()}
-                disabled={syncTimeEntriesMutation.isPending || connStatus !== "ok"}
-                data-testid="button-buildops-sync-time-entries"
-              >
-                {syncTimeEntriesMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Clock className="h-3.5 w-3.5 mr-1.5" />}
-                {syncTimeEntriesMutation.isPending ? "Syncing..." : "Sync Time Entries"}
-              </Button>
-            </div>
-            <div className="border rounded-lg p-4 space-y-2 border-amber-200 bg-amber-50/30">
-              <h4 className="text-sm font-medium flex items-center gap-2">
-                <ShoppingCart className="h-4 w-4 text-amber-600" />
-                Sync Purchase Orders
-                <Badge variant="outline" className="text-[10px] px-1.5 bg-amber-100 text-amber-700 border-amber-300 ml-auto">T&M Costing</Badge>
-              </h4>
-              <p className="text-xs text-muted-foreground">Pull purchase orders with material costs per job — captures material spend on T&M work.</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full mt-2"
-                onClick={() => syncPurchaseOrdersMutation.mutate()}
-                disabled={syncPurchaseOrdersMutation.isPending || connStatus !== "ok"}
-                data-testid="button-buildops-sync-purchase-orders"
-              >
-                {syncPurchaseOrdersMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />}
-                {syncPurchaseOrdersMutation.isPending ? "Syncing..." : "Sync Purchase Orders"}
               </Button>
             </div>
           </div>
@@ -1280,46 +1211,6 @@ const INVOICE_FIELD_MAP: Record<string, FieldMapping> = {
   jobId:           { crmField: "buildops_invoices.buildopsJobId", status: "mapped" },
 };
 
-const TIME_ENTRY_FIELD_MAP: Record<string, FieldMapping> = {
-  id:             { crmField: "buildops_time_entries.buildopsId", status: "mapped" },
-  jobId:          { crmField: "buildops_time_entries.buildopsJobId", status: "mapped" },
-  jobNumber:      { crmField: "buildops_time_entries.jobNumber", status: "mapped" },
-  technicianId:   { crmField: "buildops_time_entries.technicianId", status: "mapped" },
-  technicianName: { crmField: "buildops_time_entries.technicianName", status: "mapped" },
-  employeeName:   { crmField: "buildops_time_entries.technicianName (alias)", status: "partial" },
-  date:           { crmField: "buildops_time_entries.workDate", status: "mapped" },
-  workDate:       { crmField: "buildops_time_entries.workDate (alias)", status: "partial" },
-  startTime:      { crmField: "buildops_time_entries.startTime", status: "mapped" },
-  endTime:        { crmField: "buildops_time_entries.endTime", status: "mapped" },
-  duration:       { crmField: "buildops_time_entries.durationHours", status: "mapped" },
-  durationHours:  { crmField: "buildops_time_entries.durationHours (alias)", status: "partial" },
-  hours:          { crmField: "buildops_time_entries.durationHours (alias)", status: "partial" },
-  laborRate:      { crmField: "buildops_time_entries.laborRate", status: "mapped" },
-  rate:           { crmField: "buildops_time_entries.laborRate (alias)", status: "partial" },
-  totalCost:      { crmField: "buildops_time_entries.totalLaborCost", status: "mapped" },
-  totalLaborCost: { crmField: "buildops_time_entries.totalLaborCost (alias)", status: "partial" },
-  description:    { crmField: "buildops_time_entries.description", status: "mapped" },
-  type:           { crmField: "buildops_time_entries.entryType", status: "mapped" },
-  customerId:     { crmField: "buildops_time_entries.clientId (via job)", status: "partial", note: "Derived from job→client mapping" },
-};
-
-const PURCHASE_ORDER_FIELD_MAP: Record<string, FieldMapping> = {
-  id:             { crmField: "buildops_purchase_orders.buildopsId", status: "mapped" },
-  poNumber:       { crmField: "buildops_purchase_orders.poNumber", status: "mapped" },
-  jobId:          { crmField: "buildops_purchase_orders.buildopsJobId", status: "mapped" },
-  jobNumber:      { crmField: "buildops_purchase_orders.jobNumber", status: "mapped" },
-  status:         { crmField: "buildops_purchase_orders.status", status: "mapped" },
-  vendorName:     { crmField: "buildops_purchase_orders.vendorName", status: "mapped" },
-  vendor:         { crmField: "buildops_purchase_orders.vendorName (alias)", status: "partial" },
-  totalAmount:    { crmField: "buildops_purchase_orders.totalAmount", status: "mapped" },
-  total:          { crmField: "buildops_purchase_orders.totalAmount (alias)", status: "partial" },
-  taxAmount:      { crmField: "buildops_purchase_orders.taxAmount", status: "mapped" },
-  submittedDate:  { crmField: "buildops_purchase_orders.submittedDate", status: "mapped" },
-  approvedDate:   { crmField: "buildops_purchase_orders.approvedDate", status: "mapped" },
-  customerId:     { crmField: "buildops_purchase_orders.clientId (via job)", status: "partial", note: "Derived from job→client mapping" },
-  items:          { crmField: "", status: "unmapped", note: "Line items not yet stored — only PO totals synced" },
-};
-
 const FIELD_STATUS_BADGE: Record<FieldStatus, string> = {
   mapped:   "bg-green-100 text-green-700 border-green-200",
   partial:  "bg-amber-100 text-amber-700 border-amber-200",
@@ -1548,12 +1439,6 @@ function BuildOpsAuditPanel() {
               <TabsTrigger value="customers" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 Customers ({data.customerCount})
               </TabsTrigger>
-              <TabsTrigger value="time-entries" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
-                Time Entries ({(data as any).timeEntryCount ?? (data as any).timeEntries?.length ?? "?"})
-              </TabsTrigger>
-              <TabsTrigger value="purchase-orders" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
-                POs ({(data as any).purchaseOrderCount ?? (data as any).purchaseOrders?.length ?? "?"})
-              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="jobs" className="space-y-0 mt-0">
@@ -1611,46 +1496,6 @@ function BuildOpsAuditPanel() {
                   detailRecord={data.serviceAgreements[0] ?? null}
                   fieldMap={SA_FIELD_MAP}
                   entityLabel="Service Agreement"
-                />
-              )}
-            </TabsContent>
-
-            <TabsContent value="time-entries" className="space-y-0 mt-0">
-              {((data as any).timeEntries ?? []).length === 0 ? (
-                <div className="text-center py-8 text-sm text-muted-foreground space-y-2">
-                  <Clock className="h-8 w-8 mx-auto text-muted-foreground/40" />
-                  <p>No time entries returned from BuildOps API.</p>
-                  <p className="text-xs">This endpoint may not be available on your BuildOps plan, or no time entries exist yet.</p>
-                  {(data as any).timeEntriesError && (
-                    <p className="text-xs text-red-500 font-mono bg-red-50 p-2 rounded">{(data as any).timeEntriesError}</p>
-                  )}
-                </div>
-              ) : (
-                <AuditTable
-                  records={(data as any).timeEntries}
-                  detailRecord={(data as any).timeEntries[0] ?? null}
-                  fieldMap={TIME_ENTRY_FIELD_MAP}
-                  entityLabel="Time Entry"
-                />
-              )}
-            </TabsContent>
-
-            <TabsContent value="purchase-orders" className="space-y-0 mt-0">
-              {((data as any).purchaseOrders ?? []).length === 0 ? (
-                <div className="text-center py-8 text-sm text-muted-foreground space-y-2">
-                  <ShoppingCart className="h-8 w-8 mx-auto text-muted-foreground/40" />
-                  <p>No purchase orders returned from BuildOps API.</p>
-                  <p className="text-xs">This endpoint may not be available on your BuildOps plan, or no purchase orders exist yet.</p>
-                  {(data as any).purchaseOrdersError && (
-                    <p className="text-xs text-red-500 font-mono bg-red-50 p-2 rounded">{(data as any).purchaseOrdersError}</p>
-                  )}
-                </div>
-              ) : (
-                <AuditTable
-                  records={(data as any).purchaseOrders}
-                  detailRecord={(data as any).purchaseOrders[0] ?? null}
-                  fieldMap={PURCHASE_ORDER_FIELD_MAP}
-                  entityLabel="Purchase Order"
                 />
               )}
             </TabsContent>

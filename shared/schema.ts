@@ -727,45 +727,6 @@ export const buildopsAgreements = pgTable("buildops_agreements", {
 });
 export type BuildopsAgreement = typeof buildopsAgreements.$inferSelect;
 
-// BuildOps Time Entries (actual labor hours worked on jobs)
-export const buildopsTimeEntries = pgTable("buildops_time_entries", {
-  id: serial("id").primaryKey(),
-  buildopsId: varchar("buildops_id").notNull().unique(),
-  clientId: integer("client_id").references(() => clients.id),
-  buildopsJobId: varchar("buildops_job_id"),
-  jobNumber: varchar("job_number"),
-  technicianName: varchar("technician_name"),
-  technicianId: varchar("technician_id"),
-  workDate: timestamp("work_date"),
-  startTime: varchar("start_time"),
-  endTime: varchar("end_time"),
-  durationHours: decimal("duration_hours", { precision: 8, scale: 2 }),
-  laborRate: decimal("labor_rate", { precision: 12, scale: 2 }),
-  totalLaborCost: decimal("total_labor_cost", { precision: 12, scale: 2 }),
-  description: text("description"),
-  entryType: varchar("entry_type"),
-  syncedAt: timestamp("synced_at").defaultNow().notNull(),
-});
-export type BuildopsTimeEntry = typeof buildopsTimeEntries.$inferSelect;
-
-// BuildOps Purchase Orders (materials/parts ordered for jobs)
-export const buildopsPurchaseOrders = pgTable("buildops_purchase_orders", {
-  id: serial("id").primaryKey(),
-  buildopsId: varchar("buildops_id").notNull().unique(),
-  clientId: integer("client_id").references(() => clients.id),
-  buildopsJobId: varchar("buildops_job_id"),
-  jobNumber: varchar("job_number"),
-  poNumber: varchar("po_number"),
-  status: varchar("status"),
-  vendorName: varchar("vendor_name"),
-  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }),
-  taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }),
-  submittedDate: timestamp("submitted_date"),
-  approvedDate: timestamp("approved_date"),
-  syncedAt: timestamp("synced_at").defaultNow().notNull(),
-});
-export type BuildopsPurchaseOrder = typeof buildopsPurchaseOrders.$inferSelect;
-
 // BuildOps Sync Log
 export const buildopsSyncLog = pgTable("buildops_sync_log", {
   id: serial("id").primaryKey(),

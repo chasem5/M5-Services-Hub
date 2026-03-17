@@ -572,46 +572,6 @@ export interface BuildOpsInvoice {
   jobId?: string;
 }
 
-export interface BuildOpsTimeEntry {
-  id: string;
-  jobId?: string;
-  jobNumber?: string;
-  technicianId?: string;
-  technicianName?: string;
-  date?: string;
-  workDate?: string;
-  startTime?: string;
-  endTime?: string;
-  duration?: number;
-  durationHours?: number;
-  hours?: number;
-  laborRate?: number;
-  rate?: number;
-  totalCost?: number;
-  totalLaborCost?: number;
-  laborCost?: number;
-  description?: string;
-  type?: string;
-  entryType?: string;
-  customerId?: string;
-}
-
-export interface BuildOpsPurchaseOrder {
-  id: string;
-  poNumber?: string;
-  jobId?: string;
-  jobNumber?: string;
-  status?: string;
-  vendorName?: string;
-  vendor?: string;
-  totalAmount?: number;
-  total?: number;
-  taxAmount?: number;
-  submittedDate?: string;
-  approvedDate?: string;
-  customerId?: string;
-}
-
 export async function getJobs(
   clientId: string,
   clientSecret: string,
@@ -636,6 +596,7 @@ export async function getJobs(
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     allJobs.push(...items);
     if (items.length === 0 || (totalCount > 0 && allJobs.length >= totalCount)) break;
+    if (items.length < limit) break;
     page++;
     if (page > 200) break;
   }
@@ -666,6 +627,7 @@ export async function getInvoices(
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     allInvoices.push(...items);
     if (items.length === 0 || (totalCount > 0 && allInvoices.length >= totalCount)) break;
+    if (items.length < limit) break;
     page++;
     if (page > 200) break;
   }
@@ -696,6 +658,7 @@ export async function getAllServiceAgreements(
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     all.push(...items);
     if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
+    if (items.length < limit) break;
     page++;
     if (page > 200) break;
   }
@@ -727,77 +690,9 @@ export async function getServiceAgreements(
     const totalCount: number = data.totalCount ?? data.total ?? 0;
     all.push(...items);
     if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
+    if (items.length < limit) break;
     page++;
     if (page > 50) break;
-  }
-  return all;
-}
-
-export async function getTimeEntries(
-  clientId: string,
-  clientSecret: string,
-  tenantId: string,
-  jobId?: string,
-): Promise<BuildOpsTimeEntry[]> {
-  const token = await getToken(clientId, clientSecret);
-  const headers = buildOpsHeaders(token, tenantId);
-  const all: BuildOpsTimeEntry[] = [];
-  let page = 1;
-  while (true) {
-    let url = `${BASE_URL}/v1/time-entries?page=${page}`;
-    if (jobId) url += `&jobId=${encodeURIComponent(jobId)}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      // 404 / routing error means endpoint not available on this plan
-      if (res.status === 404 || text.startsWith("Cannot ")) {
-        const err = new Error(`TIME_ENTRIES_UNAVAILABLE: /v1/time-entries not found (HTTP ${res.status})`);
-        (err as any).unavailable = true;
-        throw err;
-      }
-      let msg = text;
-      try { msg = JSON.parse(text).message ?? text; } catch {}
-      throw new Error(msg || `HTTP ${res.status}`);
-    }
-    const data = await res.json();
-    const items: BuildOpsTimeEntry[] = data.items ?? (Array.isArray(data) ? data : []);
-    const totalCount: number = data.totalCount ?? data.total ?? 0;
-    all.push(...items);
-    if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
-    page++;
-    if (page > 500) break;
-  }
-  return all;
-}
-
-export async function getPurchaseOrders(
-  clientId: string,
-  clientSecret: string,
-  tenantId: string,
-  jobId?: string,
-): Promise<BuildOpsPurchaseOrder[]> {
-  const token = await getToken(clientId, clientSecret);
-  const headers = buildOpsHeaders(token, tenantId);
-  const all: BuildOpsPurchaseOrder[] = [];
-  let page = 1;
-  while (true) {
-    // NOTE: BuildOps /v1/purchase-orders rejects a `limit` query param — use page only
-    let url = `${BASE_URL}/v1/purchase-orders?page=${page}`;
-    if (jobId) url += `&jobId=${encodeURIComponent(jobId)}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      let msg = text;
-      try { msg = JSON.parse(text).message ?? text; } catch {}
-      throw new Error(msg || `HTTP ${res.status}`);
-    }
-    const data = await res.json();
-    const items: BuildOpsPurchaseOrder[] = data.items ?? (Array.isArray(data) ? data : []);
-    const totalCount: number = data.totalCount ?? data.total ?? 0;
-    all.push(...items);
-    if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
-    page++;
-    if (page > 500) break;
   }
   return all;
 }
