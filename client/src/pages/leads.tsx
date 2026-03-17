@@ -901,6 +901,22 @@ function LeadCard({
                   )}
                 </div>
 
+                {/* BuildOps quote info */}
+                {lead.buildopsQuoteId && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4" data-testid={`badge-kanban-quote-${lead.id}`}>
+                      <Zap className="h-2 w-2 mr-0.5" />
+                      {(lead as any).buildopsQuoteNumber ? `#${(lead as any).buildopsQuoteNumber}` : "Quote"}
+                    </Badge>
+                    {lead.buildopsExpirationDate && (
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                        <CalendarIcon className="h-2 w-2" />
+                        Exp {new Date(lead.buildopsExpirationDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Verdict chip */}
                 <div className="pt-1 border-t border-border/50">
                   <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${verdict.cls}`}>
@@ -3390,22 +3406,12 @@ export default function Leads() {
                           <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Created</p>
                           <p className="font-medium text-sm">{new Date(selectedLead.createdAt).toLocaleDateString()}</p>
                         </div>
-                        {(selectedLead as any).buildopsExpirationDate && (
-                          <div className="space-y-1">
-                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                              <CalendarIcon className="h-3 w-3" /> Quote Expires
-                            </p>
-                            <p className="font-medium text-sm" data-testid="text-quote-expiration">
-                              {new Date((selectedLead as any).buildopsExpirationDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                            </p>
-                          </div>
-                        )}
                         {(selectedLead as any).buildopsQuoteId && (
                           <div className="space-y-1 col-span-2">
                             <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                               <Zap className="h-3 w-3" /> BuildOps Quote
                             </p>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <Badge variant="outline" className="text-xs capitalize" data-testid="badge-quote-status">
                                 {(selectedLead as any).buildopsQuoteNumber ? `#${(selectedLead as any).buildopsQuoteNumber}` : "Quote"}
                                 {(selectedLead as any).buildopsQuoteStatus && <span className="ml-1">· {(selectedLead as any).buildopsQuoteStatus}</span>}
@@ -3413,6 +3419,11 @@ export default function Leads() {
                               {(selectedLead as any).buildopsQuoteTotal && (
                                 <span className="text-xs font-mono font-bold text-primary" data-testid="text-quote-total">
                                   {formatCurrency((selectedLead as any).buildopsQuoteTotal)}
+                                </span>
+                              )}
+                              {(selectedLead as any).buildopsExpirationDate && (
+                                <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-quote-expiration">
+                                  <CalendarIcon className="h-3 w-3" /> Expires {new Date((selectedLead as any).buildopsExpirationDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                 </span>
                               )}
                             </div>
