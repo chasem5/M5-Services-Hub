@@ -717,8 +717,8 @@ function BuildOpsAgreementsSection({ clientId }: { clientId: number }) {
       <CardContent className="p-0">
         <div className="divide-y divide-border/50">
           {agreements.map(sa => (
-            <div key={sa.id} className="px-6 py-3 flex items-center justify-between gap-4">
-              <div className="min-w-0">
+            <div key={sa.id} className="px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">
                   {sa.name ?? (sa.agreementNumber ? `Agreement #${sa.agreementNumber}` : "Unnamed Agreement")}
                 </p>
@@ -1771,8 +1771,8 @@ export default function ClientDetail() {
                 <CardContent className="p-0">
                   <div className="divide-y divide-border/50">
                     {childClients.map(child => (
-                      <div key={child.id} className="flex items-center justify-between gap-4 px-6 py-3 hover:bg-muted/30 transition-colors" data-testid={`row-subcompany-${child.id}`}>
-                        <div className="flex items-center gap-3 min-w-0">
+                      <div key={child.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3 hover:bg-muted/30 transition-colors" data-testid={`row-subcompany-${child.id}`}>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0 overflow-hidden">
                             {child.logoUrl ? (
                               <img src={child.logoUrl.startsWith("https://storage.googleapis.com/") ? `/api/clients/${child.id}/logo-img` : child.logoUrl} alt={child.name} className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -2246,21 +2246,21 @@ export default function ClientDetail() {
                       onDrop={(e) => { e.preventDefault(); if (dragContactId !== null) moveContactToOfficeMutation.mutate({ contactId: dragContactId, officeId: office.id }); setDragContactId(null); setDragOverOfficeId(null); }}
                     >
                       <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-start gap-2">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center shrink-0">
                               <Building2 className="h-4 w-4 text-primary" />
                             </div>
-                            <div>
-                              <h4 className="font-semibold text-base">{office.name}</h4>
-                              <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                                {office.address && <AddressLink address={office.address} showIcon className="text-xs text-muted-foreground" iconClassName="h-3 w-3" />}
-                                {office.phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{office.phone}</span>}
-                                <span>{officeContacts.length} contact{officeContacts.length !== 1 ? "s" : ""}</span>
+                            <div className="min-w-0">
+                              <h4 className="font-semibold text-base truncate">{office.name}</h4>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-0.5">
+                                {office.address && <AddressLink address={office.address} showIcon className="text-xs text-muted-foreground truncate max-w-[200px]" iconClassName="h-3 w-3" />}
+                                {office.phone && <span className="flex items-center gap-1 shrink-0"><Phone className="h-3 w-3" />{office.phone}</span>}
+                                <span className="shrink-0">{officeContacts.length} contact{officeContacts.length !== 1 ? "s" : ""}</span>
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 shrink-0">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -3968,13 +3968,13 @@ function BuildOpsInvoicesTab({ clientId }: { clientId: number }) {
   return (
     <Card className="border-none shadow-sm bg-card">
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex-1 min-w-0">
             <CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" /> BuildOps Invoices</CardTitle>
             <CardDescription>{sorted.length} invoices synced from BuildOps</CardDescription>
           </div>
           {sorted.length > 0 && (
-            <div className="text-sm">
+            <div className="text-sm shrink-0">
               <span className="text-muted-foreground">Total Invoiced:</span> <span className="font-semibold">{fmt(totalAmount)}</span>
             </div>
           )}
@@ -4081,12 +4081,12 @@ function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
   return (
     <Card className="border-none shadow-sm bg-card">
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex-1 min-w-0">
             <CardTitle className="flex items-center gap-2"><FileSignature className="h-5 w-5" /> Service Agreements</CardTitle>
             <CardDescription>{activeCount} active of {allSorted.length} total agreements</CardDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setShowAll(!showAll)} data-testid="button-toggle-agreements-filter">
+          <Button variant="outline" size="sm" className="shrink-0" onClick={() => setShowAll(!showAll)} data-testid="button-toggle-agreements-filter">
             {showAll ? "Show Active" : "Show All"}
           </Button>
         </div>
