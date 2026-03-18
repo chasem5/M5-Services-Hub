@@ -698,9 +698,12 @@ export class DatabaseStorage implements IStorage {
       }
     }
     if (stage === "lost") {
-      // Always update lostAt on each transition to lost so re-lost deals reflect latest close date
-      setData.lostAt = new Date();
-      // Always set/clear loss fields so re-lost deals don't carry stale data
+      // Only set lostAt on transition to lost — don't overwrite if editing reason on an already-lost lead
+      const [existing] = await db.select({ stage: leads.stage, lostAt: leads.lostAt }).from(leads).where(eq(leads.id, id));
+      if (existing && existing.stage !== "lost") {
+        setData.lostAt = new Date();
+      }
+      // Always update reason/note fields
       setData.lossReason = (lossReason ?? null) as Lead["lossReason"];
       setData.lossNote = lossNote ?? null;
     }

@@ -6792,6 +6792,8 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           isOverridden,
           healthOverrideNote: client.healthOverrideNote ?? null,
           groupChildCount: childIds.length,
+          jobsLast6Months: jobs.last6m,
+          jobsLast12Months: jobs.last12m,
         });
       }
 

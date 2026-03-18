@@ -2975,15 +2975,39 @@ export default function Leads() {
                     <span className="text-xs text-muted-foreground">ID: #{selectedLead.id}</span>
                   </div>
                   {!isEditingLead ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setIsEditingLead(true)}
-                      data-testid="button-edit-lead"
-                    >
-                      <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                      Edit Deal
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsEditingLead(true)}
+                        data-testid="button-edit-lead"
+                      >
+                        <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                        Edit Deal
+                      </Button>
+                      {selectedLead.stage === "lost" && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="ghost" className="px-1.5" data-testid="button-lead-actions-menu">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setLossReasonInput(selectedLead.lossReason ?? "");
+                                setLossNoteInput(selectedLead.lossNote ?? "");
+                                setPendingLossCapture({ leadId: selectedLead.id, stage: "lost" });
+                              }}
+                              data-testid="option-edit-loss-reason"
+                            >
+                              <TrendingDown className="h-4 w-4 mr-2 text-red-500" />
+                              Edit Loss Reason
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
                   ) : (
                     <div className="flex gap-2">
                       <Button

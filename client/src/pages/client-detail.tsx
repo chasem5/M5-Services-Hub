@@ -4187,6 +4187,8 @@ interface IntelData {
   healthScore: number;
   healthStatus: "healthy" | "watch" | "at_risk";
   momentum?: "rising" | "declining" | "stable";
+  jobsLast6Months?: number;
+  jobsLast12Months?: number;
 }
 
 const fmtCur = (v: number) =>
@@ -4249,8 +4251,8 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
           invoiceTrend: data.invoiceTrend ?? "flat",
           invoiceLast3Avg: String(data.invoiceLast3Avg ?? 0),
           invoicePrior3Avg: String(data.invoicePrior3Avg ?? 0),
-          jobsLast6Months: String((data as any).jobsLast6Months ?? -1),
-          jobsLast12Months: String((data as any).jobsLast12Months ?? -1),
+          jobsLast6Months: String(data.jobsLast6Months ?? -1),
+          jobsLast12Months: String(data.jobsLast12Months ?? -1),
         });
         const res = await fetch(`/api/clients/${clientId}/health-summary?${params}`, { credentials: "include" });
         const json = await res.json();
@@ -4288,8 +4290,8 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
   const velocityColor = data.velocityDirection === "growing" ? "text-green-600" : data.velocityDirection === "declining" ? "text-red-600" : "text-muted-foreground";
 
   // Recency signals for HoverCard
-  const j6m = (data as any).jobsLast6Months ?? -1;
-  const j12m = (data as any).jobsLast12Months ?? -1;
+  const j6m = data.jobsLast6Months ?? -1;
+  const j12m = data.jobsLast12Months ?? -1;
   const isDormant12m = j12m !== -1 && j12m === 0 && !data.hasActiveSA;
   const isStalled6m = j6m !== -1 && j6m === 0 && !isDormant12m;
 
