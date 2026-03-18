@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -341,11 +342,12 @@ export default function EmailSyncPage() {
   const selectedThread = threads.find(t => t.threadId === selectedThreadId) ?? null;
   const primaryEmail = selectedThread?.latestMessage ?? null;
 
+  const isMobileViewport = useIsMobile();
+
   // Auto-select first thread, or re-home if selection no longer visible in active tab.
   // On mobile, if the user explicitly tapped "Back" (mobileDeselected), do NOT auto-select
   // until they explicitly select a thread again.
   // Desktop: always auto-selects so the center panel is never empty.
-  const isMobileViewport = typeof window !== "undefined" && window.innerWidth < 768;
   useEffect(() => {
     if (visibleThreads.length === 0) {
       setSelectedThreadId(null);
