@@ -817,8 +817,8 @@ export async function getAllServiceAgreements(
     const items: BuildOpsServiceAgreement[] = data.items ?? data ?? [];
     console.log(`[BuildOps getAllServiceAgreements] page ${page}: got ${items.length} items (totalCount=${data.totalCount ?? "?"})`);
     all.push(...items);
-    // Stop only when we get fewer items than requested — totalCount is unreliable (some endpoints return per-page count)
-    if (items.length === 0 || items.length < limit) break;
+    // BuildOps caps SA pages at 10 regardless of limit= value, so we must only stop on a truly empty page
+    if (items.length === 0) break;
     page++;
     if (page > 200) break;
   }
@@ -850,7 +850,8 @@ export async function getServiceAgreements(
     const data = await res.json();
     const items: BuildOpsServiceAgreement[] = data.items ?? data ?? [];
     all.push(...items);
-    if (items.length === 0 || items.length < limit) break;
+    // Only stop on a truly empty page — BuildOps caps pages at 10 regardless of limit=
+    if (items.length === 0) break;
     page++;
     if (page > 50) break;
   }

@@ -121,7 +121,7 @@ export function AppSidebar() {
                         onClick={() => isMobile && setOpenMobile(false)}
                       >
                         <span className="relative inline-flex">
-                          <item.icon className={isActive ? "text-primary" : ""} />
+                          <item.icon className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : ""}`} />
                           {item.module === "announcements" && hasUnreadRelease && (
                             <Sparkles className="absolute -top-1.5 -right-1.5 h-2.5 w-2.5 text-primary fill-primary" />
                           )}
@@ -146,7 +146,7 @@ export function AppSidebar() {
                     className={location === "/admin" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                   >
                     <Link href="/admin" data-testid="link-admin" onClick={() => isMobile && setOpenMobile(false)}>
-                      <ShieldCheck className={location === "/admin" ? "text-primary" : ""} />
+                      <ShieldCheck className={`h-4 w-4 shrink-0 ${location === "/admin" ? "text-primary" : ""}`} />
                       <span className="group-data-[collapsible=icon]:hidden">Team Admin</span>
                     </Link>
                   </SidebarMenuButton>
@@ -168,7 +168,7 @@ export function AppSidebar() {
                   className={location === "/reports/customer-intelligence" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                 >
                   <Link href="/reports/customer-intelligence" data-testid="link-customer-intelligence" onClick={() => isMobile && setOpenMobile(false)}>
-                    <HeartPulse className={location === "/reports/customer-intelligence" ? "text-primary" : ""} />
+                    <HeartPulse className={`h-4 w-4 shrink-0 ${location === "/reports/customer-intelligence" ? "text-primary" : ""}`} />
                     <span className="group-data-[collapsible=icon]:hidden">Customer Intel</span>
                   </Link>
                 </SidebarMenuButton>
@@ -181,7 +181,7 @@ export function AppSidebar() {
                   className={location === "/reports/cohort-analysis" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                 >
                   <Link href="/reports/cohort-analysis" data-testid="link-cohort-analysis" onClick={() => isMobile && setOpenMobile(false)}>
-                    <TrendingUp className={location === "/reports/cohort-analysis" ? "text-primary" : ""} />
+                    <TrendingUp className={`h-4 w-4 shrink-0 ${location === "/reports/cohort-analysis" ? "text-primary" : ""}`} />
                     <span className="group-data-[collapsible=icon]:hidden">Cohort Analysis</span>
                   </Link>
                 </SidebarMenuButton>
@@ -194,7 +194,7 @@ export function AppSidebar() {
                   className={location === "/service-agreements" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                 >
                   <Link href="/service-agreements" data-testid="link-service-agreements" onClick={() => isMobile && setOpenMobile(false)}>
-                    <ClipboardList className={location === "/service-agreements" ? "text-primary" : ""} />
+                    <ClipboardList className={`h-4 w-4 shrink-0 ${location === "/service-agreements" ? "text-primary" : ""}`} />
                     <span className="group-data-[collapsible=icon]:hidden">Service Agreements</span>
                   </Link>
                 </SidebarMenuButton>
@@ -207,7 +207,7 @@ export function AppSidebar() {
                   className={location === "/reports/revenue-analytics" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                 >
                   <Link href="/reports/revenue-analytics" data-testid="link-revenue-analytics" onClick={() => isMobile && setOpenMobile(false)}>
-                    <TrendingUp className={location === "/reports/revenue-analytics" ? "text-primary" : ""} />
+                    <TrendingUp className={`h-4 w-4 shrink-0 ${location === "/reports/revenue-analytics" ? "text-primary" : ""}`} />
                     <span className="group-data-[collapsible=icon]:hidden">Revenue Analytics</span>
                   </Link>
                 </SidebarMenuButton>
@@ -220,7 +220,7 @@ export function AppSidebar() {
                   className={location === "/reports/win-loss" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                 >
                   <Link href="/reports/win-loss" data-testid="link-win-loss" onClick={() => isMobile && setOpenMobile(false)}>
-                    <BarChart2 className={location === "/reports/win-loss" ? "text-primary" : ""} />
+                    <BarChart2 className={`h-4 w-4 shrink-0 ${location === "/reports/win-loss" ? "text-primary" : ""}`} />
                     <span className="group-data-[collapsible=icon]:hidden">Win / Loss</span>
                   </Link>
                 </SidebarMenuButton>
@@ -233,7 +233,7 @@ export function AppSidebar() {
                   className={location === "/reports/monthly-review" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                 >
                   <Link href="/reports/monthly-review" data-testid="link-monthly-report" onClick={() => isMobile && setOpenMobile(false)}>
-                    <FileBarChart2 className={location === "/reports/monthly-review" ? "text-primary" : ""} />
+                    <FileBarChart2 className={`h-4 w-4 shrink-0 ${location === "/reports/monthly-review" ? "text-primary" : ""}`} />
                     <span className="group-data-[collapsible=icon]:hidden">Monthly Report</span>
                   </Link>
                 </SidebarMenuButton>
