@@ -48,6 +48,9 @@ import {
   clientOnboardingChecklist,
   ONBOARDING_TOTAL_ITEMS,
   aiFeedback,
+  actionPlans,
+  type ActionPlan,
+  type InsertActionPlan,
   type BuildopsSyncLog,
   type AiFeedback,
   type InsertAiFeedback,
@@ -420,6 +423,13 @@ export interface IStorage {
 
   // Monthly Business Review
   getMonthlyBusinessReview(year: number, month: number): Promise<any>;
+
+  // Action Plans
+  listActionPlans(filters?: { type?: "customer" | "company"; clientId?: number | null; includeCompleted?: boolean }): Promise<ActionPlan[]>;
+  getActionPlan(id: number): Promise<ActionPlan | undefined>;
+  createActionPlan(data: InsertActionPlan): Promise<ActionPlan>;
+  updateActionPlan(id: number, data: Partial<InsertActionPlan>): Promise<ActionPlan>;
+  deleteActionPlan(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3074,6 +3084,53 @@ export class DatabaseStorage implements IStorage {
       // Clients with neither get no entry (will be "Unclassified")
     }
     return result;
+  }
+
+  // Action Plans
+  async listActionPlans(filters?: { type?: "customer" | "company"; clientId?: number | null; includeCompleted?: boolean }): Promise<ActionPlan[]> {
+    let query = db.select().from(actionPlans) as any;
+    const conditions: any[] = [];
+    if (filters?.type) conditions.push(eq(actionPlans.type, filters.type));
+    if (filters?.clientId !== undefined) {
+      if (filters.clientId === null) {
+        conditions.push(sql`${actionPlans.clientId} IS NULL`);
+      } else {
+        conditions.push(eq(actionPlans.clientId, filters.clientId));
+      }
+    }
+    if (!filters?.includeCompleted) {
+      conditions.push(sql`${actionPlans.status} != 'dismissed'`);
+    }
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+    return query.orderBy(desc(actionPlans.createdAt));
+  }
+
+  async getActionPlan(id: number): Promise<ActionPlan | undefined> {
+    const [plan] = await db.select().from(actionPlans).where(eq(actionPlans.id, id));
+    return plan;
+  }
+
+  async createActionPlan(data: InsertActionPlan): Promise<ActionPlan> {
+    const [plan] = await db.insert(actionPlans).values({
+      ...data,
+      clientId: data.clientId ?? null,
+      dueDate: data.dueDate ?? null,
+    }).returning();
+    return plan;
+  }
+
+  async updateActionPlan(id: number, data: Partial<InsertActionPlan>): Promise<ActionPlan> {
+    const [plan] = await db.update(actionPlans)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(actionPlans.id, id))
+      .returning();
+    return plan;
+  }
+
+  async deleteActionPlan(id: number): Promise<void> {
+    await db.delete(actionPlans).where(eq(actionPlans.id, id));
   }
 
 }

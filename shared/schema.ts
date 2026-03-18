@@ -794,3 +794,25 @@ export const buildopsSyncLog = pgTable("buildops_sync_log", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 export type BuildopsSyncLog = typeof buildopsSyncLog.$inferSelect;
+
+// Action Plans (customer-level and company-level)
+export const actionPlans = pgTable("action_plans", {
+  id: serial("id").primaryKey(),
+  type: varchar("type", { length: 20 }).notNull().$type<"customer" | "company">(), // "customer" | "company"
+  clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }), // null for company-level
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  priority: varchar("priority", { length: 20 }).notNull().default("medium").$type<"high" | "medium" | "low">(),
+  status: varchar("status", { length: 20 }).notNull().default("open").$type<"open" | "done" | "dismissed">(),
+  source: varchar("source", { length: 20 }).notNull().default("manual").$type<"ai" | "manual">(),
+  dueDate: timestamp("due_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertActionPlanSchema = createInsertSchema(actionPlans).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  dueDate: z.coerce.date().optional().nullable(),
+  clientId: z.number().optional().nullable(),
+});
+export type ActionPlan = typeof actionPlans.$inferSelect;
+export type InsertActionPlan = z.infer<typeof insertActionPlanSchema>;

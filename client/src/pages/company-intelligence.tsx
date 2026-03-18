@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2 } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ActionPlanPanel } from "@/components/ActionPlanPanel";
 import RevenueAnalytics from "./revenue-analytics";
 import WinLossReport from "./win-loss-report";
 import MonthlyReport from "./monthly-report";
@@ -13,6 +15,7 @@ const TABS = [
   { value: "monthly", label: "Monthly Report" },
   { value: "cohort", label: "Cohort Analysis" },
   { value: "agreements", label: "Service Agreements" },
+  { value: "action-plan", label: "Action Plan" },
 ];
 
 const TAB_VALUES = TABS.map(t => t.value);
@@ -88,6 +91,23 @@ export default function CompanyIntelligence() {
             </TabsContent>
             <TabsContent value="agreements" className="m-0">
               <ServiceAgreements />
+            </TabsContent>
+            <TabsContent value="action-plan" className="m-0 p-6">
+              <Card className="shadow-sm bg-card max-w-2xl">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Company Action Plan</CardTitle>
+                  <CardDescription className="text-xs">
+                    Company-wide business development and retention action items
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <ActionPlanPanel
+                    type="company"
+                    clientId={null}
+                    context="Review revenue trends, win/loss ratios, customer health, and cohort data to identify company-wide action items."
+                  />
+                </CardContent>
+              </Card>
             </TabsContent>
           </div>
         </Tabs>

@@ -33,6 +33,7 @@ import {
   insertPortfolioBuildingSchema,
   insertPortfolioContactSchema,
   insertAiFeedbackSchema,
+  insertActionPlanSchema,
   ONBOARDING_ITEM_KEYS,
   ONBOARDING_TOTAL_ITEMS,
 } from "@shared/schema";
@@ -7325,6 +7326,120 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       res.json({ cohorts, quarters });
     } catch (err: any) {
       console.error("[cohort-analysis]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Action Plans ──────────────────────────────────────────────────────────
+
+  // GET /api/action-plans  — list with optional ?type=customer|company&clientId=N&includeCompleted=true
+  app.get("/api/action-plans", isAuthenticated, async (req, res) => {
+    try {
+      const type = req.query.type as "customer" | "company" | undefined;
+      const clientIdParam = req.query.clientId;
+      const includeCompleted = req.query.includeCompleted === "true";
+      const clientId = clientIdParam === "null" ? null
+        : clientIdParam ? Number(clientIdParam)
+        : undefined;
+      const plans = await storage.listActionPlans({ type, clientId, includeCompleted });
+      res.json(plans);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/action-plans — create action plan
+  app.post("/api/action-plans", isAuthenticated, async (req, res) => {
+    try {
+      const data = insertActionPlanSchema.parse(req.body);
+      const plan = await storage.createActionPlan(data);
+      res.status(201).json(plan);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // POST /api/action-plans/generate — AI-generate action plan items
+  app.post("/api/action-plans/generate", isAuthenticated, async (req, res) => {
+    try {
+      const { type, clientId, context } = z.object({
+        type: z.enum(["customer", "company"]),
+        clientId: z.number().optional().nullable(),
+        context: z.string().optional(),
+      }).parse(req.body);
+
+      let contextBlock = context ?? "";
+
+      // If customer-type, pull a bit more context automatically
+      if (type === "customer" && clientId) {
+        const client = await storage.getClient(clientId);
+        if (client) contextBlock = `Customer: ${client.name}. ${contextBlock}`;
+      }
+
+      const systemPrompt = type === "customer"
+        ? `You are a CRM assistant for M5 Services (facility maintenance). Generate 3–5 specific, actionable sales action plan items for this customer account. Each should be a concrete next step to grow or protect the relationship. Return a JSON array of objects: [{title, description, priority}] where priority is "high"|"medium"|"low".`
+        : `You are a CRM assistant for M5 Services (facility maintenance). Generate 3–5 specific, actionable company-wide action plan items to improve business development, revenue, or customer retention. Return a JSON array of objects: [{title, description, priority}] where priority is "high"|"medium"|"low".`;
+
+      const aiRes = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: contextBlock || (type === "customer" ? "Generate action plan items for this customer." : "Generate company-wide action plan items.") },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 600,
+      });
+
+      const raw = aiRes.choices[0]?.message?.content ?? "{}";
+      let suggestions: { title: string; description?: string; priority?: string }[] = [];
+      try {
+        const parsed = JSON.parse(raw);
+        suggestions = Array.isArray(parsed) ? parsed : (parsed.items ?? parsed.action_plans ?? parsed.plans ?? []);
+      } catch {
+        suggestions = [];
+      }
+
+      // Persist each suggestion as an AI-sourced action plan item
+      const created = await Promise.all(
+        suggestions.slice(0, 5).map(s =>
+          storage.createActionPlan({
+            type,
+            clientId: clientId ?? null,
+            title: s.title ?? "Action item",
+            description: s.description ?? null,
+            priority: (["high", "medium", "low"].includes(s.priority ?? "") ? s.priority : "medium") as "high" | "medium" | "low",
+            status: "open",
+            source: "ai",
+          })
+        )
+      );
+
+      res.json(created);
+    } catch (err: any) {
+      console.error("[action-plans/generate]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH /api/action-plans/:id
+  app.patch("/api/action-plans/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = insertActionPlanSchema.partial().parse(req.body);
+      const plan = await storage.updateActionPlan(id, data);
+      res.json(plan);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // DELETE /api/action-plans/:id
+  app.delete("/api/action-plans/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteActionPlan(id);
+      res.sendStatus(204);
+    } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
