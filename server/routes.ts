@@ -6923,6 +6923,9 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         invoiceCount,
         clientCount,
         activeAgreementCount,
+        earliestDate: inv.earliest_date ?? null,
+        latestDate: inv.latest_date ?? null,
+        // Legacy date aliases
         earliestStart: inv.earliest_date ?? null,
         latestEnd: inv.latest_date ?? null,
       });

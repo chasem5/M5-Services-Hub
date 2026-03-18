@@ -33,6 +33,8 @@ interface MrrArrData {
   invoiceCount: number;
   clientCount: number;
   activeAgreementCount: number;
+  earliestDate: string | null;
+  latestDate: string | null;
   earliestStart: string | null;
   latestEnd: string | null;
 }
@@ -145,7 +147,7 @@ export default function RevenueAnalytics() {
           <Card className="shadow-sm bg-card" data-testid="card-arr">
             <CardHeader className="pb-2">
               <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                Trailing 12-Month Revenue
+                Annualized Revenue
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -157,7 +159,7 @@ export default function RevenueAnalytics() {
                     {fmt(mrrData?.trailing12mRevenue ?? mrrData?.arr ?? 0)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Total invoiced · past 12 months
+                    Trailing 12-month invoice total
                   </p>
                 </>
               )}
@@ -201,7 +203,7 @@ export default function RevenueAnalytics() {
           <p className="text-xs text-muted-foreground mt-2">
             {mrrData?.invoiceCount?.toLocaleString() ?? 0} invoices
             {mrrData?.clientCount ? ` · ${mrrData.clientCount} clients billed` : ""}
-            {mrrData?.earliestStart ? ` · ${safeDate(mrrData.earliestStart)} – ${safeDate(mrrData.latestEnd)}` : ""}
+            {(mrrData?.earliestDate ?? mrrData?.earliestStart) ? ` · ${safeDate(mrrData!.earliestDate ?? mrrData!.earliestStart)} – ${safeDate(mrrData!.latestDate ?? mrrData!.latestEnd)}` : ""}
           </p>
         )}
 
