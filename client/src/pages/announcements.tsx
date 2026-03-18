@@ -182,6 +182,8 @@ export default function Announcements() {
       if (json.draft) {
         form.setValue("message", json.draft);
         toast({ title: "Draft generated", description: "Review and edit before publishing." });
+      } else {
+        toast({ title: "No history found", description: "No recent changes found — write your release notes manually." });
       }
     } catch (err: any) {
       toast({ title: "Generation failed", description: err.message, variant: "destructive" });

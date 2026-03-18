@@ -2233,7 +2233,12 @@ Respond ONLY with JSON — no markdown:
       try {
         gitLog = execSync("git log --oneline --no-merges -50", { cwd: process.cwd(), timeout: 10000 }).toString().trim();
       } catch {
-        gitLog = "No git history available.";
+        // git unavailable in deployed environment — return empty draft so user types manually
+        return res.json({ draft: "" });
+      }
+
+      if (!gitLog) {
+        return res.json({ draft: "" });
       }
 
       const { openai } = await import("./openai");
@@ -2245,20 +2250,22 @@ Respond ONLY with JSON — no markdown:
             content: `You are a product changelog writer for M5 Services, a precon/facility maintenance CRM built for Chase and the M5 team.
 Convert the git commits below into a clean, user-friendly "What's New" section.
 Write 4-8 bullet points starting with "•" describing new features, fixes, and improvements in plain English.
-Skip merge commits, dependency bumps, minor typos, and internal refactors.
-Focus on user-facing changes. Start each bullet with a clear action verb (Added, Fixed, Improved, Now, You can now, etc.).
-Be concise — each bullet should be one sentence. Do not include a title or header line.`,
+IMPORTANT: Translate every commit into user-facing language — do not skip any commit, even if it sounds technical. Every commit represents a real improvement or feature the user cares about.
+Technical translations: "schema" → data structure, "routes" → features, "endpoint" → feature, "refactor" → improved reliability, "fix" → fixed, "PATCH" → fixed, "UI" → screen/interface, "modal" → popup dialog.
+Start each bullet with a clear action verb (Added, Fixed, Improved, Now, You can now, etc.).
+Be concise — each bullet should be one sentence. Do not include a title or header line.
+If after translating all commits you still have nothing meaningful, return an empty string — do not write a sentence saying there are no updates.`,
           },
           {
             role: "user",
             content: `Recent git commits:\n${gitLog}`,
           },
         ],
-        temperature: 0.4,
-        max_tokens: 600,
+        temperature: 0.5,
+        max_tokens: 700,
       });
 
-      const draft = completion.choices[0]?.message?.content ?? "";
+      const draft = (completion.choices[0]?.message?.content ?? "").trim();
       res.json({ draft });
     } catch (err: any) {
       console.error("[generate-release-notes]", err.message);
