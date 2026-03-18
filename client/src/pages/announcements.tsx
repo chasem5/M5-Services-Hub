@@ -183,6 +183,7 @@ export default function Announcements() {
         form.setValue("message", json.draft);
         toast({ title: "Draft generated", description: "Review and edit before publishing." });
       } else {
+        form.setValue("message", "");
         toast({ title: "No history found", description: "No recent changes found — write your release notes manually." });
       }
     } catch (err: any) {
