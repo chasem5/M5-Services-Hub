@@ -56,6 +56,8 @@ interface ClientIntel {
   isOverridden: boolean;
   healthOverrideNote: string | null;
   groupChildCount: number;
+  jobsLast6Months?: number;
+  jobsLast12Months?: number;
 }
 
 type SortKey = "ltv" | "hitRate" | "pipelineValue" | "velocityLast90" | "activeJobs" | "healthScore" | "name";
@@ -63,7 +65,7 @@ type SortKey = "ltv" | "hitRate" | "pipelineValue" | "velocityLast90" | "activeJ
 const fmt = (v: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 
-function HealthBadgeHover({ client, onOverrideChange }: { client: ClientIntel; onOverrideChange?: (clientId: number, val: string | null) => void }) {
+function HealthBadgeHover({ client }: { client: ClientIntel }) {
   const [open, setOpen] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -90,6 +92,8 @@ function HealthBadgeHover({ client, onOverrideChange }: { client: ClientIntel; o
           invoiceTrend: client.invoiceTrend ?? "flat",
           invoiceLast3Avg: String(client.invoiceLast3Avg ?? 0),
           invoicePrior3Avg: String(client.invoicePrior3Avg ?? 0),
+          jobsLast6Months: String(client.jobsLast6Months ?? -1),
+          jobsLast12Months: String(client.jobsLast12Months ?? -1),
         });
         const res = await fetch(`/api/clients/${client.clientId}/health-summary?${params}`, { credentials: "include" });
         const json = await res.json();
@@ -102,8 +106,14 @@ function HealthBadgeHover({ client, onOverrideChange }: { client: ClientIntel; o
     }
   };
 
+  // Recency signal derived from data
+  const j6m = client.jobsLast6Months ?? -1;
+  const j12m = client.jobsLast12Months ?? -1;
+  const isDormant12m = j12m !== -1 && j12m === 0 && !client.hasActiveSA;
+  const isStalled6m = j6m !== -1 && j6m === 0 && !isDormant12m;
+
+  const overriddenClass = client.isOverridden ? "ring-2 ring-offset-1 ring-amber-400" : "";
   const badgeEl = (() => {
-    const overriddenClass = client.isOverridden ? "ring-2 ring-offset-1 ring-amber-400" : "";
     if (client.healthStatus === "healthy") return (
       <Badge className={cn("bg-green-100 text-green-700 border-green-200 text-xs cursor-pointer gap-1", overriddenClass)} data-testid="badge-health-healthy">
         {client.isOverridden && <Pin className="h-2.5 w-2.5" />}
@@ -126,7 +136,21 @@ function HealthBadgeHover({ client, onOverrideChange }: { client: ClientIntel; o
 
   return (
     <HoverCard open={open} onOpenChange={handleOpen} openDelay={400}>
-      <HoverCardTrigger asChild><span className="inline-block cursor-pointer">{badgeEl}</span></HoverCardTrigger>
+      <HoverCardTrigger asChild>
+        <span className="inline-flex items-center gap-1.5 cursor-pointer">
+          {badgeEl}
+          {client.momentum === "rising" && (
+            <span className="text-[10px] font-bold text-green-600 flex items-center gap-0.5" data-testid={`badge-momentum-${client.clientId}`}>
+              <TrendingUp className="h-3 w-3" /> On the Rise
+            </span>
+          )}
+          {client.momentum === "declining" && (
+            <span className="text-[10px] font-bold text-red-500 flex items-center gap-0.5" data-testid={`badge-momentum-${client.clientId}`}>
+              <TrendingDown className="h-3 w-3" /> Declining
+            </span>
+          )}
+        </span>
+      </HoverCardTrigger>
       <HoverCardContent className="w-80 text-sm" side="right">
         <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
@@ -136,6 +160,18 @@ function HealthBadgeHover({ client, onOverrideChange }: { client: ClientIntel; o
           <div className="mb-2 flex items-start gap-1.5 text-xs text-amber-600 bg-amber-50 rounded p-2">
             <Pin className="h-3 w-3 mt-0.5 shrink-0" />
             <span>Manually set: {client.healthOverrideNote}</span>
+          </div>
+        )}
+        {isDormant12m && (
+          <div className="mb-2 flex items-center gap-1.5 text-xs text-red-600 bg-red-50 rounded p-2">
+            <AlertCircle className="h-3 w-3 shrink-0" />
+            <span>No jobs in 12+ months, no service agreement — account is dormant</span>
+          </div>
+        )}
+        {isStalled6m && (
+          <div className="mb-2 flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded p-2">
+            <AlertCircle className="h-3 w-3 shrink-0" />
+            <span>No jobs in the last 6 months — engagement has stalled</span>
           </div>
         )}
         {loading ? (
@@ -468,17 +504,7 @@ export default function CustomerReport() {
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums">{c.velocityLast90}</td>
                       <td className="py-2.5 px-3 text-right">{c.hitRate !== null ? `${c.hitRate}%` : "—"}</td>
                       <td className="py-2.5 px-3 text-right">{c.activeJobs}</td>
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-1.5">
-                          {trendIcon(c.velocityDirection)}
-                          {c.momentum === "rising" && (
-                            <span className="text-[10px] font-bold text-green-600 uppercase tracking-wider" data-testid={`badge-momentum-${c.clientId}`}>Rising</span>
-                          )}
-                          {c.momentum === "declining" && (
-                            <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider" data-testid={`badge-momentum-${c.clientId}`}>Declining</span>
-                          )}
-                        </div>
-                      </td>
+                      <td className="py-2.5 px-3">{trendIcon(c.velocityDirection)}</td>
                       <td className="py-2.5 px-3 text-right text-xs text-muted-foreground">{c.wonCount}/{c.lostCount}/{c.openDeals}</td>
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-1">

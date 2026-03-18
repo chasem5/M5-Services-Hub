@@ -4249,6 +4249,8 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
           invoiceTrend: data.invoiceTrend ?? "flat",
           invoiceLast3Avg: String(data.invoiceLast3Avg ?? 0),
           invoicePrior3Avg: String(data.invoicePrior3Avg ?? 0),
+          jobsLast6Months: String((data as any).jobsLast6Months ?? -1),
+          jobsLast12Months: String((data as any).jobsLast12Months ?? -1),
         });
         const res = await fetch(`/api/clients/${clientId}/health-summary?${params}`, { credentials: "include" });
         const json = await res.json();
@@ -4285,6 +4287,12 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
   const velocityLabel = data.velocityDirection === "growing" ? "Accelerating" : data.velocityDirection === "declining" ? "Slowing" : "Steady";
   const velocityColor = data.velocityDirection === "growing" ? "text-green-600" : data.velocityDirection === "declining" ? "text-red-600" : "text-muted-foreground";
 
+  // Recency signals for HoverCard
+  const j6m = (data as any).jobsLast6Months ?? -1;
+  const j12m = (data as any).jobsLast12Months ?? -1;
+  const isDormant12m = j12m !== -1 && j12m === 0 && !data.hasActiveSA;
+  const isStalled6m = j6m !== -1 && j6m === 0 && !isDormant12m;
+
   return (
     <div className="space-y-6">
       {/* ── Header row ── */}
@@ -4301,6 +4309,18 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
               <Sparkles className="h-3.5 w-3.5 text-primary" />
               AI Health Summary
             </div>
+            {isDormant12m && (
+              <div className="mb-2 flex items-center gap-1.5 text-xs text-red-600 bg-red-50 rounded p-2">
+                <AlertCircle className="h-3 w-3 shrink-0" />
+                <span>No jobs in 12+ months, no service agreement — account is dormant</span>
+              </div>
+            )}
+            {isStalled6m && (
+              <div className="mb-2 flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded p-2">
+                <AlertCircle className="h-3 w-3 shrink-0" />
+                <span>No jobs in the last 6 months — engagement has stalled</span>
+              </div>
+            )}
             {healthSummaryLoading ? (
               <div className="space-y-1.5">
                 <Skeleton className="h-3.5 w-full" />
@@ -4312,20 +4332,20 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
             )}
           </HoverCardContent>
         </HoverCard>
+        {data.momentum === "rising" && (
+          <div className="flex items-center gap-1 text-xs font-bold text-green-600" data-testid="badge-momentum">
+            <TrendingUp className="h-3.5 w-3.5" /> On the Rise
+          </div>
+        )}
+        {data.momentum === "declining" && (
+          <div className="flex items-center gap-1 text-xs font-bold text-red-500" data-testid="badge-momentum">
+            <TrendingDown className="h-3.5 w-3.5" /> Declining
+          </div>
+        )}
         <div className={cn("flex items-center gap-1.5 text-sm font-medium", velocityColor)}>
           {velocityIcon}
           Activity: {velocityLabel}
         </div>
-        {data.momentum === "rising" && (
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold uppercase tracking-wider" data-testid="badge-momentum">
-            <TrendingUp className="h-3.5 w-3.5" /> Rising Momentum
-          </div>
-        )}
-        {data.momentum === "declining" && (
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold uppercase tracking-wider" data-testid="badge-momentum">
-            <TrendingDown className="h-3.5 w-3.5" /> Declining Momentum
-          </div>
-        )}
       </div>
 
       {/* ── Velocity callout ── */}

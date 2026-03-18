@@ -6242,14 +6242,14 @@ Guidelines:
     let healthStatus: "healthy" | "watch" | "at_risk" = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
 
     // ── Recency penalty ──────────────────────────────────────────────────────
-    // A single job after a long drought shouldn't flip the score to Healthy.
-    // Cap at Watch if no activity in last 6 months; cap at At Risk if dormant 12+ months with no SA.
+    // Inactivity is a strong negative signal regardless of historical metrics.
     if (jobsLast6Months !== -1 && jobsLast6Months === 0) {
-      // No completed/scheduled jobs in 6 months → cap at Watch
+      // -1 point penalty for no activity in 6 months, then cap at Watch
+      healthScore = Math.max(0, healthScore - 1);
       if (healthStatus === "healthy") { healthStatus = "watch"; healthScore = Math.min(healthScore, 3); }
     }
     if (jobsLast12Months !== -1 && jobsLast12Months === 0 && !hasActiveSA) {
-      // Dormant 12+ months AND no service agreement → cap at At Risk
+      // Dormant 12+ months AND no service agreement → force At Risk
       healthStatus = "at_risk"; healthScore = Math.min(healthScore, 1);
     }
 
@@ -6475,9 +6475,22 @@ Guidelines:
         velocityLast90, velocityPrior90, velocityDirection, velocityChange,
         ltv, hitRate, wonCount, lostCount, totalJobs, openCount, hasActiveSA,
         invoiceTrend, invoiceLast3Avg, invoicePrior3Avg,
+        jobsLast6Months, jobsLast12Months,
       } = req.query as Record<string, string>;
 
       const fmtAvg = (v: string | undefined) => v && !isNaN(Number(v)) ? `$${Math.round(Number(v)).toLocaleString()}` : "N/A";
+
+      // Build recency context note for the prompt
+      const j6m = jobsLast6Months !== undefined ? Number(jobsLast6Months) : -1;
+      const j12m = jobsLast12Months !== undefined ? Number(jobsLast12Months) : -1;
+      let recencyNote = "";
+      if (j12m !== -1 && j12m === 0 && hasActiveSA !== "true") {
+        recencyNote = "⚠️ No jobs in last 12 months and no active service agreement — account is dormant.";
+      } else if (j6m !== -1 && j6m === 0) {
+        recencyNote = `⚠️ No jobs in the last 6 months${j12m > 0 ? ` (${j12m} in last 12 months)` : ""} — recent engagement has stalled.`;
+      } else if (j6m !== -1 && j6m > 0) {
+        recencyNote = `${j6m} job${j6m !== 1 ? "s" : ""} in last 6 months${j12m !== -1 ? `, ${j12m} in last 12 months` : ""}.`;
+      }
 
       const prompt = `You are a concise B2B CRM analyst. Write a 2-3 sentence health summary for this customer account.
 Customer: ${client.name}
@@ -6485,11 +6498,12 @@ Health Status: ${healthStatus ?? "unknown"} (score ${healthScore ?? "?"}/6)
 Active Service Agreement: ${hasActiveSA === "true" ? "Yes — consistent contracted work" : "No"}
 Invoice Revenue Trend (last 3 months avg vs prior 3 months avg): ${fmtAvg(invoiceLast3Avg)} vs ${fmtAvg(invoicePrior3Avg)} — ${invoiceTrend ?? "flat"}
 Job Velocity (last 90 days vs prior 90): ${velocityLast90 ?? "?"} vs ${velocityPrior90 ?? "?"} jobs (${velocityDirection ?? "stable"}, ${velocityChange ?? "0"} job change)
+Recent Activity: ${recencyNote || "activity data unavailable"}
 Total Jobs Ever: ${totalJobs ?? "?"}
 Total Invoice LTV: $${ltv ? Number(ltv).toLocaleString() : "0"}
 Open Deals: ${openCount ?? "0"} | Won: ${wonCount ?? "0"} | Lost: ${lostCount ?? "0"} | Hit Rate: ${hitRate ?? "?"}%
 
-Write a punchy, factual summary highlighting what's driving the health status. Lead with service agreement status and invoice revenue trend (these are the highest-weight signals). Mention job velocity only if notable. Do not use bullet points. 2-3 sentences max.`;
+Write a punchy, factual summary highlighting what's driving the health status. Lead with service agreement status and invoice revenue trend (these are the highest-weight signals). If recent activity shows stalled or dormant engagement, call it out explicitly. Do not use bullet points. 2-3 sentences max.`;
 
       const { openai } = await import("./openai");
       const completion = await openai.chat.completions.create({
