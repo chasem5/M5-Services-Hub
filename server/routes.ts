@@ -6099,19 +6099,33 @@ Guidelines:
     ltv: number,
     invoiceTrend: "growing" | "flat" | "declining" = "flat",
     emailResponseRate: number | null = null,
-  ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk" } {
+    healthOverride?: string | null,
+  ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk"; isOverridden: boolean } {
+    // Manual override takes full precedence — skip automated scoring
+    if (healthOverride === "healthy") return { healthScore: 6, healthStatus: "healthy", isOverridden: true };
+    if (healthOverride === "watch")   return { healthScore: 3, healthStatus: "watch",   isOverridden: true };
+    if (healthOverride === "at_risk") return { healthScore: 0, healthStatus: "at_risk", isOverridden: true };
+
+    // Automated scoring (max 7 points):
     let healthScore = 0;
-    if (hasActiveSA) healthScore += 2;
+    // SA: +1 (valuable signal but not the only path to healthy — project-only clients shouldn't be penalized)
+    if (hasActiveSA) healthScore += 1;
+    // Invoice revenue trend: the strongest signal
     if (invoiceTrend === "growing") healthScore += 2;
     else if (invoiceTrend === "flat") healthScore += 1;
+    // Job velocity over last 90 days
     if (velocityDirection === "growing" || velocityDirection === "flat") healthScore += 1;
+    // Active pipeline: they're still sending work our way
     if (openDeals > 0) healthScore += 1;
-    // Email response rate: mild negative signal when low (< 25%), no bonus when good
+    // Long-term revenue history: LTV > $25K means a meaningful relationship
+    if (ltv >= 25000) healthScore += 1;
+    // Email response rate: mild negative signal when low (< 25%)
     if (emailResponseRate !== null && emailResponseRate < 25) healthScore -= 1;
     // Clamp to valid range
     healthScore = Math.max(0, healthScore);
-    const healthStatus = healthScore >= 5 ? "healthy" : healthScore >= 3 ? "watch" : "at_risk";
-    return { healthScore, healthStatus };
+    // Thresholds: Healthy >= 4, Watch: 2–3, At Risk: < 2
+    const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+    return { healthScore, healthStatus, isOverridden: false };
   }
 
   // ── Customer Intelligence ──────────────────────────────────────────────────
@@ -6341,6 +6355,24 @@ Write a punchy, factual summary highlighting what's driving the health status. L
     }
   });
 
+  // ── Health Override ────────────────────────────────────────────────────────
+  app.put("/api/clients/:id/health-override", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      if (isNaN(clientId)) return res.status(400).json({ message: "Invalid client ID" });
+      const { healthOverride, healthOverrideNote } = req.body as { healthOverride: string | null; healthOverrideNote?: string | null };
+      const valid = [null, "healthy", "watch", "at_risk"];
+      if (!valid.includes(healthOverride)) return res.status(400).json({ message: "Invalid healthOverride value" });
+      await storage.updateClient(clientId, {
+        healthOverride: healthOverride as any,
+        healthOverrideNote: healthOverrideNote ?? null,
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/reports/customer-intelligence", isAuthenticated, async (req, res) => {
     try {
       if (!(await hasModuleAccess(req, "customers"))) {
@@ -6546,8 +6578,8 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         const velocityDirection = computeVelocityDirection(jobs.last90, jobs.prior90);
         const { invoiceTrend, last3Avg: invoiceLast3Avg, prior3Avg: invoicePrior3Avg } =
           computeInvoiceTrend(groupMonthlyData);
-        const { healthScore, healthStatus } = computeHealthScoreV2(
-          velocityDirection, openDeals, hasActiveSA, ltv, invoiceTrend
+        const { healthScore, healthStatus, isOverridden } = computeHealthScoreV2(
+          velocityDirection, openDeals, hasActiveSA, ltv, invoiceTrend, null, client.healthOverride
         );
 
         if (tierFilter && client.tier !== tierFilter) continue;
@@ -6575,6 +6607,8 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           invoicePrior3Avg,
           healthScore,
           healthStatus,
+          isOverridden,
+          healthOverrideNote: client.healthOverrideNote ?? null,
           groupChildCount: childIds.length,
         });
       }
@@ -6917,25 +6951,35 @@ Write a punchy, factual summary highlighting what's driving the health status. L
 
       const toRows = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
 
-      // Step 1: Find earliest "won" date per client, grouped into acquisition quarter
-      const firstWonRows = toRows(await db.execute(sqlTag`
+      // Step 1: Find earliest invoice date per client as the acquisition cohort.
+      // We use first invoice date rather than won_at because bulk-imported deals
+      // had won_at set to the import date (March 2026), not the actual win date.
+      // First invoice date reflects when M5 first generated revenue from this client.
+      const firstInvoiceRows = toRows(await db.execute(sqlTag`
         SELECT
-          client_id,
-          MIN(COALESCE(won_at, updated_at)) AS first_won_at
-        FROM leads
-        WHERE stage = 'won' AND client_id IS NOT NULL
-        ${serviceTypeFilter ? sqlTag`AND (service_type = ${serviceTypeFilter} OR ${serviceTypeFilter} = ANY(service_types))` : sqlTag``}
-        GROUP BY client_id
+          bi.client_id,
+          MIN(bi.issued_date) AS first_invoice_date
+        FROM buildops_invoices bi
+        WHERE bi.client_id IS NOT NULL AND bi.issued_date IS NOT NULL
+        ${serviceTypeFilter ? sqlTag`
+          AND bi.client_id IN (
+            SELECT DISTINCT client_id FROM leads
+            WHERE stage = 'won' AND client_id IS NOT NULL
+              AND (service_type = ${serviceTypeFilter} OR ${serviceTypeFilter} = ANY(service_types))
+          )
+        ` : sqlTag``}
+        GROUP BY bi.client_id
+        HAVING MIN(bi.issued_date) IS NOT NULL
       `));
 
-      if (firstWonRows.length === 0) {
+      if (firstInvoiceRows.length === 0) {
         return res.json({ cohorts: [], quarters: [] });
       }
 
       // Map client -> acquisition quarter label (e.g. "Q1 2024")
       const clientCohortMap = new Map<number, string>();
-      for (const r of firstWonRows) {
-        const dt = new Date(r.first_won_at as string);
+      for (const r of firstInvoiceRows) {
+        const dt = new Date(r.first_invoice_date as string);
         const year = dt.getFullYear();
         const q = Math.floor(dt.getMonth() / 3) + 1;
         clientCohortMap.set(Number(r.client_id), `Q${q} ${year}`);

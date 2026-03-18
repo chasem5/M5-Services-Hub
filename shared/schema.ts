@@ -33,6 +33,8 @@ export const clients = pgTable("clients", {
   parentClientId: integer("parent_client_id"),
   accountManagerUserId: varchar("account_manager_user_id").references(() => users.id),
   createdBy: varchar("created_by").references(() => users.id),
+  healthOverride: varchar("health_override", { length: 20 }), // null | 'healthy' | 'watch' | 'at_risk'
+  healthOverrideNote: varchar("health_override_note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

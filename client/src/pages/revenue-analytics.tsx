@@ -14,7 +14,6 @@ import {
   Pie,
   Cell,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -228,15 +227,15 @@ export default function RevenueAnalytics() {
                   Total invoiced: {fmt(mixData?.totalRevenue ?? 0)}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={280}>
+              <CardContent className="space-y-4">
+                <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
                     <Pie
                       data={pieData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={70}
-                      outerRadius={110}
+                      innerRadius={65}
+                      outerRadius={100}
                       paddingAngle={2}
                       dataKey="revenue"
                       nameKey="category"
@@ -249,13 +248,23 @@ export default function RevenueAnalytics() {
                       formatter={(value: number, name: string) => [fmt(value), name]}
                       labelFormatter={() => ""}
                     />
-                    <Legend
-                      formatter={(value) => (
-                        <span className="text-xs text-foreground">{value}</span>
-                      )}
-                    />
                   </PieChart>
                 </ResponsiveContainer>
+                {/* Custom legend — separate from chart to avoid cramping */}
+                <div className="space-y-1.5">
+                  {pieData.map((item) => {
+                    const pct = mixData?.totalRevenue ? Math.round((item.revenue / mixData.totalRevenue) * 100) : 0;
+                    return (
+                      <div key={item.category} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                          <span className="truncate text-foreground">{item.category}</span>
+                        </div>
+                        <span className="text-muted-foreground ml-3 shrink-0">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
 

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
   BarChart3,
   TrendingUp,
@@ -20,6 +22,12 @@ import {
   ExternalLink,
   HeartPulse,
   Sparkles,
+  Pin,
+  MoreVertical,
+  ShieldCheck,
+  Eye,
+  AlertCircle,
+  X,
 } from "lucide-react";
 
 interface ClientIntel {
@@ -44,6 +52,8 @@ interface ClientIntel {
   invoicePrior3Avg: number;
   healthScore: number;
   healthStatus: "healthy" | "watch" | "at_risk";
+  isOverridden: boolean;
+  healthOverrideNote: string | null;
   groupChildCount: number;
 }
 
@@ -52,7 +62,7 @@ type SortKey = "ltv" | "hitRate" | "pipelineValue" | "velocityLast90" | "activeJ
 const fmt = (v: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 
-function HealthBadgeHover({ client }: { client: ClientIntel }) {
+function HealthBadgeHover({ client, onOverrideChange }: { client: ClientIntel; onOverrideChange?: (clientId: number, val: string | null) => void }) {
   const [open, setOpen] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -92,19 +102,41 @@ function HealthBadgeHover({ client }: { client: ClientIntel }) {
   };
 
   const badgeEl = (() => {
-    if (client.healthStatus === "healthy") return <Badge className="bg-green-100 text-green-700 border-green-200 text-xs cursor-pointer" data-testid="badge-health-healthy">Healthy</Badge>;
-    if (client.healthStatus === "watch") return <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs cursor-pointer" data-testid="badge-health-watch">Watch</Badge>;
-    return <Badge className="bg-red-100 text-red-700 border-red-200 text-xs cursor-pointer" data-testid="badge-health-at-risk">At Risk</Badge>;
+    const overriddenClass = client.isOverridden ? "ring-2 ring-offset-1 ring-amber-400" : "";
+    if (client.healthStatus === "healthy") return (
+      <Badge className={cn("bg-green-100 text-green-700 border-green-200 text-xs cursor-pointer gap-1", overriddenClass)} data-testid="badge-health-healthy">
+        {client.isOverridden && <Pin className="h-2.5 w-2.5" />}
+        Healthy
+      </Badge>
+    );
+    if (client.healthStatus === "watch") return (
+      <Badge className={cn("bg-amber-100 text-amber-700 border-amber-200 text-xs cursor-pointer gap-1", overriddenClass)} data-testid="badge-health-watch">
+        {client.isOverridden && <Pin className="h-2.5 w-2.5" />}
+        Watch
+      </Badge>
+    );
+    return (
+      <Badge className={cn("bg-red-100 text-red-700 border-red-200 text-xs cursor-pointer gap-1", overriddenClass)} data-testid="badge-health-at-risk">
+        {client.isOverridden && <Pin className="h-2.5 w-2.5" />}
+        At Risk
+      </Badge>
+    );
   })();
 
   return (
     <HoverCard open={open} onOpenChange={handleOpen} openDelay={400}>
       <HoverCardTrigger asChild><span className="inline-block cursor-pointer">{badgeEl}</span></HoverCardTrigger>
-      <HoverCardContent className="w-72 text-sm" side="right">
+      <HoverCardContent className="w-80 text-sm" side="right">
         <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
           AI Health Summary
         </div>
+        {client.isOverridden && client.healthOverrideNote && (
+          <div className="mb-2 flex items-start gap-1.5 text-xs text-amber-600 bg-amber-50 rounded p-2">
+            <Pin className="h-3 w-3 mt-0.5 shrink-0" />
+            <span>Manually set: {client.healthOverrideNote}</span>
+          </div>
+        )}
         {loading ? (
           <div className="space-y-1.5">
             <Skeleton className="h-3.5 w-full" />
@@ -116,6 +148,64 @@ function HealthBadgeHover({ client }: { client: ClientIntel }) {
         )}
       </HoverCardContent>
     </HoverCard>
+  );
+}
+
+function HealthOverrideMenu({ client }: { client: ClientIntel }) {
+  const mutation = useMutation({
+    mutationFn: (val: { healthOverride: string | null; healthOverrideNote?: string | null }) =>
+      apiRequest("PUT", `/api/clients/${client.clientId}/health-override`, val),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/reports/customer-intelligence"] }),
+  });
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`btn-health-override-${client.clientId}`}>
+          <MoreVertical className="h-3.5 w-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Set Health Override</div>
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => mutation.mutate({ healthOverride: "healthy", healthOverrideNote: "Manually set healthy" })}
+          data-testid={`override-healthy-${client.clientId}`}
+        >
+          <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+          <span>Mark Healthy</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => mutation.mutate({ healthOverride: "watch", healthOverrideNote: "Manually set watch" })}
+          data-testid={`override-watch-${client.clientId}`}
+        >
+          <Eye className="h-3.5 w-3.5 text-amber-600" />
+          <span>Mark Watch</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => mutation.mutate({ healthOverride: "at_risk", healthOverrideNote: "Manually set at risk" })}
+          data-testid={`override-atrisk-${client.clientId}`}
+        >
+          <AlertCircle className="h-3.5 w-3.5 text-red-600" />
+          <span>Mark At Risk</span>
+        </DropdownMenuItem>
+        {client.isOverridden && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="gap-2 cursor-pointer text-muted-foreground"
+              onClick={() => mutation.mutate({ healthOverride: null, healthOverrideNote: null })}
+              data-testid={`override-clear-${client.clientId}`}
+            >
+              <X className="h-3.5 w-3.5" />
+              <span>Clear Override</span>
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -305,6 +395,18 @@ export default function CustomerReport() {
         <span className="text-sm text-muted-foreground ml-auto">{sorted.length} customers</span>
       </div>
 
+      {/* Scoring explanation */}
+      <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 flex flex-wrap gap-x-4 gap-y-1">
+        <span className="font-medium text-foreground">Health scoring:</span>
+        <span>Revenue trend <strong className="text-foreground">+2 growing / +1 flat</strong></span>
+        <span>Job velocity <strong className="text-foreground">+1</strong></span>
+        <span>Active pipeline <strong className="text-foreground">+1</strong></span>
+        <span>LTV &gt;$25K <strong className="text-foreground">+1</strong></span>
+        <span>Service agreement <strong className="text-foreground">+1</strong></span>
+        <span>Healthy ≥ 4 pts · Watch 2–3 pts · At Risk &lt; 2 pts</span>
+        <span className="flex items-center gap-1"><Pin className="h-3 w-3 text-amber-500" /> = manually pinned</span>
+      </div>
+
       <Card className="shadow-sm bg-card">
         <CardContent className="p-0">
           {isError ? (
@@ -336,12 +438,12 @@ export default function CustomerReport() {
                     <SortHeader label="Active Jobs" field="activeJobs" className="text-right" />
                     <th className="py-2 px-3 font-medium">Activity</th>
                     <th className="py-2 px-3 font-medium text-right">Deals (W/L/O)</th>
-                    <th className="py-2 px-3 font-medium w-8"></th>
+                    <th className="py-2 px-3 font-medium w-16"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.map(c => (
-                    <tr key={c.clientId} className="border-b hover:bg-muted/50" data-testid={`row-client-${c.clientId}`}>
+                    <tr key={c.clientId} className="border-b hover:bg-muted/50 group" data-testid={`row-client-${c.clientId}`}>
                       <td className="py-2.5 px-3 font-medium max-w-[220px]">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <Link href={`/customers/${c.clientId}`} className="hover:text-primary hover:underline truncate">{c.name}</Link>
@@ -366,11 +468,14 @@ export default function CustomerReport() {
                       <td className="py-2.5 px-3">{trendIcon(c.velocityDirection)}</td>
                       <td className="py-2.5 px-3 text-right text-xs text-muted-foreground">{c.wonCount}/{c.lostCount}/{c.openDeals}</td>
                       <td className="py-2.5 px-3">
-                        <Link href={`/customers/${c.clientId}`}>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`link-view-${c.clientId}`}>
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
+                        <div className="flex items-center gap-1">
+                          {isAdminOrManager && <HealthOverrideMenu client={c} />}
+                          <Link href={`/customers/${c.clientId}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`link-view-${c.clientId}`}>
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Button>
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}
