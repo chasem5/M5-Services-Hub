@@ -2239,6 +2239,15 @@ Be concise — each bullet should be one sentence. Do not include a title or hea
       const userId = (req as any).user?.claims?.sub;
       const { insertAnnouncementSchema } = await import("@shared/schema");
       const data = insertAnnouncementSchema.parse({ ...req.body, createdBy: userId });
+
+      // release_notes type is restricted to admin/super_admin
+      if (data.type === "release_notes") {
+        const dbUser = await storage.getUser(userId);
+        if (!dbUser || !["admin", "super_admin"].includes(dbUser.role ?? "")) {
+          return res.status(403).json({ message: "Only admins can publish release notes" });
+        }
+      }
+
       const announcement = await storage.createAnnouncement(data);
 
       const targetIds: string[] = data.targetUserIds?.length
