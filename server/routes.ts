@@ -7346,15 +7346,19 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       if (!(await hasModuleAccess(req, "customers"))) {
         return res.status(403).json({ message: "Access denied" });
       }
-      const type = req.query.type as "customer" | "company" | undefined;
+      // Strict contract: type is required
+      const type = req.query.type as string | undefined;
+      if (type !== "customer" && type !== "company") {
+        return res.status(400).json({ message: "type must be 'customer' or 'company'" });
+      }
       const clientIdParam = req.query.clientId;
       const includeCompleted = req.query.includeCompleted === "true";
       const clientId = clientIdParam === "null" ? null
         : clientIdParam ? Number(clientIdParam)
         : undefined;
-      // Contract enforcement: customer type requires a valid clientId
+      // Contract enforcement: customer type requires a valid numeric clientId
       if (type === "customer") {
-        if (typeof clientId !== "number") {
+        if (typeof clientId !== "number" || isNaN(clientId)) {
           return res.status(400).json({ message: "clientId is required for type=customer" });
         }
         // Scoped access: check caller is authorized for this client
@@ -7469,7 +7473,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         const lastJobDate = jr.last_job_date ? new Date(jr.last_job_date).toLocaleDateString() : "unknown";
 
         const saRows = await dbGen.execute(sqlGen`
-          SELECT COUNT(*) AS cnt FROM buildops_service_agreements
+          SELECT COUNT(*) AS cnt FROM buildops_agreements
           WHERE client_id = ${clientId} AND status = 'active'
         `);
         const hasActiveSA = Number((toRowsGen(saRows)[0] as any)?.cnt ?? 0) > 0;
@@ -7519,7 +7523,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         const revenueLines = revMonths.slice(0, 3).map((r: any) => `${r.month}: $${Math.round(Number(r.total ?? 0)).toLocaleString()}`).join(", ");
 
         const saRows = await dbGen.execute(sqlGen`
-          SELECT COUNT(*) AS active FROM buildops_service_agreements WHERE status = 'active'
+          SELECT COUNT(*) AS active FROM buildops_agreements WHERE status = 'active'
         `);
         const activeSACount = Number((toRowsGen(saRows)[0] as any)?.active ?? 0);
 
@@ -7598,7 +7602,15 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           return res.status(403).json({ message: "Access denied" });
         }
       }
-      const data = insertActionPlanSchema.partial().parse(req.body);
+      // Restrict to safe-only fields — ownership (clientId/type/source) is immutable via PATCH
+      const patchSchema = z.object({
+        status: z.enum(["open", "completed", "dismissed"]).optional(),
+        title: z.string().min(1).optional(),
+        description: z.string().optional(),
+        priority: z.enum(["high", "medium", "low"]).optional(),
+        dueDate: z.string().nullable().optional(),
+      });
+      const data = patchSchema.parse(req.body);
       const plan = await storage.updateActionPlan(id, data);
       res.json(plan);
     } catch (err: any) {
