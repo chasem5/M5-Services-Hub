@@ -4304,7 +4304,8 @@ Respond with this JSON:
       let inactive = 0;
 
       const buildFieldsFromCustomer = (customer: any) => {
-        const billing = customer.addresses?.find((a: any) => a.addressType === "billing") ?? customer.addresses?.[0] ?? null;
+        const addrs = Array.isArray(customer.addresses) ? customer.addresses : (customer.addresses ? Object.values(customer.addresses) : []);
+        const billing = addrs.find((a: any) => a.addressType === "billing") ?? addrs[0] ?? null;
         const isInactive = customer.isActive === false || (customer.status && customer.status.toLowerCase() !== "active");
         return {
           name: customer.name || "Unnamed",
