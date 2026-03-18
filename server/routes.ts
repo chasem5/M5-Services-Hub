@@ -6358,5 +6358,82 @@ Write a punchy, factual summary highlighting what's driving the health status. L
     }
   });
 
+  // ── MRR / ARR from active BuildOps service agreements ──────────────────────
+  app.get("/api/analytics/mrr-arr", isAuthenticated, async (_req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql: sqlTag } = await import("drizzle-orm");
+
+      const rows = await db.execute(sqlTag`
+        SELECT
+          COUNT(*)::int                                                              AS active_count,
+          COALESCE(SUM(contract_value) FILTER (WHERE contract_value IS NOT NULL), 0) AS total_arr,
+          COALESCE(SUM(contract_value / 12) FILTER (WHERE contract_value IS NOT NULL), 0) AS total_mrr,
+          MIN(start_date)                                                            AS earliest_start,
+          MAX(end_date)                                                              AS latest_end
+        FROM buildops_agreements
+        WHERE LOWER(status) = 'active'
+      `);
+
+      const toRows = (r: any) => Array.isArray(r) ? r : r?.rows ?? [];
+      const row = toRows(rows)[0] ?? {};
+
+      res.json({
+        mrr: Number(row.total_mrr ?? 0),
+        arr: Number(row.total_arr ?? 0),
+        activeAgreementCount: Number(row.active_count ?? 0),
+        earliestStart: row.earliest_start ?? null,
+        latestEnd: row.latest_end ?? null,
+      });
+    } catch (err: any) {
+      console.error("[analytics/mrr-arr]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Service Mix from BuildOps jobs + invoices ───────────────────────────────
+  app.get("/api/analytics/service-mix", isAuthenticated, async (_req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql: sqlTag } = await import("drizzle-orm");
+
+      // Group invoiced revenue by job type using joined job type names
+      const invoiceRows = await db.execute(sqlTag`
+        SELECT
+          COALESCE(j.job_type_name, 'Other') AS category,
+          COALESCE(SUM(i.total_amount), 0)   AS revenue,
+          MAX(i.synced_at)                   AS last_synced_at
+        FROM buildops_invoices i
+        LEFT JOIN buildops_jobs j ON j.buildops_id = i.buildops_job_id
+        WHERE i.total_amount IS NOT NULL
+        GROUP BY COALESCE(j.job_type_name, 'Other')
+        ORDER BY revenue DESC
+      `);
+
+      const toRows = (r: any) => Array.isArray(r) ? r : r?.rows ?? [];
+      const rows = toRows(invoiceRows);
+
+      const totalRevenue = rows.reduce((s: number, r: any) => s + Number(r.revenue ?? 0), 0);
+
+      // Use the most recent actual sync timestamp from the source data
+      const latestSyncedAt = rows.reduce((latest: Date | null, r: any) => {
+        if (!r.last_synced_at) return latest;
+        const t = new Date(r.last_synced_at);
+        return !latest || t > latest ? t : latest;
+      }, null as Date | null);
+
+      const mix = rows.map((r: any) => ({
+        category: r.category as string,
+        revenue: Number(r.revenue ?? 0),
+        percentage: totalRevenue > 0 ? Math.round((Number(r.revenue ?? 0) / totalRevenue) * 1000) / 10 : 0,
+      }));
+
+      res.json({ mix, totalRevenue, syncedAt: latestSyncedAt?.toISOString() ?? null });
+    } catch (err: any) {
+      console.error("[analytics/service-mix]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

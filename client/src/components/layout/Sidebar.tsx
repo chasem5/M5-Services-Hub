@@ -10,6 +10,7 @@ import {
   Megaphone,
   HeartPulse,
   ClipboardList,
+  TrendingUp,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -162,6 +163,19 @@ export function AppSidebar() {
                   <Link href="/service-agreements" data-testid="link-service-agreements" onClick={() => isMobile && setOpenMobile(false)}>
                     <ClipboardList className={location === "/service-agreements" ? "text-primary" : ""} />
                     <span className="group-data-[collapsible=icon]:hidden">Service Agreements</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location === "/reports/revenue-analytics"}
+                  tooltip="Revenue Analytics"
+                  className={location === "/reports/revenue-analytics" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                >
+                  <Link href="/reports/revenue-analytics" data-testid="link-revenue-analytics" onClick={() => isMobile && setOpenMobile(false)}>
+                    <TrendingUp className={location === "/reports/revenue-analytics" ? "text-primary" : ""} />
+                    <span className="group-data-[collapsible=icon]:hidden">Revenue Analytics</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

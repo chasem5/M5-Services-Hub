@@ -21,6 +21,7 @@ import EmailSync from "@/pages/email-sync";
 import Announcements from "@/pages/announcements";
 import CustomerReport from "@/pages/customer-report";
 import ServiceAgreements from "@/pages/service-agreements";
+import RevenueAnalytics from "@/pages/revenue-analytics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function ProtectedRouter() {
@@ -46,6 +47,7 @@ function ProtectedRouter() {
           <Route path="/announcements" component={Announcements} />
           <Route path="/reports/customer-intelligence" component={CustomerReport} />
           <Route path="/service-agreements" component={ServiceAgreements} />
+          <Route path="/reports/revenue-analytics" component={RevenueAnalytics} />
           <Route component={NotFound} />
         </Switch>
       </ErrorBoundary>
