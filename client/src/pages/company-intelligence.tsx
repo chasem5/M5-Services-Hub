@@ -31,7 +31,7 @@ export default function CompanyIntelligence() {
   useEffect(() => {
     function onHashChange() {
       const hash = window.location.hash.replace("#", "");
-      const tab = TAB_VALUES.includes(hash) ? hash : "action-plan";
+      const tab = TAB_VALUES.includes(hash) ? hash : "monthly";
       setActiveTab(tab);
     }
     window.addEventListener("hashchange", onHashChange);
