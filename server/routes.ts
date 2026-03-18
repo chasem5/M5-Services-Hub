@@ -4917,19 +4917,12 @@ Respond with this JSON:
     try {
       const creds = await getBuildOpsCreds();
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
-      const { getProperties } = await import("./buildops");
+      const { getAllProperties } = await import("./buildops");
       const { db } = await import("./db");
       const { eq } = await import("drizzle-orm");
       const { contactBuildings } = await import("@shared/schema");
 
-      let allProperties: any[] = [];
-      let page = 1;
-      while (true) {
-        const batch = await getProperties(creds.clientId, creds.clientSecret, creds.tenantId, page, 100);
-        allProperties = allProperties.concat(batch.items);
-        if (allProperties.length >= batch.totalCount || batch.items.length === 0) break;
-        page++;
-      }
+      const allProperties = await getAllProperties(creds.clientId, creds.clientSecret, creds.tenantId);
 
       const allClients = await storage.listClients();
       const existingBuildings = await db.select().from(contactBuildings);

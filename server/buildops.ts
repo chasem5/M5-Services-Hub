@@ -565,6 +565,7 @@ export interface BuildOpsProperty {
   billingCustomerId?: string;
   status?: string;
   isActive?: boolean;
+  customerPropertyTypeValue?: string;
 }
 
 export async function getProperties(
@@ -575,20 +576,51 @@ export async function getProperties(
   pageSize = 100
 ): Promise<{ items: BuildOpsProperty[]; totalCount: number }> {
   const token = await getToken(clientId, clientSecret);
-  const res = await fetch(
-    `${BASE_URL}/v1/properties?page=${page}&limit=${pageSize}`,
-    { headers: buildOpsHeaders(token, tenantId) }
-  );
-  if (!res.ok) {
-    const rawText = await res.text().catch(() => "");
-    console.log(`[BuildOps getProperties] HTTP ${res.status} body:`, rawText.slice(0, 500));
-    let body: any = {};
-    try { body = JSON.parse(rawText); } catch {}
-    throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
+  const headers = buildOpsHeaders(token, tenantId);
+
+  // Try limit= first (1-indexed), fall back to page_size= (0-indexed like employees)
+  async function tryFetch(url: string) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const rawText = await res.text().catch(() => "");
+      console.log(`[BuildOps getProperties] HTTP ${res.status} ${url}:`, rawText.slice(0, 300));
+      let body: any = {};
+      try { body = JSON.parse(rawText); } catch {}
+      throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
+    }
+    return res.json();
   }
-  const data = await res.json();
-  const items: BuildOpsProperty[] = data.items ?? [];
-  return { items, totalCount: data.totalCount ?? items.length };
+
+  let data: any;
+  try {
+    data = await tryFetch(`${BASE_URL}/v1/properties?page=${page}&limit=${pageSize}`);
+  } catch (e: any) {
+    // If limit= fails (e.g. API strict validator rejects it), try page_size= with 0-indexed page
+    console.warn(`[BuildOps getProperties] limit= failed, trying page_size=: ${e.message}`);
+    data = await tryFetch(`${BASE_URL}/v1/properties?page=${page - 1}&page_size=${pageSize}`);
+  }
+
+  const items: BuildOpsProperty[] = data.items ?? data.data ?? [];
+  return { items, totalCount: data.totalCount ?? data.total ?? items.length };
+}
+
+export async function getAllProperties(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+): Promise<BuildOpsProperty[]> {
+  const all: BuildOpsProperty[] = [];
+  let page = 1;
+  const pageSize = 100;
+  while (true) {
+    const batch = await getProperties(clientId, clientSecret, tenantId, page, pageSize);
+    all.push(...batch.items);
+    console.log(`[BuildOps getAllProperties] page ${page}: got ${batch.items.length} (total so far: ${all.length})`);
+    if (batch.items.length === 0 || batch.items.length < pageSize) break;
+    page++;
+    if (page > 100) break;
+  }
+  return all;
 }
 
 // ── Service Agreements ────────────────────────────────────────────────────────
@@ -775,15 +807,18 @@ export async function getAllServiceAgreements(
       { headers }
     );
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.message ?? `HTTP ${res.status}`);
+      const rawText = await res.text().catch(() => "");
+      console.error(`[BuildOps getAllServiceAgreements] HTTP ${res.status} page ${page}:`, rawText.slice(0, 300));
+      let body: any = {};
+      try { body = JSON.parse(rawText); } catch {}
+      throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
     }
     const data = await res.json();
-    const items: BuildOpsServiceAgreement[] = data.items ?? [];
-    const totalCount: number = data.totalCount ?? data.total ?? 0;
+    const items: BuildOpsServiceAgreement[] = data.items ?? data ?? [];
+    console.log(`[BuildOps getAllServiceAgreements] page ${page}: got ${items.length} items (totalCount=${data.totalCount ?? "?"})`);
     all.push(...items);
-    if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
-    if (items.length < limit) break;
+    // Stop only when we get fewer items than requested — totalCount is unreliable (some endpoints return per-page count)
+    if (items.length === 0 || items.length < limit) break;
     page++;
     if (page > 200) break;
   }
@@ -807,15 +842,15 @@ export async function getServiceAgreements(
       { headers }
     );
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.message ?? `HTTP ${res.status}`);
+      const rawText = await res.text().catch(() => "");
+      let body: any = {};
+      try { body = JSON.parse(rawText); } catch {}
+      throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
     }
     const data = await res.json();
-    const items: BuildOpsServiceAgreement[] = data.items ?? [];
-    const totalCount: number = data.totalCount ?? data.total ?? 0;
+    const items: BuildOpsServiceAgreement[] = data.items ?? data ?? [];
     all.push(...items);
-    if (items.length === 0 || (totalCount > 0 && all.length >= totalCount)) break;
-    if (items.length < limit) break;
+    if (items.length === 0 || items.length < limit) break;
     page++;
     if (page > 50) break;
   }
