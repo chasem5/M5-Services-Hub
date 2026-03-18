@@ -746,10 +746,44 @@ export async function registerRoutes(
     res.json(client);
   });
 
+  app.get("/api/clients/:id/associations", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid client ID" });
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const toRows = (r: any) => Array.isArray(r) ? r : r?.rows ?? [];
+      const [leadsR, contactsR, estimatesR, proposalsR, meetingsR, emailsR] = await Promise.all([
+        db.execute(sql.raw(`SELECT COUNT(*) AS count FROM "leads" WHERE client_id = ${id}`)),
+        db.execute(sql.raw(`SELECT COUNT(*) AS count FROM "client_contacts" WHERE client_id = ${id}`)),
+        db.execute(sql.raw(`SELECT COUNT(*) AS count FROM "estimates" WHERE client_id = ${id}`)),
+        db.execute(sql.raw(`SELECT COUNT(*) AS count FROM "proposals" WHERE client_id = ${id}`)),
+        db.execute(sql.raw(`SELECT COUNT(*) AS count FROM "meetings" WHERE client_id = ${id}`)),
+        db.execute(sql.raw(`SELECT COUNT(*) AS count FROM "email_messages" WHERE client_id = ${id}`)),
+      ]);
+      const n = (r: any) => Number(toRows(r)[0]?.count ?? 0);
+      res.json({
+        leads: n(leadsR),
+        contacts: n(contactsR),
+        estimates: n(estimatesR),
+        proposals: n(proposalsR),
+        meetings: n(meetingsR),
+        emails: n(emailsR),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.delete("/api/clients/:id", isAuthenticated, async (req, res) => {
-    const id = parseInt(req.params.id as string);
-    await storage.deleteClient(id);
-    res.sendStatus(204);
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid client ID" });
+      await storage.deleteClient(id);
+      res.sendStatus(204);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message ?? "Failed to delete client" });
+    }
   });
 
   app.get("/api/clients/:id/children", isAuthenticated, async (req, res) => {

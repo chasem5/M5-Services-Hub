@@ -513,6 +513,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteClient(id: number): Promise<void> {
+    const { sql: rawSql } = await import("drizzle-orm");
+    await db.execute(rawSql.raw(`UPDATE "tasks" SET related_client_id = NULL WHERE related_client_id = ${id}`));
+    await db.execute(rawSql.raw(`UPDATE "reminders" SET related_client_id = NULL WHERE related_client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "email_messages" WHERE client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "meetings" WHERE client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "proposals" WHERE client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "estimates" WHERE client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "leads" WHERE client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "bd_spend_entries" WHERE client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "contact_buildings" WHERE client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "building_portfolios" WHERE client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "client_contacts" WHERE client_id = ${id}`));
+    await db.execute(rawSql.raw(`DELETE FROM "client_offices" WHERE client_id = ${id}`));
     await db.delete(clients).where(eq(clients.id, id));
   }
 

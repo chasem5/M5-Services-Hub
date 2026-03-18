@@ -42,6 +42,9 @@ import {
   Tag,
   Pencil,
   Mic,
+  Loader2,
+  ArrowRight,
+  AlertCircle,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import { BuildOpsIcon } from "@/components/BuildOpsIcon";
@@ -455,6 +458,13 @@ export default function Customers() {
   const [isBulkCompanyEditOpen, setIsBulkCompanyEditOpen] = useState(false);
   const [isBulkContactEditOpen, setIsBulkContactEditOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
+  const [clientDeleteDialog, setClientDeleteDialog] = useState<{
+    id: number;
+    name: string;
+    step: "review" | "reassign" | "confirm-delete";
+    reassignTargetId: number | null;
+    reassignSearch: string;
+  } | null>(null);
   const [isEditClientOpen, setIsEditClientOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
 
@@ -656,8 +666,32 @@ export default function Customers() {
     },
     onSuccess: () => {
       invalidateClientQueries();
-      toast({ title: "Success", description: "Customer deleted successfully" });
+      setClientDeleteDialog(null);
+      toast({ title: "Customer deleted", description: "Company and all associated records removed." });
     },
+    onError: (err: Error) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const { data: clientAssociations, isLoading: assocLoading } = useQuery<{
+    leads: number; contacts: number; estimates: number; proposals: number; meetings: number; emails: number;
+  }>({
+    queryKey: ["/api/clients", clientDeleteDialog?.id, "associations"],
+    enabled: !!clientDeleteDialog,
+  });
+
+  const reassignClientMutation = useMutation({
+    mutationFn: async ({ keepClientId, deleteClientId }: { keepClientId: number; deleteClientId: number }) => {
+      const res = await apiRequest("POST", "/api/buildops/merge-duplicate", { keepClientId, deleteClientId, fieldChoices: {} });
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateClientQueries();
+      setClientDeleteDialog(null);
+      toast({ title: "Records reassigned", description: "All records moved to the selected company. Duplicate removed." });
+    },
+    onError: (err: Error) => toast({ title: "Reassign failed", description: err.message, variant: "destructive" }),
   });
 
   const deleteContactMutation = useMutation({
@@ -2054,11 +2088,7 @@ export default function Customers() {
                                   <DropdownMenuItem 
                                     className="text-destructive focus:text-destructive cursor-pointer"
                                     onClick={() => {
-                                      setDeleteConfirm({
-                                        label: "Delete company",
-                                        description: `Delete "${c.name}"? This will permanently remove the company and cannot be undone.`,
-                                        onConfirm: () => deleteClientMutation.mutate(c.id),
-                                      });
+                                      setClientDeleteDialog({ id: c.id, name: c.name, step: "review", reassignTargetId: null, reassignSearch: "" });
                                     }}
                                     data-testid={`button-delete-customer-${c.id}`}
                                   >
@@ -3830,6 +3860,143 @@ export default function Customers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Client Delete Dialog */}
+      <Dialog open={!!clientDeleteDialog} onOpenChange={(open) => { if (!open) setClientDeleteDialog(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-destructive" />
+              Delete "{clientDeleteDialog?.name}"
+            </DialogTitle>
+            <DialogDescription>
+              Choose how to handle associated records before removing this company.
+            </DialogDescription>
+          </DialogHeader>
+
+          {clientDeleteDialog?.step === "review" && (
+            <div className="space-y-4">
+              {assocLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  {clientAssociations && (clientAssociations.leads + clientAssociations.contacts + clientAssociations.estimates + clientAssociations.proposals + clientAssociations.meetings + clientAssociations.emails) === 0 ? (
+                    <p className="text-sm text-muted-foreground">This company has no associated records. It can be safely deleted.</p>
+                  ) : (
+                    <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+                      <p className="text-sm font-medium mb-2">Associated records that will be affected:</p>
+                      {(clientAssociations?.leads ?? 0) > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Deals / Leads</span><span className="font-medium">{clientAssociations!.leads}</span></div>}
+                      {(clientAssociations?.contacts ?? 0) > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Contacts</span><span className="font-medium">{clientAssociations!.contacts}</span></div>}
+                      {(clientAssociations?.estimates ?? 0) > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Estimates</span><span className="font-medium">{clientAssociations!.estimates}</span></div>}
+                      {(clientAssociations?.proposals ?? 0) > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Proposals</span><span className="font-medium">{clientAssociations!.proposals}</span></div>}
+                      {(clientAssociations?.meetings ?? 0) > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Meetings</span><span className="font-medium">{clientAssociations!.meetings}</span></div>}
+                      {(clientAssociations?.emails ?? 0) > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Emails</span><span className="font-medium">{clientAssociations!.emails}</span></div>}
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between"
+                      onClick={() => setClientDeleteDialog(d => d ? { ...d, step: "reassign" } : null)}
+                      data-testid="button-delete-reassign"
+                    >
+                      <span className="flex items-center gap-2"><ArrowRight className="h-4 w-4" />Reassign records to another company</span>
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      className="w-full"
+                      onClick={() => setClientDeleteDialog(d => d ? { ...d, step: "confirm-delete" } : null)}
+                      data-testid="button-delete-all"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete company and all records
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {clientDeleteDialog?.step === "reassign" && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                All records from <strong>{clientDeleteDialog.name}</strong> will be moved to the company you select. The duplicate will then be removed.
+              </p>
+              <div className="space-y-2">
+                <Input
+                  placeholder="Search companies…"
+                  value={clientDeleteDialog.reassignSearch}
+                  onChange={(e) => setClientDeleteDialog(d => d ? { ...d, reassignSearch: e.target.value } : null)}
+                  data-testid="input-reassign-search"
+                />
+                <div className="max-h-52 overflow-y-auto rounded-md border divide-y">
+                  {(clients ?? [])
+                    .filter(c => c.id !== clientDeleteDialog.id && c.name.toLowerCase().includes(clientDeleteDialog.reassignSearch.toLowerCase()))
+                    .slice(0, 30)
+                    .map(c => (
+                      <button
+                        key={c.id}
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-center justify-between ${clientDeleteDialog.reassignTargetId === c.id ? "bg-primary/10 font-medium" : ""}`}
+                        onClick={() => setClientDeleteDialog(d => d ? { ...d, reassignTargetId: c.id } : null)}
+                        data-testid={`option-reassign-client-${c.id}`}
+                      >
+                        <span>{c.name}</span>
+                        {clientDeleteDialog.reassignTargetId === c.id && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                      </button>
+                    ))}
+                  {(clients ?? []).filter(c => c.id !== clientDeleteDialog.id && c.name.toLowerCase().includes(clientDeleteDialog.reassignSearch.toLowerCase())).length === 0 && (
+                    <p className="px-3 py-4 text-sm text-muted-foreground text-center">No companies found</p>
+                  )}
+                </div>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setClientDeleteDialog(d => d ? { ...d, step: "review" } : null)}>Back</Button>
+                <Button
+                  variant="destructive"
+                  disabled={!clientDeleteDialog.reassignTargetId || reassignClientMutation.isPending}
+                  onClick={() => {
+                    if (clientDeleteDialog.reassignTargetId) {
+                      reassignClientMutation.mutate({ keepClientId: clientDeleteDialog.reassignTargetId, deleteClientId: clientDeleteDialog.id });
+                    }
+                  }}
+                  data-testid="button-confirm-reassign"
+                >
+                  {reassignClientMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Transfer &amp; Remove
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+
+          {clientDeleteDialog?.step === "confirm-delete" && (
+            <div className="space-y-4">
+              <div className="flex gap-3 rounded-md bg-destructive/10 border border-destructive/20 p-3">
+                <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-destructive">This cannot be undone</p>
+                  <p className="text-muted-foreground mt-1">
+                    Permanently deleting <strong>{clientDeleteDialog.name}</strong> will remove all associated deals, contacts, estimates, proposals, meetings, and emails.
+                  </p>
+                </div>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setClientDeleteDialog(d => d ? { ...d, step: "review" } : null)}>Back</Button>
+                <Button
+                  variant="destructive"
+                  disabled={deleteClientMutation.isPending}
+                  onClick={() => deleteClientMutation.mutate(clientDeleteDialog.id)}
+                  data-testid="button-confirm-delete-all"
+                >
+                  {deleteClientMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                  Yes, Delete Everything
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Mobile FAB — context-aware per tab */}
       {activeTab !== "buildings" && (
