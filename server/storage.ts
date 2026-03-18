@@ -1503,6 +1503,7 @@ export class DatabaseStorage implements IStorage {
       { label: "Won", slug: "won", sortOrder: 5, color: "green", track: "deal" },
       { label: "Expired", slug: "expired", sortOrder: 6, color: "orange", track: "deal" },
       { label: "Lost", slug: "lost", sortOrder: 7, color: "red", track: "deal" },
+      { label: "Canceled", slug: "canceled", sortOrder: 8, color: "grey", track: "deal" },
     ];
     await db.insert(pipelineStages).values(defaults);
   }
@@ -1600,6 +1601,20 @@ export class DatabaseStorage implements IStorage {
       if (expiredStage && (expiredStage.track !== "deal" || expiredStage.color !== "orange")) {
         await db.update(pipelineStages).set({ track: "deal", color: "orange" }).where(eq(pipelineStages.id, expiredStage.id));
       }
+    }
+
+    // Migrate: add "Canceled" stage to deal track if missing (for BuildOps cancelled quotes)
+    const freshStages3 = await db.select().from(pipelineStages);
+    if (!freshStages3.some(s => s.slug === "canceled")) {
+      const lostStage = freshStages3.find(s => s.slug === "lost");
+      const insertOrder = lostStage ? lostStage.sortOrder + 1 : 99;
+      await db.insert(pipelineStages).values({
+        label: "Canceled",
+        slug: "canceled",
+        sortOrder: insertOrder,
+        color: "grey",
+        track: "deal",
+      });
     }
 
     const canonicalRelOrder = ["met_introduced", "new_lead", "in_conversation", "qualified"];
@@ -2766,18 +2781,15 @@ export class DatabaseStorage implements IStorage {
     const pipelineAdded = newPipelineLeads.reduce((s, l) => s + getLeadValue(l), 0);
 
     // 4. Proposals sent vs won vs lost
-    // Proposals: sent / signed (won). Estimates: sent / accepted (won) / rejected (lost)
-    // Combine both for a complete sent-vs-won-vs-lost picture:
-    //   sent  = proposals with status 'sent' or 'signed' + estimates with status 'sent' or 'accepted' or 'rejected'
-    //   won   = proposals 'signed' + estimates 'accepted'
-    //   lost  = estimates 'rejected'
+    // Use createdAt for initial sent date (updatedAt is misleading — changes on every edit).
+    // Also count BuildOps-synced leads that moved to proposal_sent/won/lost during the month.
     const proposalRows = await db
       .select({ status: proposals.status, count: sql<number>`count(*)` })
       .from(proposals)
       .where(
         and(
-          sql`${proposals.updatedAt} >= ${monthStart}`,
-          sql`${proposals.updatedAt} < ${monthEnd}`,
+          sql`${proposals.createdAt} >= ${monthStart}`,
+          sql`${proposals.createdAt} < ${monthEnd}`,
           sql`${proposals.status} IN ('sent', 'signed')`
         )
       )
@@ -2788,22 +2800,39 @@ export class DatabaseStorage implements IStorage {
       .from(estimates)
       .where(
         and(
-          sql`${estimates.updatedAt} >= ${monthStart}`,
-          sql`${estimates.updatedAt} < ${monthEnd}`,
+          sql`${estimates.createdAt} >= ${monthStart}`,
+          sql`${estimates.createdAt} < ${monthEnd}`,
           sql`${estimates.status} IN ('sent', 'accepted', 'rejected')`
         )
       )
       .groupBy(estimates.status);
+
+    // BuildOps leads that transitioned to proposal_sent/won/lost in the month
+    const boLeadRows = await db
+      .select({ stage: leads.stage, count: sql<number>`count(*)` })
+      .from(leads)
+      .where(
+        and(
+          sql`${leads.buildopsQuoteId} IS NOT NULL`,
+          sql`${leads.stage} IN ('proposal_sent', 'won', 'lost')`,
+          sql`${leads.updatedAt} >= ${monthStart}`,
+          sql`${leads.updatedAt} < ${monthEnd}`
+        )
+      )
+      .groupBy(leads.stage);
 
     const proposalSent = Number(proposalRows.find(r => r.status === "sent")?.count ?? 0);
     const proposalSigned = Number(proposalRows.find(r => r.status === "signed")?.count ?? 0);
     const estimateSent = Number(estimateRows.find(r => r.status === "sent")?.count ?? 0);
     const estimateAccepted = Number(estimateRows.find(r => r.status === "accepted")?.count ?? 0);
     const estimateRejected = Number(estimateRows.find(r => r.status === "rejected")?.count ?? 0);
+    const boSent = Number(boLeadRows.find(r => r.stage === "proposal_sent")?.count ?? 0);
+    const boWon = Number(boLeadRows.find(r => r.stage === "won")?.count ?? 0);
+    const boLost = Number(boLeadRows.find(r => r.stage === "lost")?.count ?? 0);
 
-    const totalSent = proposalSent + proposalSigned + estimateSent + estimateAccepted + estimateRejected;
-    const totalWon = proposalSigned + estimateAccepted;
-    const totalLost = estimateRejected;
+    const totalSent = proposalSent + proposalSigned + estimateSent + estimateAccepted + estimateRejected + boSent + boWon + boLost;
+    const totalWon = proposalSigned + estimateAccepted + boWon;
+    const totalLost = estimateRejected + boLost;
 
     // 5. New clients added
     const newClientRows = await db
@@ -2855,10 +2884,39 @@ export class DatabaseStorage implements IStorage {
       jobMap.set(r.clientId, existing);
     }
 
+    // Fetch invoice data per client for the selected month-end period (last 6 months)
+    const sixMonthsAgo = new Date(monthEnd.getTime() - 180 * 24 * 60 * 60 * 1000);
+    const threeMonthsAgo = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const invoiceTrendResult = await db.execute(sql`
+      SELECT
+        client_id,
+        CASE WHEN issued_date >= ${threeMonthsAgo} THEN 'last3m' ELSE 'prior3m' END AS period,
+        COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS total
+      FROM buildops_invoices
+      WHERE issued_date >= ${sixMonthsAgo}
+        AND issued_date < ${monthEnd}
+        AND client_id IS NOT NULL
+        AND status NOT IN ('void', 'cancelled')
+      GROUP BY 1, 2
+    `);
+    const invoiceTrendRows = toJobRows(invoiceTrendResult).map((r: any) => ({
+      clientId: r.client_id as number,
+      period: r.period as string,
+      total: Number(r.total ?? 0),
+    }));
+    const invMap = new Map<number, { last3m: number; prior3m: number }>();
+    for (const r of invoiceTrendRows) {
+      if (!r.clientId) continue;
+      const e = invMap.get(r.clientId) ?? { last3m: 0, prior3m: 0 };
+      if (r.period === "last3m") e.last3m = r.total;
+      else e.prior3m = r.total;
+      invMap.set(r.clientId, e);
+    }
+
     let healthyCount = 0;
     let watchCount = 0;
     let atRiskCount = 0;
-    let newCount = 0; // clients created in the prior 90 days as of monthEnd
+    let newCount = 0;
 
     const ninetyDaysBeforeMonthEnd = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
 
@@ -2866,13 +2924,23 @@ export class DatabaseStorage implements IStorage {
       const isNew = new Date(c.createdAt ?? monthEnd) >= ninetyDaysBeforeMonthEnd;
       if (isNew) { newCount++; continue; }
       const jobs = jobMap.get(c.id) ?? { last90: 0, prior90: 0 };
-      let score = 50;
-      if (jobs.last90 > 0) score += 20;
-      if (jobs.last90 > jobs.prior90) score += 10;
-      if (jobs.last90 === 0 && jobs.prior90 > 0) score -= 20;
-      if (jobs.last90 === 0 && jobs.prior90 === 0) score -= 10;
-      if (score >= 65) healthyCount++;
-      else if (score >= 45) watchCount++;
+      const inv = invMap.get(c.id) ?? { last3m: 0, prior3m: 0 };
+
+      // Simplified version of computeHealthScoreV2 using available signals:
+      // Job velocity (0-2 pts), invoice trend (0-2 pts) — scale to 6-pt system
+      let score = 0;
+      // Job velocity
+      if (jobs.last90 > 0) score += 2;
+      else if (jobs.prior90 > 0) score += 1; // had jobs but not recently
+      // Job trend
+      if (jobs.last90 > 0 && jobs.last90 >= jobs.prior90) score += 1;
+      // Invoice trend
+      const invRatio = inv.prior3m > 0 ? inv.last3m / inv.prior3m : (inv.last3m > 0 ? 2 : 0);
+      if (inv.last3m > 0 && invRatio >= 0.85) score += 2;
+      else if (inv.last3m > 0) score += 1;
+      // Bucket: healthy ≥ 4, watch 2-3, at risk < 2
+      if (score >= 4) healthyCount++;
+      else if (score >= 2) watchCount++;
       else atRiskCount++;
     }
 

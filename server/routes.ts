@@ -6019,13 +6019,14 @@ Respond with this JSON:
       }).from(leadsTable)
         .where(and(
           sql`${leadsTable.buildopsQuoteId} IS NOT NULL`,
-          sql`${leadsTable.buildopsQuoteStatus} IN ('draft', 'sent')`,
-          sql`${leadsTable.stage} NOT IN ('won', 'lost', 'expired')`
+          sql`LOWER(COALESCE(${leadsTable.buildopsQuoteStatus}, '')) NOT IN ('approved', 'rejected', 'cancelled', 'expired', 'declined', 'won', 'lost', 'accepted', 'jobadded', 'converted', 'projectadded')`,
+          sql`${leadsTable.stage} NOT IN ('won', 'lost', 'expired', 'canceled')`
         ));
 
       for (const lead of boLeads) {
         if (linkedBOQuoteIds.has(lead.buildopsQuoteId)) continue;
-        const status = lead.buildopsQuoteStatus === "draft" ? "draft" : "sent";
+        const rawStatus = (lead.buildopsQuoteStatus ?? "").toLowerCase();
+        const status = ["draft", "new", "open"].includes(rawStatus) ? "draft" : "sent";
         pipeline.push({
           id: `bo-lead-${lead.id}`,
           title: lead.title,

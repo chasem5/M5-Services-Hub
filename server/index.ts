@@ -5,6 +5,7 @@ import { registerObjectStorageRoutes } from "./replit_integrations/object_storag
 import { setupAuth } from "./replit_integrations/auth/replitAuth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { scheduleAutoSync } from "./auto-sync";
 
 const app = express();
 const httpServer = createServer(app);
@@ -68,6 +69,8 @@ app.use((req, res, next) => {
   registerAuthRoutes(app);
   registerObjectStorageRoutes(app);
   await registerRoutes(httpServer, app);
+
+  scheduleAutoSync();
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
