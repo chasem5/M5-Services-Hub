@@ -7332,6 +7332,14 @@ Write a punchy, factual summary highlighting what's driving the health status. L
 
   // ── Action Plans ──────────────────────────────────────────────────────────
 
+  // Helper: get the Set of client IDs this user is authorized for (undefined = all)
+  async function getAuthorizedClientIds(req: any): Promise<Set<number> | undefined> {
+    const scopedUserId = await getScopedUserId(req, "customers");
+    if (!scopedUserId) return undefined; // super_admin / full access
+    const clients = await storage.listClients(scopedUserId);
+    return new Set(clients.map(c => c.id));
+  }
+
   // GET /api/action-plans  — list with ?type=customer&clientId=N or ?type=company
   app.get("/api/action-plans", isAuthenticated, async (req, res) => {
     try {
@@ -7349,8 +7357,11 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         if (typeof clientId !== "number") {
           return res.status(400).json({ message: "clientId is required for type=customer" });
         }
-        const client = await storage.getClient(clientId);
-        if (!client) return res.status(403).json({ message: "Access denied" });
+        // Scoped access: check caller is authorized for this client
+        const allowedIds = await getAuthorizedClientIds(req);
+        if (allowedIds && !allowedIds.has(clientId)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
       }
       const plans = await storage.listActionPlans({ type, clientId, includeCompleted });
       res.json(plans);
@@ -7369,8 +7380,10 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       // Contract enforcement: customer type requires a valid clientId
       if (data.type === "customer") {
         if (!data.clientId) return res.status(400).json({ message: "clientId is required for type=customer" });
-        const client = await storage.getClient(data.clientId);
-        if (!client) return res.status(403).json({ message: "Access denied" });
+        const allowedIds = await getAuthorizedClientIds(req);
+        if (allowedIds && !allowedIds.has(data.clientId)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
       }
       const plan = await storage.createActionPlan(data);
       res.status(201).json(plan);
@@ -7391,11 +7404,13 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         clientId: z.number().optional().nullable(),
       }).parse(req.body);
 
-      // Contract enforcement: customer type requires a valid clientId
+      // Contract enforcement: customer type requires a valid clientId in scope
       if (type === "customer") {
         if (!clientId) return res.status(400).json({ message: "clientId is required for type=customer" });
-        const clientExists = await storage.getClient(clientId);
-        if (!clientExists) return res.status(403).json({ message: "Access denied" });
+        const allowedIds = await getAuthorizedClientIds(req);
+        if (allowedIds && !allowedIds.has(clientId)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
       }
 
       const { db: dbGen } = await import("./db");
@@ -7576,9 +7591,12 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const id = parseInt(req.params.id);
       const existing = await storage.getActionPlan(id);
       if (!existing) return res.status(404).json({ message: "Not found" });
+      // Scoped access: if plan has a clientId, verify caller is authorized for that client
       if (existing.clientId) {
-        const client = await storage.getClient(existing.clientId);
-        if (!client) return res.status(403).json({ message: "Access denied" });
+        const allowedIds = await getAuthorizedClientIds(req);
+        if (allowedIds && !allowedIds.has(existing.clientId)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
       }
       const data = insertActionPlanSchema.partial().parse(req.body);
       const plan = await storage.updateActionPlan(id, data);
@@ -7597,9 +7615,12 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const id = parseInt(req.params.id);
       const existing = await storage.getActionPlan(id);
       if (!existing) return res.status(404).json({ message: "Not found" });
+      // Scoped access: if plan has a clientId, verify caller is authorized for that client
       if (existing.clientId) {
-        const client = await storage.getClient(existing.clientId);
-        if (!client) return res.status(403).json({ message: "Access denied" });
+        const allowedIds = await getAuthorizedClientIds(req);
+        if (allowedIds && !allowedIds.has(existing.clientId)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
       }
       await storage.deleteActionPlan(id);
       res.sendStatus(204);

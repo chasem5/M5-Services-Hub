@@ -87,10 +87,10 @@ export function ActionPlanPanel({ type, clientId, className }: ActionPlanPanelPr
     },
   });
 
-  // Always fetch the full set to know if completed/dismissed items exist for toggle
+  // Always fetch the full set (open + done + dismissed) to know true plan count for toggle + auto-gen guard
   const allParams = new URLSearchParams({ type, includeCompleted: "true" });
   if (clientId != null) allParams.set("clientId", String(clientId));
-  const { data: allPlans = [] } = useQuery<ActionPlan[]>({
+  const { data: allPlans = [], isLoading: isLoadingAll } = useQuery<ActionPlan[]>({
     queryKey: [...qKey(type, clientId), "all"],
     queryFn: async () => {
       const res = await fetch(`/api/action-plans?${allParams}`, { credentials: "include" });
@@ -100,16 +100,15 @@ export function ActionPlanPanel({ type, clientId, className }: ActionPlanPanelPr
   });
   const completedCount = allPlans.filter(p => p.status !== "open").length;
 
-  // Auto-generate on first load only when NO plans exist at all (open + done + dismissed)
-  // Using allPlans to avoid spurious re-generation when all items are completed/dismissed
-  const allLoaded = !isLoading;
+  // Auto-generate only when ALL plans are absent (open + done + dismissed).
+  // Wait for the all-items query to finish before deciding — avoids spurious generation.
   useEffect(() => {
-    if (allLoaded && allPlans.length === 0 && !autoGenTriggered.current && !generating) {
+    if (!isLoadingAll && allPlans.length === 0 && !autoGenTriggered.current && !generating) {
       autoGenTriggered.current = true;
       handleGenerate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allLoaded, allPlans.length]);
+  }, [isLoadingAll, allPlans.length]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: qKey(type, clientId) });
