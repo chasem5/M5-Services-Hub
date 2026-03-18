@@ -6244,9 +6244,11 @@ Guidelines:
     // ── Recency penalty ──────────────────────────────────────────────────────
     // Inactivity is a strong negative signal regardless of historical metrics.
     if (jobsLast6Months !== -1 && jobsLast6Months === 0) {
-      // -1 point penalty for no activity in 6 months, then cap at Watch
+      // -1 point penalty for no activity in 6 months
       healthScore = Math.max(0, healthScore - 1);
-      if (healthStatus === "healthy") { healthStatus = "watch"; healthScore = Math.min(healthScore, 3); }
+      // Recompute status from updated score, then enforce cap at Watch (6m inactivity blocks Healthy)
+      const rawStatus: "healthy" | "watch" | "at_risk" = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+      healthStatus = rawStatus === "healthy" ? "watch" : rawStatus;
     }
     if (jobsLast12Months !== -1 && jobsLast12Months === 0 && !hasActiveSA) {
       // Dormant 12+ months AND no service agreement → force At Risk
