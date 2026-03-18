@@ -13,6 +13,7 @@ import {
   TrendingUp,
   BarChart2,
   FileBarChart2,
+  Sparkles,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -69,6 +70,13 @@ export function AppSidebar() {
     staleTime: 30000,
   });
 
+  const { data: latestRelease } = useQuery<{ id: number; isRead: boolean } | null>({
+    queryKey: ["/api/announcements/latest-release-notes"],
+    enabled: !!user,
+    refetchInterval: 5 * 60 * 1000,
+  });
+  const hasUnreadRelease = latestRelease && !latestRelease.isRead;
+
   const visibleNavItems = ALL_NAV_ITEMS.filter(item => {
     if (!myPerms) return true;
     const level = myPerms.permissions[item.module];
@@ -112,8 +120,18 @@ export function AppSidebar() {
                         data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                         onClick={() => isMobile && setOpenMobile(false)}
                       >
-                        <item.icon className={isActive ? "text-primary" : ""} />
-                        <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+                        <span className="relative inline-flex">
+                          <item.icon className={isActive ? "text-primary" : ""} />
+                          {item.module === "announcements" && hasUnreadRelease && (
+                            <Sparkles className="absolute -top-1.5 -right-1.5 h-2.5 w-2.5 text-primary fill-primary" />
+                          )}
+                        </span>
+                        <span className="group-data-[collapsible=icon]:hidden flex items-center gap-1.5">
+                          {item.title}
+                          {item.module === "announcements" && hasUnreadRelease && (
+                            <Sparkles className="h-3 w-3 text-primary fill-primary group-data-[collapsible=icon]:hidden" />
+                          )}
+                        </span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

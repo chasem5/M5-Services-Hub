@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Link } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -106,7 +107,15 @@ export function WhatsNewModal() {
           <p className="text-sm text-muted-foreground mt-1">{release.message}</p>
         )}
 
-        <div className="flex justify-end mt-2">
+        <div className="flex items-center justify-between mt-2">
+          <Link
+            href="/announcements"
+            onClick={handleDismiss}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            data-testid="link-whats-new-all-updates"
+          >
+            View all past updates
+          </Link>
           <Button
             onClick={handleDismiss}
             disabled={markReadMutation.isPending}
