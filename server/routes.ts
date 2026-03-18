@@ -4455,7 +4455,7 @@ Respond with this JSON:
             name: e.name || [e.firstName, e.middleName, e.lastName].filter(Boolean).join(" ").trim() || "Unknown",
             email: e.email?.trim() || null,
             phone: e.cellPhone?.trim() || e.landlinePhone?.trim() || null,
-            title: e.title?.trim() || null,
+            title: e.userTitle?.trim() || null,
             isActive: e.isActive ?? true,
           }));
 
