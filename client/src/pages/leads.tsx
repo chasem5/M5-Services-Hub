@@ -499,6 +499,7 @@ function KanbanColumn({
   aiSummaries,
   fetchAiSummary,
   activitySummary,
+  suppressedLeadIds = new Set(),
 }: { 
   stage: PipelineStage;
   sc: any;
@@ -520,6 +521,7 @@ function KanbanColumn({
   aiSummaries: Record<number, { healthLabel: string; headline: string; observation: string; nextStep: string }>;
   fetchAiSummary: (id: number) => void;
   activitySummary: any[] | undefined;
+  suppressedLeadIds?: Set<number>;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.slug,
@@ -579,6 +581,7 @@ function KanbanColumn({
                 fetchAiSummary={fetchAiSummary}
                 activitySummary={activitySummary}
                 stageTrack={stage.track ?? "relationship"}
+                suppressedLeadIds={suppressedLeadIds}
               />
             ))}
         </div>
@@ -603,7 +606,8 @@ function LeadCard({
   fetchAiSummary,
   activitySummary,
   stageTrack = "relationship",
-  isOverlay = false
+  isOverlay = false,
+  suppressedLeadIds = new Set(),
 }: { 
   lead: Lead; 
   formatCurrency: (v: string | number) => string;
@@ -621,6 +625,7 @@ function LeadCard({
   activitySummary: any[] | undefined;
   stageTrack?: string;
   isOverlay?: boolean;
+  suppressedLeadIds?: Set<number>;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: lead.id,
@@ -782,6 +787,18 @@ function LeadCard({
                     {formatCurrency(lead.buildopsQuoteTotal)}
                   </span>
                 )}
+              </div>
+            )}
+
+            {lead.isProposalExpired && !suppressedLeadIds.has(lead.id) && (
+              <div
+                className="flex items-center gap-1 border-t border-amber-200 dark:border-amber-800 pt-1.5 mt-0.5"
+                data-testid={`badge-expiry-nudge-${lead.id}`}
+              >
+                <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span className="text-[10px] font-bold uppercase tracking-tighter text-amber-700 dark:text-amber-400">
+                  Proposal Expired
+                </span>
               </div>
             )}
 
@@ -972,6 +989,11 @@ export default function Leads() {
   const [pendingTaskId, setPendingTaskId] = useState<number | null>(null);
   const [suggestedTask, setSuggestedTask] = useState<{ title: string; description: string; priority: string; dueInDays: number } | null>(null);
   const [suggestedTaskLoading, setSuggestedTaskLoading] = useState(false);
+  const [isFollowUpEmailOpen, setIsFollowUpEmailOpen] = useState(false);
+  const [followUpEmailTo, setFollowUpEmailTo] = useState("");
+  const [followUpEmailSubject, setFollowUpEmailSubject] = useState("");
+  const [followUpEmailBody, setFollowUpEmailBody] = useState("");
+  const [followUpSentLeadIds, setFollowUpSentLeadIds] = useState<Set<number>>(new Set());
   const [selectedClientIdForBuilding, setSelectedClientIdForBuilding] = useState<number | null>(null);
   const [selectedClientIdForBuildingEdit, setSelectedClientIdForBuildingEdit] = useState<number | null>(null);
   // Pipeline views
@@ -1084,6 +1106,14 @@ export default function Leads() {
     queryKey: ["/api/estimates"],
     staleTime: 60000,
   });
+
+  const { data: expirySuppressionData } = useQuery<{ suppressedLeadIds: number[] }>({
+    queryKey: ["/api/leads/proposal-expiry-suppression"],
+    staleTime: 60000,
+  });
+  const suppressedByServer = new Set<number>(expirySuppressionData?.suppressedLeadIds ?? []);
+
+  const hasFollowUpEmailSinceExpiry = suppressedByServer.has(selectedLead?.id ?? -1) || followUpSentLeadIds.has(selectedLead?.id ?? -1);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -1317,6 +1347,35 @@ export default function Leads() {
       toast({ title: "Task added", description: "AI-suggested task added to this deal." });
     },
     onError: () => toast({ title: "Error adding task", variant: "destructive" }),
+  });
+
+  const sendFollowUpEmailMutation = useMutation({
+    mutationFn: async ({ leadId, to, subject, body }: { leadId: number; to: string; subject: string; body: string }) => {
+      const res = await apiRequest("POST", `/api/leads/${leadId}/send-followup-email`, { to, subject, body });
+      return res.json();
+    },
+    onSuccess: (data, vars) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: ["/api/leads", vars.leadId, "notes"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/leads/activity-summary"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/leads/proposal-expiry-suppression"] });
+        setFollowUpSentLeadIds(prev => new Set([...prev, vars.leadId]));
+        setIsFollowUpEmailOpen(false);
+        toast({
+          title: data.gmailSent ? "Email sent" : "Follow-up logged",
+          description: data.message,
+        });
+      } else {
+        toast({
+          title: "Send failed",
+          description: data.message,
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to send", description: err.message, variant: "destructive" });
+    },
   });
 
   const createViewMutation = useMutation({
@@ -1628,6 +1687,24 @@ export default function Leads() {
       ? (lead as any).serviceTypes as string[]
       : lead.serviceType ? [lead.serviceType as string] : [];
     setEditFormServiceTypes(effectiveTypes);
+  };
+
+  const openFollowUpCompose = (lead: Lead) => {
+    const contact = allContacts.find(c => c.id === lead.contactId);
+    const contactEmail = contact?.email ?? "";
+    const clientName = getClientName(lead.clientId);
+    const contactName = contact?.name ?? "there";
+    const expDate = lead.buildopsExpirationDate
+      ? new Date(lead.buildopsExpirationDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+      : "recently";
+    const quoteNum = lead.buildopsQuoteNumber ? `#${lead.buildopsQuoteNumber}` : "your proposal";
+
+    setFollowUpEmailTo(contactEmail);
+    setFollowUpEmailSubject(`Following up on ${quoteNum} — ${clientName}`);
+    setFollowUpEmailBody(
+      `Hi ${contactName},\n\nI wanted to follow up on the proposal I sent for ${lead.title}. It looks like the quote expired on ${expDate}, and I'd love to reconnect and see if we can move this forward.\n\nIf now isn't the right time, I'm happy to revisit the scope or pricing to better fit your current needs. Just let me know what works best.\n\nLooking forward to hearing from you.\n\nBest regards`
+    );
+    setIsFollowUpEmailOpen(true);
   };
 
   const addEditTag = async (tag: string) => {
@@ -2043,6 +2120,7 @@ export default function Leads() {
                               aiSummaries={aiSummaries}
                               fetchAiSummary={fetchAiSummary}
                               activitySummary={activitySummary}
+                              suppressedLeadIds={new Set([...suppressedByServer, ...followUpSentLeadIds])}
                             />
                           );
                         })}
@@ -2092,6 +2170,7 @@ export default function Leads() {
                               aiSummaries={aiSummaries}
                               fetchAiSummary={fetchAiSummary}
                               activitySummary={activitySummary}
+                              suppressedLeadIds={new Set([...suppressedByServer, ...followUpSentLeadIds])}
                             />
                           );
                         })}
@@ -2954,6 +3033,48 @@ export default function Leads() {
                         ) : (
                           <p className="text-xs text-muted-foreground italic">Generating analysis...</p>
                         )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Expiry Nudge Banner */}
+                  {!isEditingLead && (() => {
+                    if (!selectedLead.isProposalExpired) return null;
+                    if (hasFollowUpEmailSinceExpiry) return null;
+                    const expDate = selectedLead.buildopsExpirationDate;
+                    const expiry = expDate ? new Date(expDate) : null;
+                    const contact = allContacts.find(c => c.id === selectedLead.contactId);
+                    const hasContactEmail = !!contact?.email;
+
+                    return (
+                      <div
+                        className="rounded-lg border bg-amber-50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-700 p-4 space-y-3"
+                        data-testid="banner-expiry-nudge"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-amber-100 dark:bg-amber-900/40">
+                            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-amber-800 dark:text-amber-300">
+                              Proposal Expired — Follow Up Now
+                            </p>
+                            <p className="text-xs mt-0.5 text-amber-700 dark:text-amber-400">
+                              This proposal expired on {expiry ? expiry.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "a past date"}. Send a follow-up to re-engage.
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full gap-1.5 bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-700 dark:hover:bg-amber-600"
+                          onClick={() => openFollowUpCompose(selectedLead)}
+                          disabled={!hasContactEmail}
+                          data-testid="button-open-followup-compose"
+                          title={!hasContactEmail ? "No email address on file for this contact" : undefined}
+                        >
+                          <Mail className="h-3.5 w-3.5" />
+                          {hasContactEmail ? "Draft Follow-Up Email" : "No Contact Email on File"}
+                        </Button>
                       </div>
                     );
                   })()}
@@ -4493,6 +4614,79 @@ export default function Leads() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Follow-Up Email Compose Dialog */}
+      <Dialog open={isFollowUpEmailOpen} onOpenChange={setIsFollowUpEmailOpen}>
+        <DialogContent className="max-w-xl" data-testid="dialog-followup-email">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-amber-600" />
+              Draft Follow-Up Email
+            </DialogTitle>
+            <DialogDescription>
+              Review and send a follow-up to re-engage on this expired proposal. The email will be logged to the deal's activity timeline.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">To</label>
+              <input
+                type="email"
+                value={followUpEmailTo}
+                onChange={(e) => setFollowUpEmailTo(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                placeholder="recipient@email.com"
+                data-testid="input-followup-email-to"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Subject</label>
+              <input
+                type="text"
+                value={followUpEmailSubject}
+                onChange={(e) => setFollowUpEmailSubject(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                data-testid="input-followup-email-subject"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Message</label>
+              <Textarea
+                value={followUpEmailBody}
+                onChange={(e) => setFollowUpEmailBody(e.target.value)}
+                rows={8}
+                className="resize-none text-sm"
+                data-testid="textarea-followup-email-body"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsFollowUpEmailOpen(false)} data-testid="button-cancel-followup-email">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!selectedLead) return;
+                sendFollowUpEmailMutation.mutate({
+                  leadId: selectedLead.id,
+                  to: followUpEmailTo,
+                  subject: followUpEmailSubject,
+                  body: followUpEmailBody,
+                });
+              }}
+              disabled={sendFollowUpEmailMutation.isPending || !followUpEmailTo.trim() || !followUpEmailSubject.trim()}
+              data-testid="button-send-followup-email"
+              className="gap-1.5"
+            >
+              {sendFollowUpEmailMutation.isPending ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sending…</>
+              ) : (
+                <><Send className="h-3.5 w-3.5" /> Send Follow-Up</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={pendingDealMove !== null} onOpenChange={(open) => { if (!open) setPendingDealMove(null); }}>
         <AlertDialogContent>

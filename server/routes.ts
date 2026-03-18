@@ -1348,7 +1348,37 @@ Do not include any other text, just the JSON.`,
   app.get("/api/leads", isAuthenticated, async (req, res) => {
     const scopedUserId = await getScopedUserId(req, "leads");
     const leads = await storage.listLeads(scopedUserId);
-    res.json(leads);
+    const now = new Date();
+    const leadsWithFlags = leads.map(lead => ({
+      ...lead,
+      isProposalExpired: lead.stage === "proposal_sent" && !!lead.buildopsExpirationDate && new Date(lead.buildopsExpirationDate) < now,
+    }));
+    res.json(leadsWithFlags);
+  });
+
+  // Return set of lead IDs (with expired proposals) that already have a follow-up email note logged since expiry
+  app.get("/api/leads/proposal-expiry-suppression", isAuthenticated, async (req, res) => {
+    try {
+      const scopedUserId = await getScopedUserId(req, "leads");
+      const leads = await storage.listLeads(scopedUserId);
+      const now = new Date();
+      const expiredLeads = leads.filter(l =>
+        l.stage === "proposal_sent" && l.buildopsExpirationDate && new Date(l.buildopsExpirationDate) < now
+      );
+      const suppressedLeadIds: number[] = [];
+      await Promise.all(expiredLeads.map(async (lead) => {
+        const notes = await storage.listLeadNotes(lead.id);
+        const expiryDate = new Date(lead.buildopsExpirationDate!);
+        const suppressionTypes = new Set(["followup_email", "email", "follow_up"]);
+        const hasEmailSinceExpiry = notes.some(
+          n => suppressionTypes.has(n.activityType ?? "") && new Date(n.createdAt) >= expiryDate
+        );
+        if (hasEmailSinceExpiry) suppressedLeadIds.push(lead.id);
+      }));
+      res.json({ suppressedLeadIds });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   app.post("/api/leads", isAuthenticated, async (req, res) => {
@@ -1470,6 +1500,93 @@ Do not include any other text, just the JSON.`,
     if (!lead) return res.status(404).json({ message: "Lead not found" });
     const emails = await storage.listEmailMessages({ leadId: id });
     res.json(emails);
+  });
+
+  // Send follow-up email for an expired/expiring proposal
+  app.post("/api/leads/:id/send-followup-email", isAuthenticated, async (req, res) => {
+    try {
+      const leadId = parseInt(req.params.id as string);
+      const userId = (req as any).user?.claims?.sub;
+      const { to, subject, body } = z.object({
+        to: z.string().email(),
+        subject: z.string().min(1),
+        body: z.string().min(1),
+      }).parse(req.body);
+
+      const lead = await storage.getLead(leadId);
+      if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "User not found" });
+
+      // Authorization: verify this lead is accessible to the requesting user
+      const scopedUserId = await getScopedUserId(req, "leads");
+      if (scopedUserId && lead.assignedTo !== scopedUserId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Try to send via Gmail if connected; fall through to log-only mode if not
+      let gmailError: string | null = null;
+      if (user.gmailConnected && user.gmailAccessToken) {
+        try {
+          const { sendGmailMessage } = await import("./gmail");
+          await sendGmailMessage(user, { to, subject, body });
+        } catch (err: any) {
+          gmailError = err.message ?? "Gmail send failed";
+        }
+      }
+
+      // Only log the follow-up note if Gmail sent successfully OR Gmail is not connected (manual follow-up intent logged)
+      // This ensures suppression only triggers on actual or intended follow-up actions, not on failed sends
+      const gmailFailed = gmailError !== null;
+      if (!gmailFailed) {
+        const statusNote = user.gmailConnected
+          ? `Follow-up email sent to ${to}`
+          : `Follow-up email drafted (Gmail not connected) — to: ${to}`;
+        const noteContent = `${statusNote}\n\nSubject: ${subject}\n\n${body}`;
+        await storage.createLeadNote({
+          leadId,
+          userId,
+          content: noteContent,
+          activityType: "followup_email",
+        });
+        await logActivity(req, "lead", leadId, "followup_email_sent", { to, subject });
+      }
+
+      res.json({
+        success: !gmailFailed,
+        gmailSent: !gmailFailed && user.gmailConnected,
+        gmailError,
+        message: gmailFailed
+          ? `Email not sent (${gmailError}) — please retry or send manually`
+          : user.gmailConnected
+          ? "Email sent via Gmail and logged to timeline"
+          : "Follow-up logged to timeline (connect Gmail to send directly)",
+      });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to send follow-up email" });
+    }
+  });
+
+  // Get lead notes since a given date (for expiry nudge suppression check)
+  app.get("/api/leads/:id/notes/since", isAuthenticated, async (req, res) => {
+    try {
+      const leadId = parseInt(req.params.id as string);
+      const lead = await storage.getLead(leadId);
+      if (!lead) return res.status(404).json({ message: "Lead not found" });
+      const scopedUserId = await getScopedUserId(req, "leads");
+      if (scopedUserId && lead.assignedTo !== scopedUserId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const since = req.query.since ? new Date(req.query.since as string) : null;
+      const notes = await storage.listLeadNotes(leadId);
+      const filtered = since
+        ? notes.filter(n => new Date(n.createdAt) >= since)
+        : notes;
+      res.json(filtered);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   // AI Summary for a lead

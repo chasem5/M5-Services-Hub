@@ -4,6 +4,7 @@ import type { User } from "@shared/schema";
 
 const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 
@@ -297,4 +298,42 @@ export async function getGmailMessages(user: User, maxResults = 50): Promise<Par
   }
 
   return results;
+}
+
+export async function sendGmailMessage(
+  user: User,
+  options: {
+    to: string;
+    subject: string;
+    body: string;
+  }
+): Promise<{ messageId: string; threadId: string }> {
+  const gmail = await getGmailClientForUser(user);
+
+  const fromEmail = user.gmailEmail ?? user.email ?? "me";
+  const raw = [
+    `From: ${fromEmail}`,
+    `To: ${options.to}`,
+    `Subject: ${options.subject}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: text/plain; charset=utf-8`,
+    ``,
+    options.body,
+  ].join("\r\n");
+
+  const encoded = Buffer.from(raw)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  const result = await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw: encoded },
+  });
+
+  return {
+    messageId: result.data.id ?? "",
+    threadId: result.data.threadId ?? "",
+  };
 }
