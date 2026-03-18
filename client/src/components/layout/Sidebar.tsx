@@ -12,6 +12,7 @@ import {
   ClipboardList,
   TrendingUp,
   BarChart2,
+  FileBarChart2,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -203,6 +204,19 @@ export function AppSidebar() {
                   <Link href="/reports/win-loss" data-testid="link-win-loss" onClick={() => isMobile && setOpenMobile(false)}>
                     <BarChart2 className={location === "/reports/win-loss" ? "text-primary" : ""} />
                     <span className="group-data-[collapsible=icon]:hidden">Win / Loss</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location === "/reports/monthly-review"}
+                  tooltip="Monthly Report"
+                  className={location === "/reports/monthly-review" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                >
+                  <Link href="/reports/monthly-review" data-testid="link-monthly-report" onClick={() => isMobile && setOpenMobile(false)}>
+                    <FileBarChart2 className={location === "/reports/monthly-review" ? "text-primary" : ""} />
+                    <span className="group-data-[collapsible=icon]:hidden">Monthly Report</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

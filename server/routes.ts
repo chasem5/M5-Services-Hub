@@ -6730,6 +6730,25 @@ Write a punchy, factual summary highlighting what's driving the health status. L
     }
   });
 
+  // ── Monthly Business Review ─────────────────────────────────────────────────
+  app.get("/api/reports/monthly-business-review", isAuthenticated, async (req, res) => {
+    try {
+      const now = new Date();
+      const defaultYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      const defaultMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+      const year = parseInt(String(req.query.year ?? defaultYear));
+      const month = parseInt(String(req.query.month ?? defaultMonth));
+      if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+        return res.status(400).json({ message: "Invalid year or month" });
+      }
+      const report = await storage.getMonthlyBusinessReview(year, month);
+      res.json(report);
+    } catch (err: any) {
+      console.error("[monthly-business-review]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ── Service Agreements list ─────────────────────────────────────────────────
   app.get("/api/service-agreements", isAuthenticated, async (req, res) => {
     try {

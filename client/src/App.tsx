@@ -22,6 +22,7 @@ import Announcements from "@/pages/announcements";
 import CustomerReport from "@/pages/customer-report";
 import CohortAnalysis from "@/pages/cohort-analysis";
 import WinLossReport from "@/pages/win-loss-report";
+import MonthlyReport from "@/pages/monthly-report";
 import ServiceAgreements from "@/pages/service-agreements";
 import RevenueAnalytics from "@/pages/revenue-analytics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -50,6 +51,7 @@ function ProtectedRouter() {
           <Route path="/reports/customer-intelligence" component={CustomerReport} />
           <Route path="/reports/cohort-analysis" component={CohortAnalysis} />
           <Route path="/reports/win-loss" component={WinLossReport} />
+          <Route path="/reports/monthly-review" component={MonthlyReport} />
           <Route path="/service-agreements" component={ServiceAgreements} />
           <Route path="/reports/revenue-analytics" component={RevenueAnalytics} />
           <Route component={NotFound} />

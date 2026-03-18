@@ -417,6 +417,9 @@ export interface IStorage {
 
   // Client Service Segments
   getClientServiceSegments(scopedUserId?: string): Promise<Record<number, string>>;
+
+  // Monthly Business Review
+  getMonthlyBusinessReview(year: number, month: number): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2685,6 +2688,248 @@ export class DatabaseStorage implements IStorage {
     const responseRate = Math.round((emailsWithReply / outboundCount) * 100);
 
     return { outboundEmails: outboundCount, emailsWithReply, responseRate };
+  }
+
+  async getMonthlyBusinessReview(year: number, month: number): Promise<any> {
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 1);
+
+    // 1. New revenue collected (BuildOps invoices issued in the month)
+    const invoiceRows = await db
+      .select({
+        totalAmount: buildopsInvoices.totalAmount,
+        clientId: buildopsInvoices.clientId,
+        customerName: buildopsInvoices.customerName,
+      })
+      .from(buildopsInvoices)
+      .where(
+        and(
+          sql`${buildopsInvoices.issuedDate} >= ${monthStart}`,
+          sql`${buildopsInvoices.issuedDate} < ${monthEnd}`,
+          sql`${buildopsInvoices.status} NOT IN ('void', 'cancelled')`
+        )
+      );
+    const newRevenue = invoiceRows.reduce((s, r) => s + parseFloat(r.totalAmount || "0"), 0);
+
+    // 2. New deals won (leads moved to "won" during the month)
+    const wonLeads = await db
+      .select({
+        id: leads.id,
+        title: leads.title,
+        value: leads.value,
+        valueType: leads.valueType,
+        valueTier: leads.valueTier,
+        clientId: leads.clientId,
+        wonAt: leads.wonAt,
+        updatedAt: leads.updatedAt,
+      })
+      .from(leads)
+      .where(
+        and(
+          eq(leads.stage, "won"),
+          sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${monthStart}`,
+          sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) < ${monthEnd}`
+        )
+      );
+
+    const tierSettings = await this.getValueTierSettings();
+    const tierMap: Record<string, number> = {};
+    for (const ts of tierSettings) {
+      tierMap[ts.tier] = parseFloat(ts.estimatedValue);
+    }
+    const getLeadValue = (lead: { value: string | null; valueType: string | null; valueTier: string | null }) => {
+      if (lead.valueType === "potential" && lead.valueTier) return tierMap[lead.valueTier] ?? 0;
+      return parseFloat(lead.value || "0");
+    };
+
+    const wonDealsCount = wonLeads.length;
+    const wonDealsValue = wonLeads.reduce((s, l) => s + getLeadValue(l), 0);
+
+    // 3. Pipeline value added (new leads created in the month that are active)
+    const newPipelineLeads = await db
+      .select({
+        id: leads.id,
+        value: leads.value,
+        valueType: leads.valueType,
+        valueTier: leads.valueTier,
+        stage: leads.stage,
+        createdAt: leads.createdAt,
+      })
+      .from(leads)
+      .where(
+        and(
+          sql`${leads.createdAt} >= ${monthStart}`,
+          sql`${leads.createdAt} < ${monthEnd}`,
+          sql`${leads.stage} NOT IN ('won', 'lost')`
+        )
+      );
+    const pipelineAdded = newPipelineLeads.reduce((s, l) => s + getLeadValue(l), 0);
+
+    // 4. Proposals sent vs won vs lost
+    // Proposals: sent / signed (won). Estimates: sent / accepted (won) / rejected (lost)
+    // Combine both for a complete sent-vs-won-vs-lost picture:
+    //   sent  = proposals with status 'sent' or 'signed' + estimates with status 'sent' or 'accepted' or 'rejected'
+    //   won   = proposals 'signed' + estimates 'accepted'
+    //   lost  = estimates 'rejected'
+    const proposalRows = await db
+      .select({ status: proposals.status, count: sql<number>`count(*)` })
+      .from(proposals)
+      .where(
+        and(
+          sql`${proposals.updatedAt} >= ${monthStart}`,
+          sql`${proposals.updatedAt} < ${monthEnd}`,
+          sql`${proposals.status} IN ('sent', 'signed')`
+        )
+      )
+      .groupBy(proposals.status);
+
+    const estimateRows = await db
+      .select({ status: estimates.status, count: sql<number>`count(*)` })
+      .from(estimates)
+      .where(
+        and(
+          sql`${estimates.updatedAt} >= ${monthStart}`,
+          sql`${estimates.updatedAt} < ${monthEnd}`,
+          sql`${estimates.status} IN ('sent', 'accepted', 'rejected')`
+        )
+      )
+      .groupBy(estimates.status);
+
+    const proposalSent = Number(proposalRows.find(r => r.status === "sent")?.count ?? 0);
+    const proposalSigned = Number(proposalRows.find(r => r.status === "signed")?.count ?? 0);
+    const estimateSent = Number(estimateRows.find(r => r.status === "sent")?.count ?? 0);
+    const estimateAccepted = Number(estimateRows.find(r => r.status === "accepted")?.count ?? 0);
+    const estimateRejected = Number(estimateRows.find(r => r.status === "rejected")?.count ?? 0);
+
+    const totalSent = proposalSent + proposalSigned + estimateSent + estimateAccepted + estimateRejected;
+    const totalWon = proposalSigned + estimateAccepted;
+    const totalLost = estimateRejected;
+
+    // 5. New clients added
+    const newClientRows = await db
+      .select({ id: clients.id, name: clients.name, tier: clients.tier, createdAt: clients.createdAt })
+      .from(clients)
+      .where(
+        and(
+          sql`${clients.createdAt} >= ${monthStart}`,
+          sql`${clients.createdAt} < ${monthEnd}`
+        )
+      )
+      .orderBy(clients.name);
+    const newClientsCount = newClientRows.length;
+
+    // 6. Client health score distribution — only clients that existed as of the selected month end
+    const allClientsForHealth = await db
+      .select({ id: clients.id, name: clients.name, tier: clients.tier, createdAt: clients.createdAt })
+      .from(clients)
+      .where(sql`${clients.createdAt} < ${monthEnd}`);
+
+    // For simplicity, compute health based on active jobs and invoices
+    const ninetyDaysAgo = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const priorNinetyStart = new Date(ninetyDaysAgo.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    const jobActivityRows = await db
+      .select({
+        clientId: buildopsJobs.clientId,
+        period: sql<string>`CASE WHEN ${buildopsJobs.scheduledDate} >= ${ninetyDaysAgo} THEN 'last90' ELSE 'prior90' END`,
+        count: sql<number>`count(*)`,
+      })
+      .from(buildopsJobs)
+      .where(
+        and(
+          sql`${buildopsJobs.scheduledDate} >= ${priorNinetyStart}`,
+          sql`${buildopsJobs.scheduledDate} < ${monthEnd}`,
+          sql`${buildopsJobs.clientId} IS NOT NULL`
+        )
+      )
+      .groupBy(buildopsJobs.clientId, sql`CASE WHEN ${buildopsJobs.scheduledDate} >= ${ninetyDaysAgo} THEN 'last90' ELSE 'prior90' END`);
+
+    const jobMap = new Map<number, { last90: number; prior90: number }>();
+    for (const r of jobActivityRows) {
+      if (!r.clientId) continue;
+      const existing = jobMap.get(r.clientId) ?? { last90: 0, prior90: 0 };
+      if (r.period === "last90") existing.last90 = Number(r.count);
+      else existing.prior90 = Number(r.count);
+      jobMap.set(r.clientId, existing);
+    }
+
+    let healthyCount = 0;
+    let watchCount = 0;
+    let atRiskCount = 0;
+    let newCount = 0; // clients created in the prior 90 days as of monthEnd
+
+    const ninetyDaysBeforeMonthEnd = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    for (const c of allClientsForHealth) {
+      const isNew = new Date(c.createdAt ?? monthEnd) >= ninetyDaysBeforeMonthEnd;
+      if (isNew) { newCount++; continue; }
+      const jobs = jobMap.get(c.id) ?? { last90: 0, prior90: 0 };
+      let score = 50;
+      if (jobs.last90 > 0) score += 20;
+      if (jobs.last90 > jobs.prior90) score += 10;
+      if (jobs.last90 === 0 && jobs.prior90 > 0) score -= 20;
+      if (jobs.last90 === 0 && jobs.prior90 === 0) score -= 10;
+      if (score >= 65) healthyCount++;
+      else if (score >= 45) watchCount++;
+      else atRiskCount++;
+    }
+
+    // 7. Top 5 clients by revenue in the month (BuildOps invoices)
+    const clientRevenueMap = new Map<number, { name: string; revenue: number }>();
+    for (const inv of invoiceRows) {
+      if (!inv.clientId) continue;
+      const existing = clientRevenueMap.get(inv.clientId);
+      if (existing) {
+        existing.revenue += parseFloat(inv.totalAmount || "0");
+      } else {
+        clientRevenueMap.set(inv.clientId, {
+          name: inv.customerName ?? "Unknown",
+          revenue: parseFloat(inv.totalAmount || "0"),
+        });
+      }
+    }
+    // Fetch client names from DB to prefer CRM names over BuildOps customer names
+    const clientIdsForRevenue = [...clientRevenueMap.keys()];
+    let crmClientNames = new Map<number, string>();
+    if (clientIdsForRevenue.length > 0) {
+      const crmRows = await db
+        .select({ id: clients.id, name: clients.name })
+        .from(clients)
+        .where(inArray(clients.id, clientIdsForRevenue));
+      for (const r of crmRows) crmClientNames.set(r.id, r.name);
+    }
+    const top5Clients = [...clientRevenueMap.entries()]
+      .map(([clientId, data]) => ({
+        clientId,
+        name: crmClientNames.get(clientId) ?? data.name,
+        revenue: data.revenue,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    return {
+      year,
+      month,
+      newRevenue,
+      wonDealsCount,
+      wonDealsValue,
+      pipelineAdded,
+      proposals: {
+        sent: totalSent,
+        won: totalWon,
+        lost: totalLost,
+        total: totalSent,
+      },
+      newClientsCount,
+      newClients: newClientRows.slice(0, 10).map(c => ({ id: c.id, name: c.name, tier: c.tier })),
+      clientHealth: {
+        healthy: healthyCount,
+        watch: watchCount,
+        atRisk: atRiskCount,
+        new: newCount,
+      },
+      top5Clients,
+    };
   }
 
   async getClientServiceSegments(scopedUserId?: string): Promise<Record<number, string>> {
