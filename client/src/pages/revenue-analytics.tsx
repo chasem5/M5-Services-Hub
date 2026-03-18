@@ -239,6 +239,7 @@ export default function RevenueAnalytics() {
                       outerRadius={110}
                       paddingAngle={2}
                       dataKey="revenue"
+                      nameKey="category"
                     >
                       {pieData.map((entry, idx) => (
                         <Cell key={`cell-${idx}`} fill={entry.color} />

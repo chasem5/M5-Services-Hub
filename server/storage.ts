@@ -2828,28 +2828,30 @@ export class DatabaseStorage implements IStorage {
     const ninetyDaysAgo = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
     const priorNinetyStart = new Date(ninetyDaysAgo.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-    const jobActivityRows = await db
-      .select({
-        clientId: buildopsJobs.clientId,
-        period: sql<string>`CASE WHEN ${buildopsJobs.scheduledDate} >= ${ninetyDaysAgo} THEN 'last90' ELSE 'prior90' END`,
-        count: sql<number>`count(*)`,
-      })
-      .from(buildopsJobs)
-      .where(
-        and(
-          sql`${buildopsJobs.scheduledDate} >= ${priorNinetyStart}`,
-          sql`${buildopsJobs.scheduledDate} < ${monthEnd}`,
-          sql`${buildopsJobs.clientId} IS NOT NULL`
-        )
-      )
-      .groupBy(buildopsJobs.clientId, sql`CASE WHEN ${buildopsJobs.scheduledDate} >= ${ninetyDaysAgo} THEN 'last90' ELSE 'prior90' END`);
+    const toJobRows = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
+    const jobResult = await db.execute(sql`
+      SELECT
+        client_id,
+        CASE WHEN scheduled_date >= ${ninetyDaysAgo} THEN 'last90' ELSE 'prior90' END AS period,
+        COUNT(*) AS count
+      FROM buildops_jobs
+      WHERE scheduled_date >= ${priorNinetyStart}
+        AND scheduled_date < ${monthEnd}
+        AND client_id IS NOT NULL
+      GROUP BY 1, 2
+    `);
+    const jobActivityRows = toJobRows(jobResult).map((r: any) => ({
+      clientId: r.client_id as number | null,
+      period: r.period as string,
+      count: Number(r.count ?? 0),
+    }));
 
     const jobMap = new Map<number, { last90: number; prior90: number }>();
     for (const r of jobActivityRows) {
       if (!r.clientId) continue;
       const existing = jobMap.get(r.clientId) ?? { last90: 0, prior90: 0 };
-      if (r.period === "last90") existing.last90 = Number(r.count);
-      else existing.prior90 = Number(r.count);
+      if (r.period === "last90") existing.last90 = r.count;
+      else existing.prior90 = r.count;
       jobMap.set(r.clientId, existing);
     }
 

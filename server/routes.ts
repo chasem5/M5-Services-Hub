@@ -6816,16 +6816,17 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const { db } = await import("./db");
       const { sql: sqlTag } = await import("drizzle-orm");
 
-      // Use 12-month trailing invoice revenue as MRR/ARR base —
-      // contract_value is often null in BuildOps so we derive from actual invoices.
+      // Use 12-month trailing invoice revenue as MRR/ARR base.
+      // Filter on issued_date only (not synced_at) so recently-synced historical
+      // invoices don't inflate the trailing window.
       const invoiceRow = await db.execute(sqlTag`
         SELECT
           COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS trailing_12m,
-          MIN(COALESCE(issued_date, due_date, synced_at))  AS earliest_date,
-          MAX(COALESCE(issued_date, due_date, synced_at))  AS latest_date
+          MIN(issued_date) AS earliest_date,
+          MAX(issued_date) AS latest_date
         FROM buildops_invoices
         WHERE
-          COALESCE(issued_date, due_date, synced_at) >= NOW() - INTERVAL '12 months'
+          issued_date >= NOW() - INTERVAL '12 months'
           AND LOWER(COALESCE(status, '')) NOT IN ('void', 'cancelled')
       `);
 
