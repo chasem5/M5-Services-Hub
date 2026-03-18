@@ -9,9 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { ActionPlanPanel } from "@/components/ActionPlanPanel";
 import {
   BarChart3,
   TrendingUp,
@@ -28,6 +30,7 @@ import {
   Eye,
   AlertCircle,
   X,
+  ClipboardList,
 } from "lucide-react";
 
 interface ClientIntel {
@@ -271,6 +274,7 @@ export default function CustomerReport() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [planClient, setPlanClient] = useState<{ clientId: number; name: string } | null>(null);
 
   const { data: directoryUsers = [] } = useQuery<{id: string; firstName: string|null; lastName: string|null; email: string|null; role: string|null}[]>({
     queryKey: ["/api/users/directory"],
@@ -509,6 +513,16 @@ export default function CustomerReport() {
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-1">
                           {isAdminOrManager && <HealthOverrideMenu client={c} />}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title="View Action Plan"
+                            onClick={() => setPlanClient({ clientId: c.clientId, name: c.name })}
+                            data-testid={`btn-action-plan-${c.clientId}`}
+                          >
+                            <ClipboardList className="h-3.5 w-3.5" />
+                          </Button>
                           <Link href={`/customers/${c.clientId}`}>
                             <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`link-view-${c.clientId}`}>
                               <ExternalLink className="h-3.5 w-3.5" />
@@ -524,6 +538,24 @@ export default function CustomerReport() {
           )}
         </CardContent>
       </Card>
+
+      {/* Action Plan slide-over */}
+      <Sheet open={!!planClient} onOpenChange={open => { if (!open) setPlanClient(null); }}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto" data-testid="sheet-action-plan">
+          <SheetHeader className="mb-4">
+            <SheetTitle className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-primary" />
+              Action Plan — {planClient?.name}
+            </SheetTitle>
+          </SheetHeader>
+          {planClient && (
+            <ActionPlanPanel
+              type="customer"
+              clientId={planClient.clientId}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

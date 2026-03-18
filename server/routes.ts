@@ -7604,7 +7604,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       }
       // Restrict to safe-only fields — ownership (clientId/type/source) is immutable via PATCH
       const patchSchema = z.object({
-        status: z.enum(["open", "completed", "dismissed"]).optional(),
+        status: z.enum(["open", "done", "dismissed"]).optional(),
         title: z.string().min(1).optional(),
         description: z.string().optional(),
         priority: z.enum(["high", "medium", "low"]).optional(),

@@ -10,19 +10,19 @@ import CohortAnalysis from "./cohort-analysis";
 import ServiceAgreements from "./service-agreements";
 
 const TABS = [
-  { value: "action-plan", label: "Action Plan" },
+  { value: "monthly", label: "Monthly Report" },
   { value: "revenue", label: "Revenue" },
   { value: "win-loss", label: "Win / Loss" },
-  { value: "monthly", label: "Monthly Report" },
   { value: "cohort", label: "Cohort Analysis" },
   { value: "agreements", label: "Service Agreements" },
+  { value: "action-plan", label: "Action Plan" },
 ];
 
 const TAB_VALUES = TABS.map(t => t.value);
 
 function getInitialTab(): string {
   const hash = window.location.hash.replace("#", "");
-  return TAB_VALUES.includes(hash) ? hash : "action-plan";
+  return TAB_VALUES.includes(hash) ? hash : "monthly";
 }
 
 export default function CompanyIntelligence() {
