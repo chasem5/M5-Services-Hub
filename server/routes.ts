@@ -158,6 +158,7 @@ export async function registerRoutes(
   await storage.migrateBuildopsPropertyColumns();
   await storage.migrateParentClientColumn();
   await storage.migrateClientOnboardingChecklist();
+  await storage.migrateLeadLossColumns();
   // Seed default value tier settings
   await storage.getValueTierSettings();
   // Seed default contact stages on startup
@@ -1568,7 +1569,11 @@ Do not include any other text, just the JSON.`,
 
   app.patch("/api/leads/:id/stage", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
-    const { stage } = z.object({ stage: z.string() }).parse(req.body);
+    const { stage, lossReason, lossNote } = z.object({
+      stage: z.string(),
+      lossReason: z.enum(["price", "competition", "timing", "no_response", "other"]).optional().nullable(),
+      lossNote: z.string().optional().nullable(),
+    }).parse(req.body);
 
     const currentLead = await storage.getLead(id);
     if (!currentLead) return res.status(404).json({ message: "Lead not found" });
@@ -1583,11 +1588,11 @@ Do not include any other text, just the JSON.`,
       finalStage = "proposal_sent";
     }
 
-    const lead = await storage.updateLeadStage(id, finalStage);
+    const lead = await storage.updateLeadStage(id, finalStage, lossReason ?? undefined, lossNote ?? undefined);
     if (finalStage !== stage) {
       await logActivity(req, "lead", lead.id, "stage_updated", { from: currentLead.stage, to: finalStage, reason: "Auto-normalized: relationship to deal track must pass through Proposal Sent" });
     } else {
-      await logActivity(req, "lead", lead.id, "stage_updated", { stage: finalStage });
+      await logActivity(req, "lead", lead.id, "stage_updated", { stage: finalStage, lossReason, lossNote });
     }
     res.json(lead);
   });
@@ -6568,6 +6573,144 @@ Write a punchy, factual summary highlighting what's driving the health status. L
   app.get("/api/customer-intelligence", isAuthenticated, (req, res) => {
     const qs = new URLSearchParams(req.query as Record<string, string>).toString();
     res.redirect(307, `/api/reports/customer-intelligence${qs ? `?${qs}` : ""}`);
+  });
+
+  // Win/Loss Analysis report
+  app.get("/api/reports/win-loss", isAuthenticated, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql: sqlTag } = await import("drizzle-orm");
+
+      const dateFrom = req.query.dateFrom as string | undefined;
+      const dateTo = req.query.dateTo as string | undefined;
+
+      // Build date range conditions using stable close timestamps:
+      // won deals use won_at, lost deals use lost_at
+      // End date is made end-of-day inclusive by adding 1 day
+      const dateFromTs = dateFrom ? new Date(dateFrom) : null;
+      const dateToTs = dateTo ? new Date(new Date(dateTo).getTime() + 24 * 60 * 60 * 1000) : null;
+
+      const wonDateFilter = dateFromTs && dateToTs
+        ? sqlTag` AND won_at >= ${dateFromTs} AND won_at < ${dateToTs}`
+        : dateFromTs
+        ? sqlTag` AND won_at >= ${dateFromTs}`
+        : dateToTs
+        ? sqlTag` AND won_at < ${dateToTs}`
+        : sqlTag``;
+
+      const lostDateFilter = dateFromTs && dateToTs
+        ? sqlTag` AND lost_at >= ${dateFromTs} AND lost_at < ${dateToTs}`
+        : dateFromTs
+        ? sqlTag` AND lost_at >= ${dateFromTs}`
+        : dateToTs
+        ? sqlTag` AND lost_at < ${dateToTs}`
+        : sqlTag``;
+
+      type SummaryRow = { count: unknown; total_value: unknown };
+      type MonthlyWonRow = { month: unknown; won: unknown };
+      type MonthlyLostRow = { month: unknown; lost: unknown };
+      type LossReasonRow = { reason: unknown; count: unknown; total_value: unknown };
+
+      const toRows = <T>(result: unknown): T[] => {
+        if (Array.isArray(result)) return result as T[];
+        if (result !== null && typeof result === "object" && "rows" in result && Array.isArray((result as { rows: unknown[] }).rows)) {
+          return (result as { rows: T[] }).rows;
+        }
+        return [];
+      };
+
+      // Total won counts and values — scoped to won_at
+      const wonRows = toRows<SummaryRow>(await db.execute(sqlTag`
+        SELECT COUNT(*) as count, COALESCE(SUM(CAST(value AS numeric)), 0) as total_value
+        FROM leads WHERE stage = 'won' ${wonDateFilter}
+      `));
+      // Total lost counts and values — scoped to lost_at
+      const lostRows = toRows<SummaryRow>(await db.execute(sqlTag`
+        SELECT COUNT(*) as count, COALESCE(SUM(CAST(value AS numeric)), 0) as total_value
+        FROM leads WHERE stage = 'lost' ${lostDateFilter}
+      `));
+
+      const wonCount = Number(wonRows[0]?.count ?? 0);
+      const lostCount = Number(lostRows[0]?.count ?? 0);
+      const wonValue = Number(wonRows[0]?.total_value ?? 0);
+      const lostValue = Number(lostRows[0]?.total_value ?? 0);
+      const total = wonCount + lostCount;
+      const winRate = total > 0 ? Math.round((wonCount / total) * 100) : null;
+
+      // Win rate over time (monthly) — use won_at for won, lost_at for lost
+      // Merge both into a unified monthly series
+      const wonMonthlyRows = toRows<MonthlyWonRow>(await db.execute(sqlTag`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', won_at), 'YYYY-MM') as month,
+          COUNT(*) as won
+        FROM leads
+        WHERE stage = 'won' AND won_at IS NOT NULL ${wonDateFilter}
+        GROUP BY DATE_TRUNC('month', won_at)
+        ORDER BY DATE_TRUNC('month', won_at) ASC
+      `));
+
+      const lostMonthlyRows = toRows<MonthlyLostRow>(await db.execute(sqlTag`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', lost_at), 'YYYY-MM') as month,
+          COUNT(*) as lost
+        FROM leads
+        WHERE stage = 'lost' AND lost_at IS NOT NULL ${lostDateFilter}
+        GROUP BY DATE_TRUNC('month', lost_at)
+        ORDER BY DATE_TRUNC('month', lost_at) ASC
+      `));
+
+      // Merge monthly data
+      const monthMap = new Map<string, { won: number; lost: number }>();
+      for (const r of wonMonthlyRows) {
+        const m = String(r.month);
+        const existing = monthMap.get(m) ?? { won: 0, lost: 0 };
+        monthMap.set(m, { ...existing, won: Number(r.won ?? 0) });
+      }
+      for (const r of lostMonthlyRows) {
+        const m = String(r.month);
+        const existing = monthMap.get(m) ?? { won: 0, lost: 0 };
+        monthMap.set(m, { ...existing, lost: Number(r.lost ?? 0) });
+      }
+
+      const winRateByMonth = [...monthMap.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, { won: w, lost: l }]) => {
+          const t = w + l;
+          return { month, won: w, lost: l, winRate: t > 0 ? Math.round((w / t) * 100) : null };
+        });
+
+      // Loss reason breakdown — scoped to lost_at
+      const lossReasonRows = toRows<LossReasonRow>(await db.execute(sqlTag`
+        SELECT
+          COALESCE(loss_reason, 'unknown') as reason,
+          COUNT(*) as count,
+          COALESCE(SUM(CAST(value AS numeric)), 0) as total_value
+        FROM leads
+        WHERE stage = 'lost' ${lostDateFilter}
+        GROUP BY loss_reason
+        ORDER BY COUNT(*) DESC
+      `));
+
+      const lossReasons = lossReasonRows.map((r) => ({
+        reason: String(r.reason),
+        count: Number(r.count),
+        totalValue: Number(r.total_value),
+      }));
+
+      res.json({
+        wonCount,
+        lostCount,
+        wonValue,
+        lostValue,
+        winRate,
+        winRateByMonth,
+        lossReasons,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.error("Win/Loss report error:", err);
+      res.status(500).json({ message });
+    }
   });
 
   // ── Service Agreements list ─────────────────────────────────────────────────

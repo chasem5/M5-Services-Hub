@@ -144,6 +144,9 @@ export const leads = pgTable("leads", {
   buildopsExpirationDate: timestamp("buildops_expiration_date"),
   followUpSnoozedUntil: timestamp("follow_up_snoozed_until"),
   wonAt: timestamp("won_at"),
+  lostAt: timestamp("lost_at"),
+  lossReason: varchar("loss_reason", { enum: ["price", "competition", "timing", "no_response", "other"] }),
+  lossNote: text("loss_note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -476,7 +479,7 @@ export const insertContactBuildingSchema = createInsertSchema(contactBuildings).
   name: z.string().optional().nullable(),
   address: z.string().min(1, "Address is required"),
 });
-export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true, wonAt: true }).extend({
+export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true, wonAt: true, lostAt: true }).extend({
   buildingId: z.number().optional().nullable(),
   contactId: z.number().optional().nullable(),
   serviceType: z.enum(["building_engineering", "facility_solutions", "janitorial", "special_projects", "property_assessment"]).optional().nullable(),
@@ -487,6 +490,8 @@ export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, creat
   recurringFrequency: z.enum(["monthly", "quarterly", "annual"]).optional().nullable(),
   contractStartDate: z.coerce.date().optional().nullable(),
   renewalDate: z.coerce.date().optional().nullable(),
+  lossReason: z.enum(["price", "competition", "timing", "no_response", "other"]).optional().nullable(),
+  lossNote: z.string().optional().nullable(),
 });
 export const insertPipelineViewSchema = createInsertSchema(pipelineViews).omit({ id: true, createdAt: true });
 export const insertTaskLabelDefinitionSchema = createInsertSchema(taskLabelDefinitions).omit({ id: true });

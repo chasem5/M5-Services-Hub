@@ -11,6 +11,7 @@ import {
   HeartPulse,
   ClipboardList,
   TrendingUp,
+  BarChart2,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -189,6 +190,19 @@ export function AppSidebar() {
                   <Link href="/reports/revenue-analytics" data-testid="link-revenue-analytics" onClick={() => isMobile && setOpenMobile(false)}>
                     <TrendingUp className={location === "/reports/revenue-analytics" ? "text-primary" : ""} />
                     <span className="group-data-[collapsible=icon]:hidden">Revenue Analytics</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location === "/reports/win-loss"}
+                  tooltip="Win/Loss Analysis"
+                  className={location === "/reports/win-loss" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                >
+                  <Link href="/reports/win-loss" data-testid="link-win-loss" onClick={() => isMobile && setOpenMobile(false)}>
+                    <BarChart2 className={location === "/reports/win-loss" ? "text-primary" : ""} />
+                    <span className="group-data-[collapsible=icon]:hidden">Win / Loss</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

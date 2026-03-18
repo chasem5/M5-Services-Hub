@@ -999,6 +999,9 @@ export default function Leads() {
   const [deleteStageId, setDeleteStageId] = useState<number | null>(null);
   const [deleteStageLabel, setDeleteStageLabel] = useState("");
   const [pendingDealMove, setPendingDealMove] = useState<{ leadId: number; stage: string; clientName: string } | null>(null);
+  const [pendingLossCapture, setPendingLossCapture] = useState<{ leadId: number; stage: string; confidenceScore?: number } | null>(null);
+  const [lossReasonInput, setLossReasonInput] = useState<string>("");
+  const [lossNoteInput, setLossNoteInput] = useState<string>("");
   const [editingStageId, setEditingStageId] = useState<number | null>(null);
   const [editingStageLabel, setEditingStageLabel] = useState("");
   const [newStageLabel, setNewStageLabel] = useState("");
@@ -1184,7 +1187,14 @@ export default function Leads() {
         setPendingDealMove({ leadId, stage: newStage, clientName: client?.name ?? "this client" });
         return;
       }
-      const prob = (targetStageObj as any)?.defaultProbability;
+      if (newStage === "lost") {
+        const prob = targetStageObj?.defaultProbability;
+        setLossReasonInput("");
+        setLossNoteInput("");
+        setPendingLossCapture({ leadId, stage: newStage, confidenceScore: prob ?? undefined });
+        return;
+      }
+      const prob = targetStageObj?.defaultProbability;
       updateLeadStageMutation.mutate({ id: leadId, stage: newStage, confidenceScore: prob ?? undefined });
     }
   };
@@ -1297,8 +1307,8 @@ export default function Leads() {
   });
 
   const updateLeadStageMutation = useMutation({
-    mutationFn: async ({ id, stage, confidenceScore }: { id: number; stage: string; confidenceScore?: number }) => {
-      const res = await apiRequest("PATCH", `/api/leads/${id}/stage`, { stage });
+    mutationFn: async ({ id, stage, confidenceScore, lossReason, lossNote }: { id: number; stage: string; confidenceScore?: number; lossReason?: string; lossNote?: string }) => {
+      const res = await apiRequest("PATCH", `/api/leads/${id}/stage`, { stage, lossReason, lossNote });
       const updated = await res.json();
       if (confidenceScore !== undefined) {
         await apiRequest("PUT", `/api/leads/${id}`, { confidenceScore });
@@ -1527,7 +1537,7 @@ export default function Leads() {
   const getStageWeightedValue = (slug: string) => {
     const stageLeads = filteredLeads?.filter((l) => l.stage === slug) ?? [];
     const stageObj = stages.find(s => s.slug === slug);
-    const stageProb = (stageObj as any)?.defaultProbability ?? 50;
+    const stageProb = stageObj?.defaultProbability ?? 50;
     return stageLeads.reduce((sum, lead) => {
       const weight = stageProb / 100;
       return sum + getLeadNumericValue(lead, tierMap) * weight;
@@ -3770,6 +3780,22 @@ export default function Leads() {
                         </div>
                       )}
 
+                      {selectedLead.stage === "lost" && selectedLead.lossReason && (
+                        <div className="space-y-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 p-3">
+                          <p className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider flex items-center gap-1">
+                            <TrendingDown className="h-3 w-3" /> Loss Reason
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge className="bg-red-100 text-red-700 border-red-200 capitalize" data-testid="badge-loss-reason">
+                              {({ price: "Price", competition: "Competition", timing: "Timing", no_response: "No Response", other: "Other" } satisfies Record<string, string>)[selectedLead.lossReason] ?? selectedLead.lossReason}
+                            </Badge>
+                          </div>
+                          {selectedLead.lossNote && (
+                            <p className="text-xs text-muted-foreground leading-relaxed" data-testid="text-loss-note">{selectedLead.lossNote}</p>
+                          )}
+                        </div>
+                      )}
+
                       <Separator />
 
                       <div className="space-y-3">
@@ -3789,6 +3815,12 @@ export default function Leads() {
                                   if (currentStageObj?.track === "relationship" && stage.track === "deal") {
                                     const client = clients?.find(c => c.id === selectedLead.clientId);
                                     setPendingDealMove({ leadId: selectedLead.id, stage: stage.slug, clientName: client?.name ?? "this client" });
+                                    return;
+                                  }
+                                  if (stage.slug === "lost") {
+                                    setLossReasonInput("");
+                                    setLossNoteInput("");
+                                    setPendingLossCapture({ leadId: selectedLead.id, stage: stage.slug });
                                     return;
                                   }
                                   updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.slug });
@@ -4807,6 +4839,106 @@ export default function Leads() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Loss Reason Capture Modal */}
+      <Dialog open={pendingLossCapture !== null} onOpenChange={(open) => { if (!open) setPendingLossCapture(null); }}>
+        <DialogContent className="max-w-md" data-testid="dialog-loss-reason">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingDown className="h-5 w-5 text-red-500" />
+              Why was this deal lost?
+            </DialogTitle>
+            <DialogDescription>
+              Capturing the reason helps track patterns over time. You can skip this if unknown.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Loss Reason</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: "price", label: "Price" },
+                  { value: "competition", label: "Competition" },
+                  { value: "timing", label: "Timing" },
+                  { value: "no_response", label: "No Response" },
+                  { value: "other", label: "Other" },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    data-testid={`button-loss-reason-${opt.value}`}
+                    className={`px-3 py-2 rounded-md border text-sm font-medium transition-all ${
+                      lossReasonInput === opt.value
+                        ? "bg-destructive text-destructive-foreground border-destructive"
+                        : "bg-background border-border hover:border-destructive/50 hover:bg-destructive/5"
+                    }`}
+                    onClick={() => setLossReasonInput(lossReasonInput === opt.value ? "" : opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Additional Notes <span className="font-normal text-muted-foreground">(optional)</span></Label>
+              <Textarea
+                placeholder="Any context about why the deal was lost…"
+                value={lossNoteInput}
+                onChange={e => setLossNoteInput(e.target.value)}
+                rows={3}
+                className="resize-none"
+                data-testid="textarea-loss-note"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setPendingLossCapture(null)}
+              data-testid="button-cancel-loss-reason"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (pendingLossCapture) {
+                  updateLeadStageMutation.mutate({
+                    id: pendingLossCapture.leadId,
+                    stage: pendingLossCapture.stage,
+                    confidenceScore: pendingLossCapture.confidenceScore,
+                  });
+                  setPendingLossCapture(null);
+                }
+              }}
+              disabled={updateLeadStageMutation.isPending}
+              data-testid="button-skip-loss-reason"
+            >
+              Skip
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (pendingLossCapture) {
+                  updateLeadStageMutation.mutate({
+                    id: pendingLossCapture.leadId,
+                    stage: pendingLossCapture.stage,
+                    confidenceScore: pendingLossCapture.confidenceScore,
+                    lossReason: lossReasonInput || undefined,
+                    lossNote: lossNoteInput || undefined,
+                  });
+                  setPendingLossCapture(null);
+                }
+              }}
+              disabled={updateLeadStageMutation.isPending}
+              data-testid="button-confirm-loss-reason"
+            >
+              {updateLeadStageMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+              Mark as Lost
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bulk Action Toolbar */}
       {selectedIds.size > 0 && (

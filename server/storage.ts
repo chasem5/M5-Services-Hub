@@ -179,7 +179,7 @@ export interface IStorage {
   getLead(id: number): Promise<Lead | undefined>;
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: number, lead: Partial<InsertLead>): Promise<Lead>;
-  updateLeadStage(id: number, stage: string): Promise<Lead>;
+  updateLeadStage(id: number, stage: string, lossReason?: string, lossNote?: string): Promise<Lead>;
   deleteLead(id: number): Promise<void>;
 
   // Tasks
@@ -310,6 +310,7 @@ export interface IStorage {
   seedInitialAdmin(email: string): Promise<void>;
   seedTestEmails(): Promise<void>;
   migrateAdminToSuperAdmin(): Promise<void>;
+  migrateLeadLossColumns(): Promise<void>;
 
   // Gmail Tokens
   updateGmailTokens(userId: string, data: { gmailAccessToken: string; gmailRefreshToken: string | null; gmailTokenExpiry: Date | null; gmailEmail: string | null; gmailConnected: boolean }): Promise<User>;
@@ -681,7 +682,7 @@ export class DatabaseStorage implements IStorage {
     return lead;
   }
 
-  async updateLeadStage(id: number, stage: string): Promise<Lead> {
+  async updateLeadStage(id: number, stage: string, lossReason?: string, lossNote?: string): Promise<Lead> {
     const setData: Partial<Lead> & { updatedAt: Date } = { stage, updatedAt: new Date() };
     if (stage === "won") {
       // Only set won_at on transition to won; preserve existing won_at if already set
@@ -689,6 +690,13 @@ export class DatabaseStorage implements IStorage {
       if (existing && existing.stage !== "won" && !existing.wonAt) {
         setData.wonAt = new Date();
       }
+    }
+    if (stage === "lost") {
+      // Always update lostAt on each transition to lost so re-lost deals reflect latest close date
+      setData.lostAt = new Date();
+      // Always set/clear loss fields so re-lost deals don't carry stale data
+      setData.lossReason = (lossReason ?? null) as Lead["lossReason"];
+      setData.lossNote = lossNote ?? null;
     }
     const [lead] = await db
       .update(leads)
@@ -1934,6 +1942,16 @@ export class DatabaseStorage implements IStorage {
     const existing = await db.select().from(users).where(eq(users.role, "super_admin"));
     if (existing.length === 0) {
       await db.update(users).set({ role: "super_admin" }).where(eq(users.role, "admin"));
+    }
+  }
+
+  async migrateLeadLossColumns(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_at timestamp`);
+      await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS loss_reason varchar`);
+      await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS loss_note text`);
+    } catch (e) {
+      console.error("migrateLeadLossColumns error:", e);
     }
   }
 
