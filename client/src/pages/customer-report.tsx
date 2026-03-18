@@ -455,7 +455,6 @@ export default function CustomerReport() {
         <CardContent className="px-4 pb-4 pt-0">
           <ActionPlanPanel
             type="customer"
-            context="Review customer health scores, pipeline, and revenue trends to identify key actions."
           />
         </CardContent>
       </Card>

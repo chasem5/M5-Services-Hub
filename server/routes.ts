@@ -7359,54 +7359,106 @@ Write a punchy, factual summary highlighting what's driving the health status. L
     }
   });
 
-  // POST /api/action-plans/generate — AI-generate action plan items
+  // POST /api/action-plans/generate — AI-generate action plan items with real metrics
   app.post("/api/action-plans/generate", isAuthenticated, async (req, res) => {
     try {
-      const { type, clientId, context } = z.object({
+      const { type, clientId } = z.object({
         type: z.enum(["customer", "company"]),
         clientId: z.number().optional().nullable(),
-        context: z.string().optional(),
       }).parse(req.body);
 
-      let contextBlock = context ?? "";
+      let contextBlock = "";
 
-      // If customer-type, pull a bit more context automatically
       if (type === "customer" && clientId) {
-        const client = await storage.getClient(clientId);
-        if (client) contextBlock = `Customer: ${client.name}. ${contextBlock}`;
+        // Pull real customer signals from DB
+        const [client, leads] = await Promise.all([
+          storage.getClient(clientId),
+          storage.listLeads(),
+        ]);
+        const clientLeads = leads.filter(l => l.clientId === clientId);
+        const openLeads = clientLeads.filter(l => !["won", "lost", "canceled"].includes(l.stage ?? ""));
+        const wonLeads = clientLeads.filter(l => l.stage === "won");
+        const lostLeads = clientLeads.filter(l => l.stage === "lost");
+        const openPipeline = openLeads.reduce((s, l) => s + (Number(l.value) || 0), 0);
+        const hitRate = (wonLeads.length + lostLeads.length) > 0
+          ? Math.round((wonLeads.length / (wonLeads.length + lostLeads.length)) * 100)
+          : null;
+
+        // Fetch invoice and job data for this client
+        const { db: dbConn } = await import("./db");
+        const { buildopsInvoices: invTable, buildopsJobs: jobTable } = await import("@shared/schema");
+        const { eq: eqFn, desc: descFn } = await import("drizzle-orm");
+        const recentInvoices = await dbConn.select().from(invTable)
+          .where(eqFn(invTable.clientId, clientId)).orderBy(descFn(invTable.issuedDate)).limit(6);
+        const activeJobs = await dbConn.select().from(jobTable)
+          .where(eqFn(jobTable.clientId, clientId));
+        const totalJobCount = activeJobs.length;
+        const invoiceLtv = recentInvoices.reduce((s, i) => s + Number(i.totalAmount ?? 0), 0);
+
+        contextBlock = [
+          `Customer: ${client?.name ?? "Unknown"} (Tier: ${client?.tier ?? "unset"})`,
+          `Open deals: ${openLeads.length} (pipeline: $${openPipeline.toLocaleString()})`,
+          `Won: ${wonLeads.length}, Lost: ${lostLeads.length}${hitRate !== null ? `, Hit rate: ${hitRate}%` : ""}`,
+          `Total jobs in BuildOps: ${totalJobCount}`,
+          `Total invoiced (LTV): $${invoiceLtv.toLocaleString()}`,
+          client?.tier === "tier_1" ? "This is a Tier 1 (highest-value) customer — protect and grow." : "",
+        ].filter(Boolean).join("\n");
+
+      } else if (type === "company") {
+        // Pull real company-wide signals
+        const [allLeads, allClients] = await Promise.all([
+          storage.listLeads(),
+          storage.listClients(),
+        ]);
+        const openLeads = allLeads.filter(l => !["won", "lost", "canceled"].includes(l.stage ?? ""));
+        const wonLeads = allLeads.filter(l => l.stage === "won");
+        const lostLeads = allLeads.filter(l => l.stage === "lost");
+        const totalPipeline = openLeads.reduce((s, l) => s + (Number(l.value) || 0), 0);
+        const hitRate = (wonLeads.length + lostLeads.length) > 0
+          ? Math.round((wonLeads.length / (wonLeads.length + lostLeads.length)) * 100)
+          : null;
+        const tier1Count = allClients.filter(c => c.tier === "tier_1").length;
+
+        contextBlock = [
+          `Company: M5 Services (facility maintenance)`,
+          `Total customers: ${allClients.length} (Tier 1: ${tier1Count})`,
+          `Open deals: ${openLeads.length}, total pipeline: $${totalPipeline.toLocaleString()}`,
+          `Won: ${wonLeads.length}, Lost: ${lostLeads.length}${hitRate !== null ? `, Company hit rate: ${hitRate}%` : ""}`,
+          "Focus on growing Tier 1 retention, converting open pipeline, and reducing customer churn.",
+        ].filter(Boolean).join("\n");
       }
 
       const systemPrompt = type === "customer"
-        ? `You are a CRM assistant for M5 Services (facility maintenance). Generate 3–5 specific, actionable sales action plan items for this customer account. Each should be a concrete next step to grow or protect the relationship. Return a JSON array of objects: [{title, description, priority}] where priority is "high"|"medium"|"low".`
-        : `You are a CRM assistant for M5 Services (facility maintenance). Generate 3–5 specific, actionable company-wide action plan items to improve business development, revenue, or customer retention. Return a JSON array of objects: [{title, description, priority}] where priority is "high"|"medium"|"low".`;
+        ? `You are a CRM assistant for M5 Services (facility maintenance). Given the customer account data below, generate 3–5 specific, concrete, actionable next steps for the sales team to grow or protect this relationship. Be specific to the customer's situation. Return ONLY a JSON object: {"items": [{title, description, priority}]} where priority is "high"|"medium"|"low".`
+        : `You are a CRM assistant for M5 Services (facility maintenance). Given the company-wide data below, generate 3–5 specific, actionable business development and retention action items for the leadership team. Return ONLY a JSON object: {"items": [{title, description, priority}]} where priority is "high"|"medium"|"low".`;
 
       const aiRes = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: contextBlock || (type === "customer" ? "Generate action plan items for this customer." : "Generate company-wide action plan items.") },
+          { role: "user", content: contextBlock },
         ],
         response_format: { type: "json_object" },
-        max_tokens: 600,
+        max_tokens: 700,
       });
 
       const raw = aiRes.choices[0]?.message?.content ?? "{}";
       let suggestions: { title: string; description?: string; priority?: string }[] = [];
       try {
         const parsed = JSON.parse(raw);
-        suggestions = Array.isArray(parsed) ? parsed : (parsed.items ?? parsed.action_plans ?? parsed.plans ?? []);
+        suggestions = Array.isArray(parsed) ? parsed
+          : (parsed.items ?? parsed.action_plans ?? parsed.plans ?? Object.values(parsed).find(Array.isArray) ?? []);
       } catch {
         suggestions = [];
       }
 
-      // Persist each suggestion as an AI-sourced action plan item
       const created = await Promise.all(
         suggestions.slice(0, 5).map(s =>
           storage.createActionPlan({
             type,
             clientId: clientId ?? null,
-            title: s.title ?? "Action item",
-            description: s.description ?? null,
+            title: String(s.title ?? "Action item"),
+            description: s.description ? String(s.description) : null,
             priority: (["high", "medium", "low"].includes(s.priority ?? "") ? s.priority : "medium") as "high" | "medium" | "low",
             status: "open",
             source: "ai",

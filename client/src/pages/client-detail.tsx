@@ -157,6 +157,7 @@ import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { BuildingsMap } from "@/components/BuildingsMap";
 import { PortfolioManager } from "@/components/PortfolioManager";
 import { getStageBadgeClass } from "@/components/ContactStagesManager";
+import { ActionPlanPanel } from "@/components/ActionPlanPanel";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow, differenceInDays } from "date-fns";
@@ -4579,6 +4580,19 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
           </CardContent>
         </Card>
       )}
+
+      {/* ── Action Plan (per-customer AI suggestions) ── */}
+      <Card className="shadow-sm bg-card" data-testid="card-action-plan">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Action Plan</CardTitle>
+          <CardDescription className="text-xs">
+            AI-powered next steps for this account
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <ActionPlanPanel type="customer" clientId={clientId} />
+        </CardContent>
+      </Card>
 
       {/* ── Sub-company revenue rollup ── */}
       {childClients.length > 0 && groupRollup && (

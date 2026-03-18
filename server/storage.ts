@@ -3088,8 +3088,7 @@ export class DatabaseStorage implements IStorage {
 
   // Action Plans
   async listActionPlans(filters?: { type?: "customer" | "company"; clientId?: number | null; includeCompleted?: boolean }): Promise<ActionPlan[]> {
-    let query = db.select().from(actionPlans) as any;
-    const conditions: any[] = [];
+    const conditions = [];
     if (filters?.type) conditions.push(eq(actionPlans.type, filters.type));
     if (filters?.clientId !== undefined) {
       if (filters.clientId === null) {
@@ -3102,9 +3101,9 @@ export class DatabaseStorage implements IStorage {
       conditions.push(sql`${actionPlans.status} != 'dismissed'`);
     }
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      return db.select().from(actionPlans).where(and(...conditions)).orderBy(desc(actionPlans.createdAt));
     }
-    return query.orderBy(desc(actionPlans.createdAt));
+    return db.select().from(actionPlans).orderBy(desc(actionPlans.createdAt));
   }
 
   async getActionPlan(id: number): Promise<ActionPlan | undefined> {

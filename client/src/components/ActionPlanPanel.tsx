@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,6 @@ interface ActionPlan {
 interface ActionPlanPanelProps {
   type: "customer" | "company";
   clientId?: number | null;
-  context?: string;
   className?: string;
 }
 
@@ -65,12 +64,13 @@ const PRIORITY_COLORS: Record<string, string> = {
 const qKey = (type: string, clientId?: number | null) =>
   ["/api/action-plans", type, clientId ?? "null"];
 
-export function ActionPlanPanel({ type, clientId, context, className }: ActionPlanPanelProps) {
+export function ActionPlanPanel({ type, clientId, className }: ActionPlanPanelProps) {
   const { toast } = useToast();
   const [showCompleted, setShowCompleted] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editItem, setEditItem] = useState<ActionPlan | null>(null);
   const [generating, setGenerating] = useState(false);
+  const autoGenTriggered = useRef(false);
 
   const [form, setForm] = useState({ title: "", description: "", priority: "medium" as "high" | "medium" | "low", dueDate: "" });
 
@@ -86,6 +86,15 @@ export function ActionPlanPanel({ type, clientId, context, className }: ActionPl
       return res.json();
     },
   });
+
+  // Auto-generate on first load if no plans exist (run once per mount)
+  useEffect(() => {
+    if (!isLoading && plans.length === 0 && !autoGenTriggered.current && !generating) {
+      autoGenTriggered.current = true;
+      handleGenerate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, plans.length]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: qKey(type, clientId) });
@@ -115,7 +124,6 @@ export function ActionPlanPanel({ type, clientId, context, className }: ActionPl
       const res = await apiRequest("POST", "/api/action-plans/generate", {
         type,
         clientId: clientId ?? null,
-        context: context ?? "",
       });
       if (!res.ok) throw new Error("Generation failed");
       invalidate();

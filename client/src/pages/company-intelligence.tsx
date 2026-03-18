@@ -104,7 +104,6 @@ export default function CompanyIntelligence() {
                   <ActionPlanPanel
                     type="company"
                     clientId={null}
-                    context="Review revenue trends, win/loss ratios, customer health, and cohort data to identify company-wide action items."
                   />
                 </CardContent>
               </Card>
