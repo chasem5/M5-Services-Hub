@@ -18,8 +18,11 @@ interface ReleaseNote {
   message: string | null;
   createdAt: string;
   isRead: boolean;
+  unreadCount: number;
   type: string;
 }
+
+const SESSION_KEY_PREFIX = "whats-new-shown-";
 
 export function WhatsNewModal() {
   const [open, setOpen] = useState(false);
@@ -30,10 +33,12 @@ export function WhatsNewModal() {
   });
 
   useEffect(() => {
-    if (release && !release.isRead) {
-      setOpen(true);
-    }
-  }, [release]);
+    if (!release || release.isRead) return;
+    const sessionKey = `${SESSION_KEY_PREFIX}${release.id}`;
+    if (sessionStorage.getItem(sessionKey)) return;
+    sessionStorage.setItem(sessionKey, "1");
+    setOpen(true);
+  }, [release?.id, release?.isRead]);
 
   const markReadMutation = useMutation({
     mutationFn: async (id: number) => {

@@ -70,12 +70,12 @@ export function AppSidebar() {
     staleTime: 30000,
   });
 
-  const { data: latestRelease } = useQuery<{ id: number; isRead: boolean } | null>({
+  const { data: latestRelease } = useQuery<{ id: number; isRead: boolean; unreadCount: number } | null>({
     queryKey: ["/api/announcements/latest-release-notes"],
     enabled: !!user,
     refetchInterval: 5 * 60 * 1000,
   });
-  const hasUnreadRelease = latestRelease && !latestRelease.isRead;
+  const hasUnreadRelease = (latestRelease?.unreadCount ?? 0) > 0;
 
   const visibleNavItems = ALL_NAV_ITEMS.filter(item => {
     if (!myPerms) return true;

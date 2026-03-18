@@ -2164,19 +2164,30 @@ Respond ONLY with JSON — no markdown:
       const { eq, desc } = await import("drizzle-orm");
       const userId = (req as any).user?.claims?.sub;
 
-      const rows = await db.select().from(annTable)
+      // Get all release_notes visible to this user (respect targetUserIds audience)
+      const allRows = await db.select().from(annTable)
         .where(eq(annTable.type, "release_notes"))
-        .orderBy(desc(annTable.createdAt))
-        .limit(1);
+        .orderBy(desc(annTable.createdAt));
 
-      if (rows.length === 0) return res.json(null);
+      const visible = allRows.filter((a: any) =>
+        !a.targetUserIds || (a.targetUserIds as string[]).length === 0 || (a.targetUserIds as string[]).includes(userId)
+      );
 
-      const ann = rows[0];
+      if (visible.length === 0) return res.json(null);
+
+      // Get all reads for this user
       const reads = await db.select().from(announcementReads)
         .where(eq(announcementReads.userId, userId));
       const readIds = new Set(reads.map((r: any) => r.announcementId));
 
-      res.json({ ...ann, isRead: readIds.has(ann.id) });
+      // Return the most recent UNREAD release note; if all read, return latest with isRead:true
+      const unread = visible.filter((a: any) => !readIds.has(a.id));
+      if (unread.length > 0) {
+        return res.json({ ...unread[0], isRead: false, unreadCount: unread.length });
+      }
+
+      // All read — return latest so sidebar badge stays off
+      return res.json({ ...visible[0], isRead: true, unreadCount: 0 });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
