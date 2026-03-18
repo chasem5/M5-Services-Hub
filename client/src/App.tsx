@@ -1,4 +1,5 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
+import { useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -20,13 +21,16 @@ import AdminPage from "@/pages/admin";
 import EmailSync from "@/pages/email-sync";
 import Announcements from "@/pages/announcements";
 import CustomerReport from "@/pages/customer-report";
-import CohortAnalysis from "@/pages/cohort-analysis";
-import WinLossReport from "@/pages/win-loss-report";
-import MonthlyReport from "@/pages/monthly-report";
-import ServiceAgreements from "@/pages/service-agreements";
-import RevenueAnalytics from "@/pages/revenue-analytics";
 import CompanyIntelligence from "@/pages/company-intelligence";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+function TabRedirect({ tab }: { tab: string }) {
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    navigate(`/company-intelligence#${tab}`, { replace: true });
+  }, [tab, navigate]);
+  return null;
+}
 
 function ProtectedRouter() {
   return (
@@ -51,11 +55,21 @@ function ProtectedRouter() {
           <Route path="/announcements" component={Announcements} />
           <Route path="/reports/customer-intelligence" component={CustomerReport} />
           <Route path="/company-intelligence" component={CompanyIntelligence} />
-          <Route path="/reports/cohort-analysis" component={CohortAnalysis} />
-          <Route path="/reports/win-loss" component={WinLossReport} />
-          <Route path="/reports/monthly-review" component={MonthlyReport} />
-          <Route path="/service-agreements" component={ServiceAgreements} />
-          <Route path="/reports/revenue-analytics" component={RevenueAnalytics} />
+          <Route path="/reports/revenue-analytics">
+            {() => <TabRedirect tab="revenue" />}
+          </Route>
+          <Route path="/reports/win-loss">
+            {() => <TabRedirect tab="win-loss" />}
+          </Route>
+          <Route path="/reports/monthly-review">
+            {() => <TabRedirect tab="monthly" />}
+          </Route>
+          <Route path="/reports/cohort-analysis">
+            {() => <TabRedirect tab="cohort" />}
+          </Route>
+          <Route path="/service-agreements">
+            {() => <TabRedirect tab="agreements" />}
+          </Route>
           <Route component={NotFound} />
         </Switch>
       </ErrorBoundary>

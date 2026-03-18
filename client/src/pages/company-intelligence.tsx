@@ -10,7 +10,7 @@ import ServiceAgreements from "./service-agreements";
 const TABS = [
   { value: "revenue", label: "Revenue" },
   { value: "win-loss", label: "Win / Loss" },
-  { value: "monthly", label: "Monthly Review" },
+  { value: "monthly", label: "Monthly Report" },
   { value: "cohort", label: "Cohort Analysis" },
   { value: "agreements", label: "Service Agreements" },
 ];
