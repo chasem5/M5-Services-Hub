@@ -2276,9 +2276,9 @@ export default function Leads() {
             </DragOverlay>
           </DndContext>
         ) : (
-          <div className="p-6">
-            <Card>
-              <Table>
+          <div className="p-4 sm:p-6">
+            <Card className="overflow-x-auto">
+              <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[40px]">

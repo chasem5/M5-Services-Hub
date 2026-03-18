@@ -1611,6 +1611,37 @@ Do not include any other text, just the JSON.`,
     } else {
       await logActivity(req, "lead", lead.id, "stage_updated", { stage: finalStage, lossReason, lossNote });
     }
+
+    // Auto-create follow-up task when manually moving a lead into "expired"
+    if (currentLead.stage !== "expired" && finalStage === "expired") {
+      try {
+        const { tasks: tbl } = await import("@shared/schema");
+        const existingTasks = await db.select().from(tbl)
+          .where(eq(tbl.relatedLeadId, id));
+        const hasTask = existingTasks.some((t: any) =>
+          t.status !== "done" && t.title?.toLowerCase().includes("expired quote")
+        );
+        if (!hasTask) {
+          const clientName = lead.clientId
+            ? (await storage.getClient(lead.clientId))?.name ?? "Client"
+            : "Client";
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          await storage.createTask({
+            title: `Follow up on expired quote – ${clientName}`,
+            description: `Quote "${lead.title}" has expired. Reach out to re-engage and discuss next steps.`,
+            priority: "high",
+            status: "todo",
+            assignedTo: lead.assignedTo ?? null,
+            relatedLeadId: id,
+            dueDate: tomorrow,
+          });
+        }
+      } catch (taskErr: any) {
+        console.error("[stage-patch] auto-task creation failed:", taskErr.message);
+      }
+    }
+
     res.json(lead);
   });
 

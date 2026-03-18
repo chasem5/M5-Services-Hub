@@ -1286,8 +1286,8 @@ export default function ClientDetail() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
+    <div className="p-4 sm:p-6 space-y-6">
+      <div className="flex items-center gap-3 sm:gap-4">
         <Button variant="ghost" size="icon" onClick={() => setLocation("/customers")}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
@@ -1306,7 +1306,7 @@ export default function ClientDetail() {
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-heading font-bold" data-testid="text-client-name">{client.name}</h1>
+            <h1 className="text-xl sm:text-3xl font-heading font-bold" data-testid="text-client-name">{client.name}</h1>
             <Badge variant="outline" className="h-6">Customer ID: {client.id}</Badge>
             {(client as any).tier && <TierBadge tier={(client as any).tier} />}
             {(client as any).buildopsId && (
@@ -2183,46 +2183,46 @@ export default function ClientDetail() {
 
           <TabsContent value="contacts" className="m-0 space-y-4">
             {/* Header row */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold">Contacts &amp; Offices</h3>
                 <p className="text-sm text-muted-foreground">Organize contacts by office or division</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   variant="outline"
-                  className="h-10 px-4"
+                  className="h-9 px-2 sm:px-4"
                   onClick={() => setIsNewPortfolioDialogOpen(true)}
                   data-testid="button-new-portfolio"
                 >
-                  <Folders className="mr-2 h-4 w-4" />
-                  New Portfolio
+                  <Folders className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">New Portfolio</span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="h-10 px-4"
+                  className="h-9 px-2 sm:px-4"
                   onClick={() => setIsOfficeDialogOpen(true)}
                   data-testid="button-add-office"
                 >
-                  <Building2 className="mr-2 h-4 w-4" />
-                  Add Office
+                  <Building2 className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Add Office</span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="h-10 px-4"
+                  className="h-9 px-2 sm:px-4"
                   onClick={() => setIsCardScannerOpen(true)}
                   data-testid="button-scan-business-card"
                 >
-                  <Smartphone className="mr-2 h-4 w-4" />
-                  Scan Card
+                  <Smartphone className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Scan Card</span>
                 </Button>
                 <Button
-                  className="h-10 px-4"
+                  className="h-9 px-3 sm:px-4"
                   onClick={() => openAddContactForOffice(null)}
                   data-testid="button-add-contact"
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Contact
+                  <Plus className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Add Contact</span>
                 </Button>
               </div>
             </div>
@@ -3828,7 +3828,7 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
             </CardDescription>
           </div>
           {sorted.length > 0 && (
-            <div className="flex gap-4 text-sm">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
               <div><span className="text-muted-foreground">Total Revenue:</span> <span className="font-semibold">{fmt(totalRevenue)}</span></div>
               <div><span className="text-muted-foreground">Total Cost:</span> <span className="font-semibold">{fmt(totalCost)}</span></div>
               <div><span className="text-muted-foreground">Margin:</span> <span className="font-semibold">{fmt(totalRevenue - totalCost)}</span></div>
@@ -3845,7 +3845,7 @@ function BuildOpsJobsTab({ clientId }: { clientId: number }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" data-testid="table-buildops-jobs">
+            <table className="w-full text-sm min-w-[900px]" data-testid="table-buildops-jobs">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="py-2 px-3 font-medium">Job #</th>
@@ -3989,7 +3989,7 @@ function BuildOpsInvoicesTab({ clientId }: { clientId: number }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" data-testid="table-buildops-invoices">
+            <table className="w-full text-sm min-w-[700px]" data-testid="table-buildops-invoices">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="py-2 px-3 font-medium">Invoice #</th>
@@ -4100,7 +4100,7 @@ function BuildOpsAgreementsTab({ clientId }: { clientId: number }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" data-testid="table-buildops-agreements">
+            <table className="w-full text-sm min-w-[700px]" data-testid="table-buildops-agreements">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="py-2 px-3 font-medium">Agreement #</th>
@@ -4375,7 +4375,7 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
       {/* ── Email response rate ── */}
       {data.emailResponseRate !== null && (
         <Card className="shadow-sm bg-card" data-testid="card-email-response-rate">
-          <CardContent className="p-4 flex items-center gap-6">
+          <CardContent className="p-4 flex flex-wrap items-center gap-6">
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wider">Email Response Rate</p>
               <p className={cn("text-3xl font-heading font-bold mt-0.5", data.emailResponseRate >= 50 ? "text-green-600" : data.emailResponseRate >= 25 ? "text-amber-600" : "text-red-500")} data-testid="text-email-response-rate">
