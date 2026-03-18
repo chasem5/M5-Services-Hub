@@ -6846,44 +6846,83 @@ Write a punchy, factual summary highlighting what's driving the health status. L
     }
   });
 
-  // ── MRR / ARR from active BuildOps service agreements ──────────────────────
+  // ── Revenue summary from BuildOps invoices ─────────────────────────────────
   app.get("/api/analytics/mrr-arr", isAuthenticated, async (_req, res) => {
     try {
       const { db } = await import("./db");
       const { sql: sqlTag } = await import("drizzle-orm");
 
-      // Use 12-month trailing invoice revenue as MRR/ARR base.
-      // Filter on issued_date only (not synced_at) so recently-synced historical
-      // invoices don't inflate the trailing window.
+      const toRows = (r: any) => Array.isArray(r) ? r : r?.rows ?? [];
+
+      // Trailing 12-month revenue from confirmed invoices only (exported + posted).
+      // Excludes void, draft, and cancelled to avoid inflating revenue with
+      // unconfirmed or reversed invoices.
       const invoiceRow = await db.execute(sqlTag`
         SELECT
           COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS trailing_12m,
-          MIN(issued_date) AS earliest_date,
-          MAX(issued_date) AS latest_date
+          COUNT(*)::int                                    AS invoice_count,
+          COUNT(DISTINCT client_id)::int                  AS client_count,
+          MIN(issued_date)                                AS earliest_date,
+          MAX(issued_date)                                AS latest_date
         FROM buildops_invoices
         WHERE
           issued_date >= NOW() - INTERVAL '12 months'
-          AND LOWER(COALESCE(status, '')) NOT IN ('void', 'cancelled')
+          AND LOWER(COALESCE(status, '')) IN ('exported', 'posted')
       `);
 
+      // Active service agreements (not cancelled/expired/terminated)
       const agreementRow = await db.execute(sqlTag`
-        SELECT COUNT(*)::int AS total_count
+        SELECT
+          COUNT(*)::int          AS total_count,
+          array_agg(client_id)   AS sa_client_ids
         FROM buildops_agreements
         WHERE LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'canceled', 'expired', 'terminated', 'void', 'inactive')
+          AND client_id IS NOT NULL
       `);
 
-      const toRows = (r: any) => Array.isArray(r) ? r : r?.rows ?? [];
       const inv = toRows(invoiceRow)[0] ?? {};
       const agr = toRows(agreementRow)[0] ?? {};
 
       const trailing12m = Number(inv.trailing_12m ?? 0);
-      const arr = trailing12m;
-      const mrr = trailing12m / 12;
+      const invoiceCount = Number(inv.invoice_count ?? 0);
+      const clientCount = Number(inv.client_count ?? 0);
+      const activeAgreementCount = Number(agr.total_count ?? 0);
+
+      // Estimate recurring revenue: trailing 12m invoices for clients with active SAs.
+      // SA contract_value is null in the DB (not synced from BuildOps), so we proxy
+      // recurring revenue as invoice revenue from SA-enrolled clients.
+      let recurringEstimate = 0;
+      const saClientIds: number[] = Array.isArray(agr.sa_client_ids)
+        ? agr.sa_client_ids.filter(Boolean).map(Number)
+        : [];
+
+      if (saClientIds.length > 0) {
+        const saClientIdsStr = saClientIds.join(",");
+        const recurringRow = await db.execute(sqlTag`
+          SELECT COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS recurring_total
+          FROM buildops_invoices
+          WHERE
+            issued_date >= NOW() - INTERVAL '12 months'
+            AND LOWER(COALESCE(status, '')) IN ('exported', 'posted')
+            AND client_id = ANY(ARRAY[${sqlTag.raw(saClientIdsStr)}]::int[])
+        `);
+        const rec = toRows(recurringRow)[0] ?? {};
+        recurringEstimate = Number(rec.recurring_total ?? 0);
+      }
+
+      const avgMonthlyRevenue = trailing12m / 12;
 
       res.json({
-        mrr: Math.round(mrr * 100) / 100,
-        arr: Math.round(arr * 100) / 100,
-        activeAgreementCount: Number(agr.total_count ?? 0),
+        // Legacy fields kept for backward compat with any existing consumers
+        mrr: Math.round(avgMonthlyRevenue * 100) / 100,
+        arr: Math.round(trailing12m * 100) / 100,
+        // New accurate fields
+        avgMonthlyRevenue: Math.round(avgMonthlyRevenue * 100) / 100,
+        trailing12mRevenue: Math.round(trailing12m * 100) / 100,
+        recurringEstimate: Math.round(recurringEstimate * 100) / 100,
+        invoiceCount,
+        clientCount,
+        activeAgreementCount,
         earliestStart: inv.earliest_date ?? null,
         latestEnd: inv.latest_date ?? null,
       });

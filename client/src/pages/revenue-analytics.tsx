@@ -8,6 +8,8 @@ import {
   FileBarChart,
   RefreshCw,
   PieChart as PieChartIcon,
+  Info,
+  Repeat,
 } from "lucide-react";
 import {
   PieChart,
@@ -25,6 +27,11 @@ import { format, parseISO } from "date-fns";
 interface MrrArrData {
   mrr: number;
   arr: number;
+  avgMonthlyRevenue: number;
+  trailing12mRevenue: number;
+  recurringEstimate: number;
+  invoiceCount: number;
+  clientCount: number;
   activeAgreementCount: number;
   earliestStart: string | null;
   latestEnd: string | null;
@@ -82,7 +89,7 @@ export default function RevenueAnalytics() {
   }));
 
   const hasMixData = pieData.length > 0;
-  const hasMrrData = (mrrData?.mrr ?? 0) > 0;
+  const hasMrrData = (mrrData?.avgMonthlyRevenue ?? mrrData?.mrr ?? 0) > 0;
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -98,17 +105,25 @@ export default function RevenueAnalytics() {
         </div>
       </div>
 
-      {/* MRR / ARR Section */}
+      {/* Revenue Summary Section */}
       <div>
-        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <DollarSign className="h-5 w-5 text-primary" />
-          Recurring Revenue
-        </h2>
+        <div className="flex items-center gap-2 mb-1">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <DollarSign className="h-5 w-5 text-primary" />
+            Revenue Summary
+          </h2>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1">
+          <Info className="h-3 w-3 shrink-0" />
+          Based on confirmed invoices (exported + posted) from the past 12 months. Excludes voided and draft invoices.
+          SA contract values are not yet synced from BuildOps, so recurring revenue is estimated from SA-client invoice history.
+        </p>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="shadow-sm bg-card" data-testid="card-mrr">
             <CardHeader className="pb-2">
               <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                Monthly Recurring Revenue
+                Avg Monthly Revenue
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -117,10 +132,10 @@ export default function RevenueAnalytics() {
               ) : (
                 <>
                   <p className="text-2xl font-heading font-bold" data-testid="text-mrr-value">
-                    {fmt(mrrData?.mrr ?? 0)}
+                    {fmt(mrrData?.avgMonthlyRevenue ?? mrrData?.mrr ?? 0)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Trailing 12-month invoice avg
+                    Trailing 12-month average / month
                   </p>
                 </>
               )}
@@ -130,7 +145,7 @@ export default function RevenueAnalytics() {
           <Card className="shadow-sm bg-card" data-testid="card-arr">
             <CardHeader className="pb-2">
               <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                Annual Recurring Revenue
+                Trailing 12-Month Revenue
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -139,10 +154,10 @@ export default function RevenueAnalytics() {
               ) : (
                 <>
                   <p className="text-2xl font-heading font-bold" data-testid="text-arr-value">
-                    {fmt(mrrData?.arr ?? 0)}
+                    {fmt(mrrData?.trailing12mRevenue ?? mrrData?.arr ?? 0)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Trailing 12-month invoice total
+                    Total invoiced · past 12 months
                   </p>
                 </>
               )}
@@ -163,26 +178,36 @@ export default function RevenueAnalytics() {
                   <p className="text-2xl font-heading font-bold" data-testid="text-active-agreement-count">
                     {mrrData?.activeAgreementCount ?? 0}
                   </p>
-                  <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                    {mrrData?.earliestStart && (
-                      <p>Invoices from: {safeDate(mrrData.earliestStart)}</p>
-                    )}
-                    {mrrData?.latestEnd && (
-                      <p>Latest: {safeDate(mrrData.latestEnd)}</p>
-                    )}
-                    {!mrrData?.earliestStart && !mrrData?.latestEnd && (
-                      <p>No invoices in past 12 months</p>
-                    )}
-                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">Active agreements</p>
+                  {(mrrData?.recurringEstimate ?? 0) > 0 && (
+                    <div className="mt-2 pt-2 border-t flex items-center gap-1.5">
+                      <Repeat className="h-3 w-3 text-primary shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-primary" data-testid="text-recurring-estimate">
+                          {fmt(mrrData!.recurringEstimate)}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground leading-tight">~Recurring (SA clients · 12mo)</p>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>
           </Card>
         </div>
 
+        {/* Summary line */}
+        {!mrrLoading && hasMrrData && (
+          <p className="text-xs text-muted-foreground mt-2">
+            {mrrData?.invoiceCount?.toLocaleString() ?? 0} invoices
+            {mrrData?.clientCount ? ` · ${mrrData.clientCount} clients billed` : ""}
+            {mrrData?.earliestStart ? ` · ${safeDate(mrrData.earliestStart)} – ${safeDate(mrrData.latestEnd)}` : ""}
+          </p>
+        )}
+
         {!mrrLoading && !hasMrrData && (
           <p className="text-sm text-muted-foreground mt-3 bg-muted/40 border rounded-lg p-3">
-            Revenue will populate once BuildOps invoices are synced. MRR is derived from the trailing 12-month invoice average.
+            Revenue will populate once BuildOps invoices are synced. Figures are derived from the trailing 12-month confirmed invoice history.
           </p>
         )}
       </div>
