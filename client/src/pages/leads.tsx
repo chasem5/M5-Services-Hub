@@ -36,6 +36,7 @@ import {
   insertTaskSchema,
   InsertTask,
   DealTag,
+  type Estimate,
 } from "@shared/schema";
 import { useSearch, Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -88,6 +89,7 @@ import {
   CalendarDays,
   CornerDownRight,
   Zap,
+  FileText,
 } from "lucide-react";
 import {
   Card,
@@ -1076,6 +1078,11 @@ export default function Leads() {
   const { data: buildingsForEdit = [] } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/clients", selectedClientIdForBuildingEdit, "all-buildings"],
     enabled: !!selectedClientIdForBuildingEdit,
+  });
+
+  const { data: allEstimates = [] } = useQuery<Estimate[]>({
+    queryKey: ["/api/estimates"],
+    staleTime: 60000,
   });
 
   const sensors = useSensors(
@@ -3507,6 +3514,25 @@ export default function Leads() {
                             </div>
                           </div>
                         )}
+                        {(() => {
+                          const linkedEstimates = allEstimates.filter(e => (e as any).leadId === selectedLead.id);
+                          if (linkedEstimates.length === 0) return null;
+                          return (
+                            <div className="space-y-1 col-span-2">
+                              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                <FileText className="h-3 w-3" /> CRM Estimates
+                              </p>
+                              <div className="flex flex-col gap-1">
+                                {linkedEstimates.map(e => (
+                                  <Link key={e.id} href={`/estimates/${e.id}`} className="flex items-center justify-between rounded border px-2 py-1 hover:bg-muted/40 transition-colors text-xs" data-testid={`link-estimate-${e.id}`}>
+                                    <span className="font-medium text-primary truncate mr-2">{e.title}</span>
+                                    <span className="shrink-0 font-mono text-muted-foreground">${parseFloat(e.total as string || "0").toLocaleString()}</span>
+                                  </Link>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="space-y-2">

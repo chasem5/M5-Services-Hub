@@ -3177,6 +3177,123 @@ Respond with this JSON:
     } catch {}
   }, 15 * 60 * 1000);
 
+  // ── BuildOps 4-hour auto-sync (jobs, invoices, agreements) ───────────────
+  async function performBuildOpsAutoSync(): Promise<void> {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) { console.log("[BuildOps auto-sync] No credentials configured, skipping"); return; }
+
+      const { getJobs, getInvoices, getAllServiceAgreements } = await import("./buildops");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { buildopsJobs, buildopsInvoices, buildopsAgreements } = await import("@shared/schema");
+
+      const allClients = await storage.listClients();
+      const clientByBuildopsId = new Map(allClients.filter(c => c.buildopsId).map(c => [c.buildopsId!, c]));
+
+      const parseDate = (d?: any): Date | null => {
+        if (d === null || d === undefined || d === "") return null;
+        const n = typeof d === "number" ? d : (/^\d{9,11}$/.test(String(d)) ? Number(d) : null);
+        if (n !== null) return new Date(n > 9e8 && n < 4e9 ? n * 1000 : n);
+        const s = String(d);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, m, day] = s.split("-").map(Number); return new Date(y, m - 1, day); }
+        const parsed = new Date(s);
+        return isNaN(parsed.getTime()) ? null : parsed;
+      };
+
+      // Sync jobs
+      try {
+        const jobs = await getJobs(creds.clientId, creds.clientSecret, creds.tenantId);
+        let created = 0, updated = 0;
+        for (const job of jobs) {
+          if (!job.id) continue;
+          const matchedClient = job.customerId ? clientByBuildopsId.get(job.customerId) : null;
+          const rawJob = job as any;
+          const visitsScheduled = Array.isArray(rawJob.visits) && rawJob.visits.length > 0
+            ? (rawJob.visits[0].scheduledDate ?? rawJob.visits[0].scheduledStart ?? rawJob.visits[0].start ?? null) : null;
+          const scheduledDateRaw = job.scheduledDate ?? job.scheduledStart ?? rawJob.scheduledStartDate ?? rawJob.firstVisitDate ?? visitsScheduled ?? null;
+          const isSAJob = !!(job.serviceAgreementId) || /SA/i.test(job.jobNumber ?? "");
+          const payload = {
+            buildopsId: job.id, clientId: matchedClient?.id ?? null, jobNumber: job.jobNumber ?? null,
+            title: job.title ?? null, issueDescription: job.issueDescription ?? null, status: job.status ?? null,
+            priority: job.priority ?? null, jobTypeName: job.jobTypeName ?? null, billingType: job.billingType ?? rawJob.billingTypeName ?? null,
+            customerName: job.customerName ?? null, customerPropertyName: job.customerPropertyName ?? null,
+            amountQuoted: job.amountQuoted != null ? String(job.amountQuoted) : null,
+            totalAmount: job.totalAmount != null ? String(job.totalAmount) : null,
+            costAmount: job.costAmount != null ? String(job.costAmount) : null,
+            laborCost: job.laborCost != null ? String(job.laborCost) : null,
+            materialCost: job.materialCost != null ? String(job.materialCost) : null,
+            grossProfit: job.grossProfit != null ? String(job.grossProfit) : null,
+            billingStatus: job.billingStatus ?? null, isServiceAgreementJob: isSAJob,
+            scheduledDate: parseDate(scheduledDateRaw), dueDate: parseDate(job.dueDate),
+            completedDate: parseDate(job.completedDate), buildopsCustomerId: job.customerId ?? null,
+            buildopsPropertyId: job.customerPropertyId ?? null, buildopsQuoteId: job.quoteId ?? null,
+            buildopsServiceAgreementId: job.serviceAgreementId ?? null, syncedAt: new Date(),
+          };
+          const [existing] = await db.select().from(buildopsJobs).where(eq(buildopsJobs.buildopsId, job.id));
+          if (existing) { await db.update(buildopsJobs).set(payload).where(eq(buildopsJobs.buildopsId, job.id)); updated++; }
+          else { await db.insert(buildopsJobs).values(payload); created++; }
+        }
+        console.log(`[BuildOps auto-sync] Jobs: ${created} created, ${updated} updated of ${jobs.length}`);
+      } catch (e: any) { console.error("[BuildOps auto-sync] Jobs error:", e.message); }
+
+      // Sync invoices
+      try {
+        const invoices = await getInvoices(creds.clientId, creds.clientSecret, creds.tenantId);
+        let created = 0, updated = 0;
+        for (const inv of invoices) {
+          if (!inv.id) continue;
+          const matchedClient = inv.customerId ? clientByBuildopsId.get(inv.customerId) : null;
+          const payload = {
+            buildopsId: inv.id, clientId: matchedClient?.id ?? null, invoiceNumber: inv.invoiceNumber ?? null,
+            status: inv.status ?? null, totalAmount: inv.totalAmount != null ? String(inv.totalAmount) : null,
+            subtotal: null as string | null, taxAmount: null as string | null,
+            customerName: inv.customerName ?? null, jobNumber: inv.jobNumber ?? null,
+            isFinalInvoice: false, issuedDate: parseDate(inv.issuedDate ?? inv.createdAt),
+            dueDate: parseDate(inv.dueDate), closedDate: parseDate(inv.closedDate ?? inv.completedDate ?? null),
+            buildopsCustomerId: inv.customerId ?? null, buildopsJobId: inv.jobId ?? null, syncedAt: new Date(),
+          };
+          const [existing] = await db.select().from(buildopsInvoices).where(eq(buildopsInvoices.buildopsId, inv.id));
+          if (existing) { await db.update(buildopsInvoices).set(payload).where(eq(buildopsInvoices.buildopsId, inv.id)); updated++; }
+          else { await db.insert(buildopsInvoices).values(payload); created++; }
+        }
+        console.log(`[BuildOps auto-sync] Invoices: ${created} created, ${updated} updated of ${invoices.length}`);
+      } catch (e: any) { console.error("[BuildOps auto-sync] Invoices error:", e.message); }
+
+      // Sync service agreements
+      try {
+        const agreements = await getAllServiceAgreements(creds.clientId, creds.clientSecret, creds.tenantId);
+        let created = 0, updated = 0;
+        for (const agr of agreements) {
+          if (!agr.id) continue;
+          const matchedClient = agr.customerId ? clientByBuildopsId.get(agr.customerId) : null;
+          const payload = {
+            buildopsId: agr.id, clientId: matchedClient?.id ?? null,
+            agreementName: agr.agreementName ?? agr.name ?? null,
+            agreementNumber: agr.agreementNumber != null ? String(agr.agreementNumber) : null,
+            customerName: matchedClient?.name ?? null, status: agr.status ?? null,
+            contractValue: agr.contractValue != null ? String(agr.contractValue) : (agr.totalAmount != null ? String(agr.totalAmount) : null),
+            frequency: agr.frequency ?? null, startDate: parseDate(agr.startDate), endDate: parseDate(agr.endDate),
+            advancedSchedulingState: agr.advancedSchedulingState ?? null, buildopsCustomerId: agr.customerId ?? null,
+            syncedAt: new Date(),
+          };
+          const [existing] = await db.select().from(buildopsAgreements).where(eq(buildopsAgreements.buildopsId, agr.id));
+          if (existing) { await db.update(buildopsAgreements).set(payload).where(eq(buildopsAgreements.buildopsId, agr.id)); updated++; }
+          else { await db.insert(buildopsAgreements).values(payload); created++; }
+        }
+        console.log(`[BuildOps auto-sync] Agreements: ${created} created, ${updated} updated of ${agreements.length}`);
+      } catch (e: any) { console.error("[BuildOps auto-sync] Agreements error:", e.message); }
+
+      await storage.createBuildopsSyncLog({ entityType: "all", action: "pull", message: `Auto-sync completed at ${new Date().toISOString()}` });
+      console.log("[BuildOps auto-sync] Complete");
+    } catch (err: any) {
+      console.error("[BuildOps auto-sync] Fatal error:", err.message);
+    }
+  }
+
+  // Run auto-sync every 4 hours
+  setInterval(performBuildOpsAutoSync, 4 * 60 * 60 * 1000);
+
   app.get("/api/email-messages", isAuthenticated, async (req, res) => {
     const userId = (req as any).user?.claims?.sub;
     const clientId = req.query.clientId ? parseInt(req.query.clientId as string) : undefined;
@@ -3956,6 +4073,10 @@ Respond with this JSON:
           await logActivity(req, "lead", targetLead.id, "stage_updated", { from: targetLead.stage, to: "proposal_sent", reason: "Auto-advanced on first estimate push to BuildOps" });
         }
         await storage.updateLead(targetLead.id, quoteMetadata);
+        // Bidirectional: set estimate.leadId so the estimate shows up on the lead detail
+        if (!estimate.leadId) {
+          await storage.updateEstimate(estimateId, { leadId: targetLead.id });
+        }
       }
 
       res.json({ ok: true, buildopsQuoteId: quote.id, quoteNumber: quote.quoteNumber });
@@ -4943,7 +5064,7 @@ Respond with this JSON:
       if (!creds) return res.status(400).json({ message: "BuildOps not configured" });
       const { getQuotes, mapBuildOpsStatusToStage } = await import("./buildops");
       const { db } = await import("./db");
-      const { eq } = await import("drizzle-orm");
+      const { eq, isNotNull } = await import("drizzle-orm");
       const { leads: leadsTable, contactBuildings } = await import("@shared/schema");
 
       let allQuotes: any[] = [];
@@ -4966,6 +5087,8 @@ Respond with this JSON:
       const allClients = await storage.listClients();
       const allLeads = await db.select().from(leadsTable);
       const allBuildings = await db.select().from(contactBuildings);
+      const { estimates: estimatesTable } = await import("@shared/schema");
+      const allCrmEstimates = await db.select().from(estimatesTable).where(isNotNull(estimatesTable.buildopsQuoteId));
       let created = 0;
       let updated = 0;
       let matchedViaProperty = 0;
@@ -5014,6 +5137,7 @@ Respond with this JSON:
 
         const existingLead = allLeads.find((l: any) => l.buildopsQuoteId === quote.id);
 
+        let upsertedLeadId: number | null = null;
         if (existingLead) {
           const updateFields: any = {
             buildopsQuoteStatus: status,
@@ -5045,6 +5169,7 @@ Respond with this JSON:
           }
           await db.update(leadsTable).set(updateFields).where(eq(leadsTable.id, existingLead.id));
           updated++;
+          upsertedLeadId = existingLead.id;
 
           // Auto-create follow-up task when a lead transitions into "expired"
           if (existingLead.stage !== "expired" && mappedStage === "expired") {
@@ -5089,6 +5214,7 @@ Respond with this JSON:
           }).returning();
           await storage.createBuildopsSyncLog({ entityType: "lead", entityId: newLead.id, buildopsId: quote.id, action: "pull", message: `Imported BuildOps quote #${quote.quoteNumber ?? quote.id}` });
           created++;
+          upsertedLeadId = newLead.id;
 
           // Auto-create follow-up task when a brand-new lead is already expired
           if (mappedStage === "expired" && newLead.clientId) {
@@ -5104,6 +5230,14 @@ Respond with this JSON:
               relatedLeadId: newLead.id,
               dueDate: tomorrow,
             });
+          }
+        }
+
+        // Auto-link: if a CRM estimate has this buildopsQuoteId but no leadId set, link it
+        if (upsertedLeadId) {
+          const matchingEstimate = allCrmEstimates.find((e: any) => e.buildopsQuoteId === quote.id && !e.leadId);
+          if (matchingEstimate) {
+            await db.update(estimatesTable).set({ leadId: upsertedLeadId }).where(eq(estimatesTable.id, matchingEstimate.id));
           }
         }
       }
@@ -6094,6 +6228,68 @@ Write a punchy, factual summary highlighting what's driving the health status. L
   app.get("/api/customer-intelligence", isAuthenticated, (req, res) => {
     const qs = new URLSearchParams(req.query as Record<string, string>).toString();
     res.redirect(307, `/api/reports/customer-intelligence${qs ? `?${qs}` : ""}`);
+  });
+
+  // ── Service Agreements list ─────────────────────────────────────────────────
+  app.get("/api/service-agreements", isAuthenticated, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql: sqlTag } = await import("drizzle-orm");
+
+      const rows = await db.execute(sqlTag`
+        SELECT
+          a.id,
+          a.buildops_id,
+          a.agreement_name,
+          a.agreement_number,
+          a.customer_name,
+          a.status,
+          a.frequency,
+          a.start_date,
+          a.end_date,
+          a.contract_value,
+          a.client_id,
+          COUNT(DISTINCT j.id)::int AS job_count,
+          COALESCE(SUM(i.total_amount), 0) AS total_invoiced
+        FROM buildops_agreements a
+        LEFT JOIN buildops_jobs j ON j.buildops_service_agreement_id = a.buildops_id
+        LEFT JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
+        GROUP BY a.id, a.buildops_id, a.agreement_name, a.agreement_number,
+                 a.customer_name, a.status, a.frequency, a.start_date, a.end_date,
+                 a.contract_value, a.client_id
+        ORDER BY COALESCE(SUM(i.total_amount), 0) DESC
+      `);
+
+      const toRows = (r: any) => Array.isArray(r) ? r : r?.rows ?? [];
+      const agreements = toRows(rows).map((r: any) => ({
+        id: r.id as number,
+        buildopsId: r.buildops_id as string,
+        agreementName: r.agreement_name as string | null,
+        agreementNumber: r.agreement_number as string | null,
+        customerName: r.customer_name as string | null,
+        status: r.status as string | null,
+        frequency: r.frequency as string | null,
+        startDate: r.start_date ? new Date(r.start_date).toISOString() : null,
+        endDate: r.end_date ? new Date(r.end_date).toISOString() : null,
+        contractValue: r.contract_value != null ? Number(r.contract_value) : null,
+        clientId: r.client_id as number | null,
+        jobCount: r.job_count as number,
+        totalInvoiced: r.total_invoiced != null ? Number(r.total_invoiced) : 0,
+      }));
+
+      const active = agreements.filter((a: any) => a.status?.toLowerCase() === "active");
+      const summary = {
+        total: agreements.length,
+        activeCount: active.length,
+        activeContractValue: active.reduce((s: number, a: any) => s + (a.contractValue ?? 0), 0),
+        totalInvoiced: agreements.reduce((s: number, a: any) => s + (a.totalInvoiced ?? 0), 0),
+      };
+
+      res.json({ agreements, summary });
+    } catch (err: any) {
+      console.error("[service-agreements]", err.message);
+      res.status(500).json({ message: err.message });
+    }
   });
 
   return httpServer;

@@ -9,6 +9,7 @@ import {
   Mail,
   Megaphone,
   HeartPulse,
+  ClipboardList,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -148,6 +149,19 @@ export function AppSidebar() {
                   <Link href="/reports/customer-intelligence" data-testid="link-customer-intelligence" onClick={() => isMobile && setOpenMobile(false)}>
                     <HeartPulse className={location === "/reports/customer-intelligence" ? "text-primary" : ""} />
                     <span className="group-data-[collapsible=icon]:hidden">Customer Intel</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location === "/service-agreements"}
+                  tooltip="Service Agreements"
+                  className={location === "/service-agreements" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                >
+                  <Link href="/service-agreements" data-testid="link-service-agreements" onClick={() => isMobile && setOpenMobile(false)}>
+                    <ClipboardList className={location === "/service-agreements" ? "text-primary" : ""} />
+                    <span className="group-data-[collapsible=icon]:hidden">Service Agreements</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

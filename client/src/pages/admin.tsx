@@ -543,6 +543,8 @@ function BuildOpsPanel() {
                 </div>
               )}
             </div>
+            {/* Push to BuildOps hidden until production-ready */}
+            {false && (
             <div className="border rounded-lg p-4 space-y-2">
               <h4 className="text-sm font-medium flex items-center gap-2">
                 <Upload className="h-4 w-4 text-primary" />
@@ -561,6 +563,7 @@ function BuildOpsPanel() {
                 {pushAllMutation.isPending ? "Pushing..." : "Push Customers"}
               </Button>
             </div>
+            )}
             <div className="border rounded-lg p-4 space-y-2">
               <h4 className="text-sm font-medium flex items-center gap-2">
                 <Briefcase className="h-4 w-4 text-primary" />

@@ -2907,47 +2907,69 @@ export default function ClientDetail() {
             <Card className="border-none shadow-sm bg-card">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle>Estimates</CardTitle>
-                  <CardDescription>Job estimates and cost breakdowns</CardDescription>
+                  <CardTitle>Quotes &amp; Estimates</CardTitle>
+                  <CardDescription>CRM estimates and BuildOps quotes for this client</CardDescription>
                 </div>
               </CardHeader>
               <CardContent>
-                {estimates && estimates.length > 0 ? (
-                  <div className="rounded-md border overflow-x-auto">
-                    <Table className="min-w-[500px]">
-                      <TableHeader className="bg-muted/50">
-                        <TableRow>
-                          <TableHead className="font-bold">Estimate Title</TableHead>
-                          <TableHead className="font-bold">Status</TableHead>
-                          <TableHead className="font-bold text-right">Total</TableHead>
-                          <TableHead className="font-bold">Date</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {estimates.map((estimate) => (
-                          <TableRow key={estimate.id} className="cursor-pointer hover:bg-muted/30" onClick={() => setLocation(`/estimates/${estimate.id}`)}>
-                            <TableCell className="font-medium text-primary underline underline-offset-4">{estimate.title}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="capitalize">{estimate.status}</Badge>
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-bold">
-                              ${parseFloat(estimate.total as string).toLocaleString()}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground text-sm">
-                              {format(new Date(estimate.createdAt), "MMM d, yyyy")}
-                            </TableCell>
+                {(() => {
+                  const crmRows = (estimates ?? []).map(e => ({
+                    key: `crm-${e.id}`, title: e.title, status: e.status,
+                    value: parseFloat(e.total as string || "0"), date: e.createdAt,
+                    source: "CRM" as const, onClick: () => setLocation(`/estimates/${e.id}`),
+                  }));
+                  const boRows = (leads ?? [])
+                    .filter(l => l.buildopsQuoteId)
+                    .map(l => ({
+                      key: `bo-${l.id}`, title: l.title, status: l.stage,
+                      value: parseFloat(l.value as string || "0"), date: l.createdAt,
+                      source: "BuildOps" as const, onClick: () => setLocation(`/leads`),
+                    }));
+                  const allRows = [...crmRows, ...boRows].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                  if (allRows.length === 0) return (
+                    <div className="text-center py-12 bg-muted/20 rounded-lg">
+                      <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
+                      <h3 className="text-lg font-semibold">No estimates found</h3>
+                      <p className="text-muted-foreground">No estimates or BuildOps quotes for this client yet.</p>
+                    </div>
+                  );
+                  return (
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table className="min-w-[560px]">
+                        <TableHeader className="bg-muted/50">
+                          <TableRow>
+                            <TableHead className="font-bold">Title</TableHead>
+                            <TableHead className="font-bold">Source</TableHead>
+                            <TableHead className="font-bold">Status</TableHead>
+                            <TableHead className="font-bold text-right">Value</TableHead>
+                            <TableHead className="font-bold">Date</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ) : (
-                  <div className="text-center py-12 bg-muted/20 rounded-lg">
-                    <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
-                    <h3 className="text-lg font-semibold">No estimates found</h3>
-                    <p className="text-muted-foreground">No estimates have been created for this client yet.</p>
-                  </div>
-                )}
+                        </TableHeader>
+                        <TableBody>
+                          {allRows.map(row => (
+                            <TableRow key={row.key} className="cursor-pointer hover:bg-muted/30" onClick={row.onClick}>
+                              <TableCell className="font-medium text-primary underline underline-offset-4">{row.title}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={`text-[10px] font-semibold ${row.source === "BuildOps" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-muted text-muted-foreground"}`}>
+                                  {row.source}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="capitalize">{row.status}</Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-bold">
+                                {row.value > 0 ? `$${row.value.toLocaleString()}` : "—"}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-sm">
+                                {format(new Date(row.date), "MMM d, yyyy")}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
           </TabsContent>
