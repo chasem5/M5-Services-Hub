@@ -7341,6 +7341,11 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const clientId = clientIdParam === "null" ? null
         : clientIdParam ? Number(clientIdParam)
         : undefined;
+      // Scoped authorization: if a specific clientId is requested, verify it exists
+      if (typeof clientId === "number") {
+        const client = await storage.getClient(clientId);
+        if (!client) return res.status(403).json({ message: "Access denied" });
+      }
       const plans = await storage.listActionPlans({ type, clientId, includeCompleted });
       res.json(plans);
     } catch (err: any) {
@@ -7352,6 +7357,11 @@ Write a punchy, factual summary highlighting what's driving the health status. L
   app.post("/api/action-plans", isAuthenticated, async (req, res) => {
     try {
       const data = insertActionPlanSchema.parse(req.body);
+      // Scoped authorization: if clientId is provided, verify it exists
+      if (data.clientId) {
+        const client = await storage.getClient(data.clientId);
+        if (!client) return res.status(403).json({ message: "Access denied" });
+      }
       const plan = await storage.createActionPlan(data);
       res.status(201).json(plan);
     } catch (err: any) {
@@ -7359,7 +7369,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
     }
   });
 
-  // POST /api/action-plans/generate — AI-generate action plan items with real metrics
+  // POST /api/action-plans/generate — AI-generate action plan items using full intelligence signals
   app.post("/api/action-plans/generate", isAuthenticated, async (req, res) => {
     try {
       const { type, clientId } = z.object({
@@ -7367,15 +7377,24 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         clientId: z.number().optional().nullable(),
       }).parse(req.body);
 
+      // Authorization: if clientId provided, verify client exists
+      if (clientId) {
+        const clientExists = await storage.getClient(clientId);
+        if (!clientExists) return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { db: dbGen } = await import("./db");
+      const { sql: sqlGen } = await import("drizzle-orm");
+      const toRowsGen = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
+
       let contextBlock = "";
 
       if (type === "customer" && clientId) {
-        // Pull real customer signals from DB
-        const [client, leads] = await Promise.all([
+        const [client, allLeads] = await Promise.all([
           storage.getClient(clientId),
           storage.listLeads(),
         ]);
-        const clientLeads = leads.filter(l => l.clientId === clientId);
+        const clientLeads = allLeads.filter(l => l.clientId === clientId);
         const openLeads = clientLeads.filter(l => !["won", "lost", "canceled"].includes(l.stage ?? ""));
         const wonLeads = clientLeads.filter(l => l.stage === "won");
         const lostLeads = clientLeads.filter(l => l.stage === "lost");
@@ -7384,28 +7403,68 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           ? Math.round((wonLeads.length / (wonLeads.length + lostLeads.length)) * 100)
           : null;
 
-        // Fetch invoice and job data for this client
-        const { db: dbConn } = await import("./db");
-        const { buildopsInvoices: invTable, buildopsJobs: jobTable } = await import("@shared/schema");
-        const { eq: eqFn, desc: descFn } = await import("drizzle-orm");
-        const recentInvoices = await dbConn.select().from(invTable)
-          .where(eqFn(invTable.clientId, clientId)).orderBy(descFn(invTable.issuedDate)).limit(6);
-        const activeJobs = await dbConn.select().from(jobTable)
-          .where(eqFn(jobTable.clientId, clientId));
-        const totalJobCount = activeJobs.length;
-        const invoiceLtv = recentInvoices.reduce((s, i) => s + Number(i.totalAmount ?? 0), 0);
+        // Full intelligence signals — match intelligence endpoint logic
+        const now = new Date();
+        const last90Start = new Date(now.getTime() - 90 * 864e5).toISOString().split("T")[0];
+        const prior90Start = new Date(now.getTime() - 180 * 864e5).toISOString().split("T")[0];
+        const last6mStart = new Date(now.getFullYear(), now.getMonth() - 6, 1).toISOString().split("T")[0];
+        const last12mStart = new Date(now.getFullYear(), now.getMonth() - 12, 1).toISOString().split("T")[0];
+        const monthRows = await dbGen.execute(sqlGen`
+          SELECT to_char(issued_date,'YYYY-MM') AS month, SUM(total_amount)::float AS total
+          FROM buildops_invoices WHERE client_id = ${clientId}
+          GROUP BY month ORDER BY month
+        `);
+        const monthlyAmounts: { month: string; total: number }[] = toRowsGen(monthRows).map((r: any) => ({
+          month: String(r.month),
+          total: Number(r.total ?? 0),
+        }));
+        const { invoiceTrend, last3Avg, prior3Avg } = computeInvoiceTrend(monthlyAmounts);
+        const ltv = monthlyAmounts.reduce((s, r) => s + r.total, 0);
+
+        const jobRows = await dbGen.execute(sqlGen`
+          SELECT
+            COUNT(*) FILTER (WHERE created_at >= ${last90Start}) AS last90,
+            COUNT(*) FILTER (WHERE created_at >= ${prior90Start} AND created_at < ${last90Start}) AS prior90,
+            COUNT(*) FILTER (WHERE created_at >= ${last6mStart}) AS last6m,
+            COUNT(*) FILTER (WHERE created_at >= ${last12mStart}) AS last12m,
+            MAX(created_at) AS last_job_date,
+            COUNT(*) AS total
+          FROM buildops_jobs WHERE client_id = ${clientId}
+        `);
+        const jr = toRowsGen(jobRows)[0] as any ?? {};
+        const velocityDirection = computeVelocityDirection(Number(jr.last90 ?? 0), Number(jr.prior90 ?? 0));
+        const jobsLast6m = Number(jr.last6m ?? -1);
+        const jobsLast12m = Number(jr.last12m ?? -1);
+        const totalJobs = Number(jr.total ?? 0);
+        const lastJobDate = jr.last_job_date ? new Date(jr.last_job_date).toLocaleDateString() : "unknown";
+
+        const saRows = await dbGen.execute(sqlGen`
+          SELECT COUNT(*) AS cnt FROM buildops_service_agreements
+          WHERE client_id = ${clientId} AND status = 'active'
+        `);
+        const hasActiveSA = Number((toRowsGen(saRows)[0] as any)?.cnt ?? 0) > 0;
+
+        const { healthScore, healthStatus } = computeHealthScoreV2(
+          velocityDirection, openLeads.length, hasActiveSA, ltv,
+          invoiceTrend, null, client?.healthOverride ?? null, jobsLast6m, jobsLast12m,
+        );
 
         contextBlock = [
           `Customer: ${client?.name ?? "Unknown"} (Tier: ${client?.tier ?? "unset"})`,
-          `Open deals: ${openLeads.length} (pipeline: $${openPipeline.toLocaleString()})`,
+          `Health: ${healthStatus} (score ${healthScore}/7)`,
+          `Invoice trend (last 3 months vs prior 3): ${invoiceTrend} — avg $${Math.round(last3Avg).toLocaleString()} vs $${Math.round(prior3Avg).toLocaleString()}`,
+          `Invoiced LTV: $${Math.round(ltv).toLocaleString()}`,
+          `Service agreement: ${hasActiveSA ? "Active" : "None/Expired"}`,
+          `Open deals: ${openLeads.length} (pipeline $${openPipeline.toLocaleString()})`,
           `Won: ${wonLeads.length}, Lost: ${lostLeads.length}${hitRate !== null ? `, Hit rate: ${hitRate}%` : ""}`,
-          `Total jobs in BuildOps: ${totalJobCount}`,
-          `Total invoiced (LTV): $${invoiceLtv.toLocaleString()}`,
-          client?.tier === "tier_1" ? "This is a Tier 1 (highest-value) customer — protect and grow." : "",
+          `BuildOps jobs: ${totalJobs} total, ${jobsLast6m} last 6m, last job: ${lastJobDate}`,
+          `Revenue velocity: ${velocityDirection}`,
+          client?.tier === "tier_1" ? "HIGH PRIORITY: Tier 1 account — protect and grow." : "",
+          healthStatus === "at_risk" ? "URGENT: Account is at risk — focus on re-engagement." : "",
+          invoiceTrend === "declining" ? "CONCERN: Invoice revenue declining — investigate root cause." : "",
         ].filter(Boolean).join("\n");
 
       } else if (type === "company") {
-        // Pull real company-wide signals
         const [allLeads, allClients] = await Promise.all([
           storage.listLeads(),
           storage.listClients(),
@@ -7418,28 +7477,46 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           ? Math.round((wonLeads.length / (wonLeads.length + lostLeads.length)) * 100)
           : null;
         const tier1Count = allClients.filter(c => c.tier === "tier_1").length;
+        const atRiskCount = allClients.filter(c => c.healthOverride === "at_risk").length;
+
+        // Revenue trend across all clients
+        const revRows = await dbGen.execute(sqlGen`
+          SELECT to_char(issued_date,'YYYY-MM') AS month, SUM(total_amount)::float AS total
+          FROM buildops_invoices
+          GROUP BY month ORDER BY month DESC LIMIT 6
+        `);
+        const revMonths = toRowsGen(revRows) as any[];
+        const revenueLines = revMonths.slice(0, 3).map((r: any) => `${r.month}: $${Math.round(Number(r.total ?? 0)).toLocaleString()}`).join(", ");
+
+        const saRows = await dbGen.execute(sqlGen`
+          SELECT COUNT(*) AS active FROM buildops_service_agreements WHERE status = 'active'
+        `);
+        const activeSACount = Number((toRowsGen(saRows)[0] as any)?.active ?? 0);
 
         contextBlock = [
-          `Company: M5 Services (facility maintenance)`,
-          `Total customers: ${allClients.length} (Tier 1: ${tier1Count})`,
+          `Company: M5 Services (facility maintenance CRM)`,
+          `Total customers: ${allClients.length} (Tier 1: ${tier1Count}, At-Risk: ${atRiskCount})`,
+          `Active service agreements: ${activeSACount}`,
           `Open deals: ${openLeads.length}, total pipeline: $${totalPipeline.toLocaleString()}`,
           `Won: ${wonLeads.length}, Lost: ${lostLeads.length}${hitRate !== null ? `, Company hit rate: ${hitRate}%` : ""}`,
-          "Focus on growing Tier 1 retention, converting open pipeline, and reducing customer churn.",
+          revenueLines ? `Recent monthly revenue: ${revenueLines}` : "",
+          atRiskCount > 0 ? `URGENT: ${atRiskCount} at-risk accounts need immediate attention.` : "",
+          "Focus on Tier 1 retention, SA renewals, pipeline conversion, and at-risk re-engagement.",
         ].filter(Boolean).join("\n");
       }
 
       const systemPrompt = type === "customer"
-        ? `You are a CRM assistant for M5 Services (facility maintenance). Given the customer account data below, generate 3–5 specific, concrete, actionable next steps for the sales team to grow or protect this relationship. Be specific to the customer's situation. Return ONLY a JSON object: {"items": [{title, description, priority}]} where priority is "high"|"medium"|"low".`
-        : `You are a CRM assistant for M5 Services (facility maintenance). Given the company-wide data below, generate 3–5 specific, actionable business development and retention action items for the leadership team. Return ONLY a JSON object: {"items": [{title, description, priority}]} where priority is "high"|"medium"|"low".`;
+        ? `You are a senior account manager at M5 Services (facility maintenance). Using the intelligence data below, generate exactly 3–5 specific, concrete, actionable account management tasks. Each task must reference actual data points (dollar amounts, health status, trend direction, etc). Do not give generic advice. Return ONLY valid JSON: {"items": [{"title": "...", "description": "...", "priority": "high"|"medium"|"low"}]}`
+        : `You are a VP of Sales at M5 Services (facility maintenance). Using the business intelligence data below, generate exactly 3–5 specific, concrete, actionable company-wide initiatives for the sales team. Each must reference actual metrics. Return ONLY valid JSON: {"items": [{"title": "...", "description": "...", "priority": "high"|"medium"|"low"}]}`;
 
       const aiRes = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: contextBlock },
+          { role: "user", content: contextBlock || "Generate action plan items." },
         ],
         response_format: { type: "json_object" },
-        max_tokens: 700,
+        max_tokens: 800,
       });
 
       const raw = aiRes.choices[0]?.message?.content ?? "{}";
@@ -7447,7 +7524,9 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       try {
         const parsed = JSON.parse(raw);
         suggestions = Array.isArray(parsed) ? parsed
-          : (parsed.items ?? parsed.action_plans ?? parsed.plans ?? Object.values(parsed).find(Array.isArray) ?? []);
+          : (parsed.items ?? parsed.action_plans ?? parsed.plans
+             ?? (Object.values(parsed).find(v => Array.isArray(v)) as any[] | undefined)
+             ?? []);
       } catch {
         suggestions = [];
       }
@@ -7477,6 +7556,12 @@ Write a punchy, factual summary highlighting what's driving the health status. L
   app.patch("/api/action-plans/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const existing = await storage.getActionPlan(id);
+      if (!existing) return res.status(404).json({ message: "Not found" });
+      if (existing.clientId) {
+        const client = await storage.getClient(existing.clientId);
+        if (!client) return res.status(403).json({ message: "Access denied" });
+      }
       const data = insertActionPlanSchema.partial().parse(req.body);
       const plan = await storage.updateActionPlan(id, data);
       res.json(plan);
@@ -7489,6 +7574,12 @@ Write a punchy, factual summary highlighting what's driving the health status. L
   app.delete("/api/action-plans/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const existing = await storage.getActionPlan(id);
+      if (!existing) return res.status(404).json({ message: "Not found" });
+      if (existing.clientId) {
+        const client = await storage.getClient(existing.clientId);
+        if (!client) return res.status(403).json({ message: "Access denied" });
+      }
       await storage.deleteActionPlan(id);
       res.sendStatus(204);
     } catch (err: any) {

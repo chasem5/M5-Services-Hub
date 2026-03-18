@@ -87,6 +87,19 @@ export function ActionPlanPanel({ type, clientId, className }: ActionPlanPanelPr
     },
   });
 
+  // Always fetch the full set to know if completed/dismissed items exist for toggle
+  const allParams = new URLSearchParams({ type, includeCompleted: "true" });
+  if (clientId != null) allParams.set("clientId", String(clientId));
+  const { data: allPlans = [] } = useQuery<ActionPlan[]>({
+    queryKey: [...qKey(type, clientId), "all"],
+    queryFn: async () => {
+      const res = await fetch(`/api/action-plans?${allParams}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load action plans");
+      return res.json();
+    },
+  });
+  const completedCount = allPlans.filter(p => p.status !== "open").length;
+
   // Auto-generate on first load if no plans exist (run once per mount)
   useEffect(() => {
     if (!isLoading && plans.length === 0 && !autoGenTriggered.current && !generating) {
@@ -98,6 +111,7 @@ export function ActionPlanPanel({ type, clientId, className }: ActionPlanPanelPr
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: qKey(type, clientId) });
+    queryClient.invalidateQueries({ queryKey: [...qKey(type, clientId), "all"] });
   };
 
   const createMutation = useMutation({
@@ -247,14 +261,14 @@ export function ActionPlanPanel({ type, clientId, className }: ActionPlanPanelPr
         </div>
       )}
 
-      {(doneItems.length > 0 || dismissedItems.length > 0) && (
+      {(completedCount > 0 || showCompleted) && (
         <button
           className="mt-3 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
           onClick={() => setShowCompleted(v => !v)}
           data-testid="btn-toggle-completed"
         >
           {showCompleted ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          {showCompleted ? "Hide" : "Show"} completed / dismissed ({doneItems.length + dismissedItems.length})
+          {showCompleted ? "Hide" : "Show"} completed / dismissed ({completedCount})
         </button>
       )}
 

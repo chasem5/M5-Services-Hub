@@ -3098,7 +3098,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
     if (!filters?.includeCompleted) {
-      conditions.push(sql`${actionPlans.status} != 'dismissed'`);
+      conditions.push(eq(actionPlans.status, "open"));
     }
     if (conditions.length > 0) {
       return db.select().from(actionPlans).where(and(...conditions)).orderBy(desc(actionPlans.createdAt));

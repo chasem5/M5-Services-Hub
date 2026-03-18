@@ -10,19 +10,19 @@ import CohortAnalysis from "./cohort-analysis";
 import ServiceAgreements from "./service-agreements";
 
 const TABS = [
+  { value: "action-plan", label: "Action Plan" },
   { value: "revenue", label: "Revenue" },
   { value: "win-loss", label: "Win / Loss" },
   { value: "monthly", label: "Monthly Report" },
   { value: "cohort", label: "Cohort Analysis" },
   { value: "agreements", label: "Service Agreements" },
-  { value: "action-plan", label: "Action Plan" },
 ];
 
 const TAB_VALUES = TABS.map(t => t.value);
 
 function getInitialTab(): string {
   const hash = window.location.hash.replace("#", "");
-  return TAB_VALUES.includes(hash) ? hash : "revenue";
+  return TAB_VALUES.includes(hash) ? hash : "action-plan";
 }
 
 export default function CompanyIntelligence() {
@@ -31,7 +31,7 @@ export default function CompanyIntelligence() {
   useEffect(() => {
     function onHashChange() {
       const hash = window.location.hash.replace("#", "");
-      const tab = TAB_VALUES.includes(hash) ? hash : "revenue";
+      const tab = TAB_VALUES.includes(hash) ? hash : "action-plan";
       setActiveTab(tab);
     }
     window.addEventListener("hashchange", onHashChange);
