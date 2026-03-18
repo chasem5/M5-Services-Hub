@@ -607,6 +607,7 @@ const SERVICE_NEEDS = [
 
 interface EmailMsg {
   id: number;
+  gmailThreadId: string;
   direction: string;
   fromEmail: string;
   fromName: string | null;
@@ -617,10 +618,47 @@ interface EmailMsg {
   requiresResponse: boolean;
   receivedAt: string;
   fullBody: string | null;
+  isDismissed: boolean;
+}
+
+interface EmailThread {
+  threadId: string;
+  messages: EmailMsg[];
+  latestMessage: EmailMsg;
+}
+
+function groupEmailsIntoThreads(emails: EmailMsg[]): EmailThread[] {
+  const map = new Map<string, EmailMsg[]>();
+  for (const msg of emails) {
+    const tid = msg.gmailThreadId || `single-${msg.id}`;
+    if (!map.has(tid)) map.set(tid, []);
+    map.get(tid)!.push(msg);
+  }
+  const threads: EmailThread[] = [];
+  for (const [threadId, msgs] of map) {
+    const sorted = [...msgs].sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+    threads.push({ threadId, messages: sorted, latestMessage: sorted[0] });
+  }
+  return threads.sort((a, b) => new Date(b.latestMessage.receivedAt).getTime() - new Date(a.latestMessage.receivedAt).getTime());
+}
+
+function threadSentimentColor(sentiment: string | null) {
+  if (sentiment === "urgent" || sentiment === "negative") return "text-red-600 bg-red-50 border-red-200";
+  if (sentiment === "positive") return "text-green-700 bg-green-50 border-green-200";
+  return "text-gray-500 bg-gray-50 border-gray-200";
+}
+
+function threadDirectionLabel(messages: EmailMsg[]) {
+  const hasIn = messages.some(m => m.direction === "inbound");
+  const hasOut = messages.some(m => m.direction === "outbound");
+  if (hasIn && hasOut) return { label: "Both", cls: "text-purple-700 bg-purple-50 border-purple-200" };
+  if (hasIn) return { label: "Inbound", cls: "text-blue-700 bg-blue-50 border-blue-200" };
+  return { label: "Outbound", cls: "text-gray-600 bg-gray-50 border-gray-200" };
 }
 
 function ClientEmailsTab({ clientId }: { clientId: number }) {
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedThreadId, setExpandedThreadId] = useState<string | null>(null);
+  const [expandedMsgId, setExpandedMsgId] = useState<number | null>(null);
   const { data: emails = [], isLoading } = useQuery<EmailMsg[]>({
     queryKey: ["/api/email-messages", clientId],
     queryFn: () => fetch(`/api/email-messages?clientId=${clientId}`, { credentials: "include" }).then(r => r.json()),
@@ -640,57 +678,109 @@ function ClientEmailsTab({ clientId }: { clientId: number }) {
     );
   }
 
+  const threads = groupEmailsIntoThreads(emails.filter(e => !e.isDismissed));
+  const dismissedCount = groupEmailsIntoThreads(emails).length - threads.length;
+
   return (
     <div className="space-y-3">
-      {emails.map((email) => {
-        const sentimentColor = email.aiSentiment === "urgent" || email.aiSentiment === "negative" ? "text-red-600 bg-red-50 border-red-200" : email.aiSentiment === "positive" ? "text-green-700 bg-green-50 border-green-200" : "text-gray-500 bg-gray-50 border-gray-200";
+      {threads.length === 0 && (
+        <div className="flex flex-col items-center justify-center h-24 text-center text-gray-400">
+          <p className="text-sm">All email threads have been dismissed.</p>
+        </div>
+      )}
+      {threads.map((thread) => {
+        const latest = thread.latestMessage;
+        const isExpanded = expandedThreadId === thread.threadId;
+        const dir = threadDirectionLabel(thread.messages);
+        const sentimentCls = threadSentimentColor(latest.aiSentiment);
+        const participants = Array.from(new Set(
+          thread.messages.map(m => m.fromName ?? m.fromEmail.split("@")[0])
+        )).join(", ");
+
         return (
-          <div key={email.id} className="border border-gray-200 rounded-lg bg-white shadow-sm overflow-hidden" data-testid={`email-item-${email.id}`}>
-            <div className="px-4 py-3 flex items-start justify-between gap-3">
+          <div key={thread.threadId} className="border border-gray-200 rounded-lg bg-white shadow-sm overflow-hidden" data-testid={`email-thread-${thread.threadId}`}>
+            <button
+              className="w-full px-4 py-3 flex items-start justify-between gap-3 text-left hover:bg-gray-50 transition-colors"
+              onClick={() => setExpandedThreadId(isExpanded ? null : thread.threadId)}
+              data-testid={`button-expand-thread-${thread.threadId}`}
+            >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className={`inline-flex items-center gap-1 text-xs font-medium border rounded px-1.5 py-0.5 ${email.direction === "inbound" ? "text-blue-700 bg-blue-50 border-blue-200" : "text-gray-600 bg-gray-50 border-gray-200"}`}>
-                    {email.direction === "inbound" ? "Inbound" : "Outbound"}
-                  </span>
-                  {email.aiSentiment && (
-                    <span className={`inline-flex items-center text-xs border rounded px-1.5 py-0.5 ${sentimentColor}`}>
-                      {email.aiSentiment.charAt(0).toUpperCase() + email.aiSentiment.slice(1)}
+                  <span className={`inline-flex items-center text-xs font-medium border rounded px-1.5 py-0.5 ${dir.cls}`}>{dir.label}</span>
+                  {thread.messages.length > 1 && (
+                    <span className="inline-flex items-center text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                      {thread.messages.length} msgs
                     </span>
                   )}
-                  {email.requiresResponse && (
+                  {latest.aiSentiment && (
+                    <span className={`inline-flex items-center text-xs border rounded px-1.5 py-0.5 ${sentimentCls}`}>
+                      {latest.aiSentiment.charAt(0).toUpperCase() + latest.aiSentiment.slice(1)}
+                    </span>
+                  )}
+                  {latest.requiresResponse && (
                     <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
                       <AlertCircle className="h-3 w-3" /> Needs Response
                     </span>
                   )}
                 </div>
-                <p className="font-semibold text-gray-900 text-sm truncate">{email.subject ?? "(no subject)"}</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {email.direction === "inbound" ? `From: ${email.fromName ?? email.fromEmail}` : `To: ${email.fromEmail}`}
-                  {" · "}{new Date(email.receivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                <p className="font-semibold text-gray-900 text-sm truncate">{latest.subject ?? "(no subject)"}</p>
+                <p className="text-xs text-gray-500 mt-0.5 truncate">
+                  {participants} · {formatDistanceToNow(new Date(latest.receivedAt), { addSuffix: true })}
                 </p>
-                {email.aiSummary && (
-                  <p className="text-xs text-gray-600 mt-2 leading-relaxed"><span className="font-medium">AI:</span> {email.aiSummary}</p>
-                )}
-                {(email.aiSuggestedTasks?.length ?? 0) > 0 && (
-                  <p className="text-xs text-primary mt-1 font-medium">{email.aiSuggestedTasks!.length} suggested task{email.aiSuggestedTasks!.length !== 1 ? "s" : ""}</p>
+                {latest.aiSummary && !isExpanded && (
+                  <p className="text-xs text-gray-600 mt-1.5 leading-relaxed line-clamp-2">
+                    <span className="font-medium">AI:</span> {latest.aiSummary}
+                  </p>
                 )}
               </div>
-              <button
-                className="text-gray-400 hover:text-gray-600 shrink-0 mt-0.5"
-                onClick={() => setExpandedId(expandedId === email.id ? null : email.id)}
-                data-testid={`button-expand-email-${email.id}`}
-              >
-                {expandedId === email.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              </button>
-            </div>
-            {expandedId === email.id && email.fullBody && (
-              <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
-                <pre className="text-xs text-gray-600 whitespace-pre-wrap font-sans leading-relaxed max-h-52 overflow-y-auto">{email.fullBody}</pre>
+              <div className="shrink-0 mt-0.5 text-gray-400">
+                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </div>
+            </button>
+
+            {isExpanded && (
+              <div className="border-t border-gray-100">
+                {[...thread.messages].reverse().map((msg, idx) => {
+                  const isMsgExpanded = expandedMsgId === msg.id;
+                  return (
+                    <div key={msg.id} className={`${idx > 0 ? "border-t border-gray-100" : ""}`}>
+                      <button
+                        className="w-full px-4 py-2.5 flex items-start justify-between gap-3 text-left hover:bg-gray-50 transition-colors"
+                        onClick={() => setExpandedMsgId(isMsgExpanded ? null : msg.id)}
+                        data-testid={`button-expand-msg-${msg.id}`}
+                      >
+                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                          <span className={`inline-flex items-center text-[10px] font-bold border rounded px-1 py-0.5 shrink-0 mt-0.5 ${msg.direction === "inbound" ? "text-blue-700 bg-blue-50 border-blue-200" : "text-gray-600 bg-gray-50 border-gray-200"}`}>
+                            {msg.direction === "inbound" ? "IN" : "OUT"}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-800">{msg.fromName ? `${msg.fromName}` : msg.fromEmail}</p>
+                            <p className="text-xs text-gray-400">{format(new Date(msg.receivedAt), "MMM d, yyyy h:mm a")}</p>
+                          </div>
+                        </div>
+                        {isMsgExpanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0 mt-1" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0 mt-1" />}
+                      </button>
+                      {isMsgExpanded && msg.fullBody && (
+                        <div className="px-4 pb-3 bg-gray-50">
+                          <pre className="text-xs text-gray-600 whitespace-pre-wrap font-sans leading-relaxed max-h-52 overflow-y-auto">{msg.fullBody}</pre>
+                        </div>
+                      )}
+                      {isMsgExpanded && msg.aiSummary && (
+                        <div className="px-4 pb-3 bg-gray-50">
+                          <p className="text-xs text-gray-600 leading-relaxed"><span className="font-medium">AI:</span> {msg.aiSummary}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         );
       })}
+      {dismissedCount > 0 && (
+        <p className="text-xs text-gray-400 text-center">{dismissedCount} dismissed thread{dismissedCount !== 1 ? "s" : ""} hidden</p>
+      )}
     </div>
   );
 }

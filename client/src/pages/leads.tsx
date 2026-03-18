@@ -437,6 +437,21 @@ function LeadActivityTab({ leadId }: { leadId: number }) {
   );
 }
 
+function groupLeadEmailsIntoThreads(emails: any[]): { threadId: string; messages: any[]; latest: any }[] {
+  const map = new Map<string, any[]>();
+  for (const msg of emails) {
+    const tid = msg.gmailThreadId || `single-${msg.id}`;
+    if (!map.has(tid)) map.set(tid, []);
+    map.get(tid)!.push(msg);
+  }
+  const threads: { threadId: string; messages: any[]; latest: any }[] = [];
+  for (const [threadId, msgs] of map) {
+    const sorted = [...msgs].sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+    threads.push({ threadId, messages: sorted, latest: sorted[0] });
+  }
+  return threads.sort((a, b) => new Date(b.latest.receivedAt).getTime() - new Date(a.latest.receivedAt).getTime());
+}
+
 function LeadLinkedEmails({ leadId }: { leadId: number }) {
   const { data: emails = [] } = useQuery<any[]>({
     queryKey: ["/api/leads", leadId, "emails"],
@@ -445,37 +460,54 @@ function LeadLinkedEmails({ leadId }: { leadId: number }) {
 
   if (emails.length === 0) return null;
 
+  const threads = groupLeadEmailsIntoThreads(emails.filter((e: any) => !e.isDismissed));
+
+  if (threads.length === 0) return null;
+
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
         <Mail className="h-3.5 w-3.5" />
-        Linked Emails ({emails.length})
+        Email Threads ({threads.length})
       </h4>
       <div className="space-y-1.5">
-        {emails.map((e: any) => (
-          <Link key={e.id} href="/email" className="block">
-            <div className="rounded-md border border-border bg-card p-2.5 space-y-0.5 hover:bg-accent/50 transition-colors cursor-pointer" data-testid={`email-activity-${e.id}`}>
-              <div className="flex items-center gap-1.5">
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                  e.direction === "inbound"
-                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
-                    : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-                }`}>
-                  {e.direction === "inbound" ? "IN" : "OUT"}
-                </span>
-                <span className="text-sm font-medium truncate flex-1">{e.subject ?? "(no subject)"}</span>
+        {threads.map((thread) => {
+          const e = thread.latest;
+          const hasIn = thread.messages.some((m: any) => m.direction === "inbound");
+          const hasOut = thread.messages.some((m: any) => m.direction === "outbound");
+          const dirLabel = hasIn && hasOut ? "BOTH" : hasIn ? "IN" : "OUT";
+          const dirCls = hasIn && hasOut
+            ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400"
+            : hasIn
+              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
+              : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400";
+          const participants = Array.from(new Set(
+            thread.messages.map((m: any) => m.fromName ?? m.fromEmail.split("@")[0])
+          )).join(", ");
+          return (
+            <Link key={thread.threadId} href="/email" className="block">
+              <div className="rounded-md border border-border bg-card p-2.5 space-y-0.5 hover:bg-accent/50 transition-colors cursor-pointer" data-testid={`email-thread-${thread.threadId}`}>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${dirCls}`}>{dirLabel}</span>
+                  {thread.messages.length > 1 && (
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 shrink-0">
+                      {thread.messages.length}
+                    </span>
+                  )}
+                  <span className="text-sm font-medium truncate flex-1">{e.subject ?? "(no subject)"}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="truncate">{participants}</span>
+                  <span>·</span>
+                  <span className="shrink-0">{formatDistanceToNow(new Date(e.receivedAt), { addSuffix: true })}</span>
+                </div>
+                {e.aiSummary && (
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{e.aiSummary}</p>
+                )}
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{e.fromName ?? e.fromEmail}</span>
-                <span>·</span>
-                <span>{formatDistanceToNow(new Date(e.receivedAt), { addSuffix: true })}</span>
-              </div>
-              {e.aiSummary && (
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{e.aiSummary}</p>
-              )}
-            </div>
-          </Link>
-        ))}
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

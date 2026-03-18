@@ -3889,6 +3889,22 @@ Respond with this JSON:
     res.json(updated);
   });
 
+  app.patch("/api/email-messages/dismiss-thread", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const { gmailThreadId } = z.object({ gmailThreadId: z.string() }).parse(req.body);
+      const { db, sql } = await import("./db");
+      const { emailMessages } = await import("../shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      await db.update(emailMessages)
+        .set({ isDismissed: true })
+        .where(and(eq(emailMessages.userId, userId), eq(emailMessages.gmailThreadId, gmailThreadId)));
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
   app.patch("/api/email-messages/:id/remove-connection-suggestion", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
     const { type, suggestionId } = z.object({ type: z.string(), suggestionId: z.number() }).parse(req.body);

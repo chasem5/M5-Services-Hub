@@ -380,7 +380,7 @@ export default function EmailSyncPage() {
   const needsResponseCount = allThreads.filter(t => t.requiresResponse).length;
   const hasTasksCount = allThreads.filter(t => t.messages.some(m => m.aiSuggestedTasks && m.aiSuggestedTasks.length > 0)).length;
   const unlinkedCount = allThreads.filter(t => !t.messages.some(m => m.clientId !== null || m.leadId !== null)).length;
-  const dismissedCount = emails.filter(e => e.isDismissed).length;
+  const dismissedCount = groupIntoThreads(emails.filter(e => e.isDismissed)).length;
 
   const matchedClient = primaryEmail?.clientId ? clients.find(c => c.id === primaryEmail.clientId) : null;
   const matchedLead = primaryEmail?.leadId ? leads.find(l => l.id === primaryEmail.leadId) : null;
@@ -424,12 +424,12 @@ export default function EmailSyncPage() {
     onError: (err: any) => toast({ title: "Sync failed", description: err.message, variant: "destructive" }),
   });
 
-  const dismissEmailMutation = useMutation({
-    mutationFn: (id: number) => apiRequest("PATCH", `/api/email-messages/${id}/dismiss`, {}),
+  const dismissThreadMutation = useMutation({
+    mutationFn: (gmailThreadId: string) => apiRequest("PATCH", `/api/email-messages/dismiss-thread`, { gmailThreadId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] });
       setSelectedThreadId(null);
-      toast({ title: "Email dismissed" });
+      toast({ title: "Thread dismissed" });
     },
   });
 
@@ -559,15 +559,12 @@ export default function EmailSyncPage() {
   };
 
   const bulkDismiss = async () => {
-    const toIds = Array.from(selectedThreadIds).map(tid => {
-      const thread = threads.find(t => t.threadId === tid);
-      return thread?.latestMessage.id;
-    }).filter((id): id is number => id !== undefined);
-    await Promise.all(toIds.map(id => apiRequest("PATCH", `/api/email-messages/${id}/dismiss`, {})));
+    const threadIds = Array.from(selectedThreadIds);
+    await Promise.all(threadIds.map(gmailThreadId => apiRequest("PATCH", `/api/email-messages/dismiss-thread`, { gmailThreadId })));
     queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] });
     setSelectedThreadIds(new Set());
     setSelectedThreadId(null);
-    toast({ title: `${toIds.length} thread${toIds.length !== 1 ? "s" : ""} dismissed` });
+    toast({ title: `${threadIds.length} thread${threadIds.length !== 1 ? "s" : ""} dismissed` });
   };
 
   const submitFeedback = (emailId: number, context: string, type: "thumbs_up" | "thumbs_down", snippet?: string) => {
@@ -922,10 +919,10 @@ export default function EmailSyncPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-60">
                       <DropdownMenuItem
-                        onClick={() => dismissEmailMutation.mutate(primaryEmail.id)}
+                        onClick={() => dismissThreadMutation.mutate(selectedThread.threadId)}
                         data-testid="menu-dismiss-email"
                       >
-                        <X className="h-3.5 w-3.5 mr-2 text-gray-500" /> Dismiss this email
+                        <X className="h-3.5 w-3.5 mr-2 text-gray-500" /> Dismiss this thread
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
