@@ -6709,5 +6709,159 @@ Write a punchy, factual summary highlighting what's driving the health status. L
     }
   });
 
+  // ── Cohort Analysis ─────────────────────────────────────────────────────────
+  app.get("/api/reports/cohort-analysis", isAuthenticated, async (req, res) => {
+    try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { db } = await import("./db");
+      const { sql: sqlTag } = await import("drizzle-orm");
+
+      const serviceTypeFilter = req.query.serviceType as string | undefined;
+
+      const toRows = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
+
+      // Step 1: Find earliest "won" date per client, grouped into acquisition quarter
+      const firstWonRows = toRows(await db.execute(sqlTag`
+        SELECT
+          client_id,
+          MIN(COALESCE(won_at, updated_at)) AS first_won_at
+        FROM leads
+        WHERE stage = 'won' AND client_id IS NOT NULL
+        ${serviceTypeFilter ? sqlTag`AND (service_type = ${serviceTypeFilter} OR ${serviceTypeFilter} = ANY(service_types))` : sqlTag``}
+        GROUP BY client_id
+      `));
+
+      if (firstWonRows.length === 0) {
+        return res.json({ cohorts: [], quarters: [] });
+      }
+
+      // Map client -> acquisition quarter label (e.g. "Q1 2024")
+      const clientCohortMap = new Map<number, string>();
+      for (const r of firstWonRows) {
+        const dt = new Date(r.first_won_at as string);
+        const year = dt.getFullYear();
+        const q = Math.floor(dt.getMonth() / 3) + 1;
+        clientCohortMap.set(Number(r.client_id), `Q${q} ${year}`);
+      }
+
+      const clientIds = Array.from(clientCohortMap.keys());
+      const clientIdsRaw = clientIds.length > 0 ? clientIds.join(",") : "0";
+
+      // Step 2: Get invoice revenue per client per quarter
+      const invoiceRevenueRows = toRows(await db.execute(sqlTag`
+        SELECT
+          client_id,
+          TO_CHAR(DATE_TRUNC('quarter', COALESCE(issued_date, due_date, synced_at)), 'YYYY-MM-DD') AS quarter_start,
+          COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS revenue
+        FROM buildops_invoices
+        WHERE client_id = ANY(ARRAY[${sqlTag.raw(clientIdsRaw)}]::int[])
+        GROUP BY client_id, 2
+        ORDER BY 2
+      `));
+
+      // Step 3: Get total invoice revenue per client (LTV)
+      const totalRevenueRows = toRows(await db.execute(sqlTag`
+        SELECT client_id, COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS total_revenue
+        FROM buildops_invoices
+        WHERE client_id = ANY(ARRAY[${sqlTag.raw(clientIdsRaw)}]::int[])
+        GROUP BY client_id
+      `));
+      const clientTotalRevMap = new Map<number, number>();
+      for (const r of totalRevenueRows) {
+        clientTotalRevMap.set(Number(r.client_id), Number(r.total_revenue ?? 0));
+      }
+
+      // Step 4: Get most recent quarter's revenue per client
+      const recentQRevRows = toRows(await db.execute(sqlTag`
+        SELECT client_id, COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS recent_revenue
+        FROM buildops_invoices
+        WHERE client_id = ANY(ARRAY[${sqlTag.raw(clientIdsRaw)}]::int[])
+          AND COALESCE(issued_date, due_date, synced_at) >= DATE_TRUNC('quarter', NOW())
+        GROUP BY client_id
+      `));
+      const clientRecentRevMap = new Map<number, number>();
+      for (const r of recentQRevRows) {
+        clientRecentRevMap.set(Number(r.client_id), Number(r.recent_revenue ?? 0));
+      }
+
+      // Aggregate by cohort
+      interface CohortData {
+        cohort: string;
+        clientCount: number;
+        totalRevenue: number;
+        avgRevenuePerClient: number;
+        recentQuarterRevenue: number;
+        quarterlyRevenue: Record<string, number>;
+      }
+
+      const cohortMap = new Map<string, CohortData>();
+
+      for (const [clientId, cohort] of clientCohortMap.entries()) {
+        if (!cohortMap.has(cohort)) {
+          cohortMap.set(cohort, {
+            cohort,
+            clientCount: 0,
+            totalRevenue: 0,
+            avgRevenuePerClient: 0,
+            recentQuarterRevenue: 0,
+            quarterlyRevenue: {},
+          });
+        }
+        const cd = cohortMap.get(cohort)!;
+        cd.clientCount += 1;
+        cd.totalRevenue += clientTotalRevMap.get(clientId) ?? 0;
+        cd.recentQuarterRevenue += clientRecentRevMap.get(clientId) ?? 0;
+      }
+
+      // Aggregate quarterly revenue per cohort
+      for (const r of invoiceRevenueRows) {
+        const clientId = Number(r.client_id);
+        const cohort = clientCohortMap.get(clientId);
+        if (!cohort) continue;
+        const quarterDate = new Date(r.quarter_start as string);
+        const year = quarterDate.getFullYear();
+        const q = Math.floor(quarterDate.getMonth() / 3) + 1;
+        const quarterLabel = `Q${q} ${year}`;
+        const revenue = Number(r.revenue ?? 0);
+
+        const cd = cohortMap.get(cohort)!;
+        cd.quarterlyRevenue[quarterLabel] = (cd.quarterlyRevenue[quarterLabel] ?? 0) + revenue;
+      }
+
+      // Finalize avg revenue per client
+      for (const cd of cohortMap.values()) {
+        cd.avgRevenuePerClient = cd.clientCount > 0 ? cd.totalRevenue / cd.clientCount : 0;
+      }
+
+      // Collect all quarters seen across all cohorts and sort them
+      const allQuartersSet = new Set<string>();
+      for (const cd of cohortMap.values()) {
+        for (const q of Object.keys(cd.quarterlyRevenue)) {
+          allQuartersSet.add(q);
+        }
+      }
+
+      // Sort quarters chronologically
+      const sortQuarter = (q: string) => {
+        const [qPart, year] = q.split(" ");
+        const qNum = parseInt(qPart.replace("Q", ""), 10);
+        return parseInt(year, 10) * 4 + qNum;
+      };
+
+      const quarters = Array.from(allQuartersSet).sort((a, b) => sortQuarter(a) - sortQuarter(b));
+
+      // Sort cohorts chronologically
+      const cohorts = Array.from(cohortMap.values()).sort((a, b) => sortQuarter(a.cohort) - sortQuarter(b.cohort));
+
+      res.json({ cohorts, quarters });
+    } catch (err: any) {
+      console.error("[cohort-analysis]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
 }

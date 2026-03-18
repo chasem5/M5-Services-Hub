@@ -20,6 +20,7 @@ import AdminPage from "@/pages/admin";
 import EmailSync from "@/pages/email-sync";
 import Announcements from "@/pages/announcements";
 import CustomerReport from "@/pages/customer-report";
+import CohortAnalysis from "@/pages/cohort-analysis";
 import ServiceAgreements from "@/pages/service-agreements";
 import RevenueAnalytics from "@/pages/revenue-analytics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -46,6 +47,7 @@ function ProtectedRouter() {
           <Route path="/email" component={EmailSync} />
           <Route path="/announcements" component={Announcements} />
           <Route path="/reports/customer-intelligence" component={CustomerReport} />
+          <Route path="/reports/cohort-analysis" component={CohortAnalysis} />
           <Route path="/service-agreements" component={ServiceAgreements} />
           <Route path="/reports/revenue-analytics" component={RevenueAnalytics} />
           <Route component={NotFound} />

@@ -156,6 +156,19 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
+                  isActive={location === "/reports/cohort-analysis"}
+                  tooltip="Cohort Analysis"
+                  className={location === "/reports/cohort-analysis" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                >
+                  <Link href="/reports/cohort-analysis" data-testid="link-cohort-analysis" onClick={() => isMobile && setOpenMobile(false)}>
+                    <TrendingUp className={location === "/reports/cohort-analysis" ? "text-primary" : ""} />
+                    <span className="group-data-[collapsible=icon]:hidden">Cohort Analysis</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
                   isActive={location === "/service-agreements"}
                   tooltip="Service Agreements"
                   className={location === "/service-agreements" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
