@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { eq, and, desc, sql, lt, or, inArray } from "drizzle-orm";
-import { computeHealthScoreV2, computeVelocityDirection } from "./health-utils";
+import { computeHealthScoreV2, computeVelocityDirection, computeInvoiceTrend } from "./health-utils";
 import {
   users,
   clients,
@@ -2877,105 +2877,99 @@ export class DatabaseStorage implements IStorage {
 
     const toJobRows = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
 
-    // Job velocity (last 90 vs prior 90 days)
+    // Date anchors for all health signals
     const ninetyDaysAgo = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
     const priorNinetyStart = new Date(ninetyDaysAgo.getTime() - 90 * 24 * 60 * 60 * 1000);
-    const jobResult = await db.execute(sql`
-      SELECT
-        client_id,
-        CASE WHEN scheduled_date >= ${ninetyDaysAgo} THEN 'last90' ELSE 'prior90' END AS period,
-        COUNT(*) AS count
-      FROM buildops_jobs
-      WHERE scheduled_date >= ${priorNinetyStart}
-        AND scheduled_date < ${monthEnd}
-        AND client_id IS NOT NULL
-      GROUP BY 1, 2
-    `);
-    const jobMap = new Map<number, { last90: number; prior90: number }>();
-    for (const r of toJobRows(jobResult) as any[]) {
-      if (!r.client_id) continue;
-      const e = jobMap.get(r.client_id) ?? { last90: 0, prior90: 0 };
-      if (r.period === "last90") e.last90 = Number(r.count ?? 0);
-      else e.prior90 = Number(r.count ?? 0);
-      jobMap.set(r.client_id, e);
-    }
-
-    // Jobs last 6m and last 12m per client (recency penalty signals)
-    const sixMonthsAgoH = new Date(monthEnd.getTime() - 180 * 24 * 60 * 60 * 1000);
-    const twelveMonthsAgoH = new Date(monthEnd.getTime() - 365 * 24 * 60 * 60 * 1000);
-    const jobs6mResult = await db.execute(sql`
-      SELECT client_id, COUNT(*) AS count
-      FROM buildops_jobs
-      WHERE scheduled_date >= ${sixMonthsAgoH}
-        AND scheduled_date < ${monthEnd}
-        AND client_id IS NOT NULL
-      GROUP BY client_id
-    `);
-    const jobs12mResult = await db.execute(sql`
-      SELECT client_id, COUNT(*) AS count
-      FROM buildops_jobs
-      WHERE scheduled_date >= ${twelveMonthsAgoH}
-        AND scheduled_date < ${monthEnd}
-        AND client_id IS NOT NULL
-      GROUP BY client_id
-    `);
-    const jobs6mMap = new Map<number, number>();
-    const jobs12mMap = new Map<number, number>();
-    for (const r of toJobRows(jobs6mResult) as any[]) {
-      if (r.client_id) jobs6mMap.set(r.client_id, Number(r.count ?? 0));
-    }
-    for (const r of toJobRows(jobs12mResult) as any[]) {
-      if (r.client_id) jobs12mMap.set(r.client_id, Number(r.count ?? 0));
-    }
-
-    // Invoice trend (last 3m vs prior 3m)
     const sixMonthsAgo = new Date(monthEnd.getTime() - 180 * 24 * 60 * 60 * 1000);
-    const threeMonthsAgo = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
-    const invoiceTrendResult = await db.execute(sql`
+    const twelveMonthsAgo = new Date(monthEnd.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+    // Job velocity using completed_date (same as Customer Intelligence)
+    // + COALESCE(completed_date, scheduled_date) for 6m/12m recency windows
+    const jobVelocityResult = await db.execute(sql`
       SELECT
         client_id,
-        CASE WHEN issued_date >= ${threeMonthsAgo} THEN 'last3m' ELSE 'prior3m' END AS period,
+        COUNT(*) FILTER (WHERE completed_date >= ${ninetyDaysAgo} AND completed_date < ${monthEnd}) AS last90,
+        COUNT(*) FILTER (WHERE completed_date >= ${priorNinetyStart} AND completed_date < ${ninetyDaysAgo}) AS prior90,
+        COUNT(*) FILTER (WHERE COALESCE(completed_date, scheduled_date) >= ${sixMonthsAgo} AND COALESCE(completed_date, scheduled_date) < ${monthEnd}) AS last_6m,
+        COUNT(*) FILTER (WHERE COALESCE(completed_date, scheduled_date) >= ${twelveMonthsAgo} AND COALESCE(completed_date, scheduled_date) < ${monthEnd}) AS last_12m
+      FROM buildops_jobs
+      WHERE client_id IS NOT NULL
+        AND (
+          completed_date >= ${priorNinetyStart}
+          OR COALESCE(completed_date, scheduled_date) >= ${twelveMonthsAgo}
+        )
+      GROUP BY client_id
+    `);
+    const jobMap = new Map<number, { last90: number; prior90: number; last6m: number; last12m: number }>();
+    for (const r of toJobRows(jobVelocityResult) as any[]) {
+      if (!r.client_id) continue;
+      jobMap.set(r.client_id, {
+        last90: Number(r.last90 ?? 0),
+        prior90: Number(r.prior90 ?? 0),
+        last6m: Number(r.last_6m ?? 0),
+        last12m: Number(r.last_12m ?? 0),
+      });
+    }
+
+    // Per-client monthly invoice series (last 6 months) — used with computeInvoiceTrend utility
+    // Uses COALESCE(issued_date, due_date, synced_at) same as Customer Intelligence
+    const invoiceMonthlyResult = await db.execute(sql`
+      SELECT
+        client_id,
+        TO_CHAR(DATE_TRUNC('month', COALESCE(issued_date, due_date, synced_at)), 'YYYY-MM') AS month,
         COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS total
       FROM buildops_invoices
-      WHERE issued_date >= ${sixMonthsAgo}
-        AND issued_date < ${monthEnd}
+      WHERE COALESCE(issued_date, due_date, synced_at) >= ${sixMonthsAgo}
+        AND COALESCE(issued_date, due_date, synced_at) < ${monthEnd}
         AND client_id IS NOT NULL
         AND status NOT IN ('void', 'cancelled')
       GROUP BY 1, 2
     `);
-    const invMap = new Map<number, { last3m: number; prior3m: number }>();
-    for (const r of toJobRows(invoiceTrendResult) as any[]) {
+    // Build per-client monthly arrays for computeInvoiceTrend
+    const invoiceMonthlyMap = new Map<number, { month: string; total: number }[]>();
+    for (const r of toJobRows(invoiceMonthlyResult) as any[]) {
       if (!r.client_id) continue;
-      const e = invMap.get(r.client_id) ?? { last3m: 0, prior3m: 0 };
-      if (r.period === "last3m") e.last3m = Number(r.total ?? 0);
-      else e.prior3m = Number(r.total ?? 0);
-      invMap.set(r.client_id, e);
+      const arr = invoiceMonthlyMap.get(r.client_id) ?? [];
+      arr.push({ month: r.month as string, total: Number(r.total ?? 0) });
+      invoiceMonthlyMap.set(r.client_id, arr);
     }
 
-    // LTV per client (all-time invoices)
-    const ltvResult = await db.execute(sql`
+    // LTV: all-time invoice sum per client (fallback: won-deal values for unsynced invoices)
+    const invoiceLtvResult = await db.execute(sql`
       SELECT client_id, COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS ltv
       FROM buildops_invoices
       WHERE client_id IS NOT NULL
         AND status NOT IN ('void', 'cancelled')
       GROUP BY client_id
     `);
-    const ltvMap = new Map<number, number>();
-    for (const r of toJobRows(ltvResult) as any[]) {
-      if (r.client_id) ltvMap.set(r.client_id, Number(r.ltv ?? 0));
-    }
-
-    // Active service agreements per client
-    const saResult = await db.execute(sql`
-      SELECT client_id, COUNT(*) AS count
-      FROM buildops_agreements
-      WHERE client_id IS NOT NULL
-        AND status = 'active'
+    const wonDealLtvResult = await db.execute(sql`
+      SELECT client_id, COALESCE(SUM(CAST(value AS numeric)), 0) AS won_ltv
+      FROM leads
+      WHERE client_id IS NOT NULL AND stage = 'won'
       GROUP BY client_id
     `);
-    const saMap = new Map<number, number>();
+    const invoiceLtvMap = new Map<number, number>();
+    const wonDealLtvMap = new Map<number, number>();
+    for (const r of toJobRows(invoiceLtvResult) as any[]) {
+      if (r.client_id) invoiceLtvMap.set(r.client_id, Number(r.ltv ?? 0));
+    }
+    for (const r of toJobRows(wonDealLtvResult) as any[]) {
+      if (r.client_id) wonDealLtvMap.set(r.client_id, Number(r.won_ltv ?? 0));
+    }
+
+    // Active service agreements per client — aligned with Customer Intelligence:
+    // active = end_date is null or in future, and not cancelled via advanced_scheduling_state
+    const saResult = await db.execute(sql`
+      SELECT DISTINCT client_id
+      FROM buildops_agreements
+      WHERE client_id IS NOT NULL
+        AND (end_date IS NULL OR end_date > ${monthEnd})
+        AND (advanced_scheduling_state IS NULL
+             OR LOWER(advanced_scheduling_state) NOT IN ('canceled', 'cancelled'))
+    `);
+    const saSet = new Set<number>();
     for (const r of toJobRows(saResult) as any[]) {
-      if (r.client_id) saMap.set(r.client_id, Number(r.count ?? 0));
+      if (r.client_id) saSet.add(r.client_id);
     }
 
     // Open deals per client (CRM leads not won/lost/expired/cancelled)
@@ -2996,22 +2990,16 @@ export class DatabaseStorage implements IStorage {
     let atRiskCount = 0;
 
     for (const c of allClientsForHealth) {
-      const jobs = jobMap.get(c.id) ?? { last90: 0, prior90: 0 };
-      const inv = invMap.get(c.id) ?? { last3m: 0, prior3m: 0 };
-      const ltv = ltvMap.get(c.id) ?? 0;
-      const hasActiveSA = (saMap.get(c.id) ?? 0) > 0;
+      const jobs = jobMap.get(c.id) ?? { last90: 0, prior90: 0, last6m: 0, last12m: 0 };
+      const invoiceLtv = invoiceLtvMap.get(c.id) ?? 0;
+      const wonLtv = wonDealLtvMap.get(c.id) ?? 0;
+      const ltv = Math.max(invoiceLtv, wonLtv);
+      const hasActiveSA = saSet.has(c.id);
       const openDeals = openDealsMap.get(c.id) ?? 0;
-      const jobsLast6Months = jobs6mMap.has(c.id) ? jobs6mMap.get(c.id)! : 0;
-      const jobsLast12Months = jobs12mMap.has(c.id) ? jobs12mMap.get(c.id)! : 0;
 
       const velocityDirection = computeVelocityDirection(jobs.last90, jobs.prior90);
-      const invRatio = inv.prior3m > 0 ? inv.last3m / inv.prior3m : (inv.last3m > 0 ? 2 : 0);
-      const invoiceTrend: "growing" | "flat" | "declining" =
-        inv.last3m === 0 && inv.prior3m === 0 ? "flat"
-        : inv.prior3m === 0 ? "growing"
-        : invRatio >= 1.15 ? "growing"
-        : invRatio <= 0.85 ? "declining"
-        : "flat";
+      const monthlyAmounts = invoiceMonthlyMap.get(c.id) ?? [];
+      const { invoiceTrend } = computeInvoiceTrend(monthlyAmounts, monthEnd);
 
       const { healthStatus } = computeHealthScoreV2(
         velocityDirection,
@@ -3021,8 +3009,8 @@ export class DatabaseStorage implements IStorage {
         invoiceTrend,
         null,
         c.healthOverride,
-        jobsLast6Months,
-        jobsLast12Months,
+        jobs.last6m,
+        jobs.last12m,
       );
 
       if (healthStatus === "healthy") healthyCount++;
