@@ -11,6 +11,7 @@ import {
   HeartPulse,
   Building2,
   Sparkles,
+  ScrollText,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -39,6 +40,7 @@ const ALL_NAV_ITEMS = [
   { title: "Tasks", icon: CheckSquare, url: "/tasks", module: "tasks" },
   { title: "Meetings", icon: Mic, url: "/meetings", module: "meetings" },
   { title: "Estimates", icon: FileText, url: "/estimates", module: "estimates" },
+  { title: "Agreements", icon: ScrollText, url: "/service-agreements", module: "estimates" },
   { title: "Email Sync", icon: Mail, url: "/email", module: "email_sync" },
   { title: "Announcements", icon: Megaphone, url: "/announcements", module: "announcements" },
 ];
