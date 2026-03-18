@@ -6213,6 +6213,8 @@ Guidelines:
     invoiceTrend: "growing" | "flat" | "declining" = "flat",
     emailResponseRate: number | null = null,
     healthOverride?: string | null,
+    jobsLast6Months: number = -1,
+    jobsLast12Months: number = -1,
   ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk"; isOverridden: boolean } {
     // Manual override takes full precedence — skip automated scoring
     if (healthOverride === "healthy") return { healthScore: 6, healthStatus: "healthy", isOverridden: true };
@@ -6237,8 +6239,30 @@ Guidelines:
     // Clamp to valid range
     healthScore = Math.max(0, healthScore);
     // Thresholds: Healthy >= 4, Watch: 2–3, At Risk: < 2
-    const healthStatus = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+    let healthStatus: "healthy" | "watch" | "at_risk" = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
+
+    // ── Recency penalty ──────────────────────────────────────────────────────
+    // A single job after a long drought shouldn't flip the score to Healthy.
+    // Cap at Watch if no activity in last 6 months; cap at At Risk if dormant 12+ months with no SA.
+    if (jobsLast6Months !== -1 && jobsLast6Months === 0) {
+      // No completed/scheduled jobs in 6 months → cap at Watch
+      if (healthStatus === "healthy") { healthStatus = "watch"; healthScore = Math.min(healthScore, 3); }
+    }
+    if (jobsLast12Months !== -1 && jobsLast12Months === 0 && !hasActiveSA) {
+      // Dormant 12+ months AND no service agreement → cap at At Risk
+      healthStatus = "at_risk"; healthScore = Math.min(healthScore, 1);
+    }
+
     return { healthScore, healthStatus, isOverridden: false };
+  }
+
+  function computeMomentum(
+    velocityDirection: string,
+    invoiceTrend: "growing" | "flat" | "declining",
+  ): "rising" | "declining" | "stable" {
+    if (velocityDirection === "growing" && invoiceTrend === "growing") return "rising";
+    if (velocityDirection === "declining" && invoiceTrend === "declining") return "declining";
+    return "stable";
   }
 
   // ── Customer Intelligence ──────────────────────────────────────────────────
@@ -6310,16 +6334,20 @@ Guidelines:
       const activeJobs = Number(jobStats?.active_jobs ?? 0);
       const totalJobs = Number(jobStats?.total_jobs ?? 0);
 
-      // ── Job velocity: last 90d vs prior 90d ──────────────────────────────
+      // ── Job velocity: last 90d vs prior 90d + recency windows ──────────────
       const [velocityRow] = toRows(await db.execute(sql`
         SELECT
           COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '90 days') as last_90,
           COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '180 days'
-                           AND completed_date < NOW() - INTERVAL '90 days') as prior_90
-        FROM buildops_jobs WHERE client_id = ${clientId} AND completed_date IS NOT NULL
+                           AND completed_date < NOW() - INTERVAL '90 days') as prior_90,
+          COUNT(*) FILTER (WHERE COALESCE(completed_date, scheduled_date) >= NOW() - INTERVAL '6 months') as last_6m,
+          COUNT(*) FILTER (WHERE COALESCE(completed_date, scheduled_date) >= NOW() - INTERVAL '12 months') as last_12m
+        FROM buildops_jobs WHERE client_id = ${clientId}
       `));
       const velocityLast90 = Number(velocityRow?.last_90 ?? 0);
       const velocityPrior90 = Number(velocityRow?.prior_90 ?? 0);
+      const jobsLast6Months = Number(velocityRow?.last_6m ?? 0);
+      const jobsLast12Months = Number(velocityRow?.last_12m ?? 0);
       const velocityDirection = computeVelocityDirection(velocityLast90, velocityPrior90);
       const velocityChange = velocityLast90 - velocityPrior90;
 
@@ -6383,10 +6411,12 @@ Guidelines:
       const emailRateData = await storage.getClientEmailResponseRate(clientId);
       const { outboundEmails: emailOutbound, emailsWithReply: emailReplied, responseRate: emailResponseRate } = emailRateData;
 
-      // ── Health score (6-point weighted system) ───────────────────────────
+      // ── Health score (6-point weighted system + recency penalty) ──────────
       const { healthScore, healthStatus } = computeHealthScoreV2(
-        velocityDirection, openCount, hasActiveSA, ltv, invoiceTrend, emailResponseRate
+        velocityDirection, openCount, hasActiveSA, ltv, invoiceTrend, emailResponseRate,
+        null, jobsLast6Months, jobsLast12Months
       );
+      const momentum = computeMomentum(velocityDirection, invoiceTrend);
 
       res.json({
         // Velocity (primary signal)
@@ -6412,6 +6442,8 @@ Guidelines:
         // Jobs
         activeJobs,
         totalJobs,
+        jobsLast6Months,
+        jobsLast12Months,
         // SA
         hasActiveSA,
         serviceAgreements,
@@ -6422,6 +6454,7 @@ Guidelines:
         // Health
         healthScore,
         healthStatus,
+        momentum,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -6577,7 +6610,9 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '90 days') as last_90,
           COUNT(*) FILTER (WHERE completed_date >= NOW() - INTERVAL '180 days'
-                           AND completed_date < NOW() - INTERVAL '90 days') as prior_90
+                           AND completed_date < NOW() - INTERVAL '90 days') as prior_90,
+          COUNT(*) FILTER (WHERE COALESCE(completed_date, scheduled_date) >= NOW() - INTERVAL '6 months') as last_6m,
+          COUNT(*) FILTER (WHERE COALESCE(completed_date, scheduled_date) >= NOW() - INTERVAL '12 months') as last_12m
         FROM buildops_jobs WHERE client_id IS NOT NULL GROUP BY client_id
       `));
       const jobMap = new Map(jobsByClient.map(r => [Number(r.client_id), {
@@ -6585,7 +6620,9 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         total: Number(r.total ?? 0),
         last90: Number(r.last_90 ?? 0),
         prior90: Number(r.prior_90 ?? 0),
-      }] as [number, { active: number; total: number; last90: number; prior90: number }]));
+        last6m: Number(r.last_6m ?? 0),
+        last12m: Number(r.last_12m ?? 0),
+      }] as [number, { active: number; total: number; last90: number; prior90: number; last6m: number; last12m: number }]));
 
       const agrByClient = toRows(await db.execute(sql`
         SELECT client_id,
@@ -6622,6 +6659,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         invoicePrior3Avg: number;
         healthScore: number;
         healthStatus: "healthy" | "watch" | "at_risk";
+        momentum: "rising" | "declining" | "stable";
         groupChildCount: number;
       }
 
@@ -6676,10 +6714,10 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         // Aggregate jobs across group
         const jobs = groupIds.reduce(
           (acc, gid) => {
-            const j = jobMap.get(gid) ?? { active: 0, total: 0, last90: 0, prior90: 0 };
-            return { active: acc.active + j.active, total: acc.total + j.total, last90: acc.last90 + j.last90, prior90: acc.prior90 + j.prior90 };
+            const j = jobMap.get(gid) ?? { active: 0, total: 0, last90: 0, prior90: 0, last6m: 0, last12m: 0 };
+            return { active: acc.active + j.active, total: acc.total + j.total, last90: acc.last90 + j.last90, prior90: acc.prior90 + j.prior90, last6m: acc.last6m + j.last6m, last12m: acc.last12m + j.last12m };
           },
-          { active: 0, total: 0, last90: 0, prior90: 0 }
+          { active: 0, total: 0, last90: 0, prior90: 0, last6m: 0, last12m: 0 }
         );
 
         // Aggregate service agreements across group
@@ -6706,8 +6744,10 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         const { invoiceTrend, last3Avg: invoiceLast3Avg, prior3Avg: invoicePrior3Avg } =
           computeInvoiceTrend(groupMonthlyData);
         const { healthScore, healthStatus, isOverridden } = computeHealthScoreV2(
-          velocityDirection, openDeals, hasActiveSA, ltv, invoiceTrend, null, client.healthOverride
+          velocityDirection, openDeals, hasActiveSA, ltv, invoiceTrend, null, client.healthOverride,
+          jobs.last6m, jobs.last12m
         );
+        const momentum = computeMomentum(velocityDirection, invoiceTrend);
 
         if (tierFilter && client.tier !== tierFilter) continue;
         if (healthFilter && healthStatus !== healthFilter) continue;
@@ -6734,6 +6774,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           invoicePrior3Avg,
           healthScore,
           healthStatus,
+          momentum,
           isOverridden,
           healthOverrideNote: client.healthOverrideNote ?? null,
           groupChildCount: childIds.length,

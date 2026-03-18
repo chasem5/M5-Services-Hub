@@ -3780,18 +3780,37 @@ export default function Leads() {
                         </div>
                       )}
 
-                      {selectedLead.stage === "lost" && selectedLead.lossReason && (
+                      {selectedLead.stage === "lost" && (
                         <div className="space-y-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 p-3">
-                          <p className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider flex items-center gap-1">
-                            <TrendingDown className="h-3 w-3" /> Loss Reason
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            <Badge className="bg-red-100 text-red-700 border-red-200 capitalize" data-testid="badge-loss-reason">
-                              {({ price: "Price", competition: "Competition", timing: "Timing", no_response: "No Response", other: "Other" } satisfies Record<string, string>)[selectedLead.lossReason] ?? selectedLead.lossReason}
-                            </Badge>
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider flex items-center gap-1">
+                              <TrendingDown className="h-3 w-3" /> Loss Reason
+                            </p>
+                            <button
+                              className="text-[10px] text-red-500 hover:text-red-700 underline font-medium"
+                              data-testid="button-edit-loss-reason"
+                              onClick={() => {
+                                setLossReasonInput(selectedLead.lossReason ?? "");
+                                setLossNoteInput(selectedLead.lossNote ?? "");
+                                setPendingLossCapture({ leadId: selectedLead.id, stage: "lost" });
+                              }}
+                            >
+                              {selectedLead.lossReason ? "Edit" : "Add"}
+                            </button>
                           </div>
-                          {selectedLead.lossNote && (
-                            <p className="text-xs text-muted-foreground leading-relaxed" data-testid="text-loss-note">{selectedLead.lossNote}</p>
+                          {selectedLead.lossReason ? (
+                            <>
+                              <div className="flex flex-wrap gap-2">
+                                <Badge className="bg-red-100 text-red-700 border-red-200 capitalize" data-testid="badge-loss-reason">
+                                  {({ price: "Price", competition: "Competition", timing: "Timing", no_response: "No Response", other: "Other" } satisfies Record<string, string>)[selectedLead.lossReason] ?? selectedLead.lossReason}
+                                </Badge>
+                              </div>
+                              {selectedLead.lossNote && (
+                                <p className="text-xs text-muted-foreground leading-relaxed" data-testid="text-loss-note">{selectedLead.lossNote}</p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-xs text-muted-foreground italic" data-testid="text-loss-reason-empty">No loss reason captured — click Add to record why this deal was lost.</p>
                           )}
                         </div>
                       )}

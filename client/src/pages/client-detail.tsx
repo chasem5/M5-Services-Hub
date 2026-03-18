@@ -4186,6 +4186,7 @@ interface IntelData {
   }[];
   healthScore: number;
   healthStatus: "healthy" | "watch" | "at_risk";
+  momentum?: "rising" | "declining" | "stable";
 }
 
 const fmtCur = (v: number) =>
@@ -4315,6 +4316,16 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
           {velocityIcon}
           Activity: {velocityLabel}
         </div>
+        {data.momentum === "rising" && (
+          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold uppercase tracking-wider" data-testid="badge-momentum">
+            <TrendingUp className="h-3.5 w-3.5" /> Rising Momentum
+          </div>
+        )}
+        {data.momentum === "declining" && (
+          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold uppercase tracking-wider" data-testid="badge-momentum">
+            <TrendingDown className="h-3.5 w-3.5" /> Declining Momentum
+          </div>
+        )}
       </div>
 
       {/* ── Velocity callout ── */}

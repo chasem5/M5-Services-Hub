@@ -52,6 +52,7 @@ interface ClientIntel {
   invoicePrior3Avg: number;
   healthScore: number;
   healthStatus: "healthy" | "watch" | "at_risk";
+  momentum: "rising" | "declining" | "stable";
   isOverridden: boolean;
   healthOverrideNote: string | null;
   groupChildCount: number;
@@ -467,7 +468,17 @@ export default function CustomerReport() {
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums">{c.velocityLast90}</td>
                       <td className="py-2.5 px-3 text-right">{c.hitRate !== null ? `${c.hitRate}%` : "—"}</td>
                       <td className="py-2.5 px-3 text-right">{c.activeJobs}</td>
-                      <td className="py-2.5 px-3">{trendIcon(c.velocityDirection)}</td>
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-1.5">
+                          {trendIcon(c.velocityDirection)}
+                          {c.momentum === "rising" && (
+                            <span className="text-[10px] font-bold text-green-600 uppercase tracking-wider" data-testid={`badge-momentum-${c.clientId}`}>Rising</span>
+                          )}
+                          {c.momentum === "declining" && (
+                            <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider" data-testid={`badge-momentum-${c.clientId}`}>Declining</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-2.5 px-3 text-right text-xs text-muted-foreground">{c.wonCount}/{c.lostCount}/{c.openDeals}</td>
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-1">
