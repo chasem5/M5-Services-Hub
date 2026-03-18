@@ -6607,20 +6607,22 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const dateFromTs = dateFrom ? new Date(dateFrom) : null;
       const dateToTs = dateTo ? new Date(new Date(dateTo).getTime() + 24 * 60 * 60 * 1000) : null;
 
+      // Use COALESCE so historical records without explicit close dates (won_at/lost_at)
+      // are still counted when a date filter is applied, consistent with the trend grouping.
       const wonDateFilter = dateFromTs && dateToTs
-        ? sqlTag` AND won_at >= ${dateFromTs} AND won_at < ${dateToTs}`
+        ? sqlTag` AND COALESCE(won_at, updated_at) >= ${dateFromTs} AND COALESCE(won_at, updated_at) < ${dateToTs}`
         : dateFromTs
-        ? sqlTag` AND won_at >= ${dateFromTs}`
+        ? sqlTag` AND COALESCE(won_at, updated_at) >= ${dateFromTs}`
         : dateToTs
-        ? sqlTag` AND won_at < ${dateToTs}`
+        ? sqlTag` AND COALESCE(won_at, updated_at) < ${dateToTs}`
         : sqlTag``;
 
       const lostDateFilter = dateFromTs && dateToTs
-        ? sqlTag` AND lost_at >= ${dateFromTs} AND lost_at < ${dateToTs}`
+        ? sqlTag` AND COALESCE(lost_at, updated_at) >= ${dateFromTs} AND COALESCE(lost_at, updated_at) < ${dateToTs}`
         : dateFromTs
-        ? sqlTag` AND lost_at >= ${dateFromTs}`
+        ? sqlTag` AND COALESCE(lost_at, updated_at) >= ${dateFromTs}`
         : dateToTs
-        ? sqlTag` AND lost_at < ${dateToTs}`
+        ? sqlTag` AND COALESCE(lost_at, updated_at) < ${dateToTs}`
         : sqlTag``;
 
       type SummaryRow = { count: unknown; total_value: unknown };
@@ -6833,6 +6835,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const agreementRow = await db.execute(sqlTag`
         SELECT COUNT(*)::int AS total_count
         FROM buildops_agreements
+        WHERE LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'canceled', 'expired', 'terminated', 'void', 'inactive')
       `);
 
       const toRows = (r: any) => Array.isArray(r) ? r : r?.rows ?? [];
