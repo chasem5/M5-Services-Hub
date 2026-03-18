@@ -4505,12 +4505,15 @@ Respond with this JSON:
       const token = await getToken(creds.clientId, creds.clientSecret);
 
       const endpoints = [
-        "/v1/employees?page=1&limit=5",
         "/v1/employees",
-        "/v2/employees?page=1&limit=5",
-        "/v1/technicians?page=1&limit=5",
-        "/v1/users?page=1&limit=5",
-        "/v1/representatives?page=1&limit=5",
+        "/v1/employees?size=200",
+        "/v1/employees?size=100",
+        "/v1/employees?page=0&size=100",
+        "/v1/employees?page=1&size=10",
+        "/v1/employees?page=1&limit=5",
+        "/v1/employees?offset=10&limit=10",
+        "/v1/employees?pageSize=100",
+        "/v1/employees?page=0&pageSize=100",
       ];
 
       const probes = await Promise.all(

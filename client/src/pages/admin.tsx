@@ -518,11 +518,16 @@ function BuildOpsPanel() {
                     <div key={p.endpoint} className={`rounded border p-2 text-xs font-mono space-y-1 ${p.status === 200 ? "border-green-500 bg-green-50 dark:bg-green-950/20" : "border-muted"}`}>
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-muted-foreground truncate">{p.endpoint}</span>
-                        <span className={`font-bold shrink-0 ${p.status === 200 ? "text-green-600" : p.status === 404 ? "text-orange-500" : p.status === 403 ? "text-red-500" : "text-muted-foreground"}`}>
+                        <span className={`font-bold shrink-0 ${p.status === 200 ? "text-green-600" : p.status === 400 ? "text-yellow-600" : p.status === 404 ? "text-orange-500" : p.status === 403 ? "text-red-500" : "text-muted-foreground"}`}>
                           {p.status} {p.statusText} <span className="text-muted-foreground font-normal">({p.elapsed}ms)</span>
                         </span>
                       </div>
-                      <pre className="whitespace-pre-wrap break-all text-[10px] text-muted-foreground max-h-24 overflow-y-auto bg-muted/50 rounded p-1">{p.bodyPreview}</pre>
+                      {p.status === 200 && p.parsed && (
+                        <div className="text-[10px] font-semibold text-green-700 dark:text-green-400">
+                          items returned: {p.parsed.items?.length ?? (Array.isArray(p.parsed) ? p.parsed.length : "?")} / totalCount: {p.parsed.totalCount ?? "?"}
+                        </div>
+                      )}
+                      <pre className="whitespace-pre-wrap break-all text-[10px] text-muted-foreground max-h-20 overflow-y-auto bg-muted/50 rounded p-1">{p.bodyPreview}</pre>
                     </div>
                   ))}
                 </div>
