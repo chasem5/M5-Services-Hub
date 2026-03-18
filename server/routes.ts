@@ -7586,6 +7586,136 @@ Write a punchy, factual summary highlighting what's driving the health status. L
     }
   });
 
+  // POST /api/action-plans/generate-recommendations — ephemeral cross-customer AI recommendations (not stored)
+  app.post("/api/action-plans/generate-recommendations", isAuthenticated, async (req, res) => {
+    try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { db: dbRec } = await import("./db");
+      const { sql: sqlRec } = await import("drizzle-orm");
+      const toRowsRec = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
+
+      const [allLeads, allClients] = await Promise.all([
+        storage.listLeads(),
+        storage.listClients(),
+      ]);
+
+      const tier1Clients = allClients.filter(c => c.tier === "tier_1");
+      const atRiskClients = allClients.filter(c => c.healthOverride === "at_risk");
+
+      const openLeads = allLeads.filter(l => !["won", "lost", "canceled"].includes(l.stage ?? ""));
+      const wonLeads = allLeads.filter(l => l.stage === "won");
+      const lostLeads = allLeads.filter(l => l.stage === "lost");
+      const totalPipeline = openLeads.reduce((s, l) => s + (Number(l.value) || 0), 0);
+      const hitRate = (wonLeads.length + lostLeads.length) > 0
+        ? Math.round((wonLeads.length / (wonLeads.length + lostLeads.length)) * 100)
+        : null;
+
+      const [revRows, saRows, dormantRows, topRevRows] = await Promise.all([
+        dbRec.execute(sqlRec`
+          SELECT to_char(issued_date,'YYYY-MM') AS month, SUM(total_amount)::float AS total
+          FROM buildops_invoices GROUP BY month ORDER BY month DESC LIMIT 6
+        `),
+        dbRec.execute(sqlRec`
+          SELECT ba.client_id, c.name, ba.status
+          FROM buildops_agreements ba JOIN clients c ON c.id = ba.client_id
+          WHERE ba.status IN ('active','expired') ORDER BY ba.end_date LIMIT 15
+        `),
+        dbRec.execute(sqlRec`
+          SELECT c.id, c.name FROM clients c
+          LEFT JOIN buildops_jobs j ON j.client_id = c.id AND j.created_at >= NOW() - INTERVAL '90 days'
+          WHERE j.id IS NULL AND EXISTS (SELECT 1 FROM buildops_jobs jj WHERE jj.client_id = c.id)
+          LIMIT 10
+        `),
+        dbRec.execute(sqlRec`
+          SELECT client_id, SUM(total_amount)::float AS ltv
+          FROM buildops_invoices GROUP BY client_id ORDER BY ltv DESC LIMIT 8
+        `),
+      ]);
+
+      const revMonths = toRowsRec(revRows) as any[];
+      const saList = toRowsRec(saRows) as any[];
+      const dormantList = toRowsRec(dormantRows) as any[];
+      const topRevList = toRowsRec(topRevRows) as any[];
+
+      const revenueLines = revMonths.slice(0, 3).map((r: any) =>
+        `${r.month}: $${Math.round(Number(r.total ?? 0)).toLocaleString()}`).join(", ");
+
+      const focusClients = [
+        ...atRiskClients.slice(0, 5),
+        ...tier1Clients.slice(0, 5),
+        ...dormantList.slice(0, 5).map((d: any) => ({ id: Number(d.id), name: String(d.name) })),
+      ].filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i).slice(0, 12);
+
+      const clientListStr = focusClients.map(c => `${c.id}: ${c.name ?? "Unknown"}`).join(", ");
+
+      const contextBlock = [
+        `M5 Services — Cross-Customer Business Intelligence`,
+        `Total customers: ${allClients.length} (Tier 1: ${tier1Clients.length}, At-Risk (manual): ${atRiskClients.length})`,
+        `Open deals: ${openLeads.length}, pipeline: $${totalPipeline.toLocaleString()}; Won: ${wonLeads.length}, Lost: ${lostLeads.length}${hitRate !== null ? `, hit rate: ${hitRate}%` : ""}`,
+        revenueLines ? `Recent monthly revenue: ${revenueLines}` : "",
+        tier1Clients.length > 0 ? `Tier 1 (top) accounts: ${tier1Clients.slice(0, 6).map(c => c.name ?? "").join(", ")}` : "",
+        atRiskClients.length > 0 ? `At-risk accounts (manually flagged): ${atRiskClients.slice(0, 6).map(c => c.name ?? "").join(", ")}` : "",
+        dormantList.length > 0 ? `Dormant (no jobs in 90d): ${dormantList.slice(0, 6).map((d: any) => d.name).join(", ")}` : "",
+        saList.length > 0 ? `Service agreements: ${saList.slice(0, 6).map((s: any) => `${s.name} (${s.status})`).join(", ")}` : "",
+        topRevList.length > 0 ? `Top revenue clients: ${topRevList.slice(0, 5).map((r: any) => {
+          const c = allClients.find(x => x.id === Number(r.client_id));
+          return c ? `${c.name ?? ""} ($${Math.round(Number(r.ltv ?? 0)).toLocaleString()})` : "";
+        }).filter(Boolean).join(", ")}` : "",
+      ].filter(Boolean).join("\n");
+
+      const systemPrompt = `You are a senior sales strategist at M5 Services (facility maintenance). Using the intelligence data below, generate 6–8 specific, actionable cross-customer recommendations.
+
+For each recommendation identify the best target:
+- "company" = applies to the whole sales team/company (no specific customer)
+- "customer" = specific customer(s) — choose from this list only: [${clientListStr}]
+
+Return ONLY valid JSON:
+{"recommendations":[{"title":"...","description":"...","priority":"high"|"medium"|"low","suggestedType":"company"|"customer","suggestedClientIds":[id, ...],"suggestedClientNames":["name",...]}]}
+
+Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedType is "company", set suggestedClientIds to []. Reference real data (dollar amounts, names, counts) in each description.`;
+
+      const aiRes = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: contextBlock },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 1400,
+      });
+
+      const raw = aiRes.choices[0]?.message?.content ?? "{}";
+      let items: any[] = [];
+      try {
+        const parsed = JSON.parse(raw);
+        items = parsed.recommendations ?? parsed.items
+          ?? (Object.values(parsed).find(v => Array.isArray(v)) as any[] | undefined) ?? [];
+      } catch { items = []; }
+
+      const result = items.slice(0, 8).map((item: any, i: number) => ({
+        id: `rec-${Date.now()}-${i}`,
+        title: String(item.title ?? "Recommendation"),
+        description: item.description ? String(item.description) : null,
+        priority: (["high", "medium", "low"].includes(item.priority) ? item.priority : "medium") as "high" | "medium" | "low",
+        suggestedType: item.suggestedType === "customer" ? "customer" : "company",
+        suggestedClientIds: Array.isArray(item.suggestedClientIds)
+          ? item.suggestedClientIds.map(Number).filter(Boolean)
+          : [],
+        suggestedClientNames: Array.isArray(item.suggestedClientNames)
+          ? item.suggestedClientNames.map(String)
+          : [],
+      }));
+
+      res.json(result);
+    } catch (err: any) {
+      console.error("[action-plans/generate-recommendations]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // PATCH /api/action-plans/:id
   app.patch("/api/action-plans/:id", isAuthenticated, async (req, res) => {
     try {

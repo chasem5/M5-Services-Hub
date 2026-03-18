@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ActionPlanPanel } from "@/components/ActionPlanPanel";
+import { RecommendationsHub } from "@/components/RecommendationsHub";
 import RevenueAnalytics from "./revenue-analytics";
 import WinLossReport from "./win-loss-report";
 import MonthlyReport from "./monthly-report";
@@ -16,6 +17,7 @@ const TABS = [
   { value: "cohort", label: "Cohort Analysis" },
   { value: "agreements", label: "Service Agreements" },
   { value: "action-plan", label: "Action Plan" },
+  { value: "recommendations", label: "Recommendations" },
 ];
 
 const TAB_VALUES = TABS.map(t => t.value);
@@ -107,6 +109,9 @@ export default function CompanyIntelligence() {
                   />
                 </CardContent>
               </Card>
+            </TabsContent>
+            <TabsContent value="recommendations" className="m-0">
+              <RecommendationsHub />
             </TabsContent>
           </div>
         </Tabs>
