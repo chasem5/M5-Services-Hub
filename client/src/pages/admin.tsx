@@ -658,8 +658,8 @@ function BuildOpsSyncAudit() {
         </div>
       </CardHeader>
       <CardContent className="p-6">
-        <div className="max-h-[400px] overflow-y-auto">
-          <table className="w-full text-sm">
+        <div className="max-h-[400px] overflow-y-auto overflow-x-auto">
+          <table className="w-full text-sm min-w-[400px]">
             <thead className="sticky top-0 bg-card">
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="pb-2 pr-4">Client</th>
@@ -889,13 +889,13 @@ function BuildOpsMatchingPanel() {
         </div>
 
         <div className="border rounded-lg overflow-hidden">
-          <div className="max-h-[500px] overflow-y-auto">
+          <div className="max-h-[500px] overflow-y-auto overflow-x-auto">
             {filteredCustomers.length === 0 ? (
               <div className="p-8 text-center text-sm text-muted-foreground">
                 {search ? "No results match your search" : "No BuildOps customers found"}
               </div>
             ) : (
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[560px]">
                 <thead className="bg-muted/40 sticky top-0">
                   <tr>
                     <th className="text-left px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">BuildOps Customer</th>
@@ -1734,8 +1734,8 @@ function AccountManagerMappingPanel() {
         ) : allUsers.length === 0 ? (
           <p className="text-sm text-muted-foreground py-2">No CRM users found.</p>
         ) : (
-          <div className="border rounded-md overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="border rounded-md overflow-hidden overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50">
                 <tr>
                   <th className="text-left font-semibold px-3 py-2">CRM User</th>
@@ -1997,7 +1997,7 @@ export default function AdminPage() {
       </div>
 
       <Tabs defaultValue="members">
-        <TabsList className="w-full justify-start border-b rounded-none h-12 bg-transparent p-0 gap-6">
+        <TabsList className="w-full justify-start border-b rounded-none h-12 bg-transparent p-0 gap-6 overflow-x-auto scrollbar-hide flex-nowrap">
           <TabsTrigger value="members" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
             <Users className="h-4 w-4" />
             Team Members

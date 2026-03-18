@@ -858,7 +858,7 @@ export default function Dashboard() {
                 {[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
             ) : (
-              <div className="grid grid-cols-3 divide-x divide-border/40">
+              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border/40">
                 {(["draft","sent","expired"] as const).map(status => {
                   const items = quotesPipeline.filter((q) => q.status === status);
                   return (

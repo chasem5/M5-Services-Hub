@@ -233,13 +233,13 @@ export default function ServiceAgreementsPage() {
                         Status <SortIcon field="status" />
                       </button>
                     </th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Frequency</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden md:table-cell">Frequency</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden sm:table-cell">
                       <button className="flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort("startDate")}>
                         Start <SortIcon field="startDate" />
                       </button>
                     </th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden sm:table-cell">
                       <button className="flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort("endDate")}>
                         End <SortIcon field="endDate" />
                       </button>
@@ -249,12 +249,12 @@ export default function ServiceAgreementsPage() {
                         Contract/yr <SortIcon field="contractValue" />
                       </button>
                     </th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">
+                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden md:table-cell">
                       <button className="flex items-center gap-1 ml-auto hover:text-foreground" onClick={() => toggleSort("jobCount")}>
                         Jobs <SortIcon field="jobCount" />
                       </button>
                     </th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">
+                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden sm:table-cell">
                       <button className="flex items-center gap-1 ml-auto hover:text-foreground" onClick={() => toggleSort("totalInvoiced")}>
                         Total Invoiced <SortIcon field="totalInvoiced" />
                       </button>
@@ -284,12 +284,12 @@ export default function ServiceAgreementsPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{agr.customerName ?? "—"}</td>
                       <td className="px-4 py-3"><StatusBadge status={agr.status} /></td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{agr.frequency ?? "—"}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{formatDate(agr.startDate)}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{formatDate(agr.endDate)}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground capitalize hidden md:table-cell">{agr.frequency ?? "—"}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground hidden sm:table-cell">{formatDate(agr.startDate)}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground hidden sm:table-cell">{formatDate(agr.endDate)}</td>
                       <td className="px-4 py-3 text-right font-medium text-sm">{formatMoney(agr.contractValue)}</td>
-                      <td className="px-4 py-3 text-right text-sm text-muted-foreground" data-testid={`jobs-count-${agr.id}`}>{agr.jobCount}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-sm" data-testid={`total-invoiced-${agr.id}`}>
+                      <td className="px-4 py-3 text-right text-sm text-muted-foreground hidden md:table-cell" data-testid={`jobs-count-${agr.id}`}>{agr.jobCount}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-sm hidden sm:table-cell" data-testid={`total-invoiced-${agr.id}`}>
                         {agr.totalInvoiced > 0 ? (
                           <span className="flex items-center justify-end gap-1">
                             <TrendingUp className="h-3 w-3 text-green-600" />

@@ -343,56 +343,58 @@ export default function CustomerReport() {
         </Card>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+        <div className="relative flex-1 min-w-0">
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search customers…" className="pl-9 w-56" value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-report" />
+          <Input placeholder="Search customers…" className="pl-9 w-full" value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-report" />
         </div>
-        <Select value={tierFilter} onValueChange={setTierFilter}>
-          <SelectTrigger className="w-32" data-testid="select-tier-filter">
-            <SelectValue placeholder="Tier" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Tiers</SelectItem>
-            <SelectItem value="tier_1">Tier 1</SelectItem>
-            <SelectItem value="tier_2">Tier 2</SelectItem>
-            <SelectItem value="tier_3">Tier 3</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={healthFilterState} onValueChange={setHealthFilterState}>
-          <SelectTrigger className="w-32" data-testid="select-health-filter">
-            <SelectValue placeholder="Health" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Health</SelectItem>
-            <SelectItem value="healthy">Healthy</SelectItem>
-            <SelectItem value="watch">Watch</SelectItem>
-            <SelectItem value="at_risk">At Risk</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" placeholder="From" data-testid="input-date-from" />
-        <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" placeholder="To" data-testid="input-date-to" />
-        {isAdminOrManager && (
-          <Select value={filterUserId} onValueChange={setFilterUserId}>
-            <SelectTrigger className="w-40" data-testid="select-user-filter">
-              <SelectValue placeholder="All Reps" />
+        <div className="flex flex-wrap gap-2">
+          <Select value={tierFilter} onValueChange={setTierFilter}>
+            <SelectTrigger className="w-full sm:w-32" data-testid="select-tier-filter">
+              <SelectValue placeholder="Tier" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Reps</SelectItem>
-              {authUser?.id && (
-                <SelectItem value={authUser.id}>My Data</SelectItem>
-              )}
-              {directoryUsers
-                .filter(u => u.id !== authUser?.id)
-                .map(u => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email ?? u.id}
-                  </SelectItem>
-                ))}
+              <SelectItem value="all">All Tiers</SelectItem>
+              <SelectItem value="tier_1">Tier 1</SelectItem>
+              <SelectItem value="tier_2">Tier 2</SelectItem>
+              <SelectItem value="tier_3">Tier 3</SelectItem>
             </SelectContent>
           </Select>
-        )}
-        <span className="text-sm text-muted-foreground ml-auto">{sorted.length} customers</span>
+          <Select value={healthFilterState} onValueChange={setHealthFilterState}>
+            <SelectTrigger className="w-full sm:w-32" data-testid="select-health-filter">
+              <SelectValue placeholder="Health" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Health</SelectItem>
+              <SelectItem value="healthy">Healthy</SelectItem>
+              <SelectItem value="watch">Watch</SelectItem>
+              <SelectItem value="at_risk">At Risk</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full sm:w-36" placeholder="From" data-testid="input-date-from" />
+          <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full sm:w-36" placeholder="To" data-testid="input-date-to" />
+          {isAdminOrManager && (
+            <Select value={filterUserId} onValueChange={setFilterUserId}>
+              <SelectTrigger className="w-full sm:w-40" data-testid="select-user-filter">
+                <SelectValue placeholder="All Reps" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Reps</SelectItem>
+                {authUser?.id && (
+                  <SelectItem value={authUser.id}>My Data</SelectItem>
+                )}
+                {directoryUsers
+                  .filter(u => u.id !== authUser?.id)
+                  .map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email ?? u.id}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        <span className="text-sm text-muted-foreground">{sorted.length} customers</span>
       </div>
 
       {/* Scoring explanation */}

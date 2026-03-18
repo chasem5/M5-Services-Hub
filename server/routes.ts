@@ -6261,7 +6261,12 @@ Guidelines:
         SELECT COALESCE(SUM(CAST(total_amount AS numeric)), 0) as ltv
         FROM buildops_invoices WHERE client_id = ${clientId}
       `));
-      const ltv = Number(invoiceLtvRow?.ltv ?? 0);
+      const [wonDealLtvRow] = toRows(await db.execute(sql`
+        SELECT COALESCE(SUM(CAST(value AS numeric)), 0) as won_value
+        FROM leads WHERE client_id = ${clientId} AND stage = 'won'
+      `));
+      // Use the higher of invoice LTV or won-deal total (won deals used as fallback when invoices not yet synced)
+      const ltv = Math.max(Number(invoiceLtvRow?.ltv ?? 0), Number(wonDealLtvRow?.won_value ?? 0));
 
       // ── Job counts ───────────────────────────────────────────────────────
       const [jobStats] = toRows(await db.execute(sql`
@@ -6509,6 +6514,13 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       `));
       const invoiceMap = new Map(invoicesByClient.map(r => [Number(r.client_id), Number(r.ltv ?? 0)]));
 
+      // Won-deal LTV per client (fallback when invoices not yet synced)
+      const wonDealsByClient = toRows(await db.execute(sql`
+        SELECT client_id, COALESCE(SUM(CAST(value AS numeric)), 0) as won_value
+        FROM leads WHERE client_id IS NOT NULL AND stage = 'won' GROUP BY client_id
+      `));
+      const wonDealMap = new Map(wonDealsByClient.map(r => [Number(r.client_id), Number(r.won_value ?? 0)]));
+
       // Invoice monthly totals per client (last 6 months) for revenue trend
       const invoiceMonthlyByClient = toRows(await db.execute(sql`
         SELECT
@@ -6624,8 +6636,10 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           pipeline += Number(d?.pipeline ?? 0);
         }
 
-        // Aggregate invoice LTV across group
-        const ltv = groupIds.reduce((s, gid) => s + (invoiceMap.get(gid) ?? 0), 0);
+        // Aggregate LTV across group: use higher of invoice LTV or won-deal total
+        const invoiceLtv = groupIds.reduce((s, gid) => s + (invoiceMap.get(gid) ?? 0), 0);
+        const wonLtv = groupIds.reduce((s, gid) => s + (wonDealMap.get(gid) ?? 0), 0);
+        const ltv = Math.max(invoiceLtv, wonLtv);
 
         // Aggregate jobs across group
         const jobs = groupIds.reduce(
