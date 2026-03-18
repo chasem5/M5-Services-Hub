@@ -188,13 +188,15 @@ function RecCard({
           <p className="text-xs text-muted-foreground leading-relaxed mb-2">{rec.description}</p>
         )}
 
-        {rec.suggestedClientNames.length > 0 && (
-          <p className="text-[10px] text-muted-foreground mb-2">
-            <span className="font-medium">AI suggested for:</span>{" "}
-            {rec.suggestedClientNames.slice(0, 3).join(", ")}
-            {rec.suggestedClientNames.length > 3 ? ` +${rec.suggestedClientNames.length - 3}` : ""}
-          </p>
-        )}
+        <p className="text-[10px] text-muted-foreground mb-2 flex items-center gap-1">
+          <span className="font-medium">Suggested target:</span>
+          {rec.suggestedType === "company"
+            ? "Company Plan"
+            : rec.suggestedClientNames.length > 0
+              ? rec.suggestedClientNames.slice(0, 3).join(", ") +
+                (rec.suggestedClientNames.length > 3 ? ` +${rec.suggestedClientNames.length - 3}` : "")
+              : "All Customers"}
+        </p>
 
         {!assigned && (
           <div className="flex items-center gap-2 flex-wrap mt-3 pt-3 border-t border-border/50">
@@ -327,7 +329,7 @@ export function RecommendationsHub() {
     setAssigningAll(true);
     try {
       await Promise.all(
-        unassigned.map(rec => assignRec(rec, cardStates[rec.id] ?? defaultCardState(rec))),
+        unassigned.map(rec => assignRec(rec, defaultCardState(rec))),
       );
       toast({
         title: "All assigned",
