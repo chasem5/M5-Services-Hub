@@ -999,7 +999,7 @@ export default function Leads() {
   const [deleteStageId, setDeleteStageId] = useState<number | null>(null);
   const [deleteStageLabel, setDeleteStageLabel] = useState("");
   const [pendingDealMove, setPendingDealMove] = useState<{ leadId: number; stage: string; clientName: string } | null>(null);
-  const [pendingLossCapture, setPendingLossCapture] = useState<{ leadId: number; stage: string; confidenceScore?: number } | null>(null);
+  const [pendingLossCapture, setPendingLossCapture] = useState<{ leadId: number; stage: string; confidenceScore?: number; isEdit?: boolean } | null>(null);
   const [lossReasonInput, setLossReasonInput] = useState<string>("");
   const [lossNoteInput, setLossNoteInput] = useState<string>("");
   const [editingStageId, setEditingStageId] = useState<number | null>(null);
@@ -1318,6 +1318,7 @@ export default function Leads() {
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leads/activity-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/win-loss"] });
       if (selectedLead) setSelectedLead(updated);
     },
   });
@@ -2997,7 +2998,7 @@ export default function Leads() {
                               onClick={() => {
                                 setLossReasonInput(selectedLead.lossReason ?? "");
                                 setLossNoteInput(selectedLead.lossNote ?? "");
-                                setPendingLossCapture({ leadId: selectedLead.id, stage: "lost" });
+                                setPendingLossCapture({ leadId: selectedLead.id, stage: "lost", isEdit: true });
                               }}
                               data-testid="option-edit-loss-reason"
                             >
@@ -3816,7 +3817,7 @@ export default function Leads() {
                               onClick={() => {
                                 setLossReasonInput(selectedLead.lossReason ?? "");
                                 setLossNoteInput(selectedLead.lossNote ?? "");
-                                setPendingLossCapture({ leadId: selectedLead.id, stage: "lost" });
+                                setPendingLossCapture({ leadId: selectedLead.id, stage: "lost", isEdit: !!selectedLead.lossReason });
                               }}
                             >
                               {selectedLead.lossReason ? "Edit" : "Add"}
@@ -4942,23 +4943,25 @@ export default function Leads() {
             >
               Cancel
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (pendingLossCapture) {
-                  updateLeadStageMutation.mutate({
-                    id: pendingLossCapture.leadId,
-                    stage: pendingLossCapture.stage,
-                    confidenceScore: pendingLossCapture.confidenceScore,
-                  });
-                  setPendingLossCapture(null);
-                }
-              }}
-              disabled={updateLeadStageMutation.isPending}
-              data-testid="button-skip-loss-reason"
-            >
-              Skip
-            </Button>
+            {!pendingLossCapture?.isEdit && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (pendingLossCapture) {
+                    updateLeadStageMutation.mutate({
+                      id: pendingLossCapture.leadId,
+                      stage: pendingLossCapture.stage,
+                      confidenceScore: pendingLossCapture.confidenceScore,
+                    });
+                    setPendingLossCapture(null);
+                  }
+                }}
+                disabled={updateLeadStageMutation.isPending}
+                data-testid="button-skip-loss-reason"
+              >
+                Skip
+              </Button>
+            )}
             <Button
               variant="destructive"
               onClick={() => {
@@ -4977,7 +4980,7 @@ export default function Leads() {
               data-testid="button-confirm-loss-reason"
             >
               {updateLeadStageMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
-              Mark as Lost
+              {pendingLossCapture?.isEdit ? "Save Loss Reason" : "Mark as Lost"}
             </Button>
           </DialogFooter>
         </DialogContent>
