@@ -380,7 +380,7 @@ export default function EmailSyncPage() {
   const needsResponseCount = allThreads.filter(t => t.requiresResponse).length;
   const hasTasksCount = allThreads.filter(t => t.messages.some(m => m.aiSuggestedTasks && m.aiSuggestedTasks.length > 0)).length;
   const unlinkedCount = allThreads.filter(t => !t.messages.some(m => m.clientId !== null || m.leadId !== null)).length;
-  const dismissedCount = groupIntoThreads(emails.filter(e => e.isDismissed)).length;
+  const dismissedCount = groupIntoThreads(emails).filter(t => t.messages.every(m => m.isDismissed)).length;
 
   const matchedClient = primaryEmail?.clientId ? clients.find(c => c.id === primaryEmail.clientId) : null;
   const matchedLead = primaryEmail?.leadId ? leads.find(l => l.id === primaryEmail.leadId) : null;

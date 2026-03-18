@@ -468,7 +468,7 @@ function LeadLinkedEmails({ leadId }: { leadId: number }) {
     <div className="space-y-2">
       <h4 className="text-xs font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
         <Mail className="h-3.5 w-3.5" />
-        Email Threads ({threads.length})
+        {threads.length} Threads
       </h4>
       <div className="space-y-1.5">
         {threads.map((thread) => {
