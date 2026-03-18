@@ -2302,7 +2302,7 @@ Respond ONLY with JSON — no markdown:
           lines.push(`Most recent announcement: ${lastAnnouncement}`);
         }
 
-        if (wonCount === 0 && estCreatedCount === 0 && clientCount === 0 && taskCount === 0) {
+        if (wonCount === 0 && estCreatedCount === 0 && estSentCount === 0 && clientCount === 0 && taskCount === 0) {
           return res.json({ draft: "" });
         }
 
