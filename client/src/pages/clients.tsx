@@ -110,6 +110,12 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { AddressLink } from "@/components/AddressLink";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
@@ -549,6 +555,10 @@ export default function Customers() {
 
   const { data: allEstimates = [] } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates"],
+  });
+
+  const { data: emailResponseRates = {} } = useQuery<Record<number, { outboundEmails: number; emailsWithReply: number; responseRate: number }>>({
+    queryKey: ["/api/clients/email-response-rates"],
   });
 
   const [duplicateClientWarning, setDuplicateClientWarning] = useState<{ id: number; name: string } | null>(null);
@@ -1682,6 +1692,7 @@ export default function Customers() {
                             </TableHead>
                           );
                         })}
+                        <TableHead className="font-bold min-w-[120px]">Email Reply Rate</TableHead>
                         {isAdminOrManager && (
                           <TableHead className="font-bold min-w-[140px]">Acct Mgr</TableHead>
                         )}
@@ -1830,6 +1841,33 @@ export default function Customers() {
                                       </span>
                                     )}
                                   </div>
+                                );
+                              })()}
+                            </TableCell>
+                            <TableCell>
+                              {(() => {
+                                const rateData = emailResponseRates[c.id];
+                                if (!rateData) {
+                                  return <span className="text-xs text-muted-foreground italic">No data</span>;
+                                }
+                                const { responseRate, emailsWithReply, outboundEmails } = rateData;
+                                const rateColor = responseRate >= 50 ? "text-green-600" : responseRate >= 25 ? "text-amber-600" : "text-red-500";
+                                return (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className={`text-sm font-semibold cursor-default ${rateColor}`} data-testid={`text-email-rate-${c.id}`}>
+                                          {responseRate}%
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="max-w-xs">
+                                        <p className="text-xs">{emailsWithReply} of {outboundEmails} outreach email{outboundEmails !== 1 ? "s" : ""} received a reply</p>
+                                        {responseRate < 25 && (
+                                          <p className="text-xs text-red-400 mt-1">Low — mild negative health signal</p>
+                                        )}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
                                 );
                               })()}
                             </TableCell>

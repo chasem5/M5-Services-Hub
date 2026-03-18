@@ -410,6 +410,9 @@ export interface IStorage {
   getClientOnboardingChecklist(clientId: number): Promise<ClientOnboardingChecklist[]>;
   upsertClientOnboardingItem(clientId: number, itemKey: string, isCompleted: boolean): Promise<ClientOnboardingChecklist>;
   getOnboardingCompletionMap(clientIds: number[], applicableClientIds?: number[]): Promise<Map<number, { completed: number; total: number }>>;
+
+  // Email Response Rate
+  getClientEmailResponseRate(clientId: number): Promise<{ outboundEmails: number; emailsWithReply: number; responseRate: number | null }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2619,6 +2622,48 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return map;
+  }
+
+  async getClientEmailResponseRate(clientId: number): Promise<{ outboundEmails: number; emailsWithReply: number; responseRate: number | null }> {
+    // Fetch all outbound email messages for this client
+    const outboundEmails = await db
+      .select({ id: emailMessages.id, gmailThreadId: emailMessages.gmailThreadId })
+      .from(emailMessages)
+      .where(
+        and(
+          eq(emailMessages.clientId, clientId),
+          eq(emailMessages.direction, "outbound")
+        )
+      );
+
+    const outboundCount = outboundEmails.length;
+
+    if (outboundCount === 0) {
+      return { outboundEmails: 0, emailsWithReply: 0, responseRate: null };
+    }
+
+    // Get all unique thread IDs from outbound emails
+    const outboundThreadIds = [...new Set(outboundEmails.map(e => e.gmailThreadId))];
+
+    // Find which threads have at least one inbound reply
+    const inboundReplies = await db
+      .select({ gmailThreadId: emailMessages.gmailThreadId })
+      .from(emailMessages)
+      .where(
+        and(
+          inArray(emailMessages.gmailThreadId, outboundThreadIds),
+          eq(emailMessages.direction, "inbound")
+        )
+      );
+
+    // Thread IDs that got a reply
+    const repliedThreadIds = new Set(inboundReplies.map(e => e.gmailThreadId));
+
+    // Count outbound emails whose thread received a reply
+    const emailsWithReply = outboundEmails.filter(e => repliedThreadIds.has(e.gmailThreadId)).length;
+    const responseRate = Math.round((emailsWithReply / outboundCount) * 100);
+
+    return { outboundEmails: outboundCount, emailsWithReply, responseRate };
   }
 }
 

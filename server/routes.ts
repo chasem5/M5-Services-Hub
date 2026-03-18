@@ -528,6 +528,69 @@ export async function registerRoutes(
     res.json(clients);
   });
 
+  // Bulk email response rates for all clients (single efficient query)
+  app.get("/api/clients/email-response-rates", isAuthenticated, async (req, res) => {
+    try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Scope to authorized clients only
+      const scopedUserId = await getScopedUserId(req, "customers");
+      const authorizedClients = await storage.listClients(scopedUserId);
+      const authorizedClientIds = authorizedClients.map(c => c.id);
+
+      if (authorizedClientIds.length === 0) {
+        return res.json({});
+      }
+
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const toRows = (r: any): any[] => {
+        if (Array.isArray(r)) return r;
+        if (r && Array.isArray((r as any).rows)) return (r as any).rows;
+        return [];
+      };
+
+      // Count outbound email messages per client, and how many are in threads that received a reply.
+      // Denominator: total outbound email messages sent to this client.
+      // Numerator: outbound emails whose thread also contains at least one inbound reply.
+      const rows = toRows(await db.execute(sql`
+        SELECT
+          out_emails.client_id,
+          COUNT(out_emails.id) AS outbound_emails,
+          COUNT(out_emails.id) FILTER (
+            WHERE EXISTS (
+              SELECT 1 FROM email_messages in_emails
+              WHERE in_emails.gmail_thread_id = out_emails.gmail_thread_id
+                AND in_emails.direction = 'inbound'
+            )
+          ) AS emails_with_reply
+        FROM email_messages out_emails
+        WHERE out_emails.direction = 'outbound'
+          AND out_emails.client_id = ANY(${authorizedClientIds}::int[])
+        GROUP BY out_emails.client_id
+      `));
+
+      const result: Record<number, { outboundEmails: number; emailsWithReply: number; responseRate: number }> = {};
+      for (const r of rows) {
+        const clientId = Number(r.client_id);
+        const outbound = Number(r.outbound_emails ?? 0);
+        const withReply = Number(r.emails_with_reply ?? 0);
+        if (outbound > 0) {
+          result[clientId] = {
+            outboundEmails: outbound,
+            emailsWithReply: withReply,
+            responseRate: Math.round((withReply / outbound) * 100),
+          };
+        }
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/clients", isAuthenticated, async (req, res) => {
     const userId = (req as any).user.claims.sub;
     const clientData = insertClientSchema.parse({ ...req.body, createdBy: userId });
@@ -6013,6 +6076,7 @@ Guidelines:
     hasActiveSA: boolean,
     ltv: number,
     invoiceTrend: "growing" | "flat" | "declining" = "flat",
+    emailResponseRate: number | null = null,
   ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk" } {
     let healthScore = 0;
     if (hasActiveSA) healthScore += 2;
@@ -6020,6 +6084,10 @@ Guidelines:
     else if (invoiceTrend === "flat") healthScore += 1;
     if (velocityDirection === "growing" || velocityDirection === "flat") healthScore += 1;
     if (openDeals > 0) healthScore += 1;
+    // Email response rate: mild negative signal when low (< 25%), no bonus when good
+    if (emailResponseRate !== null && emailResponseRate < 25) healthScore -= 1;
+    // Clamp to valid range
+    healthScore = Math.max(0, healthScore);
     const healthStatus = healthScore >= 5 ? "healthy" : healthScore >= 3 ? "watch" : "at_risk";
     return { healthScore, healthStatus };
   }
@@ -6157,9 +6225,13 @@ Guidelines:
       const invoiceMonthly = invoiceMonthRows.map(r => ({ month: r.month as string, total: Number(r.total ?? 0) }));
       const { invoiceTrend, last3Avg: invoiceLast3Avg, prior3Avg: invoicePrior3Avg } = computeInvoiceTrend(invoiceMonthly);
 
+      // ── Email response rate ───────────────────────────────────────────────
+      const emailRateData = await storage.getClientEmailResponseRate(clientId);
+      const { outboundEmails: emailOutbound, emailsWithReply: emailReplied, responseRate: emailResponseRate } = emailRateData;
+
       // ── Health score (6-point weighted system) ───────────────────────────
       const { healthScore, healthStatus } = computeHealthScoreV2(
-        velocityDirection, openCount, hasActiveSA, ltv, invoiceTrend
+        velocityDirection, openCount, hasActiveSA, ltv, invoiceTrend, emailResponseRate
       );
 
       res.json({
@@ -6189,6 +6261,10 @@ Guidelines:
         // SA
         hasActiveSA,
         serviceAgreements,
+        // Email response rate
+        emailOutbound,
+        emailReplied,
+        emailResponseRate,
         // Health
         healthScore,
         healthStatus,

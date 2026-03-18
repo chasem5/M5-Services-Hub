@@ -1,0 +1,35 @@
+=======
+  async getClientEmailResponseRate(clientId: number): Promise<{ outboundThreads: number; repliedThreads: number; responseRate: number | null }> {
+    const outboundEmails = await db
+      .select({ gmailThreadId: emailMessages.gmailThreadId })
+      .from(emailMessages)
+      .where(
+        and(
+          eq(emailMessages.clientId, clientId),
+          eq(emailMessages.direction, "outbound")
+        )
+      );
+
+    const outboundThreadIds = [...new Set(outboundEmails.map(e => e.gmailThreadId))];
+    const outboundThreads = outboundThreadIds.length;
+
+    if (outboundThreads === 0) {
+      return { outboundThreads: 0, repliedThreads: 0, responseRate: null };
+    }
+
+    const inboundReplies = await db
+      .select({ gmailThreadId: emailMessages.gmailThreadId })
+      .from(emailMessages)
+      .where(
+        and(
+          inArray(emailMessages.gmailThreadId, outboundThreadIds),
+          eq(emailMessages.direction, "inbound")
+        )
+      );
+
+    const repliedThreadIds = new Set(inboundReplies.map(e => e.gmailThreadId));
+    const repliedThreads = repliedThreadIds.size;
+    const responseRate = Math.round((repliedThreads / outboundThreads) * 100);
+
+    return { outboundThreads, repliedThreads, responseRate };
+>>>>>>> 2f68388 (feat: Email Response Rate Tracking (Task #36))

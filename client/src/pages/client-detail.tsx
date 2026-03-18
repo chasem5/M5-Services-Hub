@@ -4169,6 +4169,9 @@ interface IntelData {
   invoiceTrend: "growing" | "flat" | "declining";
   invoiceLast3Avg: number;
   invoicePrior3Avg: number;
+  emailOutbound: number;
+  emailReplied: number;
+  emailResponseRate: number | null;
   serviceAgreements: {
     buildopsId: string;
     agreementNumber: string;
@@ -4369,6 +4372,26 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
         </Card>
       </div>
 
+      {/* ── Email response rate ── */}
+      {data.emailResponseRate !== null && (
+        <Card className="shadow-sm bg-card" data-testid="card-email-response-rate">
+          <CardContent className="p-4 flex items-center gap-6">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Email Response Rate</p>
+              <p className={cn("text-3xl font-heading font-bold mt-0.5", data.emailResponseRate >= 50 ? "text-green-600" : data.emailResponseRate >= 25 ? "text-amber-600" : "text-red-500")} data-testid="text-email-response-rate">
+                {data.emailResponseRate}%
+              </p>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p>{data.emailReplied} of {data.emailOutbound} outreach email{data.emailOutbound !== 1 ? "s" : ""} received a reply</p>
+              {data.emailResponseRate < 25 && (
+                <p className="text-red-500 text-xs mt-1 font-medium">Low response rate — mild negative signal</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── 12-month job activity chart ── */}
       {data.jobTrend && data.jobTrend.some(m => m.count > 0) && (
         <Card className="shadow-sm bg-card">
@@ -4470,6 +4493,29 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
                   : <X className="h-4 w-4 text-red-400" />}
               </div>
             </div>
+            {/* Email response rate — penalty signal */}
+            {data.emailResponseRate !== null && (
+              <div className="flex items-center justify-between gap-2" data-testid="row-email-response-rate">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="text-muted-foreground truncate">Email response rate</span>
+                  <span className="text-xs text-muted-foreground shrink-0">(penalty if &lt;25%)</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className={cn("text-xs font-semibold", data.emailResponseRate < 25 ? "text-red-400" : "text-green-600")}>
+                    {data.emailResponseRate < 25 ? "−1" : "+0"}
+                  </span>
+                  {data.emailResponseRate < 25
+                    ? <TrendingDown className="h-4 w-4 text-red-400" />
+                    : <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                </div>
+              </div>
+            )}
+            {data.emailResponseRate !== null && (
+              <p className="text-xs text-muted-foreground pl-5 -mt-1" data-testid="text-email-response-detail">
+                {data.emailReplied} of {data.emailOutbound} outreach email{data.emailOutbound !== 1 ? "s" : ""} received a reply — {data.emailResponseRate}%
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
