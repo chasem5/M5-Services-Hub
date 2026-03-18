@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, boolean, varchar, jsonb, decimal } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, boolean, varchar, jsonb, decimal, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./models/auth";
@@ -743,6 +743,38 @@ export const buildopsEmployees = pgTable("buildops_employees", {
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
 });
 export type BuildopsEmployee = typeof buildopsEmployees.$inferSelect;
+
+// Client Onboarding Checklist
+export const clientOnboardingChecklist = pgTable("client_onboarding_checklist", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+  itemKey: varchar("item_key", { length: 100 }).notNull(),
+  isCompleted: boolean("is_completed").default(false).notNull(),
+  completedAt: timestamp("completed_at"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({ unq: unique().on(t.clientId, t.itemKey) }));
+
+export const insertClientOnboardingChecklistSchema = createInsertSchema(clientOnboardingChecklist).omit({ id: true, updatedAt: true });
+export type ClientOnboardingChecklist = typeof clientOnboardingChecklist.$inferSelect;
+export type InsertClientOnboardingChecklist = z.infer<typeof insertClientOnboardingChecklistSchema>;
+
+export const ONBOARDING_ITEM_KEYS = [
+  "buildops_customer_linked",
+  "service_agreement_created",
+  "first_job_scheduled",
+  "welcome_email_sent",
+  "primary_contact_confirmed",
+] as const;
+export type OnboardingItemKey = typeof ONBOARDING_ITEM_KEYS[number];
+export const ONBOARDING_TOTAL_ITEMS = ONBOARDING_ITEM_KEYS.length;
+
+export const ONBOARDING_ITEM_LABELS: Record<OnboardingItemKey, string> = {
+  buildops_customer_linked: "BuildOps customer linked",
+  service_agreement_created: "Service agreement created",
+  first_job_scheduled: "First job scheduled",
+  welcome_email_sent: "Welcome email sent",
+  primary_contact_confirmed: "Primary contact confirmed",
+};
 
 // BuildOps Sync Log
 export const buildopsSyncLog = pgTable("buildops_sync_log", {

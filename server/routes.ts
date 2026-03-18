@@ -33,6 +33,8 @@ import {
   insertPortfolioBuildingSchema,
   insertPortfolioContactSchema,
   insertAiFeedbackSchema,
+  ONBOARDING_ITEM_KEYS,
+  ONBOARDING_TOTAL_ITEMS,
 } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
@@ -155,6 +157,7 @@ export async function registerRoutes(
   await storage.migrateBuildopsClientColumns();
   await storage.migrateBuildopsPropertyColumns();
   await storage.migrateParentClientColumn();
+  await storage.migrateClientOnboardingChecklist();
   // Seed default value tier settings
   await storage.getValueTierSettings();
   // Seed default contact stages on startup
@@ -458,6 +461,27 @@ export async function registerRoutes(
   });
 
   // Duplicate detection
+  app.get("/api/clients/onboarding-summary", isAuthenticated, async (req, res) => {
+    if (!(await hasModuleAccess(req, "customers"))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const scopedUserId = await getScopedUserId(req, "customers");
+    const [allClients, allLeads] = await Promise.all([
+      storage.listClients(scopedUserId),
+      storage.listLeads(scopedUserId),
+    ]);
+    const clientIds = allClients.map(c => c.id);
+    const wonClientIdSet = new Set(allLeads.filter(l => l.stage === "won" && l.clientId != null).map(l => l.clientId as number));
+    const activeClientIdSet = new Set(allClients.filter(c => c.buildopsStatus === "active").map(c => c.id));
+    const applicableClientIds = [...new Set([...wonClientIdSet, ...activeClientIdSet])].filter(id => clientIds.includes(id));
+    const map = await storage.getOnboardingCompletionMap(clientIds, applicableClientIds);
+    const result: Record<number, { completed: number; total: number }> = {};
+    for (const [clientId, data] of map.entries()) {
+      result[clientId] = data;
+    }
+    res.json(result);
+  });
+
   app.get("/api/clients/check-duplicate", isAuthenticated, async (req, res) => {
     const name = req.query.name as string;
     if (!name) return res.status(400).json({ message: "Name parameter required" });
@@ -685,6 +709,48 @@ export async function registerRoutes(
       const msg = err instanceof Error ? err.message : "An error occurred";
       res.status(500).json({ message: msg });
     }
+  });
+
+  // Client Onboarding Checklist
+  const onboardingItemKeySchema = z.enum(ONBOARDING_ITEM_KEYS);
+
+  app.get("/api/clients/:id/onboarding-checklist", isAuthenticated, async (req, res) => {
+    if (!(await hasModuleAccess(req, "customers"))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const id = parseInt(req.params.id as string);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid client ID" });
+    const scopedUserId = await getScopedUserId(req, "customers");
+    if (scopedUserId) {
+      const client = await storage.getClient(id);
+      if (!client || client.createdBy !== scopedUserId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+    const items = await storage.getClientOnboardingChecklist(id);
+    res.json(items);
+  });
+
+  app.patch("/api/clients/:id/onboarding-checklist/:itemKey", isAuthenticated, async (req, res) => {
+    if (!(await hasModuleAccess(req, "customers"))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const id = parseInt(req.params.id as string);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid client ID" });
+    const parsedKey = onboardingItemKeySchema.safeParse(req.params.itemKey);
+    if (!parsedKey.success) {
+      return res.status(400).json({ message: "Invalid onboarding item key" });
+    }
+    const scopedUserId = await getScopedUserId(req, "customers");
+    if (scopedUserId) {
+      const client = await storage.getClient(id);
+      if (!client || client.createdBy !== scopedUserId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+    }
+    const { isCompleted } = z.object({ isCompleted: z.boolean() }).parse(req.body);
+    const item = await storage.upsertClientOnboardingItem(id, parsedKey.data, isCompleted);
+    res.json(item);
   });
 
   // Client Contacts

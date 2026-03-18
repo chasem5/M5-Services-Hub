@@ -147,7 +147,9 @@ import {
   type ActivityLog,
   type BuildingPortfolio,
   type ContactStage,
-  type IndustryOption
+  type IndustryOption,
+  ONBOARDING_ITEM_KEYS,
+  ONBOARDING_ITEM_LABELS,
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { OrgChart } from "@/components/OrgChart";
@@ -806,6 +808,7 @@ export default function ClientDetail() {
   const [dragContactId, setDragContactId] = useState<number | null>(null);
   const [dragOverOfficeId, setDragOverOfficeId] = useState<number | "unassigned" | null>(null);
   const [orgChartView, setOrgChartView] = useState<"people" | "portfolio">("people");
+  const [onboardingChecklistOpen, setOnboardingChecklistOpen] = useState(true);
 
   // Queries
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
@@ -938,6 +941,24 @@ export default function ClientDetail() {
 
   const { data: spendEntries = [], isLoading: isLoadingSpend } = useQuery<BdSpendEntry[]>({
     queryKey: ["/api/clients", clientId, "spend"],
+  });
+
+  const { data: onboardingItems = [] } = useQuery<Array<{ id: number; clientId: number; itemKey: string; isCompleted: boolean; completedAt: string | null; updatedAt: string }>>({
+    queryKey: ["/api/clients", clientId, "onboarding-checklist"],
+  });
+
+  const toggleOnboardingItemMutation = useMutation({
+    mutationFn: async ({ itemKey, isCompleted }: { itemKey: string; isCompleted: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/clients/${clientId}/onboarding-checklist/${itemKey}`, { isCompleted });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "onboarding-checklist"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients/onboarding-summary"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to update checklist", variant: "destructive" });
+    },
   });
 
   // Mutations
@@ -1921,8 +1942,72 @@ export default function ClientDetail() {
                 </Card>
               </div>
 
-              {/* Right: Offices Preview + Recent Activity */}
+              {/* Right: Onboarding Checklist + Offices Preview + Recent Activity */}
               <div className="lg:col-span-2 space-y-6">
+                {/* Onboarding Checklist — for clients with a won deal or active BuildOps status */}
+                {(leads && leads.some(l => l.stage === "won") || (client && client.buildopsStatus === "active")) && (() => {
+                  const ONBOARDING_ITEMS = ONBOARDING_ITEM_KEYS.map(key => ({ key, label: ONBOARDING_ITEM_LABELS[key] }));
+                  const completedCount = ONBOARDING_ITEMS.filter(item => {
+                    const record = onboardingItems.find(r => r.itemKey === item.key);
+                    return record?.isCompleted;
+                  }).length;
+                  const total = ONBOARDING_ITEMS.length;
+                  const pct = Math.round((completedCount / total) * 100);
+                  return (
+                    <Card className="shadow-sm border-border/40 bg-card" data-testid="card-onboarding-checklist">
+                      <CardHeader className="pb-3 cursor-pointer select-none" onClick={() => setOnboardingChecklistOpen(o => !o)}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ClipboardList className="h-4 w-4 text-primary shrink-0" />
+                            <CardTitle className="text-base font-semibold">Onboarding</CardTitle>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-medium text-muted-foreground" data-testid="text-onboarding-progress">
+                              {completedCount} of {total} complete
+                            </span>
+                            {onboardingChecklistOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                          </div>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden" data-testid="bar-onboarding-progress">
+                          <div
+                            className="h-full rounded-full transition-all duration-300 bg-primary"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </CardHeader>
+                      {onboardingChecklistOpen && (
+                        <CardContent className="pt-0 pb-4 space-y-1">
+                          {ONBOARDING_ITEMS.map(item => {
+                            const record = onboardingItems.find(r => r.itemKey === item.key);
+                            const isChecked = record?.isCompleted ?? false;
+                            return (
+                              <div
+                                key={item.key}
+                                className={`flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer transition-colors select-none ${isChecked ? "text-muted-foreground" : "hover:bg-muted/60"}`}
+                                onClick={() => {
+                                  if (!toggleOnboardingItemMutation.isPending) {
+                                    toggleOnboardingItemMutation.mutate({ itemKey: item.key, isCompleted: !isChecked });
+                                  }
+                                }}
+                                data-testid={`toggle-onboarding-${item.key}`}
+                              >
+                                <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${isChecked ? "bg-primary border-primary" : "border-input"}`}>
+                                  {isChecked && (
+                                    <svg className="h-2.5 w-2.5 text-primary-foreground" fill="none" viewBox="0 0 12 12">
+                                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  )}
+                                </div>
+                                <span className={`text-sm ${isChecked ? "line-through" : "font-medium"}`}>{item.label}</span>
+                              </div>
+                            );
+                          })}
+                        </CardContent>
+                      )}
+                    </Card>
+                  );
+                })()}
+
                 {/* Offices Preview */}
                 <Card className="shadow-sm border-border/40 bg-card">
                   <CardHeader className="pb-3">

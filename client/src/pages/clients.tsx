@@ -510,6 +510,10 @@ export default function Customers() {
     queryKey: ["/api/clients"],
   });
 
+  const { data: onboardingSummary = {} } = useQuery<Record<number, { completed: number; total: number }>>({
+    queryKey: ["/api/clients/onboarding-summary"],
+  });
+
   const { data: allContacts = [], isLoading: isLoadingContacts } = useQuery<ClientContact[]>({
     queryKey: ["/api/client-contacts"],
   });
@@ -1749,6 +1753,22 @@ export default function Customers() {
                                           {children!.length} {children!.length === 1 ? "sub-company" : "sub-companies"}
                                         </span>
                                       )}
+                                      {(() => {
+                                        const summary = onboardingSummary[c.id];
+                                        if (summary && summary.completed < summary.total) {
+                                          return (
+                                            <span
+                                              className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300 font-medium border border-orange-200 dark:border-orange-800 flex items-center gap-1 shrink-0"
+                                              data-testid={`badge-onboarding-incomplete-${c.id}`}
+                                              title={`Onboarding: ${summary.completed}/${summary.total} complete`}
+                                            >
+                                              <ClipboardList className="h-2.5 w-2.5" />
+                                              {summary.completed}/{summary.total}
+                                            </span>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
                                     </div>
                                     {(c.serviceNeeds ?? []).length > 0 && (
                                       <div className="flex flex-wrap gap-1">
@@ -1949,6 +1969,22 @@ export default function Customers() {
                                   {isAdminOrManager && (c as any).buildopsStatus === "inactive" && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-card-${c.id}`}>Inactive in BuildOps</span>
                                   )}
+                                  {(() => {
+                                    const summary = onboardingSummary[c.id];
+                                    if (summary && summary.completed < summary.total) {
+                                      return (
+                                        <span
+                                          className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300 font-medium border border-orange-200 dark:border-orange-800 flex items-center gap-1 shrink-0"
+                                          data-testid={`badge-onboarding-incomplete-card-${c.id}`}
+                                          title={`Onboarding: ${summary.completed}/${summary.total} complete`}
+                                        >
+                                          <ClipboardList className="h-2.5 w-2.5" />
+                                          {summary.completed}/{summary.total}
+                                        </span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                 </div>
                                 <TierBadge tier={c.tier} size="xs" />
                               </div>

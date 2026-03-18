@@ -45,6 +45,8 @@ import {
   buildopsAgreements,
   buildopsInvoices,
   buildopsJobs,
+  clientOnboardingChecklist,
+  ONBOARDING_TOTAL_ITEMS,
   aiFeedback,
   type BuildopsSyncLog,
   type AiFeedback,
@@ -116,6 +118,8 @@ import {
   type InsertAttachment,
   type PushSubscription,
   type InsertPushSubscription,
+  type ClientOnboardingChecklist,
+  type InsertClientOnboardingChecklist,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -399,6 +403,12 @@ export interface IStorage {
   createBuildopsSyncLog(data: { entityType: string; entityId?: number | null; buildopsId?: string | null; action: string; message?: string | null }): Promise<BuildopsSyncLog>;
   listBuildopsSyncLogs(limit?: number): Promise<BuildopsSyncLog[]>;
   getLastBuildopsSync(): Promise<BuildopsSyncLog | null>;
+
+  // Client Onboarding Checklist
+  migrateClientOnboardingChecklist(): Promise<void>;
+  getClientOnboardingChecklist(clientId: number): Promise<ClientOnboardingChecklist[]>;
+  upsertClientOnboardingItem(clientId: number, itemKey: string, isCompleted: boolean): Promise<ClientOnboardingChecklist>;
+  getOnboardingCompletionMap(clientIds: number[], applicableClientIds?: number[]): Promise<Map<number, { completed: number; total: number }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2490,6 +2500,86 @@ export class DatabaseStorage implements IStorage {
   async getLastBuildopsSync(): Promise<BuildopsSyncLog | null> {
     const [row] = await db.select().from(buildopsSyncLog).orderBy(desc(buildopsSyncLog.createdAt)).limit(1);
     return row ?? null;
+  }
+
+  async migrateClientOnboardingChecklist(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS client_onboarding_checklist (
+          id serial PRIMARY KEY,
+          client_id integer NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+          item_key varchar(100) NOT NULL,
+          is_completed boolean NOT NULL DEFAULT false,
+          completed_at timestamp,
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+    } catch (e) {
+      console.error("migrateClientOnboardingChecklist: create table error:", e);
+    }
+    try {
+      await db.execute(sql`
+        DO $$ BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE constraint_name = 'client_onboarding_checklist_client_id_item_key_unique'
+            AND table_name = 'client_onboarding_checklist'
+          ) THEN
+            ALTER TABLE client_onboarding_checklist
+              ADD CONSTRAINT client_onboarding_checklist_client_id_item_key_unique
+              UNIQUE (client_id, item_key);
+          END IF;
+        END $$
+      `);
+    } catch (e) {
+      console.error("migrateClientOnboardingChecklist: unique constraint error:", e);
+    }
+  }
+
+  async getClientOnboardingChecklist(clientId: number): Promise<ClientOnboardingChecklist[]> {
+    return db.select().from(clientOnboardingChecklist).where(eq(clientOnboardingChecklist.clientId, clientId));
+  }
+
+  async upsertClientOnboardingItem(clientId: number, itemKey: string, isCompleted: boolean): Promise<ClientOnboardingChecklist> {
+    const [row] = await db
+      .insert(clientOnboardingChecklist)
+      .values({
+        clientId,
+        itemKey,
+        isCompleted,
+        completedAt: isCompleted ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [clientOnboardingChecklist.clientId, clientOnboardingChecklist.itemKey],
+        set: {
+          isCompleted,
+          completedAt: isCompleted ? new Date() : null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  async getOnboardingCompletionMap(clientIds: number[], applicableClientIds?: number[]): Promise<Map<number, { completed: number; total: number }>> {
+    const TOTAL_ITEMS = ONBOARDING_TOTAL_ITEMS;
+    const map = new Map<number, { completed: number; total: number }>();
+    if (clientIds.length === 0) return map;
+    const rows = await db.select().from(clientOnboardingChecklist).where(inArray(clientOnboardingChecklist.clientId, clientIds));
+    const completedByClient = new Map<number, number>();
+    for (const row of rows) {
+      if (row.isCompleted) {
+        completedByClient.set(row.clientId, (completedByClient.get(row.clientId) ?? 0) + 1);
+      }
+    }
+    const applicable = applicableClientIds ?? Array.from(completedByClient.keys());
+    for (const clientId of applicable) {
+      if (clientIds.includes(clientId)) {
+        map.set(clientId, { completed: completedByClient.get(clientId) ?? 0, total: TOTAL_ITEMS });
+      }
+    }
+    return map;
   }
 }
 
