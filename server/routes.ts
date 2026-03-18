@@ -2225,41 +2225,94 @@ Respond ONLY with JSON — no markdown:
     }
   });
 
-  // ── AI-generate release notes draft from git log ──────────────────────────
+  // ── AI-generate release notes draft from git log (or DB activity fallback) ──
   app.post("/api/announcements/generate-release-notes", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
     try {
       const { execSync } = await import("child_process");
       let gitLog = "";
+      let useDbFallback = false;
       try {
         gitLog = execSync("git log --oneline --no-merges -50", { cwd: process.cwd(), timeout: 10000 }).toString().trim();
       } catch {
-        // git unavailable in deployed environment — return empty draft so user types manually
-        return res.json({ draft: "" });
+        useDbFallback = true;
       }
 
-      if (!gitLog) {
+      if (!gitLog && !useDbFallback) {
         return res.json({ draft: "" });
       }
 
       const { openai } = await import("./openai");
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are a product changelog writer for M5 Services, a precon/facility maintenance CRM built for Chase and the M5 team.
+
+      let contextContent = "";
+      let systemPrompt = "";
+
+      if (useDbFallback) {
+        const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const [wonLeads, sentEstimates, newClients, announcements] = await Promise.all([
+          db.execute(sql`
+            SELECT COUNT(*) as count, COALESCE(SUM(value), 0) as total_value
+            FROM leads WHERE stage = 'won' AND updated_at >= ${since}
+          `),
+          db.execute(sql`
+            SELECT COUNT(*) as count FROM estimates
+            WHERE status IN ('sent','accepted') AND created_at >= ${since}
+          `),
+          db.execute(sql`
+            SELECT COUNT(*) as count FROM clients WHERE created_at >= ${since}
+          `),
+          db.execute(sql`
+            SELECT title FROM announcements ORDER BY created_at DESC LIMIT 3
+          `),
+        ]);
+
+        const toRows = (r: any) => (Array.isArray(r) ? r : r?.rows ?? []);
+        const wonRow = toRows(wonLeads)[0] ?? {};
+        const estRow = toRows(sentEstimates)[0] ?? {};
+        const clientRow = toRows(newClients)[0] ?? {};
+        const recentAnnouncements: string[] = toRows(announcements).map((r: any) => r.title).filter(Boolean);
+
+        const wonCount = Number(wonRow.count ?? 0);
+        const wonValue = Number(wonRow.total_value ?? 0);
+        const estCount = Number(estRow.count ?? 0);
+        const clientCount = Number(clientRow.count ?? 0);
+
+        const lines: string[] = [
+          `Reporting period: last 30 days (${since.toDateString()} – today)`,
+          `Deals won: ${wonCount} (total value $${wonValue.toLocaleString()})`,
+          `Proposals/estimates sent or accepted: ${estCount}`,
+          `New clients synced: ${clientCount}`,
+        ];
+        if (recentAnnouncements.length) {
+          lines.push(`Most recent announcements: ${recentAnnouncements.join(", ")}`);
+        }
+
+        if (wonCount === 0 && estCount === 0 && clientCount === 0) {
+          return res.json({ draft: "" });
+        }
+
+        contextContent = lines.join("\n");
+        systemPrompt = `You are a product changelog writer for M5 Services, a precon/facility maintenance CRM.
+Based on the CRM activity summary below, write a short "What's New / This Month" update for the M5 team.
+Write 3-6 bullet points starting with "•" in plain English describing business activity and CRM highlights.
+Start each bullet with a clear action verb (Closed, Sent, Added, Synced, etc.).
+Be concise — each bullet should be one sentence. Do not include a title or header line.`;
+      } else {
+        contextContent = `Recent git commits:\n${gitLog}`;
+        systemPrompt = `You are a product changelog writer for M5 Services, a precon/facility maintenance CRM built for Chase and the M5 team.
 Convert the git commits below into a clean, user-friendly "What's New" section.
 Write 4-8 bullet points starting with "•" describing new features, fixes, and improvements in plain English.
 IMPORTANT: Translate every commit into user-facing language — do not skip any commit, even if it sounds technical. Every commit represents a real improvement or feature the user cares about.
 Technical translations: "schema" → data structure, "routes" → features, "endpoint" → feature, "refactor" → improved reliability, "fix" → fixed, "PATCH" → fixed, "UI" → screen/interface, "modal" → popup dialog.
 Start each bullet with a clear action verb (Added, Fixed, Improved, Now, You can now, etc.).
 Be concise — each bullet should be one sentence. Do not include a title or header line.
-If after translating all commits you still have nothing meaningful, return an empty string — do not write a sentence saying there are no updates.`,
-          },
-          {
-            role: "user",
-            content: `Recent git commits:\n${gitLog}`,
-          },
+If after translating all commits you still have nothing meaningful, return an empty string — do not write a sentence saying there are no updates.`;
+      }
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: contextContent },
         ],
         temperature: 0.5,
         max_tokens: 700,

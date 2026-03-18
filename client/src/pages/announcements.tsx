@@ -184,7 +184,7 @@ export default function Announcements() {
         toast({ title: "Draft generated", description: "Review and edit before publishing." });
       } else {
         form.setValue("message", "");
-        toast({ title: "No history found", description: "No recent changes found — write your release notes manually." });
+        toast({ title: "Could not generate notes", description: "Describe your update manually." });
       }
     } catch (err: any) {
       toast({ title: "Generation failed", description: err.message, variant: "destructive" });
