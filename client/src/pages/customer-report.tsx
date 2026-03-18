@@ -14,6 +14,7 @@ import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { ActionPlanPanel } from "@/components/ActionPlanPanel";
+import { RecommendationsHub } from "@/components/RecommendationsHub";
 import {
   BarChart3,
   TrendingUp,
@@ -275,6 +276,7 @@ export default function CustomerReport() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [planClient, setPlanClient] = useState<{ clientId: number; name: string } | null>(null);
+  const [recsOpen, setRecsOpen] = useState(false);
 
   const { data: directoryUsers = [] } = useQuery<{id: string; firstName: string|null; lastName: string|null; email: string|null; role: string|null}[]>({
     queryKey: ["/api/users/directory"],
@@ -355,6 +357,16 @@ export default function CustomerReport() {
           </h1>
           <p className="text-muted-foreground text-sm mt-1">Account health, lifetime value, and pipeline metrics across all customers</p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setRecsOpen(true)}
+          data-testid="btn-open-recommendations"
+        >
+          <Sparkles className="h-4 w-4 text-primary" />
+          Recommendations
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -554,6 +566,19 @@ export default function CustomerReport() {
               clientId={planClient.clientId}
             />
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Recommendations slide-over */}
+      <Sheet open={recsOpen} onOpenChange={setRecsOpen}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-0" data-testid="sheet-recommendations">
+          <SheetHeader className="px-6 pt-6 pb-0">
+            <SheetTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI Recommendations
+            </SheetTitle>
+          </SheetHeader>
+          <RecommendationsHub />
         </SheetContent>
       </Sheet>
     </div>
