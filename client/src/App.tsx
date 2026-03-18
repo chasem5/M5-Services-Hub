@@ -70,6 +70,12 @@ function ProtectedRouter() {
           <Route path="/service-agreements">
             {() => <TabRedirect tab="agreements" />}
           </Route>
+          <Route path="/reports/service-agreements">
+            {() => <TabRedirect tab="agreements" />}
+          </Route>
+          <Route path="/reports/monthly-report">
+            {() => <TabRedirect tab="monthly" />}
+          </Route>
           <Route component={NotFound} />
         </Switch>
       </ErrorBoundary>

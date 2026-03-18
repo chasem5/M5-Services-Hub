@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2 } from "lucide-react";
 import RevenueAnalytics from "./revenue-analytics";
@@ -24,6 +24,16 @@ function getInitialTab(): string {
 
 export default function CompanyIntelligence() {
   const [activeTab, setActiveTab] = useState<string>(getInitialTab);
+
+  useEffect(() => {
+    function onHashChange() {
+      const hash = window.location.hash.replace("#", "");
+      const tab = TAB_VALUES.includes(hash) ? hash : "revenue";
+      setActiveTab(tab);
+    }
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   function handleTabChange(value: string) {
     setActiveTab(value);
