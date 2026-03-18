@@ -2772,7 +2772,7 @@ export class DatabaseStorage implements IStorage {
     };
 
     const wonDealsCount = wonLeads.length;
-    const wonDealsValue = wonLeads.reduce((s, l) => s + getLeadValue(l), 0);
+    const wonDealsValue = wonLeads.reduce((s, l) => s + parseFloat(l.value || "0"), 0);
 
     // 3. Pipeline value added (new leads created in the month that are active)
     const newPipelineLeads = await db
@@ -2972,12 +2972,12 @@ export class DatabaseStorage implements IStorage {
       if (r.client_id) saSet.add(r.client_id);
     }
 
-    // Open deals per client (CRM leads not won/lost/expired/cancelled)
+    // Open deals per client — exact same stage filter as Customer Intelligence health scoring
     const openDealsResult = await db.execute(sql`
       SELECT client_id, COUNT(*) AS count
       FROM leads
       WHERE client_id IS NOT NULL
-        AND stage NOT IN ('won', 'lost', 'expired', 'cancelled')
+        AND stage NOT IN ('won', 'lost', 'canceled')
       GROUP BY client_id
     `);
     const openDealsMap = new Map<number, number>();
