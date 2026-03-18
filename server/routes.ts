@@ -4506,14 +4506,10 @@ Respond with this JSON:
 
       const endpoints = [
         "/v1/employees",
-        "/v1/employees?size=200",
-        "/v1/employees?size=100",
-        "/v1/employees?page=0&size=100",
-        "/v1/employees?page=1&size=10",
-        "/v1/employees?page=1&limit=5",
-        "/v1/employees?offset=10&limit=10",
-        "/v1/employees?pageSize=100",
-        "/v1/employees?page=0&pageSize=100",
+        "/v1/employees?cursor=test_cursor",
+        "/v1/employees?after=test_after",
+        "/v1/employees?isActive=true",
+        "/v1/employees?page=2",
       ];
 
       const probes = await Promise.all(
@@ -4526,13 +4522,21 @@ Respond with this JSON:
             let parsedPreview: any = null;
             try { parsedPreview = JSON.parse(rawBody); } catch {}
             const elapsed = Date.now() - start;
+            // Capture all response headers
+            const respHeaders: Record<string, string> = {};
+            r.headers.forEach((v, k) => { respHeaders[k] = v; });
+            // For 200, surface top-level keys and item count
+            const topLevelKeys = parsedPreview && typeof parsedPreview === "object" && !Array.isArray(parsedPreview)
+              ? Object.keys(parsedPreview) : [];
             return {
               endpoint: path,
               status: r.status,
               statusText: r.statusText,
               elapsed,
-              bodyPreview: rawBody.length > 500 ? rawBody.slice(0, 500) + "…" : rawBody,
+              bodyPreview: rawBody.length > 1500 ? rawBody.slice(0, 1500) + "…" : rawBody,
               parsed: parsedPreview,
+              topLevelKeys,
+              respHeaders,
             };
           } catch (fetchErr: any) {
             return { endpoint: path, status: 0, statusText: "fetch error", elapsed: Date.now() - start, bodyPreview: fetchErr.message, parsed: null };

@@ -523,11 +523,21 @@ function BuildOpsPanel() {
                         </span>
                       </div>
                       {p.status === 200 && p.parsed && (
-                        <div className="text-[10px] font-semibold text-green-700 dark:text-green-400">
-                          items returned: {p.parsed.items?.length ?? (Array.isArray(p.parsed) ? p.parsed.length : "?")} / totalCount: {p.parsed.totalCount ?? "?"}
+                        <div className="space-y-0.5">
+                          <div className="text-[10px] font-semibold text-green-700 dark:text-green-400">
+                            items returned: {p.parsed.items?.length ?? (Array.isArray(p.parsed) ? p.parsed.length : "?")} / totalCount: {p.parsed.totalCount ?? "?"}
+                          </div>
+                          {p.topLevelKeys?.length > 0 && (
+                            <div className="text-[10px] text-blue-600 dark:text-blue-400">
+                              response keys: [{p.topLevelKeys.join(", ")}]
+                            </div>
+                          )}
+                          {p.respHeaders && Object.keys(p.respHeaders).map(h => (
+                            <div key={h} className="text-[10px] text-purple-600 dark:text-purple-400">hdr {h}: {p.respHeaders[h]}</div>
+                          ))}
                         </div>
                       )}
-                      <pre className="whitespace-pre-wrap break-all text-[10px] text-muted-foreground max-h-20 overflow-y-auto bg-muted/50 rounded p-1">{p.bodyPreview}</pre>
+                      <pre className="whitespace-pre-wrap break-all text-[10px] text-muted-foreground max-h-40 overflow-y-auto bg-muted/50 rounded p-1">{p.bodyPreview}</pre>
                     </div>
                   ))}
                 </div>
