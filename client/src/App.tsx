@@ -25,6 +25,7 @@ import WinLossReport from "@/pages/win-loss-report";
 import MonthlyReport from "@/pages/monthly-report";
 import ServiceAgreements from "@/pages/service-agreements";
 import RevenueAnalytics from "@/pages/revenue-analytics";
+import CompanyIntelligence from "@/pages/company-intelligence";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function ProtectedRouter() {
@@ -49,6 +50,7 @@ function ProtectedRouter() {
           <Route path="/email" component={EmailSync} />
           <Route path="/announcements" component={Announcements} />
           <Route path="/reports/customer-intelligence" component={CustomerReport} />
+          <Route path="/company-intelligence" component={CompanyIntelligence} />
           <Route path="/reports/cohort-analysis" component={CohortAnalysis} />
           <Route path="/reports/win-loss" component={WinLossReport} />
           <Route path="/reports/monthly-review" component={MonthlyReport} />

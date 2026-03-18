@@ -9,10 +9,7 @@ import {
   Mail,
   Megaphone,
   HeartPulse,
-  ClipboardList,
-  TrendingUp,
-  BarChart2,
-  FileBarChart2,
+  Building2,
   Sparkles,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
@@ -157,7 +154,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Reports</SidebarGroupLabel>
+          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Intelligence</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -176,65 +173,13 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={location === "/reports/cohort-analysis"}
-                  tooltip="Cohort Analysis"
-                  className={location === "/reports/cohort-analysis" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                  isActive={location === "/company-intelligence"}
+                  tooltip="Company Intelligence"
+                  className={location === "/company-intelligence" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                 >
-                  <Link href="/reports/cohort-analysis" data-testid="link-cohort-analysis" onClick={() => isMobile && setOpenMobile(false)}>
-                    <TrendingUp className={`h-4 w-4 shrink-0 ${location === "/reports/cohort-analysis" ? "text-primary" : ""}`} />
-                    <span className="group-data-[collapsible=icon]:hidden">Cohort Analysis</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location === "/service-agreements"}
-                  tooltip="Service Agreements"
-                  className={location === "/service-agreements" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
-                >
-                  <Link href="/service-agreements" data-testid="link-service-agreements" onClick={() => isMobile && setOpenMobile(false)}>
-                    <ClipboardList className={`h-4 w-4 shrink-0 ${location === "/service-agreements" ? "text-primary" : ""}`} />
-                    <span className="group-data-[collapsible=icon]:hidden">Service Agreements</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location === "/reports/revenue-analytics"}
-                  tooltip="Revenue Analytics"
-                  className={location === "/reports/revenue-analytics" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
-                >
-                  <Link href="/reports/revenue-analytics" data-testid="link-revenue-analytics" onClick={() => isMobile && setOpenMobile(false)}>
-                    <TrendingUp className={`h-4 w-4 shrink-0 ${location === "/reports/revenue-analytics" ? "text-primary" : ""}`} />
-                    <span className="group-data-[collapsible=icon]:hidden">Revenue Analytics</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location === "/reports/win-loss"}
-                  tooltip="Win/Loss Analysis"
-                  className={location === "/reports/win-loss" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
-                >
-                  <Link href="/reports/win-loss" data-testid="link-win-loss" onClick={() => isMobile && setOpenMobile(false)}>
-                    <BarChart2 className={`h-4 w-4 shrink-0 ${location === "/reports/win-loss" ? "text-primary" : ""}`} />
-                    <span className="group-data-[collapsible=icon]:hidden">Win / Loss</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location === "/reports/monthly-review"}
-                  tooltip="Monthly Report"
-                  className={location === "/reports/monthly-review" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
-                >
-                  <Link href="/reports/monthly-review" data-testid="link-monthly-report" onClick={() => isMobile && setOpenMobile(false)}>
-                    <FileBarChart2 className={`h-4 w-4 shrink-0 ${location === "/reports/monthly-review" ? "text-primary" : ""}`} />
-                    <span className="group-data-[collapsible=icon]:hidden">Monthly Report</span>
+                  <Link href="/company-intelligence" data-testid="link-company-intelligence" onClick={() => isMobile && setOpenMobile(false)}>
+                    <Building2 className={`h-4 w-4 shrink-0 ${location === "/company-intelligence" ? "text-primary" : ""}`} />
+                    <span className="group-data-[collapsible=icon]:hidden">Company Intel</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
