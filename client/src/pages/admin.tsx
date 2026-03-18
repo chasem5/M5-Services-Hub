@@ -1494,7 +1494,7 @@ function BuildOpsAuditPanel() {
         )}
         {data && (
           <Tabs value={auditTab} onValueChange={setAuditTab}>
-            <TabsList className="mb-4 h-9 bg-muted/60 rounded-lg p-1 flex-wrap gap-1">
+            <TabsList className="mb-4 h-9 bg-muted/60 rounded-lg p-1 flex-nowrap gap-1 overflow-x-auto scrollbar-hide">
               <TabsTrigger value="jobs" className="text-xs h-7 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 Jobs ({data.jobCount})
               </TabsTrigger>

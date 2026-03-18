@@ -176,19 +176,19 @@ export default function ServiceAgreementsPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               placeholder="Search agreements, customers..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-8 h-8 text-sm"
+              className="pl-8 h-8 text-sm w-full"
               data-testid="input-search-agreements"
             />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-8 text-sm w-[130px]" data-testid="select-status-filter">
+            <SelectTrigger className="h-8 text-sm w-full sm:w-[130px]" data-testid="select-status-filter">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -198,7 +198,7 @@ export default function ServiceAgreementsPage() {
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground ml-auto">{filtered.length} agreement{filtered.length !== 1 ? "s" : ""}</span>
+          <span className="text-xs text-muted-foreground sm:ml-auto">{filtered.length} agreement{filtered.length !== 1 ? "s" : ""}</span>
         </div>
 
         {/* Table */}
