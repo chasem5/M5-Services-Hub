@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { storage } from "./storage";
+import { computeHealthScoreV2, computeVelocityDirection, computeInvoiceTrend } from "./health-utils";
 import { isAuthenticated, requireRole } from "./replit_integrations/auth/replitAuth";
 import { openai, openaiAudio } from "./openai";
 import { toFile } from "openai";
@@ -6243,96 +6244,6 @@ Guidelines:
     const months12 = generateLast12Months();
     const map = new Map(sparse.map(r => [r.month, r.count]));
     return months12.map(m => ({ month: m, count: map.get(m) ?? 0 }));
-  }
-
-  function computeVelocityDirection(last90: number, prior90: number): "growing" | "flat" | "declining" {
-    if (prior90 === 0 && last90 === 0) return "flat";
-    if (prior90 === 0) return "growing";
-    const ratio = last90 / prior90;
-    if (ratio >= 1.15) return "growing";
-    if (ratio <= 0.85) return "declining";
-    return "flat";
-  }
-
-  function computeInvoiceTrend(
-    monthlyAmounts: { month: string; total: number }[]
-  ): { invoiceTrend: "growing" | "flat" | "declining"; last3Avg: number; prior3Avg: number } {
-    const amountMap = new Map(monthlyAmounts.map(r => [r.month, r.total]));
-    const now = new Date();
-    const months: string[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-    }
-    const prior3 = months.slice(0, 3).map(m => amountMap.get(m) ?? 0);
-    const last3 = months.slice(3).map(m => amountMap.get(m) ?? 0);
-    const prior3Avg = prior3.reduce((a, b) => a + b, 0) / 3;
-    const last3Avg = last3.reduce((a, b) => a + b, 0) / 3;
-    let invoiceTrend: "growing" | "flat" | "declining";
-    if (prior3Avg === 0 && last3Avg === 0) {
-      invoiceTrend = "flat";
-    } else if (prior3Avg === 0) {
-      invoiceTrend = "growing";
-    } else {
-      const ratio = last3Avg / prior3Avg;
-      if (ratio >= 1.15) invoiceTrend = "growing";
-      else if (ratio <= 0.85) invoiceTrend = "declining";
-      else invoiceTrend = "flat";
-    }
-    return { invoiceTrend, last3Avg, prior3Avg };
-  }
-
-  function computeHealthScoreV2(
-    velocityDirection: string,
-    openDeals: number,
-    hasActiveSA: boolean,
-    ltv: number,
-    invoiceTrend: "growing" | "flat" | "declining" = "flat",
-    emailResponseRate: number | null = null,
-    healthOverride?: string | null,
-    jobsLast6Months: number = -1,
-    jobsLast12Months: number = -1,
-  ): { healthScore: number; healthStatus: "healthy" | "watch" | "at_risk"; isOverridden: boolean } {
-    // Manual override takes full precedence — skip automated scoring
-    if (healthOverride === "healthy") return { healthScore: 6, healthStatus: "healthy", isOverridden: true };
-    if (healthOverride === "watch")   return { healthScore: 3, healthStatus: "watch",   isOverridden: true };
-    if (healthOverride === "at_risk") return { healthScore: 0, healthStatus: "at_risk", isOverridden: true };
-
-    // Automated scoring (max 7 points):
-    let healthScore = 0;
-    // SA: +1 (valuable signal but not the only path to healthy — project-only clients shouldn't be penalized)
-    if (hasActiveSA) healthScore += 1;
-    // Invoice revenue trend: the strongest signal
-    if (invoiceTrend === "growing") healthScore += 2;
-    else if (invoiceTrend === "flat") healthScore += 1;
-    // Job velocity over last 90 days
-    if (velocityDirection === "growing" || velocityDirection === "flat") healthScore += 1;
-    // Active pipeline: they're still sending work our way
-    if (openDeals > 0) healthScore += 1;
-    // Long-term revenue history: LTV > $25K means a meaningful relationship
-    if (ltv >= 25000) healthScore += 1;
-    // Email response rate: mild negative signal when low (< 25%)
-    if (emailResponseRate !== null && emailResponseRate < 25) healthScore -= 1;
-    // Clamp to valid range
-    healthScore = Math.max(0, healthScore);
-    // Thresholds: Healthy >= 4, Watch: 2–3, At Risk: < 2
-    let healthStatus: "healthy" | "watch" | "at_risk" = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
-
-    // ── Recency penalty ──────────────────────────────────────────────────────
-    // Inactivity is a strong negative signal regardless of historical metrics.
-    if (jobsLast6Months !== -1 && jobsLast6Months === 0) {
-      // -1 point penalty for no activity in 6 months
-      healthScore = Math.max(0, healthScore - 1);
-      // Recompute status from updated score, then enforce cap at Watch (6m inactivity blocks Healthy)
-      const rawStatus: "healthy" | "watch" | "at_risk" = healthScore >= 4 ? "healthy" : healthScore >= 2 ? "watch" : "at_risk";
-      healthStatus = rawStatus === "healthy" ? "watch" : rawStatus;
-    }
-    if (jobsLast12Months !== -1 && jobsLast12Months === 0 && !hasActiveSA) {
-      // Dormant 12+ months AND no service agreement → force At Risk
-      healthStatus = "at_risk"; healthScore = Math.min(healthScore, 1);
-    }
-
-    return { healthScore, healthStatus, isOverridden: false };
   }
 
   function computeMomentum(

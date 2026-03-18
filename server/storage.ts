@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { eq, and, desc, sql, lt, or, inArray } from "drizzle-orm";
+import { computeHealthScoreV2, computeVelocityDirection } from "./health-utils";
 import {
   users,
   clients,
@@ -2820,32 +2821,42 @@ export class DatabaseStorage implements IStorage {
       )
       .groupBy(estimates.status);
 
-    // BuildOps leads that transitioned to proposal_sent/won/lost in the month
-    const boLeadRows = await db
-      .select({ stage: leads.stage, count: sql<number>`count(*)` })
-      .from(leads)
-      .where(
-        and(
-          sql`${leads.buildopsQuoteId} IS NOT NULL`,
-          sql`${leads.stage} IN ('proposal_sent', 'won', 'lost')`,
-          sql`${leads.updatedAt} >= ${monthStart}`,
-          sql`${leads.updatedAt} < ${monthEnd}`
-        )
-      )
-      .groupBy(leads.stage);
+    // All CRM leads won in the month — use won_at timestamp, fall back to updated_at
+    const _toRowsWL = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
+    const wonLeadResult = await db.execute(sql`
+      SELECT COUNT(*) AS count
+      FROM leads
+      WHERE stage = 'won'
+        AND COALESCE(won_at, updated_at) >= ${monthStart}
+        AND COALESCE(won_at, updated_at) < ${monthEnd}
+    `);
+    const lostLeadResult = await db.execute(sql`
+      SELECT COUNT(*) AS count
+      FROM leads
+      WHERE stage = 'lost'
+        AND COALESCE(lost_at, updated_at) >= ${monthStart}
+        AND COALESCE(lost_at, updated_at) < ${monthEnd}
+    `);
+    const sentLeadResult = await db.execute(sql`
+      SELECT COUNT(*) AS count
+      FROM leads
+      WHERE stage = 'proposal_sent'
+        AND updated_at >= ${monthStart}
+        AND updated_at < ${monthEnd}
+    `);
 
     const proposalSent = Number(proposalRows.find(r => r.status === "sent")?.count ?? 0);
     const proposalSigned = Number(proposalRows.find(r => r.status === "signed")?.count ?? 0);
     const estimateSent = Number(estimateRows.find(r => r.status === "sent")?.count ?? 0);
     const estimateAccepted = Number(estimateRows.find(r => r.status === "accepted")?.count ?? 0);
     const estimateRejected = Number(estimateRows.find(r => r.status === "rejected")?.count ?? 0);
-    const boSent = Number(boLeadRows.find(r => r.stage === "proposal_sent")?.count ?? 0);
-    const boWon = Number(boLeadRows.find(r => r.stage === "won")?.count ?? 0);
-    const boLost = Number(boLeadRows.find(r => r.stage === "lost")?.count ?? 0);
+    const crmWon = Number(_toRowsWL(wonLeadResult)[0]?.count ?? 0);
+    const crmLost = Number(_toRowsWL(lostLeadResult)[0]?.count ?? 0);
+    const crmSent = Number(_toRowsWL(sentLeadResult)[0]?.count ?? 0);
 
-    const totalSent = proposalSent + proposalSigned + estimateSent + estimateAccepted + estimateRejected + boSent + boWon + boLost;
-    const totalWon = proposalSigned + estimateAccepted + boWon;
-    const totalLost = estimateRejected + boLost;
+    const totalSent = proposalSent + proposalSigned + estimateSent + estimateAccepted + estimateRejected + crmSent + crmWon + crmLost;
+    const totalWon = proposalSigned + estimateAccepted + crmWon;
+    const totalLost = estimateRejected + crmLost;
 
     // 5. Active clients this month (distinct clients with ≥1 invoice in the period)
     const activeClientResult = await db.execute(sql`
@@ -2859,17 +2870,16 @@ export class DatabaseStorage implements IStorage {
     const _toRows = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
     const activeClientsCount = Number((_toRows(activeClientResult)[0] as any)?.count ?? 0);
 
-    // 6. Client health score distribution — all current clients (creation date not a meaningful filter
-    //    because all 253 clients were synced from BuildOps after the CRM launch date)
+    // 6. Client health score distribution — all current clients, using same computeHealthScoreV2 as Customer Intelligence
     const allClientsForHealth = await db
-      .select({ id: clients.id, name: clients.name, tier: clients.tier })
+      .select({ id: clients.id, name: clients.name, healthOverride: clients.healthOverride })
       .from(clients);
 
-    // For simplicity, compute health based on active jobs and invoices
+    const toJobRows = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
+
+    // Job velocity (last 90 vs prior 90 days)
     const ninetyDaysAgo = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
     const priorNinetyStart = new Date(ninetyDaysAgo.getTime() - 90 * 24 * 60 * 60 * 1000);
-
-    const toJobRows = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
     const jobResult = await db.execute(sql`
       SELECT
         client_id,
@@ -2881,22 +2891,44 @@ export class DatabaseStorage implements IStorage {
         AND client_id IS NOT NULL
       GROUP BY 1, 2
     `);
-    const jobActivityRows = toJobRows(jobResult).map((r: any) => ({
-      clientId: r.client_id as number | null,
-      period: r.period as string,
-      count: Number(r.count ?? 0),
-    }));
-
     const jobMap = new Map<number, { last90: number; prior90: number }>();
-    for (const r of jobActivityRows) {
-      if (!r.clientId) continue;
-      const existing = jobMap.get(r.clientId) ?? { last90: 0, prior90: 0 };
-      if (r.period === "last90") existing.last90 = r.count;
-      else existing.prior90 = r.count;
-      jobMap.set(r.clientId, existing);
+    for (const r of toJobRows(jobResult) as any[]) {
+      if (!r.client_id) continue;
+      const e = jobMap.get(r.client_id) ?? { last90: 0, prior90: 0 };
+      if (r.period === "last90") e.last90 = Number(r.count ?? 0);
+      else e.prior90 = Number(r.count ?? 0);
+      jobMap.set(r.client_id, e);
     }
 
-    // Fetch invoice data per client for the selected month-end period (last 6 months)
+    // Jobs last 6m and last 12m per client (recency penalty signals)
+    const sixMonthsAgoH = new Date(monthEnd.getTime() - 180 * 24 * 60 * 60 * 1000);
+    const twelveMonthsAgoH = new Date(monthEnd.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const jobs6mResult = await db.execute(sql`
+      SELECT client_id, COUNT(*) AS count
+      FROM buildops_jobs
+      WHERE scheduled_date >= ${sixMonthsAgoH}
+        AND scheduled_date < ${monthEnd}
+        AND client_id IS NOT NULL
+      GROUP BY client_id
+    `);
+    const jobs12mResult = await db.execute(sql`
+      SELECT client_id, COUNT(*) AS count
+      FROM buildops_jobs
+      WHERE scheduled_date >= ${twelveMonthsAgoH}
+        AND scheduled_date < ${monthEnd}
+        AND client_id IS NOT NULL
+      GROUP BY client_id
+    `);
+    const jobs6mMap = new Map<number, number>();
+    const jobs12mMap = new Map<number, number>();
+    for (const r of toJobRows(jobs6mResult) as any[]) {
+      if (r.client_id) jobs6mMap.set(r.client_id, Number(r.count ?? 0));
+    }
+    for (const r of toJobRows(jobs12mResult) as any[]) {
+      if (r.client_id) jobs12mMap.set(r.client_id, Number(r.count ?? 0));
+    }
+
+    // Invoice trend (last 3m vs prior 3m)
     const sixMonthsAgo = new Date(monthEnd.getTime() - 180 * 24 * 60 * 60 * 1000);
     const threeMonthsAgo = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
     const invoiceTrendResult = await db.execute(sql`
@@ -2911,44 +2943,90 @@ export class DatabaseStorage implements IStorage {
         AND status NOT IN ('void', 'cancelled')
       GROUP BY 1, 2
     `);
-    const invoiceTrendRows = toJobRows(invoiceTrendResult).map((r: any) => ({
-      clientId: r.client_id as number,
-      period: r.period as string,
-      total: Number(r.total ?? 0),
-    }));
     const invMap = new Map<number, { last3m: number; prior3m: number }>();
-    for (const r of invoiceTrendRows) {
-      if (!r.clientId) continue;
-      const e = invMap.get(r.clientId) ?? { last3m: 0, prior3m: 0 };
-      if (r.period === "last3m") e.last3m = r.total;
-      else e.prior3m = r.total;
-      invMap.set(r.clientId, e);
+    for (const r of toJobRows(invoiceTrendResult) as any[]) {
+      if (!r.client_id) continue;
+      const e = invMap.get(r.client_id) ?? { last3m: 0, prior3m: 0 };
+      if (r.period === "last3m") e.last3m = Number(r.total ?? 0);
+      else e.prior3m = Number(r.total ?? 0);
+      invMap.set(r.client_id, e);
+    }
+
+    // LTV per client (all-time invoices)
+    const ltvResult = await db.execute(sql`
+      SELECT client_id, COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS ltv
+      FROM buildops_invoices
+      WHERE client_id IS NOT NULL
+        AND status NOT IN ('void', 'cancelled')
+      GROUP BY client_id
+    `);
+    const ltvMap = new Map<number, number>();
+    for (const r of toJobRows(ltvResult) as any[]) {
+      if (r.client_id) ltvMap.set(r.client_id, Number(r.ltv ?? 0));
+    }
+
+    // Active service agreements per client
+    const saResult = await db.execute(sql`
+      SELECT client_id, COUNT(*) AS count
+      FROM buildops_agreements
+      WHERE client_id IS NOT NULL
+        AND status = 'active'
+      GROUP BY client_id
+    `);
+    const saMap = new Map<number, number>();
+    for (const r of toJobRows(saResult) as any[]) {
+      if (r.client_id) saMap.set(r.client_id, Number(r.count ?? 0));
+    }
+
+    // Open deals per client (CRM leads not won/lost/expired/cancelled)
+    const openDealsResult = await db.execute(sql`
+      SELECT client_id, COUNT(*) AS count
+      FROM leads
+      WHERE client_id IS NOT NULL
+        AND stage NOT IN ('won', 'lost', 'expired', 'cancelled')
+      GROUP BY client_id
+    `);
+    const openDealsMap = new Map<number, number>();
+    for (const r of toJobRows(openDealsResult) as any[]) {
+      if (r.client_id) openDealsMap.set(r.client_id, Number(r.count ?? 0));
     }
 
     let healthyCount = 0;
     let watchCount = 0;
     let atRiskCount = 0;
-    const newCount = 0; // "new" bucket not used — CRM createdAt reflects sync date, not client tenure
 
     for (const c of allClientsForHealth) {
       const jobs = jobMap.get(c.id) ?? { last90: 0, prior90: 0 };
       const inv = invMap.get(c.id) ?? { last3m: 0, prior3m: 0 };
+      const ltv = ltvMap.get(c.id) ?? 0;
+      const hasActiveSA = (saMap.get(c.id) ?? 0) > 0;
+      const openDeals = openDealsMap.get(c.id) ?? 0;
+      const jobsLast6Months = jobs6mMap.has(c.id) ? jobs6mMap.get(c.id)! : 0;
+      const jobsLast12Months = jobs12mMap.has(c.id) ? jobs12mMap.get(c.id)! : 0;
 
-      // Simplified version of computeHealthScoreV2 using available signals:
-      // Job velocity (0-2 pts), invoice trend (0-2 pts) — scale to 6-pt system
-      let score = 0;
-      // Job velocity
-      if (jobs.last90 > 0) score += 2;
-      else if (jobs.prior90 > 0) score += 1; // had jobs but not recently
-      // Job trend
-      if (jobs.last90 > 0 && jobs.last90 >= jobs.prior90) score += 1;
-      // Invoice trend
+      const velocityDirection = computeVelocityDirection(jobs.last90, jobs.prior90);
       const invRatio = inv.prior3m > 0 ? inv.last3m / inv.prior3m : (inv.last3m > 0 ? 2 : 0);
-      if (inv.last3m > 0 && invRatio >= 0.85) score += 2;
-      else if (inv.last3m > 0) score += 1;
-      // Bucket: healthy ≥ 4, watch 2-3, at risk < 2
-      if (score >= 4) healthyCount++;
-      else if (score >= 2) watchCount++;
+      const invoiceTrend: "growing" | "flat" | "declining" =
+        inv.last3m === 0 && inv.prior3m === 0 ? "flat"
+        : inv.prior3m === 0 ? "growing"
+        : invRatio >= 1.15 ? "growing"
+        : invRatio <= 0.85 ? "declining"
+        : "flat";
+
+      const { healthStatus } = computeHealthScoreV2(
+        velocityDirection,
+        openDeals,
+        hasActiveSA,
+        ltv,
+        invoiceTrend,
+        null,
+        c.healthOverride,
+        jobsLast6Months,
+        jobsLast12Months,
+      );
+
+      if (healthStatus === "healthy") healthyCount++;
+      else if (healthStatus === "watch") watchCount++;
       else atRiskCount++;
     }
 
@@ -3003,7 +3081,6 @@ export class DatabaseStorage implements IStorage {
         healthy: healthyCount,
         watch: watchCount,
         atRisk: atRiskCount,
-        new: newCount,
       },
       top5Clients,
     };

@@ -34,7 +34,6 @@ interface MBRReport {
     healthy: number;
     watch: number;
     atRisk: number;
-    new: number;
   };
   top5Clients: { clientId: number; name: string; revenue: number }[];
 }
@@ -252,26 +251,24 @@ export default function MonthlyReport() {
           {/* Section 3: Client Health */}
           <section>
             <SectionHeader icon={HeartPulse} title="Client Health Distribution" />
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <MetricCard
                 label="Healthy"
                 value={report.clientHealth.healthy.toString()}
+                sub="Consistent revenue & engagement"
                 accent="text-green-600"
               />
               <MetricCard
                 label="Watch"
                 value={report.clientHealth.watch.toString()}
+                sub="Declining or inconsistent signals"
                 accent="text-amber-600"
               />
               <MetricCard
                 label="At Risk"
                 value={report.clientHealth.atRisk.toString()}
+                sub="Inactive or low-revenue clients"
                 accent="text-red-600"
-              />
-              <MetricCard
-                label="New (< 90 days)"
-                value={report.clientHealth.new.toString()}
-                accent="text-primary"
               />
             </div>
           </section>
