@@ -8,6 +8,7 @@ import { Megaphone, RefreshCw, Menu, LayoutDashboard, Target, Users, CheckSquare
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger, MobileSearchButton } from "@/components/GlobalSearch";
 import { QuickActionsBar } from "@/components/QuickActionsBar";
+import { WhatsNewModal } from "@/components/WhatsNewModal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
@@ -285,6 +286,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
       </div>
       <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
       <BottomNav />
+      <WhatsNewModal />
     </SidebarProvider>
   );
 }

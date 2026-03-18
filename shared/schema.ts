@@ -416,7 +416,7 @@ export const announcementReads = pgTable("announcement_reads", {
 export const insertAnnouncementSchema = createInsertSchema(announcements).omit({ id: true, createdAt: true }).extend({
   targetUserIds: z.array(z.string()).optional().nullable(),
   priority: z.enum(["normal", "urgent"]).default("normal"),
-  type: z.enum(["announcement", "task", "reminder"]).default("announcement"),
+  type: z.enum(["announcement", "task", "reminder", "release_notes"]).default("announcement"),
 });
 export type Announcement = typeof announcements.$inferSelect;
 export type InsertAnnouncement = z.infer<typeof insertAnnouncementSchema>;

@@ -13,6 +13,9 @@ import {
   CheckCheck,
   AlertCircle,
   Users,
+  Sparkles,
+  Wand2,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -65,13 +68,14 @@ interface User {
 
 interface MyPermissions {
   role: string;
+  isSuperAdmin?: boolean;
   permissions: Record<string, string>;
 }
 
 const broadcastSchema = z.object({
   title: z.string().min(1, "Title is required"),
   message: z.string().optional(),
-  type: z.enum(["announcement", "task", "reminder"]),
+  type: z.enum(["announcement", "task", "reminder", "release_notes"]),
   priority: z.enum(["normal", "urgent"]),
   targetUserIds: z.array(z.string()).optional(),
 });
@@ -82,22 +86,26 @@ const TYPE_ICON: Record<string, React.ElementType> = {
   announcement: Megaphone,
   task: CheckSquare,
   reminder: Bell,
+  release_notes: Sparkles,
 };
 
 const TYPE_LABEL: Record<string, string> = {
   announcement: "Announcement",
   task: "Task",
   reminder: "Reminder",
+  release_notes: "What's New",
 };
 
 export default function Announcements() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [generating, setGenerating] = useState(false);
   const { toast } = useToast();
 
   const { data: myPerms } = useQuery<MyPermissions>({ queryKey: ["/api/my-permissions"] });
   const canCreate =
-    myPerms?.role === "admin" || myPerms?.permissions?.["announcements"] === "full";
+    myPerms?.isSuperAdmin || myPerms?.role === "admin" || myPerms?.permissions?.["announcements"] === "full";
+  const canCreateReleaseNotes = myPerms?.isSuperAdmin || myPerms?.role === "admin";
 
   const { data: announcements = [], isLoading } = useQuery<Announcement[]>({
     queryKey: ["/api/announcements"],
@@ -119,6 +127,9 @@ export default function Announcements() {
     },
   });
 
+  const watchedType = form.watch("type");
+  const isReleaseNotes = watchedType === "release_notes";
+
   const createMutation = useMutation({
     mutationFn: async (data: BroadcastForm) => {
       const payload = {
@@ -131,10 +142,11 @@ export default function Announcements() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/announcements"] });
       queryClient.invalidateQueries({ queryKey: ["/api/announcements/unread-count"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/announcements/latest-release-notes"] });
       setDialogOpen(false);
       setSelectedUserIds([]);
       form.reset();
-      toast({ title: "Broadcast sent successfully" });
+      toast({ title: isReleaseNotes ? "What's New published!" : "Broadcast sent successfully" });
     },
     onError: (err: any) => {
       toast({ title: "Failed to send broadcast", description: err.message, variant: "destructive" });
@@ -162,6 +174,22 @@ export default function Announcements() {
     },
   });
 
+  async function handleGenerate() {
+    setGenerating(true);
+    try {
+      const res = await apiRequest("POST", "/api/announcements/generate-release-notes", {});
+      const json = await res.json();
+      if (json.draft) {
+        form.setValue("message", json.draft);
+        toast({ title: "Draft generated", description: "Review and edit before publishing." });
+      }
+    } catch (err: any) {
+      toast({ title: "Generation failed", description: err.message, variant: "destructive" });
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   const unreadCount = announcements.filter((a) => !a.isRead).length;
 
   function getUserName(userId: string) {
@@ -176,6 +204,10 @@ export default function Announcements() {
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }
+
+  const releaseAnn = announcements.filter((a) => a.type === "release_notes");
+  const otherAnn = announcements.filter((a) => a.type !== "release_notes");
+  const sortedAll = [...releaseAnn, ...otherAnn];
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
@@ -223,7 +255,7 @@ export default function Announcements() {
             <div key={i} className="h-24 rounded-lg bg-muted animate-pulse" />
           ))}
         </div>
-      ) : announcements.length === 0 ? (
+      ) : sortedAll.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Megaphone className="h-10 w-10 mx-auto mb-3 opacity-30" />
           <p className="font-medium">No broadcasts yet</p>
@@ -231,15 +263,25 @@ export default function Announcements() {
         </div>
       ) : (
         <div className="space-y-3">
-          {announcements.map((a) => {
+          {sortedAll.map((a) => {
             const Icon = TYPE_ICON[a.type] ?? Megaphone;
             const isUrgent = a.priority === "urgent";
+            const isRelease = a.type === "release_notes";
+            const bullets = isRelease
+              ? (a.message ?? "")
+                  .split("\n")
+                  .map((l) => l.trim())
+                  .filter((l) => l.length > 0)
+              : null;
+
             return (
               <Card
                 key={a.id}
                 data-testid={`card-announcement-${a.id}`}
                 className={`transition-colors ${
-                  !a.isRead
+                  isRelease && !a.isRead
+                    ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
+                    : !a.isRead
                     ? "border-primary/40 bg-primary/5"
                     : "border-border"
                 }`}
@@ -248,7 +290,9 @@ export default function Announcements() {
                   <div className="flex items-start gap-3">
                     <div
                       className={`mt-0.5 rounded-full p-2 flex-shrink-0 ${
-                        isUrgent
+                        isRelease
+                          ? "bg-primary/10 text-primary"
+                          : isUrgent
                           ? "bg-red-100 text-red-600"
                           : "bg-muted text-muted-foreground"
                       }`}
@@ -269,21 +313,42 @@ export default function Announcements() {
                             Urgent
                           </Badge>
                         )}
-                        <Badge variant="outline" className="text-xs py-0">
+                        <Badge
+                          variant="outline"
+                          className={`text-xs py-0 ${isRelease ? "border-primary/30 text-primary bg-primary/5" : ""}`}
+                        >
                           {TYPE_LABEL[a.type] ?? a.type}
                         </Badge>
                         {!a.isRead && (
                           <span className="h-2 w-2 rounded-full bg-primary inline-block" />
                         )}
                       </div>
-                      {a.message && (
-                        <p
-                          className="text-sm text-muted-foreground mb-2"
-                          data-testid={`text-announcement-message-${a.id}`}
-                        >
-                          {a.message}
-                        </p>
+
+                      {/* Release notes: render bullets */}
+                      {isRelease && bullets && bullets.length > 0 ? (
+                        <ul className="space-y-1.5 mb-2">
+                          {bullets.map((line, i) => {
+                            const isBullet = line.startsWith("•") || line.startsWith("-") || line.startsWith("*");
+                            const text = isBullet ? line.replace(/^[•\-*]\s*/, "") : line;
+                            return (
+                              <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-primary/60 shrink-0" />
+                                <span>{text}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        a.message && (
+                          <p
+                            className="text-sm text-muted-foreground mb-2"
+                            data-testid={`text-announcement-message-${a.id}`}
+                          >
+                            {a.message}
+                          </p>
+                        )
                       )}
+
                       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                         <span>From: {getUserName(a.createdBy)}</span>
                         {a.targetUserIds && a.targetUserIds.length > 0 ? (
@@ -335,12 +400,47 @@ export default function Announcements() {
             >
               <FormField
                 control={form.control}
+                name="type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Type</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-broadcast-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="announcement">Announcement</SelectItem>
+                        <SelectItem value="task">Assign Task</SelectItem>
+                        <SelectItem value="reminder">Send Reminder</SelectItem>
+                        {canCreateReleaseNotes && (
+                          <SelectItem value="release_notes">
+                            <span className="flex items-center gap-1.5">
+                              <Sparkles className="h-3.5 w-3.5 text-primary" />
+                              What's New / Release Notes
+                            </span>
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name="title"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Title</FormLabel>
+                    <FormLabel>{isReleaseNotes ? "Version Label" : "Title"}</FormLabel>
                     <FormControl>
-                      <Input placeholder="Broadcast title" {...field} data-testid="input-broadcast-title" />
+                      <Input
+                        placeholder={isReleaseNotes ? "e.g. March 2026 Update" : "Broadcast title"}
+                        {...field}
+                        data-testid="input-broadcast-title"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -352,44 +452,52 @@ export default function Announcements() {
                 name="message"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Message (optional)</FormLabel>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>
+                        {isReleaseNotes ? "Release Notes" : "Message (optional)"}
+                      </FormLabel>
+                      {isReleaseNotes && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1.5"
+                          onClick={handleGenerate}
+                          disabled={generating}
+                          data-testid="button-generate-release-notes"
+                        >
+                          {generating ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Wand2 className="h-3 w-3 text-primary" />
+                          )}
+                          {generating ? "Generating…" : "Auto-generate with AI"}
+                        </Button>
+                      )}
+                    </div>
                     <FormControl>
                       <Textarea
-                        placeholder="Additional details..."
-                        rows={3}
+                        placeholder={
+                          isReleaseNotes
+                            ? "Paste or generate bullet-point release notes…\n• Added customer health score overrides\n• Fixed revenue analytics to exclude draft invoices"
+                            : "Additional details..."
+                        }
+                        rows={isReleaseNotes ? 6 : 3}
                         {...field}
                         data-testid="textarea-broadcast-message"
                       />
                     </FormControl>
+                    {isReleaseNotes && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Use one item per line. Bullets (•) are rendered as bullet points for users.
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Type</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-broadcast-type">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="announcement">Announcement</SelectItem>
-                          <SelectItem value="task">Assign Task</SelectItem>
-                          <SelectItem value="reminder">Send Reminder</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
+              {!isReleaseNotes && (
                 <FormField
                   control={form.control}
                   name="priority"
@@ -411,53 +519,55 @@ export default function Announcements() {
                     </FormItem>
                   )}
                 />
-              </div>
+              )}
 
-              <div>
-                <FormLabel>Target Recipients</FormLabel>
-                <div className="mt-2 border rounded-md p-3 max-h-40 overflow-y-auto space-y-1">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedUserIds.length === 0}
-                      onChange={() => setSelectedUserIds([])}
-                      data-testid="checkbox-everyone"
-                    />
-                    <span className="font-medium">Everyone</span>
-                  </label>
-                  {teamMembers.map((u) => {
-                    const name =
-                      u.firstName || u.lastName
-                        ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim()
-                        : u.email ?? u.id;
-                    return (
-                      <label
-                        key={u.id}
-                        className="flex items-center gap-2 text-sm cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedUserIds.includes(u.id)}
-                          onChange={() => toggleUser(u.id)}
-                          data-testid={`checkbox-user-${u.id}`}
-                        />
-                        {name}
-                      </label>
-                    );
-                  })}
+              {!isReleaseNotes && (
+                <div>
+                  <FormLabel>Target Recipients</FormLabel>
+                  <div className="mt-2 border rounded-md p-3 max-h-40 overflow-y-auto space-y-1">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.length === 0}
+                        onChange={() => setSelectedUserIds([])}
+                        data-testid="checkbox-everyone"
+                      />
+                      <span className="font-medium">Everyone</span>
+                    </label>
+                    {teamMembers.map((u) => {
+                      const name =
+                        u.firstName || u.lastName
+                          ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim()
+                          : u.email ?? u.id;
+                      return (
+                        <label
+                          key={u.id}
+                          className="flex items-center gap-2 text-sm cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedUserIds.includes(u.id)}
+                            onChange={() => toggleUser(u.id)}
+                            data-testid={`checkbox-user-${u.id}`}
+                          />
+                          {name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {selectedUserIds.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {selectedUserIds.length} recipient{selectedUserIds.length !== 1 ? "s" : ""} selected
+                    </p>
+                  )}
                 </div>
-                {selectedUserIds.length > 0 && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {selectedUserIds.length} recipient{selectedUserIds.length !== 1 ? "s" : ""} selected
-                  </p>
-                )}
-              </div>
+              )}
 
               <DialogFooter>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setDialogOpen(false)}
+                  onClick={() => { setDialogOpen(false); form.reset(); }}
                   data-testid="button-cancel-broadcast"
                 >
                   Cancel
@@ -467,7 +577,11 @@ export default function Announcements() {
                   disabled={createMutation.isPending}
                   data-testid="button-submit-broadcast"
                 >
-                  {createMutation.isPending ? "Sending..." : "Send Broadcast"}
+                  {createMutation.isPending
+                    ? "Sending..."
+                    : isReleaseNotes
+                    ? "Publish What's New"
+                    : "Send Broadcast"}
                 </Button>
               </DialogFooter>
             </form>

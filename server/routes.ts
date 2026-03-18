@@ -2156,6 +2156,73 @@ Respond ONLY with JSON — no markdown:
     }
   });
 
+  // ── Latest release notes (for What's New modal) ─────────────────────────
+  app.get("/api/announcements/latest-release-notes", isAuthenticated, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { announcements: annTable, announcementReads } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const userId = (req as any).user?.claims?.sub;
+
+      const rows = await db.select().from(annTable)
+        .where(eq(annTable.type, "release_notes"))
+        .orderBy(desc(annTable.createdAt))
+        .limit(1);
+
+      if (rows.length === 0) return res.json(null);
+
+      const ann = rows[0];
+      const reads = await db.select().from(announcementReads)
+        .where(eq(announcementReads.userId, userId));
+      const readIds = new Set(reads.map((r: any) => r.announcementId));
+
+      res.json({ ...ann, isRead: readIds.has(ann.id) });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── AI-generate release notes draft from git log ──────────────────────────
+  app.post("/api/announcements/generate-release-notes", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const { execSync } = await import("child_process");
+      let gitLog = "";
+      try {
+        gitLog = execSync("git log --oneline --no-merges -50", { cwd: process.cwd(), timeout: 10000 }).toString().trim();
+      } catch {
+        gitLog = "No git history available.";
+      }
+
+      const { openai } = await import("./openai");
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are a product changelog writer for M5 Services, a precon/facility maintenance CRM built for Chase and the M5 team.
+Convert the git commits below into a clean, user-friendly "What's New" section.
+Write 4-8 bullet points starting with "•" describing new features, fixes, and improvements in plain English.
+Skip merge commits, dependency bumps, minor typos, and internal refactors.
+Focus on user-facing changes. Start each bullet with a clear action verb (Added, Fixed, Improved, Now, You can now, etc.).
+Be concise — each bullet should be one sentence. Do not include a title or header line.`,
+          },
+          {
+            role: "user",
+            content: `Recent git commits:\n${gitLog}`,
+          },
+        ],
+        temperature: 0.4,
+        max_tokens: 600,
+      });
+
+      const draft = completion.choices[0]?.message?.content ?? "";
+      res.json({ draft });
+    } catch (err: any) {
+      console.error("[generate-release-notes]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/announcements", isAuthenticated, requireModuleFullAccess("announcements"), async (req, res) => {
     try {
       const userId = (req as any).user?.claims?.sub;
