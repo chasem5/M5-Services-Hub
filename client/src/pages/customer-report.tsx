@@ -1,7 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { ActionPlanPanel } from "@/components/ActionPlanPanel";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -446,18 +445,6 @@ export default function CustomerReport() {
         <span>Healthy ≥ 4 pts · Watch 2–3 pts · At Risk &lt; 2 pts</span>
         <span className="flex items-center gap-1"><Pin className="h-3 w-3 text-amber-500" /> = manually pinned</span>
       </div>
-
-      <Card className="shadow-sm bg-card">
-        <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-base">Customer Action Plans</CardTitle>
-          <CardDescription className="text-xs">Manage and track action items across all customer accounts</CardDescription>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 pt-0">
-          <ActionPlanPanel
-            type="customer"
-          />
-        </CardContent>
-      </Card>
 
       <Card className="shadow-sm bg-card">
         <CardContent className="p-0">

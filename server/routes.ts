@@ -7332,17 +7332,23 @@ Write a punchy, factual summary highlighting what's driving the health status. L
 
   // ── Action Plans ──────────────────────────────────────────────────────────
 
-  // GET /api/action-plans  — list with optional ?type=customer|company&clientId=N&includeCompleted=true
+  // GET /api/action-plans  — list with ?type=customer&clientId=N or ?type=company
   app.get("/api/action-plans", isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const type = req.query.type as "customer" | "company" | undefined;
       const clientIdParam = req.query.clientId;
       const includeCompleted = req.query.includeCompleted === "true";
       const clientId = clientIdParam === "null" ? null
         : clientIdParam ? Number(clientIdParam)
         : undefined;
-      // Scoped authorization: if a specific clientId is requested, verify it exists
-      if (typeof clientId === "number") {
+      // Contract enforcement: customer type requires a valid clientId
+      if (type === "customer") {
+        if (typeof clientId !== "number") {
+          return res.status(400).json({ message: "clientId is required for type=customer" });
+        }
         const client = await storage.getClient(clientId);
         if (!client) return res.status(403).json({ message: "Access denied" });
       }
@@ -7356,9 +7362,13 @@ Write a punchy, factual summary highlighting what's driving the health status. L
   // POST /api/action-plans — create action plan
   app.post("/api/action-plans", isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const data = insertActionPlanSchema.parse(req.body);
-      // Scoped authorization: if clientId is provided, verify it exists
-      if (data.clientId) {
+      // Contract enforcement: customer type requires a valid clientId
+      if (data.type === "customer") {
+        if (!data.clientId) return res.status(400).json({ message: "clientId is required for type=customer" });
         const client = await storage.getClient(data.clientId);
         if (!client) return res.status(403).json({ message: "Access denied" });
       }
@@ -7372,13 +7382,18 @@ Write a punchy, factual summary highlighting what's driving the health status. L
   // POST /api/action-plans/generate — AI-generate action plan items using full intelligence signals
   app.post("/api/action-plans/generate", isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const { type, clientId } = z.object({
         type: z.enum(["customer", "company"]),
         clientId: z.number().optional().nullable(),
       }).parse(req.body);
 
-      // Authorization: if clientId provided, verify client exists
-      if (clientId) {
+      // Contract enforcement: customer type requires a valid clientId
+      if (type === "customer") {
+        if (!clientId) return res.status(400).json({ message: "clientId is required for type=customer" });
         const clientExists = await storage.getClient(clientId);
         if (!clientExists) return res.status(403).json({ message: "Access denied" });
       }
@@ -7555,6 +7570,9 @@ Write a punchy, factual summary highlighting what's driving the health status. L
   // PATCH /api/action-plans/:id
   app.patch("/api/action-plans/:id", isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const id = parseInt(req.params.id);
       const existing = await storage.getActionPlan(id);
       if (!existing) return res.status(404).json({ message: "Not found" });
@@ -7573,6 +7591,9 @@ Write a punchy, factual summary highlighting what's driving the health status. L
   // DELETE /api/action-plans/:id
   app.delete("/api/action-plans/:id", isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const id = parseInt(req.params.id);
       const existing = await storage.getActionPlan(id);
       if (!existing) return res.status(404).json({ message: "Not found" });

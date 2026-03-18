@@ -100,14 +100,16 @@ export function ActionPlanPanel({ type, clientId, className }: ActionPlanPanelPr
   });
   const completedCount = allPlans.filter(p => p.status !== "open").length;
 
-  // Auto-generate on first load if no plans exist (run once per mount)
+  // Auto-generate on first load only when NO plans exist at all (open + done + dismissed)
+  // Using allPlans to avoid spurious re-generation when all items are completed/dismissed
+  const allLoaded = !isLoading;
   useEffect(() => {
-    if (!isLoading && plans.length === 0 && !autoGenTriggered.current && !generating) {
+    if (allLoaded && allPlans.length === 0 && !autoGenTriggered.current && !generating) {
       autoGenTriggered.current = true;
       handleGenerate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, plans.length]);
+  }, [allLoaded, allPlans.length]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: qKey(type, clientId) });
