@@ -70,7 +70,7 @@ export function ActionPlanPanel({ type, clientId, className }: ActionPlanPanelPr
   const [addOpen, setAddOpen] = useState(false);
   const [editItem, setEditItem] = useState<ActionPlan | null>(null);
   const [generating, setGenerating] = useState(false);
-  const autoGenTriggered = useRef(false);
+  const autoGenTriggered = useRef<string | null>(null);
 
   const [form, setForm] = useState({ title: "", description: "", priority: "medium" as "high" | "medium" | "low", dueDate: "" });
 
@@ -101,14 +101,16 @@ export function ActionPlanPanel({ type, clientId, className }: ActionPlanPanelPr
   const completedCount = allPlans.filter(p => p.status !== "open").length;
 
   // Auto-generate only when ALL plans are absent (open + done + dismissed).
-  // Wait for the all-items query to finish before deciding — avoids spurious generation.
+  // Guard is keyed by scope (type + clientId) so navigating between accounts
+  // correctly triggers generation for each account with no plans.
+  const scopeKey = `${type}:${clientId ?? "null"}`;
   useEffect(() => {
-    if (!isLoadingAll && allPlans.length === 0 && !autoGenTriggered.current && !generating) {
-      autoGenTriggered.current = true;
+    if (!isLoadingAll && allPlans.length === 0 && autoGenTriggered.current !== scopeKey && !generating) {
+      autoGenTriggered.current = scopeKey;
       handleGenerate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoadingAll, allPlans.length]);
+  }, [isLoadingAll, allPlans.length, scopeKey]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: qKey(type, clientId) });
