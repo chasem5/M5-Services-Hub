@@ -2250,10 +2250,14 @@ Respond ONLY with JSON — no markdown:
         const { db } = await import("./db");
         const { sql } = await import("drizzle-orm");
         const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const [wonLeads, sentEstimates, newClients, completedTasks, announcements] = await Promise.all([
+        const [wonLeads, createdEstimates, sentEstimates, newClients, completedTasks, announcements] = await Promise.all([
           db.execute(sql`
             SELECT COUNT(*) as count, COALESCE(SUM(value), 0) as total_value
             FROM leads WHERE stage = 'won' AND updated_at >= ${since}
+          `),
+          db.execute(sql`
+            SELECT COUNT(*) as count FROM estimates
+            WHERE created_at >= ${since}
           `),
           db.execute(sql`
             SELECT COUNT(*) as count FROM estimates
@@ -2264,7 +2268,7 @@ Respond ONLY with JSON — no markdown:
           `),
           db.execute(sql`
             SELECT COUNT(*) as count FROM tasks
-            WHERE status = 'done' AND updated_at >= ${since}
+            WHERE status = 'done' AND created_at >= ${since}
           `),
           db.execute(sql`
             SELECT title FROM announcements ORDER BY created_at DESC LIMIT 1
@@ -2273,21 +2277,24 @@ Respond ONLY with JSON — no markdown:
 
         const toRows = (r: any) => (Array.isArray(r) ? r : r?.rows ?? []);
         const wonRow = toRows(wonLeads)[0] ?? {};
-        const estRow = toRows(sentEstimates)[0] ?? {};
+        const createdEstRow = toRows(createdEstimates)[0] ?? {};
+        const sentEstRow = toRows(sentEstimates)[0] ?? {};
         const clientRow = toRows(newClients)[0] ?? {};
         const taskRow = toRows(completedTasks)[0] ?? {};
         const lastAnnouncement: string | null = toRows(announcements)[0]?.title ?? null;
 
         const wonCount = Number(wonRow.count ?? 0);
         const wonValue = Number(wonRow.total_value ?? 0);
-        const estCount = Number(estRow.count ?? 0);
+        const estCreatedCount = Number(createdEstRow.count ?? 0);
+        const estSentCount = Number(sentEstRow.count ?? 0);
         const clientCount = Number(clientRow.count ?? 0);
         const taskCount = Number(taskRow.count ?? 0);
 
         const lines: string[] = [
           `Reporting period: last 30 days (${since.toDateString()} – today)`,
           `Deals won: ${wonCount} (total value $${wonValue.toLocaleString()})`,
-          `Proposals/estimates sent or accepted: ${estCount}`,
+          `Estimates created: ${estCreatedCount}`,
+          `Proposals/estimates sent or accepted: ${estSentCount}`,
           `New clients synced: ${clientCount}`,
           `Tasks completed: ${taskCount}`,
         ];
@@ -2295,7 +2302,7 @@ Respond ONLY with JSON — no markdown:
           lines.push(`Most recent announcement: ${lastAnnouncement}`);
         }
 
-        if (wonCount === 0 && estCount === 0 && clientCount === 0 && taskCount === 0) {
+        if (wonCount === 0 && estCreatedCount === 0 && clientCount === 0 && taskCount === 0) {
           return res.json({ draft: "" });
         }
 
