@@ -7632,7 +7632,8 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         `),
         dbRec.execute(sqlRec`
           SELECT c.id, c.name FROM clients c
-          LEFT JOIN buildops_jobs j ON j.client_id = c.id AND j.created_at >= NOW() - INTERVAL '90 days'
+          LEFT JOIN buildops_jobs j ON j.client_id = c.id
+            AND COALESCE(j.scheduled_date, j.completed_date, j.synced_at) >= NOW() - INTERVAL '90 days'
           WHERE j.id IS NULL AND EXISTS (SELECT 1 FROM buildops_jobs jj WHERE jj.client_id = c.id)
           LIMIT 10
         `),
