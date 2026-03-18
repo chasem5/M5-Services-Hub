@@ -264,6 +264,8 @@ function ThreadRow({ thread, clients, isSelected, isChecked, showCheckboxes, onS
 export default function EmailSyncPage() {
   const { toast } = useToast();
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  // Prevents auto-select from overriding the user's explicit "Back" tap on mobile
+  const [mobileDeselected, setMobileDeselected] = useState(false);
   const [showDismissed, setShowDismissed] = useState(false);
   const [viewFilter, setViewFilter] = useState<"all" | "customers" | "other">("customers");
   const [needsResponseOnly, setNeedsResponseOnly] = useState(false);
@@ -339,16 +341,22 @@ export default function EmailSyncPage() {
   const selectedThread = threads.find(t => t.threadId === selectedThreadId) ?? null;
   const primaryEmail = selectedThread?.latestMessage ?? null;
 
-  // Auto-select first thread, or re-home if selection no longer visible in active tab
+  // Auto-select first thread, or re-home if selection no longer visible in active tab.
+  // On mobile, if the user explicitly tapped "Back" (mobileDeselected), do NOT auto-select
+  // until they explicitly select a thread again.
+  // Desktop: always auto-selects so the center panel is never empty.
+  const isMobileViewport = typeof window !== "undefined" && window.innerWidth < 768;
   useEffect(() => {
     if (visibleThreads.length === 0) {
       setSelectedThreadId(null);
       return;
     }
+    // On mobile, respect the user's explicit "Back" choice
+    if (isMobileViewport && mobileDeselected) return;
     if (!selectedThreadId || !visibleThreads.find(t => t.threadId === selectedThreadId)) {
       setSelectedThreadId(visibleThreads[0].threadId);
     }
-  }, [visibleThreads.length, selectedThreadId, viewFilter, needsResponseOnly, hasTasksOnly, unlinkedOnly, showDismissed, searchQuery]);
+  }, [visibleThreads.length, selectedThreadId, mobileDeselected, viewFilter, needsResponseOnly, hasTasksOnly, unlinkedOnly, showDismissed, searchQuery]);
 
   // When thread changes, auto-expand most recent message
   useEffect(() => {
@@ -770,7 +778,7 @@ export default function EmailSyncPage() {
                     isSelected={thread.threadId === selectedThreadId}
                     isChecked={selectedThreadIds.has(thread.threadId)}
                     showCheckboxes={selectedThreadIds.size > 0}
-                    onSelect={() => setSelectedThreadId(thread.threadId)}
+                    onSelect={() => { setSelectedThreadId(thread.threadId); setMobileDeselected(false); }}
                     onToggleCheck={(e) => {
                       e.stopPropagation();
                       setSelectedThreadIds(prev => {
@@ -866,7 +874,7 @@ export default function EmailSyncPage() {
             <div className="p-4 sm:p-5">
               {/* Mobile back button */}
               <button
-                onClick={() => setSelectedThreadId(null)}
+                onClick={() => { setSelectedThreadId(null); setMobileDeselected(true); }}
                 className="md:hidden flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-3 -ml-1"
                 data-testid="button-email-back"
               >
