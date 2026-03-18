@@ -300,8 +300,8 @@ export default function EmailSyncPage() {
   const [quickClientEmailForLink, setQuickClientEmailForLink] = useState<number | null>(null);
 
   const { data: emails = [], isLoading } = useQuery<EmailMessage[]>({
-    queryKey: ["/api/email-messages", showDismissed],
-    queryFn: () => fetch(`/api/email-messages${showDismissed ? "?includeDismissed=true" : ""}`, { credentials: "include" }).then(r => r.json()),
+    queryKey: ["/api/email-messages", "all"],
+    queryFn: () => fetch(`/api/email-messages?includeDismissed=true`, { credentials: "include" }).then(r => r.json()),
   });
 
   const { data: dismissedSenders = [] } = useQuery<DismissedSender[]>({
