@@ -410,6 +410,11 @@ export default function Customers() {
   const [contactSortDir, setContactSortDir] = useState<"asc" | "desc">("asc");
   const [companySortField, setCompanySortField] = useState<"name" | "tier" | "industry" | "revenue" | "spend">("name");
   const [companySortDir, setCompanySortDir] = useState<"asc" | "desc">("asc");
+  const [segmentByService, setSegmentByService] = useState(false);
+  const { data: serviceSegments = {} } = useQuery<Record<number, string>>({
+    queryKey: ["/api/clients/service-segments"],
+    enabled: segmentByService,
+  });
   const [expandedParents, setExpandedParents] = useState<Set<number>>(new Set());
   const { data: industryOptionsList } = useQuery<IndustryOption[]>({ queryKey: ["/api/industry-options"] });
   const industryOptionLabels = industryOptionsList?.map(o => o.label) ?? [];
@@ -453,10 +458,15 @@ export default function Customers() {
   const [isEditClientOpen, setIsEditClientOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
 
+  const invalidateClientQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/clients/service-segments"] });
+  };
+
   const bulkDeleteClientsMutation = useMutation({
     mutationFn: (ids: number[]) => apiRequest("DELETE", "/api/clients/bulk", { ids }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      invalidateClientQueries();
       setSelectedCompanies([]);
       toast({ title: "Companies deleted successfully" });
     },
@@ -476,7 +486,7 @@ export default function Customers() {
   const bulkUpdateClientsMutation = useMutation({
     mutationFn: ({ ids, data }: { ids: number[], data: any }) => apiRequest("PATCH", "/api/clients/bulk", { ids, data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      invalidateClientQueries();
       setSelectedCompanies([]);
       setIsBulkCompanyEditOpen(false);
       toast({ title: "Companies updated successfully" });
@@ -606,7 +616,7 @@ export default function Customers() {
       return res.json();
     },
     onSuccess: (newClient: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      invalidateClientQueries();
       setIsCreateDialogOpen(false);
       form.reset();
       setIndustryCustomMode(false);
@@ -624,7 +634,7 @@ export default function Customers() {
       return res.json();
     },
     onSuccess: (_result, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      invalidateClientQueries();
       const prevParent = editingClient?.parentClientId ?? null;
       const newParent = variables.data.parentClientId ?? null;
       let desc = "Company details updated.";
@@ -645,7 +655,7 @@ export default function Customers() {
       await apiRequest("DELETE", `/api/clients/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      invalidateClientQueries();
       toast({ title: "Success", description: "Customer deleted successfully" });
     },
   });
@@ -664,7 +674,7 @@ export default function Customers() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      invalidateClientQueries();
       toast({ title: "Account manager updated" });
     },
     onError: (err: Error) => toast({ title: "Failed to update", description: err.message, variant: "destructive" }),
@@ -783,6 +793,7 @@ export default function Customers() {
       setImportResult({ ...result, type: importPreview.type });
       setIsImportReviewOpen(false);
       queryClient.invalidateQueries({ queryKey: [importPreview.type === "companies" ? "/api/clients" : "/api/client-contacts"] });
+      if (importPreview.type === "companies") queryClient.invalidateQueries({ queryKey: ["/api/clients/service-segments"] });
     } catch (e: any) {
       toast({ title: "Import failed", description: e.message, variant: "destructive" });
     } finally {
@@ -1643,6 +1654,16 @@ export default function Customers() {
                     <SelectItem value="tier_3">Tier 3</SelectItem>
                   </SelectContent>
                 </Select>
+                <Button
+                  variant={segmentByService ? "default" : "outline"}
+                  size="sm"
+                  className="h-10 gap-2 shrink-0"
+                  onClick={() => setSegmentByService(v => !v)}
+                  data-testid="button-segment-by-service"
+                >
+                  <Layers className="h-4 w-4" />
+                  <span className="hidden sm:inline">Segment by Service</span>
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -1653,6 +1674,94 @@ export default function Customers() {
                   ))}
                 </div>
               ) : filteredClients && filteredClients.length > 0 ? (
+                segmentByService ? (
+                  (() => {
+                    const tierHealth: Record<string, number> = { tier_1: 100, tier_2: 66, tier_3: 33 };
+                    const getHealthScore = (c: Client) => tierHealth[c.tier ?? ""] ?? 50;
+                    const VALID_CATEGORIES = new Set(SERVICE_NEEDS.map(s => s.key));
+                    const segments: Record<string, Client[]> = { __unclassified__: [] };
+                    for (const s of SERVICE_NEEDS) segments[s.key] = [];
+                    for (const c of filteredClients) {
+                      const category = serviceSegments[c.id];
+                      if (category && VALID_CATEGORIES.has(category)) {
+                        segments[category].push(c);
+                      } else {
+                        segments["__unclassified__"].push(c);
+                      }
+                    }
+                    return (
+                      <div className="space-y-4" data-testid="segment-view-container">
+                        {[...SERVICE_NEEDS.map(s => ({ key: s.key, label: s.label, Icon: s.Icon, color: s.color })), { key: "__unclassified__", label: "Unclassified", Icon: Building2, color: "text-muted-foreground" }].map(({ key, label, Icon, color }) => {
+                          const segClients = segments[key] ?? [];
+                          if (segClients.length === 0) return null;
+                          const totalRevenue = segClients.reduce((sum, c) => sum + parseFloat(c.annualRevenue ?? "0"), 0);
+                          const avgHealth = Math.round(segClients.reduce((sum, c) => sum + getHealthScore(c), 0) / segClients.length);
+                          return (
+                            <div key={key} className="rounded-xl border border-border/60 overflow-hidden" data-testid={`segment-group-${key}`}>
+                              <div className="flex items-center gap-3 px-4 py-3 bg-muted/40 border-b border-border/40">
+                                <Icon className={`h-4 w-4 shrink-0 ${color}`} />
+                                <h3 className="font-semibold text-sm flex-1">{label}</h3>
+                                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                  <span className="flex items-center gap-1" data-testid={`segment-count-${key}`}>
+                                    <Building2 className="h-3 w-3" />
+                                    <span className="font-medium text-foreground">{segClients.length}</span>
+                                    {segClients.length === 1 ? "client" : "clients"}
+                                  </span>
+                                  <span className="flex items-center gap-1" data-testid={`segment-revenue-${key}`}>
+                                    <DollarSign className="h-3 w-3" />
+                                    <span className="font-medium text-foreground">{totalRevenue > 0 ? `$${(totalRevenue / 1000).toFixed(0)}k` : "—"}</span>
+                                    revenue
+                                  </span>
+                                  <span className="flex items-center gap-1" data-testid={`segment-health-${key}`}>
+                                    <Star className="h-3 w-3" />
+                                    <span className="font-medium text-foreground">{avgHealth}%</span>
+                                    avg health
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="divide-y divide-border/30">
+                                {segClients.map(c => (
+                                  <Link
+                                    key={c.id}
+                                    href={`/customers/${c.id}`}
+                                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors group"
+                                    data-testid={`segment-client-row-${c.id}`}
+                                  >
+                                    <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors shrink-0 overflow-hidden">
+                                      {c.logoUrl ? (
+                                        <img
+                                          src={c.logoUrl.startsWith("https://storage.googleapis.com/") ? `/api/clients/${c.id}/logo-img` : c.logoUrl}
+                                          alt={c.name}
+                                          className="h-full w-full object-cover"
+                                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                        />
+                                      ) : (
+                                        <Building2 className="h-4 w-4" />
+                                      )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-sm font-medium truncate block">{c.name}</span>
+                                      {c.industry && <span className="text-[11px] text-muted-foreground">{c.industry}</span>}
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                      <TierBadge tier={c.tier} size="xs" />
+                                      {c.annualRevenue && parseFloat(c.annualRevenue) > 0 && (
+                                        <span className="text-xs text-muted-foreground font-mono hidden sm:block">
+                                          ${parseFloat(c.annualRevenue).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr
+                                        </span>
+                                      )}
+                                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40" />
+                                    </div>
+                                  </Link>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()
+                ) : (
                 <div className="relative">
                   <div className="hidden md:block rounded-md border border-border/50 overflow-x-auto">
                     <Table className="min-w-[700px]">
@@ -2146,6 +2255,7 @@ export default function Customers() {
                 </div>
               )}
             </div>
+                )
           ) : (
                 <div className="text-center py-12 bg-muted/20 rounded-lg border-2 border-dashed border-border/50">
                   <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">

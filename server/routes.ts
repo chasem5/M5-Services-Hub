@@ -592,6 +592,23 @@ export async function registerRoutes(
     }
   });
 
+  // Client service segments — returns a map of clientId → primary service category
+  // derived from BuildOps job history (with fallback to manually-set serviceNeeds)
+  // Respects user-scope restriction to prevent data leakage for restricted-role users
+  // Scoped to the same set of clients the caller can access via /api/clients
+  app.get("/api/clients/service-segments", isAuthenticated, async (req, res) => {
+    try {
+      if (!(await hasModuleAccess(req, "customers"))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const scopedUserId = await getScopedUserId(req, "customers");
+      const segments = await storage.getClientServiceSegments(scopedUserId);
+      res.json(segments);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/clients", isAuthenticated, async (req, res) => {
     const userId = (req as any).user.claims.sub;
     const clientData = insertClientSchema.parse({ ...req.body, createdBy: userId });

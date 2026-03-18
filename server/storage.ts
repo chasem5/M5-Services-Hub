@@ -414,6 +414,9 @@ export interface IStorage {
 
   // Email Response Rate
   getClientEmailResponseRate(clientId: number): Promise<{ outboundEmails: number; emailsWithReply: number; responseRate: number | null }>;
+
+  // Client Service Segments
+  getClientServiceSegments(scopedUserId?: string): Promise<Record<number, string>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2683,6 +2686,78 @@ export class DatabaseStorage implements IStorage {
 
     return { outboundEmails: outboundCount, emailsWithReply, responseRate };
   }
+
+  async getClientServiceSegments(scopedUserId?: string): Promise<Record<number, string>> {
+    // Map BuildOps job type names to our service categories using keyword matching
+    function mapJobTypeToCategory(jobTypeName: string | null | undefined): string | null {
+      if (!jobTypeName) return null;
+      const name = jobTypeName.toLowerCase();
+      if (name.includes("janitor") || name.includes("cleaning") || name.includes("janitorial")) return "janitorial";
+      if (name.includes("engineer") || name.includes("mechanical") || name.includes("hvac") || name.includes("building engineer")) return "building_engineering";
+      if (name.includes("special project") || name.includes("construction") || name.includes("renovation")) return "special_projects";
+      if (name.includes("facility") || name.includes("maintenance") || name.includes("repair")) return "facility_solutions";
+      if (name.includes("assessment") || name.includes("inspection") || name.includes("survey") || name.includes("audit")) return "property_assessment";
+      return null;
+    }
+
+    // Fetch only the clients this user is allowed to see (matches /api/clients scoping)
+    const accessibleClients = await db
+      .select({ id: clients.id, serviceNeeds: clients.serviceNeeds })
+      .from(clients)
+      .where(scopedUserId ? eq(clients.createdBy, scopedUserId) : undefined);
+
+    const accessibleClientIds = new Set(accessibleClients.map(c => c.id));
+
+    // Query BuildOps job counts per accessible client and job type
+    const accessibleIdList = [...accessibleClientIds];
+    const jobRows = accessibleIdList.length > 0
+      ? await db
+          .select({
+            clientId: buildopsJobs.clientId,
+            jobTypeName: buildopsJobs.jobTypeName,
+            count: sql<string>`COUNT(*)`,
+          })
+          .from(buildopsJobs)
+          .where(and(
+            sql`${buildopsJobs.clientId} IS NOT NULL`,
+            sql`${buildopsJobs.jobTypeName} IS NOT NULL`,
+            inArray(buildopsJobs.clientId, accessibleIdList),
+          ))
+          .groupBy(buildopsJobs.clientId, buildopsJobs.jobTypeName)
+      : [];
+
+    // For each client, find the most frequent mappable job type
+    const clientJobCounts: Record<number, Record<string, number>> = {};
+    for (const row of jobRows) {
+      if (!row.clientId || !accessibleClientIds.has(row.clientId)) continue;
+      const category = mapJobTypeToCategory(row.jobTypeName);
+      if (!category) continue;
+      if (!clientJobCounts[row.clientId]) clientJobCounts[row.clientId] = {};
+      clientJobCounts[row.clientId][category] = (clientJobCounts[row.clientId][category] ?? 0) + Number(row.count);
+    }
+
+    // Build primary category from BuildOps jobs
+    const buildopsCategories: Record<number, string> = {};
+    for (const [clientIdStr, counts] of Object.entries(clientJobCounts)) {
+      const clientId = Number(clientIdStr);
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      if (sorted.length > 0) buildopsCategories[clientId] = sorted[0][0];
+    }
+
+    const result: Record<number, string> = {};
+    for (const client of accessibleClients) {
+      if (buildopsCategories[client.id]) {
+        // Prefer BuildOps-derived category
+        result[client.id] = buildopsCategories[client.id];
+      } else if (client.serviceNeeds && client.serviceNeeds.length > 0) {
+        // Fall back to first manually-set service need
+        result[client.id] = client.serviceNeeds[0];
+      }
+      // Clients with neither get no entry (will be "Unclassified")
+    }
+    return result;
+  }
+
 }
 
 export const storage = new DatabaseStorage();

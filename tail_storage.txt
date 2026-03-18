@@ -1,0 +1,100 @@
+      .values({
+        clientId,
+        itemKey,
+        isCompleted,
+        completedAt: isCompleted ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [clientOnboardingChecklist.clientId, clientOnboardingChecklist.itemKey],
+        set: {
+          isCompleted,
+          completedAt: isCompleted ? new Date() : null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  async getOnboardingCompletionMap(clientIds: number[], applicableClientIds?: number[]): Promise<Map<number, { completed: number; total: number }>> {
+    const TOTAL_ITEMS = ONBOARDING_TOTAL_ITEMS;
+    const map = new Map<number, { completed: number; total: number }>();
+    if (clientIds.length === 0) return map;
+    const rows = await db.select().from(clientOnboardingChecklist).where(inArray(clientOnboardingChecklist.clientId, clientIds));
+    const completedByClient = new Map<number, number>();
+    for (const row of rows) {
+      if (row.isCompleted) {
+        completedByClient.set(row.clientId, (completedByClient.get(row.clientId) ?? 0) + 1);
+      }
+    }
+    const applicable = applicableClientIds ?? Array.from(completedByClient.keys());
+    for (const clientId of applicable) {
+      if (clientIds.includes(clientId)) {
+        map.set(clientId, { completed: completedByClient.get(clientId) ?? 0, total: TOTAL_ITEMS });
+      }
+    }
+    return map;
+=======
+  async getClientServiceSegments(): Promise<Record<number, string>> {
+    // Map BuildOps job type names to our service categories using keyword matching
+    function mapJobTypeToCategory(jobTypeName: string | null | undefined): string | null {
+      if (!jobTypeName) return null;
+      const name = jobTypeName.toLowerCase();
+      if (name.includes("janitor") || name.includes("cleaning") || name.includes("janitorial")) return "janitorial";
+      if (name.includes("engineer") || name.includes("mechanical") || name.includes("hvac") || name.includes("building engineer")) return "building_engineering";
+      if (name.includes("special project") || name.includes("construction") || name.includes("renovation")) return "special_projects";
+      if (name.includes("facility") || name.includes("maintenance") || name.includes("repair")) return "facility_solutions";
+      if (name.includes("assessment") || name.includes("inspection") || name.includes("survey") || name.includes("audit")) return "property_assessment";
+      return null;
+    }
+
+    // Query job counts per client and job type
+    const jobRows = await db
+      .select({
+        clientId: buildopsJobs.clientId,
+        jobTypeName: buildopsJobs.jobTypeName,
+        count: sql<string>`COUNT(*)`,
+      })
+      .from(buildopsJobs)
+      .where(sql`${buildopsJobs.clientId} IS NOT NULL AND ${buildopsJobs.jobTypeName} IS NOT NULL`)
+      .groupBy(buildopsJobs.clientId, buildopsJobs.jobTypeName);
+
+    // For each client, find the most frequent mappable job type
+    const clientJobCounts: Record<number, Record<string, number>> = {};
+    for (const row of jobRows) {
+      if (!row.clientId) continue;
+      const category = mapJobTypeToCategory(row.jobTypeName);
+      if (!category) continue;
+      if (!clientJobCounts[row.clientId]) clientJobCounts[row.clientId] = {};
+      clientJobCounts[row.clientId][category] = (clientJobCounts[row.clientId][category] ?? 0) + Number(row.count);
+    }
+
+    // Build primary category from BuildOps jobs
+    const buildopsCategories: Record<number, string> = {};
+    for (const [clientIdStr, counts] of Object.entries(clientJobCounts)) {
+      const clientId = Number(clientIdStr);
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      if (sorted.length > 0) buildopsCategories[clientId] = sorted[0][0];
+    }
+
+    // Fetch all clients for fallback to serviceNeeds
+    const allClients = await db.select({ id: clients.id, serviceNeeds: clients.serviceNeeds }).from(clients);
+
+    const result: Record<number, string> = {};
+    for (const client of allClients) {
+      if (buildopsCategories[client.id]) {
+        // Prefer BuildOps-derived category
+        result[client.id] = buildopsCategories[client.id];
+      } else if (client.serviceNeeds && client.serviceNeeds.length > 0) {
+        // Fall back to first manually-set service need
+        result[client.id] = client.serviceNeeds[0];
+      }
+      // Clients with neither get no entry (will be "Unclassified")
+    }
+    return result;
+>>>>>>> 1333bf3 (feat: Add Customer Segmentation Optional View (Task #35))
+  }
+}
+
+export const storage = new DatabaseStorage();
