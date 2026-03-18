@@ -90,6 +90,9 @@ import {
   CornerDownRight,
   Zap,
   FileText,
+  UserCheck,
+  Archive,
+  MoveRight,
 } from "lucide-react";
 import {
   Card,
@@ -500,6 +503,8 @@ function KanbanColumn({
   fetchAiSummary,
   activitySummary,
   suppressedLeadIds = new Set(),
+  selectedIds,
+  onToggleSelect,
 }: { 
   stage: PipelineStage;
   sc: any;
@@ -522,6 +527,8 @@ function KanbanColumn({
   fetchAiSummary: (id: number) => void;
   activitySummary: any[] | undefined;
   suppressedLeadIds?: Set<number>;
+  selectedIds: Set<number>;
+  onToggleSelect: (id: number) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.slug,
@@ -582,6 +589,8 @@ function KanbanColumn({
                 activitySummary={activitySummary}
                 stageTrack={stage.track ?? "relationship"}
                 suppressedLeadIds={suppressedLeadIds}
+                isSelected={selectedIds.has(lead.id)}
+                onToggleSelect={onToggleSelect}
               />
             ))}
         </div>
@@ -608,6 +617,8 @@ function LeadCard({
   stageTrack = "relationship",
   isOverlay = false,
   suppressedLeadIds = new Set(),
+  isSelected = false,
+  onToggleSelect,
 }: { 
   lead: Lead; 
   formatCurrency: (v: string | number) => string;
@@ -626,6 +637,8 @@ function LeadCard({
   stageTrack?: string;
   isOverlay?: boolean;
   suppressedLeadIds?: Set<number>;
+  isSelected?: boolean;
+  onToggleSelect?: (id: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: lead.id,
@@ -672,10 +685,9 @@ function LeadCard({
           style={style}
           {...attributes}
           {...listeners}
-          className={`hover-elevate cursor-grab active:cursor-grabbing border-border shadow transition-shadow hover:shadow-md ${isOverlay ? "cursor-grabbing shadow-xl ring-2 ring-primary" : ""}`}
+          className={`hover-elevate cursor-grab active:cursor-grabbing border-border shadow transition-shadow hover:shadow-md ${isOverlay ? "cursor-grabbing shadow-xl ring-2 ring-primary" : ""} ${isSelected ? "ring-2 ring-primary bg-primary/5" : ""}`}
           onClick={(e) => {
             if (isOverlay) return;
-            // Prevent opening detail if dragging
             openLeadDetail(lead);
           }}
           data-testid={`card-lead-${lead.id}`}
@@ -683,7 +695,20 @@ function LeadCard({
         >
           <CardHeader className="p-3 pb-0 space-y-1">
             <div className="flex items-start justify-between gap-2">
-              <h4 className="font-bold text-sm leading-tight line-clamp-2">{lead.title}</h4>
+              <h4 className="font-bold text-sm leading-tight line-clamp-2 flex-1">{lead.title}</h4>
+              {!isOverlay && onToggleSelect && (
+                <div
+                  className="shrink-0 mt-0.5"
+                  onClick={(e) => { e.stopPropagation(); onToggleSelect(lead.id); }}
+                >
+                  <Checkbox
+                    checked={isSelected}
+                    data-testid={`checkbox-lead-${lead.id}`}
+                    className="h-4 w-4 pointer-events-none"
+                    aria-label={`Select deal ${lead.title}`}
+                  />
+                </div>
+              )}
             </div>
             <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
               <UsersIcon className="h-3 w-3" />
@@ -1030,6 +1055,18 @@ export default function Leads() {
   const [createConfidenceStatus, setCreateConfidenceStatus] = useState<string | null>(null);
   const [editConfidenceStatus, setEditConfidenceStatus] = useState<string | null>(null);
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const toggleSelectId = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+
   const { data: stages = [] } = useQuery<PipelineStage[]>({
     queryKey: ["/api/pipeline-stages"],
   });
@@ -1182,6 +1219,26 @@ export default function Leads() {
     onError: (err: any) => {
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
     },
+  });
+
+  const bulkUpdateLeadsMutation = useMutation({
+    mutationFn: async (payload: { ids: number[]; action: "move_stage" | "assign" | "archive"; stage?: string; assignedTo?: string | null }) => {
+      const res = await apiRequest("PATCH", "/api/leads/bulk", payload);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Bulk action failed" }));
+        throw new Error(err.message ?? "Bulk action failed");
+      }
+      return res.json() as Promise<{ updated: number }>;
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/activity-summary"] });
+      clearSelection();
+      const count = data.updated;
+      const actionLabel = variables.action === "move_stage" ? "moved to new stage" : variables.action === "assign" ? "reassigned" : "marked as Lost";
+      toast({ title: `${count} deal${count !== 1 ? "s" : ""} ${actionLabel}` });
+    },
+    onError: (err: Error) => toast({ title: err.message || "Bulk action failed", variant: "destructive" }),
   });
 
   const createLeadMutation = useMutation({
@@ -2121,6 +2178,8 @@ export default function Leads() {
                               fetchAiSummary={fetchAiSummary}
                               activitySummary={activitySummary}
                               suppressedLeadIds={new Set([...suppressedByServer, ...followUpSentLeadIds])}
+                              selectedIds={selectedIds}
+                              onToggleSelect={toggleSelectId}
                             />
                           );
                         })}
@@ -2171,6 +2230,8 @@ export default function Leads() {
                               fetchAiSummary={fetchAiSummary}
                               activitySummary={activitySummary}
                               suppressedLeadIds={new Set([...suppressedByServer, ...followUpSentLeadIds])}
+                              selectedIds={selectedIds}
+                              onToggleSelect={toggleSelectId}
                             />
                           );
                         })}
@@ -2210,6 +2271,20 @@ export default function Leads() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[40px]">
+                      <Checkbox
+                        checked={filteredLeads && filteredLeads.length > 0 && filteredLeads.every(l => selectedIds.has(l.id))}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedIds(new Set(filteredLeads?.map(l => l.id) ?? []));
+                          } else {
+                            clearSelection();
+                          }
+                        }}
+                        data-testid="checkbox-select-all"
+                        aria-label="Select all deals"
+                      />
+                    </TableHead>
                     <TableHead>Deal Title</TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Contact</TableHead>
@@ -2229,10 +2304,18 @@ export default function Leads() {
                     return (
                       <TableRow
                         key={lead.id}
-                        className="cursor-pointer"
+                        className={`cursor-pointer ${selectedIds.has(lead.id) ? "bg-primary/5" : ""}`}
                         onClick={() => openLeadDetail(lead)}
                         data-testid={`row-lead-${lead.id}`}
                       >
+                        <TableCell onClick={(e) => { e.stopPropagation(); toggleSelectId(lead.id); }}>
+                          <Checkbox
+                            checked={selectedIds.has(lead.id)}
+                            data-testid={`checkbox-lead-list-${lead.id}`}
+                            className="pointer-events-none"
+                            aria-label={`Select deal ${lead.title}`}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">
                           <div>
                             {lead.title}
@@ -4724,6 +4807,120 @@ export default function Leads() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Bulk Action Toolbar */}
+      {selectedIds.size > 0 && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-background border border-border shadow-xl rounded-xl px-4 py-3 min-w-[400px] max-w-[700px] w-auto"
+          data-testid="bulk-action-toolbar"
+        >
+          <div className="flex items-center gap-2 mr-2">
+            <span className="text-sm font-semibold text-foreground">
+              {selectedIds.size} selected
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={() => {
+                if (filteredLeads && filteredLeads.length > selectedIds.size) {
+                  setSelectedIds(new Set(filteredLeads.map(l => l.id)));
+                } else {
+                  clearSelection();
+                }
+              }}
+              data-testid="button-bulk-select-all"
+            >
+              {filteredLeads && filteredLeads.length > selectedIds.size
+                ? `Select all ${filteredLeads.length}`
+                : "Deselect all"}
+            </Button>
+          </div>
+          <div className="h-4 w-px bg-border mx-1" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-8"
+                disabled={bulkUpdateLeadsMutation.isPending}
+                data-testid="button-bulk-move-stage"
+              >
+                <MoveRight className="h-3.5 w-3.5" />
+                Move to Stage
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="center" className="min-w-[160px]">
+              {stages.map(s => (
+                <DropdownMenuItem
+                  key={s.id}
+                  onClick={() => bulkUpdateLeadsMutation.mutate({ ids: Array.from(selectedIds), action: "move_stage", stage: s.slug })}
+                  data-testid={`option-bulk-stage-${s.slug}`}
+                >
+                  {s.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-8"
+                disabled={bulkUpdateLeadsMutation.isPending}
+                data-testid="button-bulk-assign"
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                Assign To
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="center" className="min-w-[160px]">
+              <DropdownMenuItem
+                onClick={() => bulkUpdateLeadsMutation.mutate({ ids: Array.from(selectedIds), action: "assign", assignedTo: null })}
+                data-testid="option-bulk-assign-unassigned"
+              >
+                Unassigned
+              </DropdownMenuItem>
+              {(users ?? []).map((u) => (
+                <DropdownMenuItem
+                  key={u.id}
+                  onClick={() => bulkUpdateLeadsMutation.mutate({ ids: Array.from(selectedIds), action: "assign", assignedTo: u.id })}
+                  data-testid={`option-bulk-assign-${u.id}`}
+                >
+                  {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : (u.email ?? "User")}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8 text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60"
+            disabled={bulkUpdateLeadsMutation.isPending}
+            onClick={() => bulkUpdateLeadsMutation.mutate({ ids: Array.from(selectedIds), action: "archive" })}
+            data-testid="button-bulk-archive"
+          >
+            <Archive className="h-3.5 w-3.5" />
+            Mark as Lost
+          </Button>
+          <div className="h-4 w-px bg-border mx-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={clearSelection}
+            data-testid="button-bulk-clear-selection"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+          {bulkUpdateLeadsMutation.isPending && (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          )}
+        </div>
+      )}
     </div>
   );
 }

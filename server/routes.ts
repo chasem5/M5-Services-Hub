@@ -1397,6 +1397,87 @@ Do not include any other text, just the JSON.`,
     res.json(lead);
   });
 
+  // Bulk lead update — must be registered before /api/leads/:id to avoid wildcard capture
+  app.patch("/api/leads/bulk", isAuthenticated, async (req, res) => {
+    try {
+      const schema = z.discriminatedUnion("action", [
+        z.object({ ids: z.array(z.number()).min(1), action: z.literal("move_stage"), stage: z.string().min(1) }),
+        z.object({ ids: z.array(z.number()).min(1), action: z.literal("assign"), assignedTo: z.string().nullable() }),
+        z.object({ ids: z.array(z.number()).min(1), action: z.literal("archive") }),
+      ]);
+      const body = schema.parse(req.body);
+
+      // Authorization: strict all-or-nothing check — every requested ID must be permitted
+      const scopedUserId = await getScopedUserId(req, "leads");
+      const permittedIds = body.ids;
+      if (scopedUserId) {
+        const allLeads = await storage.listLeads(scopedUserId);
+        const allowedSet = new Set(allLeads.map(l => l.id));
+        const unauthorized = body.ids.filter(id => !allowedSet.has(id));
+        if (unauthorized.length > 0) {
+          return res.status(403).json({ message: "One or more leads cannot be updated (permission denied)" });
+        }
+      }
+
+      // For stage changes: validate slug, load current lead stages, and compute per-lead final stage
+      let updateData: { stagePerLead?: Map<number, string>; assignedTo?: string | null } = {};
+      if (body.action === "move_stage" || body.action === "archive") {
+        const pipelineStagesList = await storage.listPipelineStages();
+        const stageMap = new Map(pipelineStagesList.map(s => [s.slug, s]));
+        const targetSlug = body.action === "archive" ? "lost" : body.stage;
+        if (!stageMap.has(targetSlug)) {
+          return res.status(400).json({ message: `Invalid stage: ${targetSlug}` });
+        }
+        const targetStageObj = stageMap.get(targetSlug)!;
+        // Fetch current lead data to compute per-lead normalization
+        const currentLeads = await storage.listLeads(scopedUserId ?? undefined);
+        const selectedLeads = currentLeads.filter(l => permittedIds.includes(l.id));
+        const stagePerLead = new Map<number, string>();
+        for (const lead of selectedLeads) {
+          const curStageObj = stageMap.get(lead.stage);
+          // Relationship→deal normalization: must pass through proposal_sent
+          const needsGating = curStageObj?.track === "relationship" && targetStageObj.track === "deal" && targetSlug !== "proposal_sent";
+          stagePerLead.set(lead.id, needsGating ? "proposal_sent" : targetSlug);
+        }
+        updateData.stagePerLead = stagePerLead;
+      } else if (body.action === "assign") {
+        if (body.assignedTo !== null) {
+          const targetUser = await storage.getUser(body.assignedTo);
+          if (!targetUser) {
+            return res.status(400).json({ message: `User not found: ${body.assignedTo}` });
+          }
+        }
+        updateData.assignedTo = body.assignedTo;
+      }
+
+      const updated = await storage.bulkUpdateLeads(permittedIds, updateData);
+
+      // Write a batch activity log entry per lead for audit/timeline parity
+      if (body.action === "move_stage" && updateData.stagePerLead) {
+        const logPromises: Promise<void>[] = [];
+        for (const [leadId, finalStage] of updateData.stagePerLead) {
+          logPromises.push(logActivity(req, "lead", leadId, "stage_updated", { stage: finalStage, bulk: true }));
+        }
+        await Promise.all(logPromises);
+      } else if (body.action === "archive" && updateData.stagePerLead) {
+        const logPromises = Array.from(updateData.stagePerLead.keys()).map(leadId =>
+          logActivity(req, "lead", leadId, "stage_updated", { stage: "lost", bulk: true })
+        );
+        await Promise.all(logPromises);
+      } else if (body.action === "assign" && "assignedTo" in body) {
+        const assignedTo = (body as { assignedTo: string | null }).assignedTo;
+        const logPromises = permittedIds.map(leadId =>
+          logActivity(req, "lead", leadId, "updated", { assignedTo, bulk: true })
+        );
+        await Promise.all(logPromises);
+      }
+
+      res.json({ updated });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
   app.get("/api/leads/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id as string);
     const lead = await storage.getLead(id);

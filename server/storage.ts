@@ -392,6 +392,7 @@ export interface IStorage {
   deleteBulkClientContacts(ids: number[]): Promise<void>;
   bulkUpdateClientContacts(ids: number[], data: Partial<ClientContact>): Promise<void>;
   bulkUpdateClients(ids: number[], data: Partial<Client>): Promise<void>;
+  bulkUpdateLeads(ids: number[], data: { stagePerLead?: Map<number, string>; assignedTo?: string | null }): Promise<number>;
 
   // Activity Summary
   getLeadsActivitySummary(userId?: string): Promise<{ leadId: number; lastActivityAt: Date | null; stageChangedAt: Date | null }[]>;
@@ -2401,6 +2402,44 @@ export class DatabaseStorage implements IStorage {
         await db.update(clients).set({ ...clean as any, updatedAt: new Date() }).where(eq(clients.id, id));
       }
     }
+  }
+
+  async bulkUpdateLeads(ids: number[], data: { stagePerLead?: Map<number, string>; assignedTo?: string | null }): Promise<number> {
+    if (!ids.length) return 0;
+    const now = new Date();
+    return await db.transaction(async (tx) => {
+      // Validate all requested IDs exist — fetch existing rows inside the transaction
+      const existingLeads = await tx.select({ id: leads.id, stage: leads.stage, wonAt: leads.wonAt }).from(leads).where(inArray(leads.id, ids));
+      if (existingLeads.length !== ids.length) {
+        throw new Error(`One or more leads not found`);
+      }
+      if (data.stagePerLead !== undefined) {
+        // Group leads by resolved target stage and apply wonAt logic per-group
+        const stageGroups = new Map<string, { id: number; needsWonAt: boolean }[]>();
+        for (const lead of existingLeads) {
+          const targetStage = data.stagePerLead.get(lead.id)!;
+          const needsWonAt = targetStage === "won" && lead.stage !== "won" && !lead.wonAt;
+          const group = stageGroups.get(targetStage) ?? [];
+          group.push({ id: lead.id, needsWonAt });
+          stageGroups.set(targetStage, group);
+        }
+        for (const [targetStage, group] of stageGroups) {
+          const wonIds = group.filter(g => g.needsWonAt).map(g => g.id);
+          const nonWonIds = group.filter(g => !g.needsWonAt).map(g => g.id);
+          if (wonIds.length > 0) {
+            await tx.update(leads).set({ stage: targetStage, wonAt: now, updatedAt: now }).where(inArray(leads.id, wonIds));
+          }
+          if (nonWonIds.length > 0) {
+            await tx.update(leads).set({ stage: targetStage, updatedAt: now }).where(inArray(leads.id, nonWonIds));
+          }
+        }
+      } else {
+        const clean: Record<string, unknown> = { updatedAt: now };
+        if ("assignedTo" in data) clean.assignedTo = data.assignedTo;
+        await tx.update(leads).set(clean).where(inArray(leads.id, ids));
+      }
+      return existingLeads.length;
+    });
   }
 
   async getLeadsActivitySummary(userId?: string): Promise<{ leadId: number; lastActivityAt: Date | null; stageChangedAt: Date | null }[]> {
