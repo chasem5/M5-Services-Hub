@@ -101,14 +101,18 @@ export default function MonthlyReport() {
 
   const [selYear, selMonth] = selectedKey.split("-").map(Number);
 
-  const { data: report, isLoading, isError } = useQuery<MBRReport>({
+  const { data: report, isLoading, isError, refetch } = useQuery<MBRReport>({
     queryKey: ["/api/reports/monthly-business-review", selYear, selMonth],
+    retry: 1,
     queryFn: async () => {
       const res = await fetch(
         `/api/reports/monthly-business-review?year=${selYear}&month=${selMonth}`,
         { credentials: "include" }
       );
-      if (!res.ok) throw new Error("Failed to load report");
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(body || `HTTP ${res.status}`);
+      }
       return res.json();
     },
   });
@@ -179,8 +183,15 @@ export default function MonthlyReport() {
         <Card className="shadow-sm">
           <CardContent className="py-16 text-center text-muted-foreground">
             <FileBarChart2 className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p className="font-medium text-red-600">Failed to load report</p>
-            <p className="text-sm">Please try selecting a different month or refreshing the page.</p>
+            <p className="font-medium text-red-600 mb-1">Failed to load report</p>
+            <p className="text-sm mb-4">The report could not be loaded. Please try again.</p>
+            <button
+              onClick={() => refetch()}
+              className="px-4 py-2 text-sm font-medium rounded-md bg-primary text-white hover:bg-primary/90 transition-colors"
+              data-testid="button-retry-monthly-report"
+            >
+              Retry
+            </button>
           </CardContent>
         </Card>
       )}

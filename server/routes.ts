@@ -6654,26 +6654,25 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const total = wonCount + lostCount;
       const winRate = total > 0 ? Math.round((wonCount / total) * 100) : null;
 
-      // Win rate over time (monthly) — use won_at for won, lost_at for lost
-      // Merge both into a unified monthly series
+      // Win rate over time (monthly) — fall back to updated_at when won_at/lost_at not set
       const wonMonthlyRows = toRows<MonthlyWonRow>(await db.execute(sqlTag`
         SELECT
-          TO_CHAR(DATE_TRUNC('month', won_at), 'YYYY-MM') as month,
+          TO_CHAR(DATE_TRUNC('month', COALESCE(won_at, updated_at)), 'YYYY-MM') as month,
           COUNT(*) as won
         FROM leads
-        WHERE stage = 'won' AND won_at IS NOT NULL ${wonDateFilter}
-        GROUP BY DATE_TRUNC('month', won_at)
-        ORDER BY DATE_TRUNC('month', won_at) ASC
+        WHERE stage = 'won' ${wonDateFilter}
+        GROUP BY DATE_TRUNC('month', COALESCE(won_at, updated_at))
+        ORDER BY DATE_TRUNC('month', COALESCE(won_at, updated_at)) ASC
       `));
 
       const lostMonthlyRows = toRows<MonthlyLostRow>(await db.execute(sqlTag`
         SELECT
-          TO_CHAR(DATE_TRUNC('month', lost_at), 'YYYY-MM') as month,
+          TO_CHAR(DATE_TRUNC('month', COALESCE(lost_at, updated_at)), 'YYYY-MM') as month,
           COUNT(*) as lost
         FROM leads
-        WHERE stage = 'lost' AND lost_at IS NOT NULL ${lostDateFilter}
-        GROUP BY DATE_TRUNC('month', lost_at)
-        ORDER BY DATE_TRUNC('month', lost_at) ASC
+        WHERE stage = 'lost' ${lostDateFilter}
+        GROUP BY DATE_TRUNC('month', COALESCE(lost_at, updated_at))
+        ORDER BY DATE_TRUNC('month', COALESCE(lost_at, updated_at)) ASC
       `));
 
       // Merge monthly data
@@ -6817,26 +6816,38 @@ Write a punchy, factual summary highlighting what's driving the health status. L
       const { db } = await import("./db");
       const { sql: sqlTag } = await import("drizzle-orm");
 
-      const rows = await db.execute(sqlTag`
+      // Use 12-month trailing invoice revenue as MRR/ARR base —
+      // contract_value is often null in BuildOps so we derive from actual invoices.
+      const invoiceRow = await db.execute(sqlTag`
         SELECT
-          COUNT(*)::int                                                              AS active_count,
-          COALESCE(SUM(contract_value) FILTER (WHERE contract_value IS NOT NULL), 0) AS total_arr,
-          COALESCE(SUM(contract_value / 12) FILTER (WHERE contract_value IS NOT NULL), 0) AS total_mrr,
-          MIN(start_date)                                                            AS earliest_start,
-          MAX(end_date)                                                              AS latest_end
+          COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS trailing_12m,
+          MIN(COALESCE(issued_date, due_date, synced_at))  AS earliest_date,
+          MAX(COALESCE(issued_date, due_date, synced_at))  AS latest_date
+        FROM buildops_invoices
+        WHERE
+          COALESCE(issued_date, due_date, synced_at) >= NOW() - INTERVAL '12 months'
+          AND LOWER(COALESCE(status, '')) NOT IN ('void', 'cancelled')
+      `);
+
+      const agreementRow = await db.execute(sqlTag`
+        SELECT COUNT(*)::int AS total_count
         FROM buildops_agreements
-        WHERE LOWER(status) = 'active'
       `);
 
       const toRows = (r: any) => Array.isArray(r) ? r : r?.rows ?? [];
-      const row = toRows(rows)[0] ?? {};
+      const inv = toRows(invoiceRow)[0] ?? {};
+      const agr = toRows(agreementRow)[0] ?? {};
+
+      const trailing12m = Number(inv.trailing_12m ?? 0);
+      const arr = trailing12m;
+      const mrr = trailing12m / 12;
 
       res.json({
-        mrr: Number(row.total_mrr ?? 0),
-        arr: Number(row.total_arr ?? 0),
-        activeAgreementCount: Number(row.active_count ?? 0),
-        earliestStart: row.earliest_start ?? null,
-        latestEnd: row.latest_end ?? null,
+        mrr: Math.round(mrr * 100) / 100,
+        arr: Math.round(arr * 100) / 100,
+        activeAgreementCount: Number(agr.total_count ?? 0),
+        earliestStart: inv.earliest_date ?? null,
+        latestEnd: inv.latest_date ?? null,
       });
     } catch (err: any) {
       console.error("[analytics/mrr-arr]", err.message);

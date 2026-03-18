@@ -83,7 +83,7 @@ export default function RevenueAnalytics() {
   }));
 
   const hasMixData = pieData.length > 0;
-  const hasMrrData = (mrrData?.activeAgreementCount ?? 0) > 0;
+  const hasMrrData = (mrrData?.mrr ?? 0) > 0;
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -121,9 +121,7 @@ export default function RevenueAnalytics() {
                     {fmt(mrrData?.mrr ?? 0)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {hasMrrData
-                      ? "Based on active service agreements"
-                      : "No active agreements with contract values"}
+                    Trailing 12-month invoice avg
                   </p>
                 </>
               )}
@@ -145,7 +143,7 @@ export default function RevenueAnalytics() {
                     {fmt(mrrData?.arr ?? 0)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Total active contract value (annual)
+                    Trailing 12-month invoice total
                   </p>
                 </>
               )}
@@ -155,7 +153,7 @@ export default function RevenueAnalytics() {
           <Card className="shadow-sm bg-card" data-testid="card-active-agreements">
             <CardHeader className="pb-2">
               <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                Active Agreements
+                Service Agreements
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -168,13 +166,13 @@ export default function RevenueAnalytics() {
                   </p>
                   <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
                     {mrrData?.earliestStart && (
-                      <p>From: {safeDate(mrrData.earliestStart)}</p>
+                      <p>Invoices from: {safeDate(mrrData.earliestStart)}</p>
                     )}
                     {mrrData?.latestEnd && (
-                      <p>Through: {safeDate(mrrData.latestEnd)}</p>
+                      <p>Latest: {safeDate(mrrData.latestEnd)}</p>
                     )}
                     {!mrrData?.earliestStart && !mrrData?.latestEnd && (
-                      <p>No date coverage data</p>
+                      <p>No invoices in past 12 months</p>
                     )}
                   </div>
                 </>
@@ -185,7 +183,7 @@ export default function RevenueAnalytics() {
 
         {!mrrLoading && !hasMrrData && (
           <p className="text-sm text-muted-foreground mt-3 bg-muted/40 border rounded-lg p-3">
-            MRR/ARR will populate automatically when BuildOps service agreements are synced and have contract values set to active status.
+            Revenue will populate once BuildOps invoices are synced. MRR is derived from the trailing 12-month invoice average.
           </p>
         )}
       </div>

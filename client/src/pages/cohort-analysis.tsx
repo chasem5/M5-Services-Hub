@@ -61,14 +61,18 @@ export default function CohortAnalysis() {
   const queryParams = new URLSearchParams();
   if (serviceType !== "all") queryParams.set("serviceType", serviceType);
 
-  const { data, isLoading, isError } = useQuery<CohortResponse>({
+  const { data, isLoading, isError, refetch } = useQuery<CohortResponse>({
     queryKey: ["/api/reports/cohort-analysis", serviceType],
+    retry: 1,
     queryFn: async () => {
       const res = await fetch(
         `/api/reports/cohort-analysis?${queryParams.toString()}`,
         { credentials: "include" }
       );
-      if (!res.ok) throw new Error("Failed to load cohort data");
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(body || `HTTP ${res.status}`);
+      }
       return res.json();
     },
   });
@@ -182,8 +186,15 @@ export default function CohortAnalysis() {
         <Card className="shadow-sm bg-card">
           <CardContent className="py-16 text-center text-muted-foreground">
             <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p className="font-medium text-red-600">Failed to load cohort data</p>
-            <p className="text-sm">Please try refreshing the page.</p>
+            <p className="font-medium text-red-600 mb-1">Failed to load cohort data</p>
+            <p className="text-sm mb-4">The report could not be loaded. Please try again.</p>
+            <button
+              onClick={() => refetch()}
+              className="px-4 py-2 text-sm font-medium rounded-md bg-primary text-white hover:bg-primary/90 transition-colors"
+              data-testid="button-retry-cohort"
+            >
+              Retry
+            </button>
           </CardContent>
         </Card>
       ) : isLoading ? (
