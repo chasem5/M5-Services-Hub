@@ -2748,6 +2748,8 @@ export class DatabaseStorage implements IStorage {
         value: leads.value,
         valueType: leads.valueType,
         valueTier: leads.valueTier,
+        buildopsQuoteTotal: leads.buildopsQuoteTotal,
+        buildopsQuoteId: leads.buildopsQuoteId,
         clientId: leads.clientId,
         wonAt: leads.wonAt,
         updatedAt: leads.updatedAt,
@@ -2772,7 +2774,11 @@ export class DatabaseStorage implements IStorage {
     };
 
     const wonDealsCount = wonLeads.length;
-    const wonDealsValue = wonLeads.reduce((s, l) => s + parseFloat(l.value || "0"), 0);
+    // Prefer buildopsQuoteTotal (actual quote amount from BuildOps) over manually-entered CRM value
+    const wonDealsValue = wonLeads.reduce((s, l) => {
+      const boTotal = l.buildopsQuoteTotal ? parseFloat(l.buildopsQuoteTotal) : null;
+      return s + (boTotal !== null && boTotal > 0 ? boTotal : parseFloat(l.value || "0"));
+    }, 0);
 
     // 3. Pipeline value added (new leads created in the month that are active)
     const newPipelineLeads = await db
@@ -2794,9 +2800,15 @@ export class DatabaseStorage implements IStorage {
       );
     const pipelineAdded = newPipelineLeads.reduce((s, l) => s + getLeadValue(l), 0);
 
-    // 4. Proposals sent vs won vs lost
-    // Use createdAt for initial sent date (updatedAt is misleading — changes on every edit).
-    // Also count BuildOps-synced leads that moved to proposal_sent/won/lost during the month.
+    // 4. Proposals / quotes sent vs won vs lost
+    // Three sources are combined, deduplicating by source to avoid double-counting:
+    //   A) CRM-native proposals (proposals table)
+    //   B) CRM-native estimates (estimates table)
+    //   C) BuildOps-linked leads (classified by buildopsQuoteStatus)
+    //   D) CRM-only leads (no buildopsQuoteId, classified by stage)
+    const _toRowsWL = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
+
+    // A) CRM proposals
     const proposalRows = await db
       .select({ status: proposals.status, count: sql<number>`count(*)` })
       .from(proposals)
@@ -2809,6 +2821,7 @@ export class DatabaseStorage implements IStorage {
       )
       .groupBy(proposals.status);
 
+    // B) CRM estimates
     const estimateRows = await db
       .select({ status: estimates.status, count: sql<number>`count(*)` })
       .from(estimates)
@@ -2821,26 +2834,58 @@ export class DatabaseStorage implements IStorage {
       )
       .groupBy(estimates.status);
 
-    // All CRM leads won in the month — use won_at timestamp, fall back to updated_at
-    const _toRowsWL = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
-    const wonLeadResult = await db.execute(sql`
+    // C) BuildOps-linked leads — use buildopsQuoteStatus for classification
+    // Win states: approved, accepted, jobadded, converted, projectadded
+    // Loss states: rejected, declined, expired, cancelled
+    // Draft states (not sent yet): draft, new, open
+    // Sent = everything else (pending, submitted, etc.) or won/lost states that updated in the month
+    const boQuoteSentResult = await db.execute(sql`
       SELECT COUNT(*) AS count
       FROM leads
-      WHERE stage = 'won'
+      WHERE buildops_quote_id IS NOT NULL
+        AND LOWER(COALESCE(buildops_quote_status, '')) NOT IN ('draft', 'new', 'open', '')
+        AND updated_at >= ${monthStart}
+        AND updated_at < ${monthEnd}
+    `);
+    const boQuoteWonResult = await db.execute(sql`
+      SELECT COUNT(*) AS count
+      FROM leads
+      WHERE buildops_quote_id IS NOT NULL
+        AND LOWER(buildops_quote_status) IN ('approved', 'accepted', 'jobadded', 'converted', 'projectadded')
         AND COALESCE(won_at, updated_at) >= ${monthStart}
         AND COALESCE(won_at, updated_at) < ${monthEnd}
     `);
-    const lostLeadResult = await db.execute(sql`
+    const boQuoteLostResult = await db.execute(sql`
       SELECT COUNT(*) AS count
       FROM leads
-      WHERE stage = 'lost'
+      WHERE buildops_quote_id IS NOT NULL
+        AND LOWER(buildops_quote_status) IN ('rejected', 'declined', 'expired', 'cancelled')
         AND COALESCE(lost_at, updated_at) >= ${monthStart}
         AND COALESCE(lost_at, updated_at) < ${monthEnd}
     `);
-    const sentLeadResult = await db.execute(sql`
+
+    // D) CRM-only leads (no BuildOps quote attached) classified by stage
+    const crmOnlyWonResult = await db.execute(sql`
       SELECT COUNT(*) AS count
       FROM leads
-      WHERE stage = 'proposal_sent'
+      WHERE buildops_quote_id IS NULL
+        AND stage = 'won'
+        AND COALESCE(won_at, updated_at) >= ${monthStart}
+        AND COALESCE(won_at, updated_at) < ${monthEnd}
+    `);
+    const crmOnlyLostResult = await db.execute(sql`
+      SELECT COUNT(*) AS count
+      FROM leads
+      WHERE buildops_quote_id IS NULL
+        AND stage = 'lost'
+        AND COALESCE(lost_at, updated_at) >= ${monthStart}
+        AND COALESCE(lost_at, updated_at) < ${monthEnd}
+    `);
+    const crmOnlySentResult = await db.execute(sql`
+      SELECT COUNT(*) AS count
+      FROM leads
+      WHERE buildops_quote_id IS NULL
+        AND stage = 'proposal_sent'
         AND updated_at >= ${monthStart}
         AND updated_at < ${monthEnd}
     `);
@@ -2850,13 +2895,17 @@ export class DatabaseStorage implements IStorage {
     const estimateSent = Number(estimateRows.find(r => r.status === "sent")?.count ?? 0);
     const estimateAccepted = Number(estimateRows.find(r => r.status === "accepted")?.count ?? 0);
     const estimateRejected = Number(estimateRows.find(r => r.status === "rejected")?.count ?? 0);
-    const crmWon = Number(_toRowsWL(wonLeadResult)[0]?.count ?? 0);
-    const crmLost = Number(_toRowsWL(lostLeadResult)[0]?.count ?? 0);
-    const crmSent = Number(_toRowsWL(sentLeadResult)[0]?.count ?? 0);
+    const boSent = Number(_toRowsWL(boQuoteSentResult)[0]?.count ?? 0);
+    const boWon = Number(_toRowsWL(boQuoteWonResult)[0]?.count ?? 0);
+    const boLost = Number(_toRowsWL(boQuoteLostResult)[0]?.count ?? 0);
+    const crmWon = Number(_toRowsWL(crmOnlyWonResult)[0]?.count ?? 0);
+    const crmLost = Number(_toRowsWL(crmOnlyLostResult)[0]?.count ?? 0);
+    const crmSent = Number(_toRowsWL(crmOnlySentResult)[0]?.count ?? 0);
 
-    const totalSent = proposalSent + proposalSigned + estimateSent + estimateAccepted + estimateRejected + crmSent + crmWon + crmLost;
-    const totalWon = proposalSigned + estimateAccepted + crmWon;
-    const totalLost = estimateRejected + crmLost;
+    // Total sent = all quotes/proposals that left draft state this month (won/lost also count as "sent")
+    const totalSent = proposalSent + proposalSigned + estimateSent + estimateAccepted + estimateRejected + boSent + crmSent;
+    const totalWon = proposalSigned + estimateAccepted + boWon + crmWon;
+    const totalLost = estimateRejected + boLost + crmLost;
 
     // 5. Active clients this month (distinct clients with ≥1 invoice in the period)
     const activeClientResult = await db.execute(sql`
