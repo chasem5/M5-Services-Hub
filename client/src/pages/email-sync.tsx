@@ -16,7 +16,7 @@ import { Link } from "wouter";
 import {
   Mail, RefreshCw, AlertCircle, Bell, ArrowDownLeft, ArrowUpRight,
   Plus, TrendingUp, MoreVertical, X, UserPlus, Zap, Building2,
-  ChevronRight, Clock, Eye, EyeOff, Search, Users, ChevronDown, ChevronUp, Ban,
+  ChevronRight, ChevronLeft, Clock, Eye, EyeOff, Search, Users, ChevronDown, ChevronUp, Ban,
   ThumbsUp, ThumbsDown, Check, ChevronsUpDown, Pencil,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
@@ -601,29 +601,31 @@ export default function EmailSyncPage() {
               if (primaryEmail) setQuickClientEmailForLink(primaryEmail.id);
               setQuickClientDialogOpen(true);
             }}
-            className="gap-1.5 h-8 text-sm"
+            className="gap-1.5 h-8 text-sm px-2 sm:px-3"
             data-testid="button-new-company"
+            title="New Company"
           >
             <Building2 className="h-3.5 w-3.5" />
-            New Company
+            <span className="hidden sm:inline">New Company</span>
           </Button>
           <Button
             variant="outline"
             onClick={() => setAddContactDialogOpen(true)}
-            className="gap-1.5 h-8 text-sm"
+            className="gap-1.5 h-8 text-sm px-2 sm:px-3"
             data-testid="button-new-contact"
+            title="New Contact"
           >
             <UserPlus className="h-3.5 w-3.5" />
-            New Contact
+            <span className="hidden sm:inline">New Contact</span>
           </Button>
           <Button
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending}
-            className="gap-2 bg-primary hover:bg-primary/90 text-white h-8 text-sm"
+            className="gap-2 bg-primary hover:bg-primary/90 text-white h-8 text-sm px-2 sm:px-4"
             data-testid="button-sync-now"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-            {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+            <span className="hidden sm:inline">{syncMutation.isPending ? "Syncing..." : "Sync Now"}</span>
           </Button>
         </div>
       </div>
@@ -708,8 +710,8 @@ export default function EmailSyncPage() {
 
       {/* Three-column body */}
       <div className="flex-1 flex overflow-hidden">
-        {/* LEFT: Thread list */}
-        <div className="w-80 shrink-0 border-r border-gray-200 bg-white flex flex-col overflow-hidden">
+        {/* LEFT: Thread list — full-width on mobile, fixed 320px on md+ */}
+        <div className={`${selectedThread ? "hidden md:flex" : "flex"} w-full md:w-80 md:shrink-0 border-r border-gray-200 bg-white flex-col overflow-hidden`}>
           {/* View filter tabs — always at top, never scrolls */}
           {!isLoading && allThreads.length > 0 && (
             <div className="shrink-0 flex border-b border-gray-200 bg-white" data-testid="email-view-tabs">
@@ -853,15 +855,24 @@ export default function EmailSyncPage() {
           )}
         </div>
 
-        {/* CENTER: Email messages */}
-        <div className="flex-1 overflow-y-auto">
+        {/* CENTER: Email messages — hidden on mobile when no thread selected */}
+        <div className={`${!selectedThread ? "hidden md:flex md:flex-col" : "flex flex-col"} flex-1 overflow-y-auto`}>
           {!selectedThread ? (
             <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
               <Mail className="h-10 w-10 mb-3 text-gray-300" />
               <p className="text-sm">Select a thread to view details</p>
             </div>
           ) : (
-            <div className="p-5">
+            <div className="p-4 sm:p-5">
+              {/* Mobile back button */}
+              <button
+                onClick={() => setSelectedThreadId(null)}
+                className="md:hidden flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-3 -ml-1"
+                data-testid="button-email-back"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                All emails
+              </button>
               {/* Thread header */}
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1 min-w-0">
@@ -997,9 +1008,9 @@ export default function EmailSyncPage() {
           )}
         </div>
 
-        {/* RIGHT: CRM Sidebar */}
+        {/* RIGHT: CRM Sidebar — hidden on mobile, shown on md+ */}
         {selectedThread && primaryEmail && (
-          <div className="w-80 shrink-0 border-l border-gray-200 bg-white overflow-y-auto flex flex-col">
+          <div className="hidden md:flex w-80 shrink-0 border-l border-gray-200 bg-white overflow-y-auto flex-col">
             <div className="p-4 space-y-4">
 
               {/* Thread Summary */}
