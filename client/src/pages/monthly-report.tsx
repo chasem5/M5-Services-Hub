@@ -10,7 +10,6 @@ import {
   FileBarChart2,
   Printer,
   DollarSign,
-  Users,
   HeartPulse,
   FileText,
   Trophy,
@@ -30,8 +29,7 @@ interface MBRReport {
     lost: number;
     total: number;
   };
-  newClientsCount: number;
-  newClients: { id: number; name: string; tier: string | null }[];
+  activeClientsCount: number;
   clientHealth: {
     healthy: number;
     watch: number;
@@ -87,12 +85,6 @@ function MetricCard({ label, value, sub, accent }: { label: string; value: strin
   );
 }
 
-function tierLabel(tier: string | null) {
-  if (tier === "tier_1") return <Badge variant="outline" className="text-xs border-primary/30 text-primary">Tier 1</Badge>;
-  if (tier === "tier_2") return <Badge variant="outline" className="text-xs border-blue-300 text-blue-600">Tier 2</Badge>;
-  if (tier === "tier_3") return <Badge variant="outline" className="text-xs border-gray-300 text-gray-500">Tier 3</Badge>;
-  return <span className="text-xs text-muted-foreground">—</span>;
-}
 
 export default function MonthlyReport() {
   const options = buildYearMonthOptions();
@@ -220,9 +212,9 @@ export default function MonthlyReport() {
                 sub="New active deals created"
               />
               <MetricCard
-                label="New Clients Added"
-                value={report.newClientsCount.toString()}
-                sub="Companies created this month"
+                label="Active Clients"
+                value={report.activeClientsCount.toString()}
+                sub="Clients with revenue this month"
                 accent="text-primary"
               />
             </div>
@@ -317,42 +309,6 @@ export default function MonthlyReport() {
             )}
           </section>
 
-          {/* Section 5: New Clients */}
-          {report.newClientsCount > 0 && (
-            <>
-              <Separator />
-              <section>
-                <SectionHeader icon={Users} title="New Clients Added" />
-                <Card className="shadow-sm print:shadow-none print:border">
-                  <CardContent className="p-0">
-                    <table className="w-full text-sm" data-testid="table-new-clients">
-                      <thead>
-                        <tr className="border-b text-left text-muted-foreground">
-                          <th className="py-2.5 px-4 font-medium">Company</th>
-                          <th className="py-2.5 px-4 font-medium">Tier</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {report.newClients.map(c => (
-                          <tr key={c.id} className="border-b last:border-0 hover:bg-muted/40 print:hover:bg-transparent" data-testid={`row-new-client-${c.id}`}>
-                            <td className="py-2.5 px-4 font-medium">{c.name}</td>
-                            <td className="py-2.5 px-4">{tierLabel(c.tier)}</td>
-                          </tr>
-                        ))}
-                        {report.newClientsCount > 10 && (
-                          <tr>
-                            <td colSpan={2} className="py-2 px-4 text-xs text-muted-foreground">
-                              + {report.newClientsCount - 10} more clients not shown
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              </section>
-            </>
-          )}
 
         </div>
       )}

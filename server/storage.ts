@@ -2847,24 +2847,23 @@ export class DatabaseStorage implements IStorage {
     const totalWon = proposalSigned + estimateAccepted + boWon;
     const totalLost = estimateRejected + boLost;
 
-    // 5. New clients added
-    const newClientRows = await db
-      .select({ id: clients.id, name: clients.name, tier: clients.tier, createdAt: clients.createdAt })
-      .from(clients)
-      .where(
-        and(
-          sql`${clients.createdAt} >= ${monthStart}`,
-          sql`${clients.createdAt} < ${monthEnd}`
-        )
-      )
-      .orderBy(clients.name);
-    const newClientsCount = newClientRows.length;
+    // 5. Active clients this month (distinct clients with ≥1 invoice in the period)
+    const activeClientResult = await db.execute(sql`
+      SELECT COUNT(DISTINCT client_id) AS count
+      FROM buildops_invoices
+      WHERE issued_date >= ${monthStart}
+        AND issued_date < ${monthEnd}
+        AND client_id IS NOT NULL
+        AND status NOT IN ('void', 'cancelled')
+    `);
+    const _toRows = (r: any): any[] => Array.isArray(r) ? r : r?.rows ?? [];
+    const activeClientsCount = Number((_toRows(activeClientResult)[0] as any)?.count ?? 0);
 
-    // 6. Client health score distribution — only clients that existed as of the selected month end
+    // 6. Client health score distribution — all current clients (creation date not a meaningful filter
+    //    because all 253 clients were synced from BuildOps after the CRM launch date)
     const allClientsForHealth = await db
-      .select({ id: clients.id, name: clients.name, tier: clients.tier, createdAt: clients.createdAt })
-      .from(clients)
-      .where(sql`${clients.createdAt} < ${monthEnd}`);
+      .select({ id: clients.id, name: clients.name, tier: clients.tier })
+      .from(clients);
 
     // For simplicity, compute health based on active jobs and invoices
     const ninetyDaysAgo = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
@@ -2929,13 +2928,9 @@ export class DatabaseStorage implements IStorage {
     let healthyCount = 0;
     let watchCount = 0;
     let atRiskCount = 0;
-    let newCount = 0;
-
-    const ninetyDaysBeforeMonthEnd = new Date(monthEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const newCount = 0; // "new" bucket not used — CRM createdAt reflects sync date, not client tenure
 
     for (const c of allClientsForHealth) {
-      const isNew = new Date(c.createdAt ?? monthEnd) >= ninetyDaysBeforeMonthEnd;
-      if (isNew) { newCount++; continue; }
       const jobs = jobMap.get(c.id) ?? { last90: 0, prior90: 0 };
       const inv = invMap.get(c.id) ?? { last3m: 0, prior3m: 0 };
 
@@ -3003,8 +2998,7 @@ export class DatabaseStorage implements IStorage {
         lost: totalLost,
         total: totalSent,
       },
-      newClientsCount,
-      newClients: newClientRows.slice(0, 10).map(c => ({ id: c.id, name: c.name, tier: c.tier })),
+      activeClientsCount,
       clientHealth: {
         healthy: healthyCount,
         watch: watchCount,
