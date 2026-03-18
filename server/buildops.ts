@@ -428,51 +428,36 @@ export async function getEmployees(
   clientId: string,
   clientSecret: string,
   tenantId: string
-): Promise<{ employees: BuildOpsEmployee[]; debug?: Record<string, any> }> {
+): Promise<{ employees: BuildOpsEmployee[]; totalCount: number; debug?: Record<string, any> }> {
   const token = await getToken(clientId, clientSecret);
   const headers = buildOpsHeaders(token, tenantId);
 
-  // /v1/employees does NOT accept page/limit (returns 400).
-  // Try Spring Boot's "size" param to increase page size, then page through using page=0,1,2...
+  // API spec: page is 0-indexed, page_size max=100. Correct params are ?page=N&page_size=100
+  // (NOT limit/size/pageSize — those all return 400 from the OpenAPI strict validator)
   const allEmployees: BuildOpsEmployee[] = [];
+  let totalCount = 0;
+  let page = 0;
 
-  // First, try with size=200 to get everything in one shot
-  const firstRes = await fetch(`${BASE_URL}/v1/employees?size=200`, { headers });
-  if (firstRes.ok) {
-    const data = await firstRes.json();
+  while (true) {
+    const url = `${BASE_URL}/v1/employees?page=${page}&page_size=100`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const rawText = await res.text().catch(() => "");
+      console.warn(`[BuildOps getEmployees] page ${page} HTTP ${res.status}: ${rawText.slice(0, 300)}`);
+      if (page === 0) return { employees: [], totalCount: 0, debug: { status: res.status, bodyPreview: rawText.slice(0, 500) } };
+      break;
+    }
+    const data = await res.json();
     const items = extractEmployeeArray(data);
+    totalCount = data.totalCount ?? (allEmployees.length + items.length);
     allEmployees.push(...items);
-    const total: number = data.totalCount ?? items.length;
-    console.log(`[BuildOps getEmployees] size=200 call: got ${items.length} of ${total} employees`);
-
-    // If there are more pages (size=200 might still be paginated), page through
-    if (items.length > 0 && allEmployees.length < total) {
-      let page = 1;
-      while (allEmployees.length < total && page < 20) {
-        const pageRes = await fetch(`${BASE_URL}/v1/employees?size=200&page=${page}`, { headers });
-        if (!pageRes.ok) break;
-        const pageData = await pageRes.json();
-        const pageItems = extractEmployeeArray(pageData);
-        if (pageItems.length === 0) break;
-        allEmployees.push(...pageItems);
-        page++;
-      }
-    }
-  } else {
-    // size param didn't work either — fall back to no-param call (returns default 10)
-    const fallbackRes = await fetch(`${BASE_URL}/v1/employees`, { headers });
-    if (!fallbackRes.ok) {
-      const rawText = await fallbackRes.text().catch(() => "");
-      console.warn(`[BuildOps getEmployees] HTTP ${fallbackRes.status}: ${rawText.slice(0, 300)}`);
-      return { employees: [], debug: { status: fallbackRes.status, bodyPreview: rawText.slice(0, 500) } };
-    }
-    const data = await fallbackRes.json();
-    allEmployees.push(...extractEmployeeArray(data));
-    console.warn(`[BuildOps getEmployees] size param rejected; fell back to no-param, got ${allEmployees.length}`);
+    console.log(`[BuildOps getEmployees] page ${page}: got ${items.length}, total so far: ${allEmployees.length}/${totalCount}`);
+    if (items.length === 0 || allEmployees.length >= totalCount) break;
+    page++;
+    if (page > 20) break;
   }
 
-  console.log(`[BuildOps getEmployees] total employees fetched: ${allEmployees.length}`);
-  return { employees: allEmployees };
+  return { employees: allEmployees, totalCount };
 }
 
 // ── Departments ───────────────────────────────────────────────────────────────

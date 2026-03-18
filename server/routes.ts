@@ -4439,7 +4439,7 @@ Respond with this JSON:
 
       console.log("[sync-reps] Fetching M5 employees from BuildOps /v1/employees");
       const result = await getEmployees(creds.clientId, creds.clientSecret, creds.tenantId);
-      const { employees, debug: debugInfo } = result;
+      const { employees, totalCount: buildopsTotal, debug: debugInfo } = result;
 
       console.log(`[sync-reps] Got ${employees.length} employees from BuildOps`);
 
@@ -4470,11 +4470,11 @@ Respond with this JSON:
 
       const msg = employees.length === 0
         ? `Sync employees: 0 returned from BuildOps /v1/employees. The endpoint may not be available for this tenant.`
-        : `Sync employees: ${created} created, ${updated} updated, ${skipped} skipped. Total: ${employees.length} from BuildOps.`;
+        : `Sync employees: ${created} created, ${updated} updated, ${skipped} skipped. Synced ${employees.length} of ${buildopsTotal} employees from BuildOps.`;
       console.log(`[sync-reps] ${msg}`);
       await storage.createBuildopsSyncLog({ entityType: "contact", action: "pull", message: msg });
 
-      const response: any = { ok: true, created, updated, skipped, total: employees.length };
+      const response: any = { ok: true, created, updated, skipped, total: employees.length, buildopsTotal };
       if (isSuperAdmin && debugInfo) {
         response.debug = debugInfo;
       }
@@ -4505,11 +4505,11 @@ Respond with this JSON:
       const token = await getToken(creds.clientId, creds.clientSecret);
 
       const endpoints = [
+        "/v1/employees?page=0&page_size=100",
+        "/v1/employees?page=1&page_size=100",
         "/v1/employees",
-        "/v1/employees?cursor=test_cursor",
-        "/v1/employees?after=test_after",
-        "/v1/employees?isActive=true",
-        "/v1/employees?page=2",
+        "/v1/employees?include_inactive=true",
+        "/v1/employees?page=0&page_size=100&include_inactive=true",
       ];
 
       const probes = await Promise.all(
