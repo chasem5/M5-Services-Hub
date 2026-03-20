@@ -343,11 +343,15 @@ function BuildingsList({ buildings, offices, contacts, clients: clientsList, lea
                   {company.name}
                 </Link>
               )}
-              {contact && (
-                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              {contact && company && (
+                <Link
+                  href={`/customers/${company.id}?tab=organization&contactId=${contact.id}`}
+                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-primary hover:underline transition-colors truncate"
+                  data-testid={`link-building-contact-${building.id}`}
+                >
                   <Users className="h-3 w-3 shrink-0" />
                   {contact.name}{contact.title ? ` · ${contact.title}` : ""}
-                </div>
+                </Link>
               )}
             </div>
             {building.notes && (
@@ -411,7 +415,7 @@ export default function Customers() {
   const [contactStatusFilter, setContactStatusFilter] = useState("all");
   const [contactSortField, setContactSortField] = useState<"name" | "company" | "title" | "status" | "spend">("name");
   const [contactSortDir, setContactSortDir] = useState<"asc" | "desc">("asc");
-  const [companySortField, setCompanySortField] = useState<"name" | "tier" | "industry" | "revenue" | "spend">("name");
+  const [companySortField, setCompanySortField] = useState<"name" | "tier" | "industry" | "status" | "revenue" | "spend">("name");
   const [companySortDir, setCompanySortDir] = useState<"asc" | "desc">("asc");
   const [segmentByService, setSegmentByService] = useState(false);
   const { data: serviceSegments = {} } = useQuery<Record<number, string>>({
@@ -419,6 +423,15 @@ export default function Customers() {
     enabled: segmentByService,
   });
   const [expandedParents, setExpandedParents] = useState<Set<number>>(new Set());
+  const [expandedCompanyRows, setExpandedCompanyRows] = useState<Set<number>>(new Set());
+  const [inlineAddContactClientId, setInlineAddContactClientId] = useState<number | null>(null);
+  const [inlineContactName, setInlineContactName] = useState("");
+  const [inlineContactTitle, setInlineContactTitle] = useState("");
+  const [inlineContactEmail, setInlineContactEmail] = useState("");
+  const [inlineAddBuildingClientId, setInlineAddBuildingClientId] = useState<number | null>(null);
+  const [inlineBuildingName, setInlineBuildingName] = useState("");
+  const [inlineBuildingAddress, setInlineBuildingAddress] = useState("");
+  const [inlineBuildingContactId, setInlineBuildingContactId] = useState<string>("");
   const { data: industryOptionsList } = useQuery<IndustryOption[]>({ queryKey: ["/api/industry-options"] });
   const industryOptionLabels = industryOptionsList?.map(o => o.label) ?? [];
   const [industryFilter, setIndustryFilter] = useState("all");
@@ -579,6 +592,10 @@ export default function Customers() {
 
   const { data: emailResponseRates = {} } = useQuery<Record<number, { outboundEmails: number; emailsWithReply: number; responseRate: number }>>({
     queryKey: ["/api/clients/email-response-rates"],
+  });
+
+  const { data: buildopsRevenueSummary = {} } = useQuery<Record<number, number>>({
+    queryKey: ["/api/buildops-revenue-summary"],
   });
 
   const [duplicateClientWarning, setDuplicateClientWarning] = useState<{ id: number; name: string } | null>(null);
@@ -848,6 +865,8 @@ export default function Customers() {
       logoUrl: "",
       annualRevenue: null as string | null,
       parentClientId: null as number | null,
+      prospectRevenueTier: null as string | null,
+      customerStatus: "prospect",
     },
   });
 
@@ -891,6 +910,36 @@ export default function Customers() {
     },
     onError: () => {
       toast({ title: "Failed to add contact", variant: "destructive" });
+    },
+  });
+
+  const inlineCreateContactMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/client-contacts", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+      setInlineAddContactClientId(null);
+      setInlineContactName("");
+      setInlineContactTitle("");
+      setInlineContactEmail("");
+      toast({ title: "Contact added" });
+    },
+    onError: () => {
+      toast({ title: "Failed to add contact", variant: "destructive" });
+    },
+  });
+
+  const inlineCreateBuildingMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/contact-buildings", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/all-buildings"] });
+      setInlineAddBuildingClientId(null);
+      setInlineBuildingName("");
+      setInlineBuildingAddress("");
+      setInlineBuildingContactId("");
+      toast({ title: "Building added" });
+    },
+    onError: () => {
+      toast({ title: "Failed to add building", variant: "destructive" });
     },
   });
 
@@ -1005,8 +1054,15 @@ export default function Customers() {
       cmp = (tierOrder[a.tier ?? ""] ?? 3) - (tierOrder[b.tier ?? ""] ?? 3);
     } else if (companySortField === "industry") {
       cmp = (a.industry ?? "").localeCompare(b.industry ?? "");
+    } else if (companySortField === "status") {
+      const statusOrder: Record<string, number> = { prospect: 0, active: 1, inactive: 2, former: 3 };
+      cmp = (statusOrder[a.customerStatus ?? "prospect"] ?? 4) - (statusOrder[b.customerStatus ?? "prospect"] ?? 4);
     } else if (companySortField === "revenue") {
-      cmp = parseFloat(a.annualRevenue ?? "0") - parseFloat(b.annualRevenue ?? "0");
+      const getRevenue = (c: typeof a) => {
+        if (c.customerStatus === "active" && c.buildopsId) return buildopsRevenueSummary[c.id] ?? 0;
+        return parseFloat(c.annualRevenue ?? "0");
+      };
+      cmp = getRevenue(a) - getRevenue(b);
     } else if (companySortField === "spend") {
       cmp = (spendByClientId[a.id] ?? 0) - (spendByClientId[b.id] ?? 0);
     }
@@ -1309,21 +1365,24 @@ export default function Customers() {
                 />
                 <FormField
                   control={form.control}
-                  name="annualRevenue"
+                  name="prospectRevenueTier"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Annual Revenue from This Client ($)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1000"
-                          placeholder="e.g. 120000"
-                          {...field}
-                          value={field.value ?? ""}
-                          data-testid="input-customer-annual-revenue"
-                        />
-                      </FormControl>
+                      <FormLabel>Potential Revenue</FormLabel>
+                      <Select onValueChange={(v) => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-customer-prospect-revenue-tier">
+                            <SelectValue placeholder="Select tier..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">Not set</SelectItem>
+                          <SelectItem value="$">$ — Low</SelectItem>
+                          <SelectItem value="$$">$$ — Medium</SelectItem>
+                          <SelectItem value="$$$">$$$ — High</SelectItem>
+                          <SelectItem value="$$$$">$$$$ — Very High</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1728,7 +1787,10 @@ export default function Customers() {
                         {[...SERVICE_NEEDS.map(s => ({ key: s.key, label: s.label, Icon: s.Icon, color: s.color })), { key: "__unclassified__", label: "Unclassified", Icon: Building2, color: "text-muted-foreground" }].map(({ key, label, Icon, color }) => {
                           const segClients = segments[key] ?? [];
                           if (segClients.length === 0) return null;
-                          const totalRevenue = segClients.reduce((sum, c) => sum + parseFloat(c.annualRevenue ?? "0"), 0);
+                          const totalRevenue = segClients.reduce((sum, c) => {
+                            if (c.customerStatus === "active" && c.buildopsId) return sum + (buildopsRevenueSummary[c.id] ?? 0);
+                            return sum + parseFloat(c.annualRevenue ?? "0");
+                          }, 0);
                           const avgHealth = Math.round(segClients.reduce((sum, c) => sum + getHealthScore(c), 0) / segClients.length);
                           return (
                             <div key={key} className="rounded-xl border border-border/60 overflow-hidden" data-testid={`segment-group-${key}`}>
@@ -1779,11 +1841,23 @@ export default function Customers() {
                                     </div>
                                     <div className="flex items-center gap-3 shrink-0">
                                       <TierBadge tier={c.tier} size="xs" />
-                                      {c.annualRevenue && parseFloat(c.annualRevenue) > 0 && (
-                                        <span className="text-xs text-muted-foreground font-mono hidden sm:block">
-                                          ${parseFloat(c.annualRevenue).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr
-                                        </span>
-                                      )}
+                                      {(() => {
+                                        const status = c.customerStatus ?? "prospect";
+                                        if (status === "active" && c.buildopsId) {
+                                          const bRev = buildopsRevenueSummary[c.id];
+                                          return bRev && bRev > 0
+                                            ? <span className="text-xs text-muted-foreground font-mono hidden sm:block">${bRev.toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr</span>
+                                            : <span className="text-xs text-muted-foreground italic hidden sm:block">No invoices</span>;
+                                        }
+                                        if (status === "prospect") {
+                                          return c.prospectRevenueTier
+                                            ? <span className="text-xs font-semibold text-primary hidden sm:block">{c.prospectRevenueTier}</span>
+                                            : <span className="text-xs text-muted-foreground italic hidden sm:block">Not set</span>;
+                                        }
+                                        return c.annualRevenue && parseFloat(c.annualRevenue) > 0
+                                          ? <span className="text-xs text-muted-foreground font-mono hidden sm:block">${parseFloat(c.annualRevenue).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr</span>
+                                          : null;
+                                      })()}
                                       <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40" />
                                     </div>
                                   </Link>
@@ -1811,8 +1885,8 @@ export default function Customers() {
                             data-testid="checkbox-select-all-companies"
                           />
                         </TableHead>
-                        {(["name", "tier", "industry", "revenue", "spend"] as const).map((field, i) => {
-                          const labels = ["Company Name", "Tier", "Industry", "Revenue", "BD Spend"];
+                        {(["name", "tier", "industry", "status", "revenue", "spend"] as const).map((field, i) => {
+                          const labels = ["Company Name", "Tier", "Industry", "Status", "Revenue", "BD Spend"];
                           const active = companySortField === field;
                           return (
                             <TableHead
@@ -1898,8 +1972,8 @@ export default function Customers() {
                                   <div className="flex flex-col gap-1 min-w-0">
                                     <div className="flex items-center gap-1.5">
                                       <span className={isChild ? "text-sm" : "text-base"}>{c.name}</span>
-                                      {(c as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
-                                      {isAdminOrManager && (c as any).buildopsStatus === "inactive" && (
+                                      {c.buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
+                                      {isAdminOrManager && c.buildopsStatus === "inactive" && (
                                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-${c.id}`}>Inactive in BuildOps</span>
                                       )}
                                       {!isChild && hasChildren && (
@@ -1963,11 +2037,56 @@ export default function Customers() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <span className="text-sm font-medium" data-testid={`text-revenue-${c.id}`}>
-                                {c.annualRevenue && parseFloat(c.annualRevenue) > 0
-                                  ? `$${parseFloat(c.annualRevenue).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/yr`
-                                  : <span className="text-muted-foreground italic text-xs">Not set</span>}
-                              </span>
+                              {(() => {
+                                const status = c.customerStatus ?? "prospect";
+                                const statusStyles: Record<string, string> = {
+                                  prospect: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800",
+                                  active: "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800",
+                                  inactive: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800",
+                                  former: "bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800/30 dark:text-gray-400 dark:border-gray-700",
+                                };
+                                return (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusStyles[status] ?? statusStyles.prospect}`} data-testid={`badge-status-${c.id}`}>
+                                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                                  </span>
+                                );
+                              })()}
+                            </TableCell>
+                            <TableCell>
+                              {(() => {
+                                const status = c.customerStatus ?? "prospect";
+                                const isActiveClient = status === "active";
+                                if (isActiveClient && c.buildopsId) {
+                                  const bRevenue = buildopsRevenueSummary[c.id];
+                                  if (bRevenue && bRevenue > 0) {
+                                    return (
+                                      <span className="text-sm font-medium" data-testid={`text-revenue-${c.id}`}>
+                                        ${bRevenue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/yr
+                                      </span>
+                                    );
+                                  }
+                                  return <span className="text-muted-foreground italic text-xs">No invoices</span>;
+                                }
+                                if (status === "prospect") {
+                                  const tier = c.prospectRevenueTier;
+                                  if (tier) {
+                                    return (
+                                      <span className="text-sm font-semibold text-primary" data-testid={`text-revenue-${c.id}`}>
+                                        {tier}
+                                      </span>
+                                    );
+                                  }
+                                  return <span className="text-muted-foreground italic text-xs">Not set</span>;
+                                }
+                                if (c.annualRevenue && parseFloat(c.annualRevenue) > 0) {
+                                  return (
+                                    <span className="text-sm font-medium" data-testid={`text-revenue-${c.id}`}>
+                                      ${parseFloat(c.annualRevenue).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/yr
+                                    </span>
+                                  );
+                                }
+                                return <span className="text-muted-foreground italic text-xs">Not set</span>;
+                              })()}
                             </TableCell>
                             <TableCell>
                               {(() => {
@@ -2053,6 +2172,29 @@ export default function Customers() {
                               </TableCell>
                             )}
                             <TableCell>
+                              <div className="flex items-center gap-1">
+                                {!isChild && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedCompanyRows(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(c.id)) next.delete(c.id);
+                                        else next.add(c.id);
+                                        return next;
+                                      });
+                                    }}
+                                    data-testid={`button-expand-company-row-${c.id}`}
+                                    title={expandedCompanyRows.has(c.id) ? "Collapse" : "Show contacts & buildings"}
+                                  >
+                                    {expandedCompanyRows.has(c.id)
+                                      ? <ChevronUp className="h-4 w-4 text-primary" />
+                                      : <Users className="h-4 w-4 text-muted-foreground" />}
+                                  </Button>
+                                )}
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-customer-actions-${c.id}`}>
@@ -2097,12 +2239,196 @@ export default function Customers() {
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
 
+                        const isRowExpanded = expandedCompanyRows.has(client.id);
+                        const companyContacts = allContacts.filter(ct => ct.clientId === client.id);
+                        const companyBuildings = allBuildings.filter(b => b.contactId && companyContacts.some(ct => ct.id === b.contactId));
+
                         return (
-                          <Fragment key={client.id}>{renderClientRow(client, false)}{isExpanded && sortedChildren.map(child => renderClientRow(child, true))}</Fragment>
+                          <Fragment key={client.id}>
+                            {renderClientRow(client, false)}
+                            {isExpanded && sortedChildren.map(child => renderClientRow(child, true))}
+                            {isRowExpanded && (
+                              <TableRow className="bg-muted/10 border-0">
+                                <TableCell colSpan={99} className="py-3 px-6">
+                                  <div className="space-y-3">
+                                    {/* Contacts mini-panel */}
+                                    <div>
+                                      <div className="flex items-center justify-between mb-2">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Contacts ({companyContacts.length})</p>
+                                        {inlineAddContactClientId !== client.id && (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-6 px-2 text-[10px]"
+                                            onClick={() => { setInlineAddContactClientId(client.id); setInlineContactName(""); setInlineContactTitle(""); setInlineContactEmail(""); }}
+                                            data-testid={`button-add-contact-expand-${client.id}`}
+                                          >
+                                            <Plus className="h-3 w-3 mr-1" />
+                                            Add Contact
+                                          </Button>
+                                        )}
+                                      </div>
+                                      {inlineAddContactClientId === client.id && (
+                                        <div className="flex items-center gap-2 mb-2 flex-wrap" data-testid={`form-inline-contact-${client.id}`}>
+                                          <Input
+                                            placeholder="Name *"
+                                            value={inlineContactName}
+                                            onChange={e => setInlineContactName(e.target.value)}
+                                            className="h-7 text-xs w-28 flex-1 min-w-0"
+                                            data-testid="input-inline-contact-name"
+                                          />
+                                          <Input
+                                            placeholder="Title"
+                                            value={inlineContactTitle}
+                                            onChange={e => setInlineContactTitle(e.target.value)}
+                                            className="h-7 text-xs w-24 flex-1 min-w-0"
+                                            data-testid="input-inline-contact-title"
+                                          />
+                                          <Input
+                                            placeholder="Email"
+                                            value={inlineContactEmail}
+                                            onChange={e => setInlineContactEmail(e.target.value)}
+                                            className="h-7 text-xs w-32 flex-1 min-w-0"
+                                            data-testid="input-inline-contact-email"
+                                          />
+                                          <Button
+                                            size="sm"
+                                            className="h-7 px-2 text-[11px]"
+                                            disabled={!inlineContactName.trim() || inlineCreateContactMutation.isPending}
+                                            onClick={() => inlineCreateContactMutation.mutate({ clientId: client.id, name: inlineContactName.trim(), title: inlineContactTitle.trim() || null, email: inlineContactEmail.trim() || null })}
+                                            data-testid="button-save-inline-contact"
+                                          >
+                                            Save
+                                          </Button>
+                                          <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => setInlineAddContactClientId(null)} data-testid="button-cancel-inline-contact">
+                                            Cancel
+                                          </Button>
+                                        </div>
+                                      )}
+                                      {companyContacts.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground italic">No contacts yet</p>
+                                      ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                          {companyContacts.slice(0, 8).map(ct => (
+                                            <Link
+                                              key={ct.id}
+                                              href={`/customers/${ct.clientId}?tab=organization&contactId=${ct.id}`}
+                                              className="flex items-center gap-1.5 bg-background border border-border/60 rounded-full px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                                              data-testid={`chip-contact-${ct.id}`}
+                                            >
+                                              <div className="h-4 w-4 rounded-full bg-primary/15 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
+                                                {ct.name.charAt(0)}
+                                              </div>
+                                              <span className="font-medium">{ct.name}</span>
+                                              {ct.title && <span className="text-muted-foreground text-[10px]">· {ct.title}</span>}
+                                              {ct.isPrimary && <span className="text-[9px] bg-primary/10 text-primary rounded px-1 font-medium">Primary</span>}
+                                            </Link>
+                                          ))}
+                                          {companyContacts.length > 8 && (
+                                            <span className="text-[10px] text-muted-foreground self-center">+{companyContacts.length - 8} more</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {/* Buildings mini-panel */}
+                                    <div>
+                                      <div className="flex items-center justify-between mb-2">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Buildings ({companyBuildings.length})</p>
+                                        {inlineAddBuildingClientId !== client.id && (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-6 px-2 text-[10px]"
+                                            onClick={() => { setInlineAddBuildingClientId(client.id); setInlineBuildingName(""); setInlineBuildingAddress(""); setInlineBuildingContactId(companyContacts[0]?.id?.toString() ?? ""); }}
+                                            data-testid={`button-add-building-expand-${client.id}`}
+                                            disabled={companyContacts.length === 0}
+                                            title={companyContacts.length === 0 ? "Add a contact first before adding a building" : "Add building"}
+                                          >
+                                            <Plus className="h-3 w-3 mr-1" />
+                                            Add Building
+                                          </Button>
+                                        )}
+                                      </div>
+                                      {inlineAddBuildingClientId === client.id && (
+                                        <div className="space-y-2 mb-2 p-2 rounded-lg border bg-muted/20" data-testid={`form-inline-building-${client.id}`}>
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <Input
+                                              placeholder="Building name *"
+                                              value={inlineBuildingName}
+                                              onChange={e => setInlineBuildingName(e.target.value)}
+                                              className="h-7 text-xs flex-1 min-w-0"
+                                              data-testid="input-inline-building-name"
+                                            />
+                                            <Input
+                                              placeholder="Address"
+                                              value={inlineBuildingAddress}
+                                              onChange={e => setInlineBuildingAddress(e.target.value)}
+                                              className="h-7 text-xs flex-1 min-w-0"
+                                              data-testid="input-inline-building-address"
+                                            />
+                                          </div>
+                                          {companyContacts.length > 1 && (
+                                            <select
+                                              value={inlineBuildingContactId}
+                                              onChange={e => setInlineBuildingContactId(e.target.value)}
+                                              className="h-7 text-xs w-full rounded border bg-background px-2"
+                                              data-testid="select-inline-building-contact"
+                                            >
+                                              {companyContacts.map(ct => (
+                                                <option key={ct.id} value={ct.id}>{ct.name}</option>
+                                              ))}
+                                            </select>
+                                          )}
+                                          <div className="flex items-center gap-2">
+                                            <Button
+                                              size="sm"
+                                              className="h-7 px-2 text-[11px]"
+                                              disabled={!inlineBuildingName.trim() || !inlineBuildingContactId || inlineCreateBuildingMutation.isPending}
+                                              onClick={() => inlineCreateBuildingMutation.mutate({ contactId: parseInt(inlineBuildingContactId), name: inlineBuildingName.trim(), address: inlineBuildingAddress.trim() || inlineBuildingName.trim() })}
+                                              data-testid="button-save-inline-building"
+                                            >
+                                              Save
+                                            </Button>
+                                            <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => setInlineAddBuildingClientId(null)} data-testid="button-cancel-inline-building">
+                                              Cancel
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {companyBuildings.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground italic">No buildings yet</p>
+                                      ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                          {companyBuildings.slice(0, 6).map(b => {
+                                            const contact = allContacts.find(ct => ct.id === b.contactId);
+                                            return (
+                                              <Link
+                                                key={b.id}
+                                                href={`/customers/${contact?.clientId ?? client.id}?tab=organization&contactId=${b.contactId}`}
+                                                className="flex items-center gap-1.5 bg-background border border-border/60 rounded-md px-2.5 py-1 text-xs hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                                                data-testid={`chip-building-${b.id}`}
+                                              >
+                                                <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                <span>{b.name ?? b.address ?? "Unnamed"}</span>
+                                              </Link>
+                                            );
+                                          })}
+                                          {companyBuildings.length > 6 && (
+                                            <span className="text-[10px] text-muted-foreground self-center">+{companyBuildings.length - 6} more</span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
                         );
                       })}
                     </TableBody>
@@ -2142,8 +2468,8 @@ export default function Customers() {
                               <div className="flex items-center justify-between gap-2 mb-1">
                                 <div className="flex items-center gap-1.5 min-w-0">
                                   <h3 className={`font-bold truncate ${isChild ? "text-xs" : "text-sm"}`}>{c.name}</h3>
-                                  {(c as any).buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
-                                  {isAdminOrManager && (c as any).buildopsStatus === "inactive" && (
+                                  {c.buildopsId && <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />}
+                                  {isAdminOrManager && c.buildopsStatus === "inactive" && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium border border-amber-200 dark:border-amber-800" data-testid={`badge-inactive-card-${c.id}`}>Inactive in BuildOps</span>
                                   )}
                                   {(() => {
@@ -2169,9 +2495,17 @@ export default function Customers() {
                                 {c.industry && <span className="truncate">{c.industry}</span>}
                                 {c.industry && <span>•</span>}
                                 <span className="font-medium text-primary">
-                                  {c.annualRevenue && parseFloat(c.annualRevenue) > 0
-                                    ? `$${(parseFloat(c.annualRevenue) / 1000).toFixed(0)}k/yr`
-                                    : "No revenue"}
+                                  {(() => {
+                                    const status = c.customerStatus ?? "prospect";
+                                    if (status === "active" && c.buildopsId) {
+                                      const bRev = buildopsRevenueSummary[c.id];
+                                      return bRev && bRev > 0 ? `$${(bRev / 1000).toFixed(0)}k/yr` : "No invoices";
+                                    }
+                                    if (status === "prospect" && c.prospectRevenueTier) return c.prospectRevenueTier;
+                                    return c.annualRevenue && parseFloat(c.annualRevenue) > 0
+                                      ? `$${(parseFloat(c.annualRevenue) / 1000).toFixed(0)}k/yr`
+                                      : "No revenue";
+                                  })()}
                                 </span>
                               </div>
                             </div>
@@ -2590,14 +2924,33 @@ export default function Customers() {
                             </div>
                           </TableCell>
                           <TableCell onClick={(e) => e.stopPropagation()}>
-                            <Link
-                              href={`/customers/${contact.clientId}`}
-                              className="flex items-center gap-1.5 text-primary hover:underline text-sm"
-                              data-testid={`link-contact-company-${contact.id}`}
-                            >
-                              <Building2 className="h-3.5 w-3.5" />
-                              {getCompanyName(contact.clientId)}
-                            </Link>
+                            <div className="space-y-1">
+                              <Link
+                                href={`/customers/${contact.clientId}`}
+                                className="flex items-center gap-1.5 text-primary hover:underline text-sm"
+                                data-testid={`link-contact-company-${contact.id}`}
+                              >
+                                <Building2 className="h-3.5 w-3.5" />
+                                {getCompanyName(contact.clientId)}
+                              </Link>
+                              {(() => {
+                                const contactBuildings = allBuildings.filter(b => b.contactId === contact.id);
+                                if (contactBuildings.length === 0) return null;
+                                return (
+                                  <div className="flex flex-wrap gap-1">
+                                    {contactBuildings.slice(0, 3).map(b => (
+                                      <span key={b.id} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground border border-border/40" data-testid={`badge-building-contact-${contact.id}-${b.id}`}>
+                                        <MapPin className="h-2.5 w-2.5 shrink-0" />
+                                        {b.name ?? b.address ?? "Building"}
+                                      </span>
+                                    ))}
+                                    {contactBuildings.length > 3 && (
+                                      <span className="text-[10px] text-muted-foreground self-center">+{contactBuildings.length - 3}</span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <span className="text-sm text-muted-foreground">{contact.title || <span className="italic">No title</span>}</span>

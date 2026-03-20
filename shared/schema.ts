@@ -35,6 +35,8 @@ export const clients = pgTable("clients", {
   createdBy: varchar("created_by").references(() => users.id),
   healthOverride: varchar("health_override", { length: 20 }), // null | 'healthy' | 'watch' | 'at_risk'
   healthOverrideNote: varchar("health_override_note"),
+  customerStatus: varchar("customer_status", { length: 30 }).default("prospect"),
+  prospectRevenueTier: varchar("prospect_revenue_tier", { length: 10 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

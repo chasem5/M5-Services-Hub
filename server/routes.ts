@@ -5747,6 +5747,25 @@ Respond with this JSON:
   });
 
 
+  app.get("/api/buildops-revenue-summary", isAuthenticated, async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(sql`
+        SELECT client_id, COALESCE(SUM(CAST(total_amount AS numeric)), 0) AS total_revenue
+        FROM buildops_invoices
+        GROUP BY client_id
+      `);
+      const result: Record<number, number> = {};
+      for (const row of rows.rows) {
+        result[row.client_id as number] = parseFloat(String(row.total_revenue));
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Unified quotes list: BuildOps quotes enriched with CRM estimate linkage
   app.get("/api/buildops/quotes-list", isAuthenticated, async (req, res) => {
     try {

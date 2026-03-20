@@ -656,6 +656,153 @@ function threadDirectionLabel(messages: EmailMsg[]) {
   return { label: "Outbound", cls: "text-gray-600 bg-gray-50 border-gray-200" };
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Unified chronological history feed
+// ──────────────────────────────────────────────────────────────────────
+type FeedEventKind = "activity" | "email" | "file";
+interface FeedEvent {
+  id: string;
+  kind: FeedEventKind;
+  date: Date;
+  title: string;
+  subtitle?: string;
+  meta?: string;
+  href?: string;
+}
+
+function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
+  const { data: actLogs = [], isLoading: loadAct } = useQuery<ActivityLog[]>({
+    queryKey: ["/api/activity-logs", "client", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/activity-logs?entityType=client&entityId=${clientId}`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const { data: emails = [], isLoading: loadEmail } = useQuery<EmailMsg[]>({
+    queryKey: ["/api/email-messages", clientId],
+    queryFn: () => fetch(`/api/email-messages?clientId=${clientId}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  const { data: attachments = [], isLoading: loadFiles } = useQuery<{ id: number; fileName: string; fileType: string; fileSize: number; objectKey: string; createdAt: string }[]>({
+    queryKey: ["/api/attachments", "client", clientId],
+  });
+
+  const { data: users = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/users"] });
+
+  const isLoading = loadAct || loadEmail || loadFiles;
+
+  const events: FeedEvent[] = [];
+
+  actLogs.forEach(log => {
+    const user = users.find(u => u.id === log.userId);
+    const metaStr = log.metadata && typeof log.metadata === "object" && !Array.isArray(log.metadata)
+      ? Object.entries(log.metadata as Record<string, unknown>).map(([k, v]) => `${k}: ${v}`).join(", ")
+      : undefined;
+    events.push({
+      id: `act-${log.id}`,
+      kind: "activity",
+      date: new Date(log.createdAt),
+      title: log.action,
+      subtitle: metaStr,
+      meta: user?.name,
+    });
+  });
+
+  const threads = groupEmailsIntoThreads(emails.filter(e => !e.isDismissed));
+  threads.forEach(thread => {
+    const latest = thread.latestMessage;
+    events.push({
+      id: `email-${thread.threadId}`,
+      kind: "email",
+      date: new Date(latest.receivedAt),
+      title: latest.subject ?? "(No subject)",
+      subtitle: latest.aiSummary ?? undefined,
+      meta: `${threadDirectionLabel(thread.messages).label} · ${latest.fromName ?? latest.fromEmail}`,
+    });
+  });
+
+  attachments.forEach(att => {
+    const isImage = att.fileType?.startsWith("image/");
+    events.push({
+      id: `file-${att.id}`,
+      kind: "file",
+      date: new Date(att.createdAt),
+      title: att.fileName,
+      meta: isImage ? "Image" : "File",
+    });
+  });
+
+  events.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  const kindIcon = (kind: FeedEventKind) => {
+    if (kind === "activity") return <History className="h-3.5 w-3.5 text-primary" />;
+    if (kind === "email") return <Mail className="h-3.5 w-3.5 text-blue-500" />;
+    return <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />;
+  };
+
+  const kindLabel = (kind: FeedEventKind) => {
+    if (kind === "activity") return "Activity";
+    if (kind === "email") return "Email";
+    return "File";
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4 p-6">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="flex gap-3">
+            <Skeleton className="h-7 w-7 rounded-full shrink-0" />
+            <div className="space-y-1.5 flex-1 pt-1">
+              <Skeleton className="h-3.5 w-1/3" />
+              <Skeleton className="h-3 w-2/3" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <History className="h-10 w-10 mb-3 opacity-30" />
+        <p className="font-medium">No history yet</p>
+        <p className="text-sm mt-1">Activity, emails, and files will appear here.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" data-testid="unified-history-feed">
+      <div className="absolute left-[27px] top-0 bottom-0 w-px bg-border/60" />
+      <div className="space-y-0">
+        {events.map(ev => (
+          <div key={ev.id} className="flex gap-3 group hover:bg-muted/30 rounded-lg px-3 py-2.5 transition-colors" data-testid={`history-event-${ev.id}`}>
+            <div className="relative mt-0.5 shrink-0">
+              <div className="h-7 w-7 rounded-full bg-background border flex items-center justify-center shadow-sm group-hover:border-primary/40 transition-colors">
+                {kindIcon(ev.kind)}
+              </div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{kindLabel(ev.kind)}</span>
+                <span className="font-medium text-sm truncate">{ev.title}</span>
+              </div>
+              {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ev.subtitle}</p>}
+              <div className="flex items-center gap-2 mt-1">
+                {ev.meta && <span className="text-[11px] text-muted-foreground/70">{ev.meta}</span>}
+                <span className="text-[11px] text-muted-foreground/50 ml-auto">{formatDistanceToNow(ev.date, { addSuffix: true })}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ClientEmailsTab({ clientId }: { clientId: number }) {
   const [expandedThreadId, setExpandedThreadId] = useState<string | null>(null);
   const [expandedMsgId, setExpandedMsgId] = useState<number | null>(null);
@@ -858,7 +1005,27 @@ export default function ClientDetail() {
     const tab = params.get("tab");
     const contactId = params.get("contactId");
     if (tab) {
-      setActiveTab(tab);
+      const legacyMap: Record<string, { tab: string; orgSub?: "list" | "orgchart" | "map"; revSub?: "leads" | "estimates" | "jobs" | "invoices" | "agreements" }> = {
+        contacts: { tab: "organization", orgSub: "list" },
+        orgchart: { tab: "organization", orgSub: "orgchart" },
+        "portfolio-map": { tab: "organization", orgSub: "map" },
+        deals: { tab: "revenue", revSub: "leads" },
+        estimates: { tab: "revenue", revSub: "estimates" },
+        "buildops-jobs": { tab: "revenue", revSub: "jobs" },
+        "buildops-invoices": { tab: "revenue", revSub: "invoices" },
+        "buildops-agreements": { tab: "revenue", revSub: "agreements" },
+        activity: { tab: "history" },
+        emails: { tab: "history" },
+        attachments: { tab: "history" },
+      };
+      const mapped = legacyMap[tab];
+      if (mapped) {
+        setActiveTab(mapped.tab);
+        if (mapped.orgSub) setOrgSubTab(mapped.orgSub);
+        if (mapped.revSub) setRevenueSubTab(mapped.revSub);
+      } else {
+        setActiveTab(tab);
+      }
       urlInitializedRef.current = true;
     }
     if (contactId) {
@@ -878,6 +1045,13 @@ export default function ClientDetail() {
   const [editingContact, setEditingContact] = useState<ClientContact | null>(null);
   const [orgChartEditId, setOrgChartEditId] = useState<number | null>(null);
   const [isOfficeDialogOpen, setIsOfficeDialogOpen] = useState(false);
+  const [isAddBuildingOpen, setIsAddBuildingOpen] = useState(false);
+  const [isNewBuildingContactId, setIsNewBuildingContactId] = useState<number | null>(null);
+  const [newBuildingName, setNewBuildingName] = useState("");
+  const [newBuildingAddress, setNewBuildingAddress] = useState("");
+  const [reassignBuildingId, setReassignBuildingId] = useState<number | null>(null);
+  const [reassignBuildingContactId, setReassignBuildingContactId] = useState<string>("");
+  const [addContactForBuildingId, setAddContactForBuildingId] = useState<number | null>(null);
   const [isEditOfficeDialogOpen, setIsEditOfficeDialogOpen] = useState(false);
   const [isNewPortfolioDialogOpen, setIsNewPortfolioDialogOpen] = useState(false);
   const [newPortfolioName, setNewPortfolioName] = useState("");
@@ -900,6 +1074,8 @@ export default function ClientDetail() {
   const [dragOverOfficeId, setDragOverOfficeId] = useState<number | "unassigned" | null>(null);
   const [orgChartView, setOrgChartView] = useState<"people" | "portfolio">("people");
   const [onboardingChecklistOpen, setOnboardingChecklistOpen] = useState(true);
+  const [orgSubTab, setOrgSubTab] = useState<"list" | "orgchart" | "map">("list");
+  const [revenueSubTab, setRevenueSubTab] = useState<"leads" | "estimates" | "jobs" | "invoices" | "agreements">("leads");
 
   // Queries
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
@@ -971,6 +1147,17 @@ export default function ClientDetail() {
 
   const { data: users = [] } = useQuery<{id: string; firstName: string|null; lastName: string|null; email: string|null}[]>({
     queryKey: ["/api/users/directory"],
+  });
+
+  const { data: recentEmails = [] } = useQuery<EmailMsg[]>({
+    queryKey: ["/api/email-messages", clientId],
+    queryFn: () => fetch(`/api/email-messages?clientId=${clientId}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  const { data: buildopsInvoices = [] } = useQuery<{ id: number; totalAmount: string | null; status: string | null }[]>({
+    queryKey: ["/api/clients", clientId, "buildops-invoices"],
+    queryFn: () => fetch(`/api/clients/${clientId}/buildops-invoices`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!client?.buildopsId,
   });
 
   const getUserDisplayName = (userId: string) => {
@@ -1086,6 +1273,11 @@ export default function ClientDetail() {
         await apiRequest("POST", `/api/portfolios/${addContactPortfolioId}/contacts`, { contactId: newContact.id, role: null });
         queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
         queryClient.invalidateQueries({ queryKey: ["/api/portfolios", { clientId }] });
+      }
+      if (addContactForBuildingId !== null) {
+        await apiRequest("PUT", `/api/contact-buildings/${addContactForBuildingId}`, { contactId: newContact.id });
+        queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "all-buildings"] });
+        setAddContactForBuildingId(null);
       }
       queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
       setIsContactDialogOpen(false);
@@ -1229,9 +1421,37 @@ export default function ClientDetail() {
     },
   });
 
-  const openAddContactForOffice = (officeId: number | null) => {
+  const reassignBuildingMutation = useMutation({
+    mutationFn: ({ buildingId, contactId }: { buildingId: number; contactId: number }) =>
+      apiRequest("PUT", `/api/contact-buildings/${buildingId}`, { contactId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "all-buildings"] });
+      setReassignBuildingId(null);
+      setReassignBuildingContactId("");
+      toast({ title: "Building contact updated" });
+    },
+    onError: () => toast({ title: "Failed to update building contact", variant: "destructive" }),
+  });
+
+  const addBuildingToContactMutation = useMutation({
+    mutationFn: (data: { contactId: number; name: string; address: string }) =>
+      apiRequest("POST", "/api/contact-buildings", { contactId: data.contactId, name: data.name || null, address: data.address }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "all-buildings"] });
+      setIsAddBuildingOpen(false);
+      setIsNewBuildingContactId(null);
+      setNewBuildingName("");
+      setNewBuildingAddress("");
+      toast({ title: "Building added" });
+    },
+    onError: () => toast({ title: "Failed to add building", variant: "destructive" }),
+  });
+
+  const openAddContactForOffice = (officeId: number | null, buildingId?: number) => {
     setDefaultOfficeId(officeId);
     contactForm.setValue("officeId" as any, officeId ?? undefined);
+    if (buildingId !== undefined) setAddContactForBuildingId(buildingId);
+    else setAddContactForBuildingId(null);
     setIsContactDialogOpen(true);
   };
 
@@ -1260,6 +1480,7 @@ export default function ClientDetail() {
       logoUrl: client.logoUrl ?? "",
       parentClientId: client.parentClientId ?? null,
       serviceNeeds: (client.serviceNeeds as string[] | null) ?? [],
+      prospectRevenueTier: client.prospectRevenueTier ?? null,
     } : {
       name: "",
       industry: "",
@@ -1273,6 +1494,7 @@ export default function ClientDetail() {
       logoUrl: "",
       serviceNeeds: [],
       parentClientId: null,
+      prospectRevenueTier: null,
     },
   });
 
@@ -1376,122 +1598,141 @@ export default function ClientDetail() {
     );
   }
 
+  const contactCount = contacts?.length ?? 0;
+  const buildingCount = allBuildings.filter(b => b.type === "building").length;
+  const activeLeadsCount = leads?.filter(l => !["won", "lost"].includes(l.stage)).length ?? 0;
+  const pipelineValue = leads?.filter(l => !["won", "lost"].includes(l.stage)).reduce((sum, l) => sum + (parseFloat(l.value ?? "0") || 0), 0) ?? 0;
+
+  const healthScore = (() => {
+    if (client.healthOverride) {
+      const overrideMap: Record<string, number> = { healthy: 90, watch: 55, at_risk: 25 };
+      return overrideMap[client.healthOverride] ?? 70;
+    }
+    const tierMap: Record<string, number> = { tier_1: 85, tier_2: 65, tier_3: 45 };
+    return tierMap[client.tier ?? ""] ?? 60;
+  })();
+
+  const healthLabel = healthScore >= 75 ? "Healthy" : healthScore >= 50 ? "Watch" : "At Risk";
+  const healthColor = healthScore >= 75 ? "text-green-600" : healthScore >= 50 ? "text-amber-600" : "text-red-500";
+
+  const fmtMoney = (n: number) => n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n / 1_000).toFixed(0)}K` : `$${n.toLocaleString()}`;
+
+  const buildopsRevenue = buildopsInvoices.reduce((sum, inv) => sum + (parseFloat(inv.totalAmount ?? "0") || 0), 0);
+  const isProspect = (client.customerStatus ?? "prospect") === "prospect";
+  const isActive = client.customerStatus === "active";
+  const revenueLabel = isActive && client.buildopsId ? "BuildOps Revenue" : isProspect ? "Potential Revenue" : "Annual Revenue";
+  const revenueDisplayValue = isActive && client.buildopsId
+    ? buildopsRevenue
+    : parseFloat(client.annualRevenue ?? "0") || 0;
+  const prospectTier = client.prospectRevenueTier ?? null;
+
   return (
-    <div className="p-4 sm:p-6 space-y-6">
-      <div className="flex items-center gap-3 sm:gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/customers")}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-xl overflow-hidden border">
-          {(client as any).logoUrl && !logoImgError ? (
-            <img
-              src={`/api/clients/${clientId}/logo-img`}
-              alt={client.name}
-              className="h-full w-full object-contain"
-              onError={() => setLogoImgError(true)}
-              data-testid="img-client-logo"
-            />
-          ) : (
-            client.name[0].toUpperCase()
-          )}
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-xl sm:text-3xl font-heading font-bold" data-testid="text-client-name">{client.name}</h1>
-            <Badge variant="outline" className="h-6">Customer ID: {client.id}</Badge>
-            {(client as any).tier && <TierBadge tier={(client as any).tier} />}
-            {(client as any).buildopsId && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span data-testid="badge-buildops-synced" className="cursor-default">
-                      <BuildOpsIcon className="h-5 w-5" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>Synced with BuildOps</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+    <div className="min-h-screen bg-background">
+      {/* ── Top Company Header Bar ── */}
+      <div className="border-b border-border/60 bg-card px-4 sm:px-6 py-3" data-testid="panel-company-header">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setLocation("/customers")} data-testid="button-back-to-customers">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0 text-lg overflow-hidden border">
+            {client.logoUrl && !logoImgError ? (
+              <img
+                src={`/api/clients/${clientId}/logo-img`}
+                alt={client.name}
+                className="h-full w-full object-contain"
+                onError={() => setLogoImgError(true)}
+                data-testid="img-client-logo"
+              />
+            ) : (
+              client.name[0].toUpperCase()
             )}
-            {client.parentClientId && (() => {
-              const parent = allClients.find(c => c.id === client.parentClientId);
-              return parent ? (
-                <Link href={`/customers/${parent.id}`} data-testid="badge-parent-company">
-                  <Badge variant="secondary" className="h-6 gap-1 text-xs font-medium hover:bg-secondary/80 cursor-pointer">
-                    <Folders className="h-3 w-3" />
-                    Part of {parent.name}
-                  </Badge>
-                </Link>
-              ) : null;
-            })()}
           </div>
-          <div className="flex items-center gap-2 mt-1">
-            <p className="text-muted-foreground">{client.industry || "No industry specified"}</p>
-            <BuildOpsStatusBadge buildopsId={(client as any).buildopsId} buildopsStatus={(client as any).buildopsStatus} showInactive={isAdminOrManager} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="font-heading font-bold text-lg leading-tight" data-testid="text-client-name">{client.name}</h1>
+              {client.tier && <TierBadge tier={client.tier} size="xs" />}
+              {client.buildopsId && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span data-testid="badge-buildops-synced" className="cursor-default">
+                        <BuildOpsIcon className="h-4 w-4" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Synced with BuildOps</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              <Select
+                value={client.customerStatus ?? "prospect"}
+                onValueChange={(val) => updateClientMutation.mutate({ customerStatus: val })}
+              >
+                <SelectTrigger className={`h-6 w-auto gap-1 text-[11px] font-semibold border rounded-full px-2.5 ${isActive ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800" : isProspect ? "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800" : "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800"}`} data-testid="select-customer-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="prospect">Prospect</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="former">Former</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              {client.parentClientId && (() => {
+                const parent = allClients.find(c => c.id === client.parentClientId);
+                return parent ? (
+                  <Link href={`/customers/${parent.id}`} data-testid="badge-parent-company">
+                    <Badge variant="secondary" className="h-5 gap-1 text-[10px] font-medium hover:bg-secondary/80 cursor-pointer">
+                      <Folders className="h-2.5 w-2.5" />
+                      {parent.name}
+                    </Badge>
+                  </Link>
+                ) : null;
+              })()}
+              <p className="text-xs text-muted-foreground">{client.industry || "No industry"}</p>
+            </div>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs shrink-0"
+            onClick={() => setIsEditCompanyOpen(true)}
+            data-testid="button-edit-company-rail"
+          >
+            <Pencil className="h-3.5 w-3.5 mr-1.5" />
+            Edit Company
+          </Button>
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="w-full justify-start border-b rounded-none h-12 bg-transparent p-0 gap-1 md:gap-6 overflow-x-auto scrollbar-hide">
+      {/* ── Main Content with Tabs ── */}
+      <div className="flex-1 min-w-0 flex flex-col">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col">
+        <TabsList className="w-full justify-start border-b rounded-none h-12 bg-transparent p-0 gap-1 md:gap-4 overflow-x-auto scrollbar-hide shrink-0">
           <TabsTrigger value="overview" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
             <Building2 className="h-4 w-4 md:mr-2" />
             <span className="hidden md:inline">Overview</span>
           </TabsTrigger>
-          <TabsTrigger value="contacts" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+          <TabsTrigger value="organization" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-organization">
             <Users className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Contacts</span>
+            <span className="hidden md:inline">Organization</span>
           </TabsTrigger>
-          <TabsTrigger value="deals" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
-            <Target className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Leads</span>
+          <TabsTrigger value="revenue" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-revenue">
+            <DollarSign className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Revenue</span>
           </TabsTrigger>
-          <TabsTrigger value="estimates" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
-            <FileText className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Estimates</span>
-          </TabsTrigger>
-          <TabsTrigger value="orgchart" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
-            <GitBranch className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Org Chart</span>
-          </TabsTrigger>
-          <TabsTrigger value="portfolio-map" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-portfolio-map">
-            <Map className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Portfolio Map</span>
-          </TabsTrigger>
-          <TabsTrigger value="activity" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+          <TabsTrigger value="history" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-history">
             <History className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Activity</span>
+            <span className="hidden md:inline">History</span>
           </TabsTrigger>
-          <TabsTrigger value="emails" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-emails">
-            <Mail className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Emails</span>
-          </TabsTrigger>
-          <TabsTrigger value="attachments" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
-            <Paperclip className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Files</span>
-          </TabsTrigger>
-          {client?.buildopsId && (
-            <>
-              <TabsTrigger value="buildops-jobs" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-jobs">
-                <Briefcase className="h-4 w-4 md:mr-2" />
-                <span className="hidden md:inline">Jobs</span>
-              </TabsTrigger>
-              <TabsTrigger value="buildops-invoices" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-invoices">
-                <Receipt className="h-4 w-4 md:mr-2" />
-                <span className="hidden md:inline">Invoices</span>
-              </TabsTrigger>
-              <TabsTrigger value="buildops-agreements" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-agreements">
-                <FileSignature className="h-4 w-4 md:mr-2" />
-                <span className="hidden md:inline">Agreements</span>
-              </TabsTrigger>
-            </>
-          )}
           <TabsTrigger value="intelligence" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-intelligence">
             <HeartPulse className="h-4 w-4 md:mr-2" />
             <span className="hidden md:inline">Intelligence</span>
           </TabsTrigger>
         </TabsList>
 
-        <div className="py-6">
+        <div className="p-4 sm:p-6">
           {/* ── Edit Company Dialog ── */}
           <Dialog open={isEditCompanyOpen} onOpenChange={setIsEditCompanyOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1687,27 +1928,54 @@ export default function ClientDetail() {
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={clientForm.control}
-                      name="annualRevenue"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Annual Revenue ($)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="1000"
-                              placeholder="e.g. 120000"
-                              {...field}
-                              value={field.value ?? ""}
-                              data-testid="input-edit-client-annual-revenue"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    {isProspect ? (
+                      <FormField
+                        control={clientForm.control}
+                        name={"prospectRevenueTier" as any}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Potential Revenue</FormLabel>
+                            <Select onValueChange={(v) => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-edit-prospect-revenue-tier">
+                                  <SelectValue placeholder="Select tier..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">Not set</SelectItem>
+                                <SelectItem value="$">$ — Low</SelectItem>
+                                <SelectItem value="$$">$$ — Medium</SelectItem>
+                                <SelectItem value="$$$">$$$ — High</SelectItem>
+                                <SelectItem value="$$$$">$$$$ — Very High</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    ) : (
+                      <FormField
+                        control={clientForm.control}
+                        name="annualRevenue"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Annual Revenue ($)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1000"
+                                placeholder="e.g. 120000"
+                                {...field}
+                                value={field.value ?? ""}
+                                data-testid="input-edit-client-annual-revenue"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
                   </div>
                   <FormField
                     control={clientForm.control}
@@ -1790,10 +2058,10 @@ export default function ClientDetail() {
           </Dialog>
 
           <TabsContent value="overview" className="m-0 space-y-6">
-            {/* ── Stats Row ── */}
+            {/* ── Health + Quick Stats Row ── */}
             {(() => {
               const activeLeadsArr = leads?.filter(l => !["won", "lost"].includes(l.stage)) ?? [];
-              const pipelineValue = activeLeadsArr.reduce((sum, l) => sum + (parseFloat(l.value ?? "0") || 0), 0);
+              const pipelineVal = activeLeadsArr.reduce((sum, l) => sum + (parseFloat(l.value ?? "0") || 0), 0);
               const totalBdSpend = spendEntries.reduce((s, e) => s + parseFloat(e.amount), 0);
               const wonCount = leads?.filter(l => l.stage === "won").length ?? 0;
               const fmt = (n: number) => n >= 1000000
@@ -1802,53 +2070,127 @@ export default function ClientDetail() {
                 ? `$${(n / 1000).toFixed(0)}K`
                 : `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
               return (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <Card className="shadow-sm border-border/40 bg-card" data-testid="panel-health-score">
+                    <CardContent className="px-4 py-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Health</p>
+                        <span className={`text-xs font-bold ${healthColor}`}>{healthLabel}</span>
+                      </div>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${healthScore >= 75 ? "bg-green-500" : healthScore >= 50 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${healthScore}%` }} />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">{healthScore}% score</p>
+                    </CardContent>
+                  </Card>
                   <Card className="shadow-sm border-border/40 bg-card">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                    <CardContent className="px-4 py-3">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{revenueLabel}</p>
+                      {isProspect ? (
+                        <div className="flex items-center gap-2 mt-1">
+                          <Select
+                            value={prospectTier ?? "__none__"}
+                            onValueChange={(val) => updateClientMutation.mutate({ prospectRevenueTier: val === "__none__" ? null : val })}
+                          >
+                            <SelectTrigger className="h-7 w-24 text-sm font-bold" data-testid="select-prospect-revenue-tier">
+                              <SelectValue placeholder="Set tier" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">Not set</SelectItem>
+                              <SelectItem value="$">$</SelectItem>
+                              <SelectItem value="$$">$$</SelectItem>
+                              <SelectItem value="$$$">$$$</SelectItem>
+                              <SelectItem value="$$$$">$$$$</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : (
+                        <p className="text-xl font-heading font-bold mt-1" data-testid="stat-annual-revenue">{revenueDisplayValue > 0 ? fmt(revenueDisplayValue) : "—"}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                  <Card className="shadow-sm border-border/40 bg-card">
+                    <CardContent className="px-4 py-3">
                       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Active Deals</p>
-                      <Target className="h-4 w-4 text-primary shrink-0" />
-                    </CardHeader>
-                    <CardContent className="px-4 pb-4">
-                      <p className="text-2xl font-heading font-bold" data-testid="stat-active-deals">{activeLeadsArr.length}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">In pipeline</p>
+                      <p className="text-xl font-heading font-bold mt-1" data-testid="stat-active-deals">{activeLeadsArr.length}</p>
+                      <p className="text-[10px] text-muted-foreground">{pipelineVal > 0 ? `${fmt(pipelineVal)} pipeline` : "In pipeline"}</p>
                     </CardContent>
                   </Card>
                   <Card className="shadow-sm border-border/40 bg-card">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Pipeline Value</p>
-                      <TrendingUp className="h-4 w-4 text-primary shrink-0" />
-                    </CardHeader>
-                    <CardContent className="px-4 pb-4">
-                      <p className="text-2xl font-heading font-bold" data-testid="stat-pipeline-value">{pipelineValue > 0 ? fmt(pipelineValue) : "—"}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Estimated total</p>
+                    <CardContent className="px-4 py-3">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Contacts</p>
+                      <p className="text-xl font-heading font-bold mt-1" data-testid="count-contacts">{contactCount}</p>
                     </CardContent>
                   </Card>
                   <Card className="shadow-sm border-border/40 bg-card">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Total BD Spend</p>
-                      <DollarSign className="h-4 w-4 text-primary shrink-0" />
-                    </CardHeader>
-                    <CardContent className="px-4 pb-4">
-                      <p className="text-2xl font-heading font-bold" data-testid="stat-total-spend">{totalBdSpend > 0 ? fmt(totalBdSpend) : "—"}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Business development</p>
+                    <CardContent className="px-4 py-3">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Buildings</p>
+                      <p className="text-xl font-heading font-bold mt-1" data-testid="count-buildings">{buildingCount}</p>
                     </CardContent>
                   </Card>
                   <Card className="shadow-sm border-border/40 bg-card">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Won Deals</p>
-                      <Trophy className="h-4 w-4 text-primary shrink-0" />
-                    </CardHeader>
-                    <CardContent className="px-4 pb-4">
-                      <p className="text-2xl font-heading font-bold" data-testid="stat-won-deals">{wonCount}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Closed won</p>
+                    <CardContent className="px-4 py-3">
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">BD Spend</p>
+                      <p className="text-xl font-heading font-bold mt-1" data-testid="stat-total-spend">{totalBdSpend > 0 ? fmt(totalBdSpend) : "—"}</p>
                     </CardContent>
                   </Card>
                 </div>
               );
             })()}
 
+            {/* ── Overview highlights: Top Contacts + Recent Emails ── */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Top Contacts */}
+              <Card className="shadow-sm border-border/40 bg-card" data-testid="card-overview-top-contacts">
+                <CardHeader className="pb-3 flex flex-row items-center gap-2">
+                  <Users className="h-4 w-4 text-primary shrink-0" />
+                  <CardTitle className="text-sm font-semibold">Key Contacts</CardTitle>
+                  <button onClick={() => setActiveTab("organization")} className="ml-auto text-[10px] text-primary hover:underline" data-testid="link-overview-all-contacts">View all →</button>
+                </CardHeader>
+                <CardContent className="pb-4 space-y-2">
+                  {(contacts ?? []).length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No contacts yet</p>
+                  ) : (
+                    (contacts ?? []).slice(0, 4).map(ct => (
+                      <div key={ct.id} className="flex items-center gap-2" data-testid={`overview-contact-row-${ct.id}`}>
+                        <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                          {ct.name.charAt(0)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <button onClick={() => { setActiveTab("organization"); }} className="text-xs font-medium hover:underline text-left truncate block w-full" data-testid={`overview-contact-link-${ct.id}`}>{ct.name}</button>
+                          {ct.title && <p className="text-[10px] text-muted-foreground truncate">{ct.title}</p>}
+                        </div>
+                        {ct.isPrimary && <span className="text-[9px] bg-primary/10 text-primary rounded px-1 shrink-0">Primary</span>}
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+              {/* Recent Emails */}
+              <Card className="shadow-sm border-border/40 bg-card" data-testid="card-overview-recent-emails">
+                <CardHeader className="pb-3 flex flex-row items-center gap-2">
+                  <Mail className="h-4 w-4 text-primary shrink-0" />
+                  <CardTitle className="text-sm font-semibold">Recent Emails</CardTitle>
+                  <button onClick={() => setActiveTab("history")} className="ml-auto text-[10px] text-primary hover:underline" data-testid="link-overview-all-emails">View all →</button>
+                </CardHeader>
+                <CardContent className="pb-4 space-y-2">
+                  {recentEmails.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No emails yet</p>
+                  ) : (
+                    recentEmails.slice(0, 3).map(em => (
+                      <div key={em.id} className="space-y-0.5" data-testid={`overview-email-row-${em.id}`}>
+                        <p className="text-xs font-medium truncate">{em.subject || "(no subject)"}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{em.fullBody ? em.fullBody.replace(/<[^>]+>/g, "").slice(0, 60) + (em.fullBody.length > 60 ? "…" : "") : ""}</p>
+                        <p className="text-[9px] text-muted-foreground">{em.receivedAt ? new Date(em.receivedAt).toLocaleDateString() : ""}</p>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
             {/* ── BuildOps Service Agreements ── */}
-            {(client as any).buildopsId && (
+            {client.buildopsId && (
               <BuildOpsAgreementsSection clientId={clientId} />
             )}
 
@@ -1918,7 +2260,7 @@ export default function ClientDetail() {
                     {[
                       { label: "Industry", value: client.industry || null },
                       { label: "Phone", value: client.phone ? formatPhoneNumber(client.phone) : null },
-                      { label: "Annual Revenue", value: client.annualRevenue && parseFloat(client.annualRevenue) > 0 ? `$${parseFloat(client.annualRevenue).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : null },
+                      { label: revenueLabel, value: isProspect ? (prospectTier || null) : (revenueDisplayValue > 0 ? `$${revenueDisplayValue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : null) },
                     ].map(({ label, value }) => (
                       <div key={label} className="flex items-start gap-3">
                         <span className="text-xs font-medium text-muted-foreground w-28 shrink-0 pt-0.5">{label}</span>
@@ -2122,7 +2464,7 @@ export default function ClientDetail() {
                         </div>
                         <div className="px-6 py-3 border-t border-border/60">
                           <button
-                            onClick={() => setActiveTab("contacts")}
+                            onClick={() => { setActiveTab("organization"); setOrgSubTab("list"); }}
                             className="text-xs text-primary hover:underline flex items-center gap-1 font-medium"
                             data-testid="link-view-all-offices"
                           >
@@ -2175,7 +2517,7 @@ export default function ClientDetail() {
                         </div>
                         <div className="px-6 py-3 border-t border-border/60">
                           <button
-                            onClick={() => setActiveTab("activity")}
+                            onClick={() => setActiveTab("history")}
                             className="text-xs text-primary hover:underline flex items-center gap-1 font-medium"
                             data-testid="link-view-full-timeline"
                           >
@@ -2222,7 +2564,7 @@ export default function ClientDetail() {
                     </div>
                     {activeDeals.length > 0 && (
                       <button
-                        onClick={() => setActiveTab("deals")}
+                        onClick={() => { setActiveTab("revenue"); setRevenueSubTab("leads"); }}
                         className="text-xs text-primary hover:underline flex items-center gap-1 font-medium"
                         data-testid="link-view-all-deals"
                       >
@@ -2272,8 +2614,26 @@ export default function ClientDetail() {
             })()}
           </TabsContent>
 
-          <TabsContent value="contacts" className="m-0 space-y-4">
-            {/* Header row */}
+          <TabsContent value="organization" className="m-0 space-y-4">
+            {/* Organization sub-nav */}
+            <div className="flex items-center gap-1 border-b pb-3">
+              {(["list", "orgchart", "map"] as const).map(sub => (
+                <button
+                  key={sub}
+                  onClick={() => setOrgSubTab(sub)}
+                  className={cn(
+                    "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                    orgSubTab === sub ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                  data-testid={`button-org-sub-${sub}`}
+                >
+                  {sub === "list" ? "Contacts & Offices" : sub === "orgchart" ? "Org Chart" : "Portfolio Map"}
+                </button>
+              ))}
+            </div>
+
+            {orgSubTab === "list" && (
+              <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold">Contacts &amp; Offices</h3>
@@ -2431,7 +2791,9 @@ export default function ClientDetail() {
                           </div>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {officeContacts.map(contact => (
+                            {officeContacts.map(contact => {
+                              const contactBuildings = allBuildings.filter(b => b.contactId === contact.id);
+                              return (
                               <div
                                 key={contact.id}
                                 draggable
@@ -2446,8 +2808,66 @@ export default function ClientDetail() {
                                   onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
                                   onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
                                 />
+                                {/* ── Buildings under this contact (chain view) ── */}
+                                <div className="mt-1 ml-3 border-l-2 border-border/40 pl-3 space-y-1" data-testid={`contact-buildings-chain-${contact.id}`}>
+                                  {contactBuildings.map(b => (
+                                    <div key={b.id} className="group flex items-center justify-between gap-2 py-1 px-2 rounded-md bg-muted/30 border border-border/30 hover:border-primary/30 transition-colors" data-testid={`building-row-${b.id}`}>
+                                      {reassignBuildingId === b.id ? (
+                                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                          <Select value={reassignBuildingContactId} onValueChange={setReassignBuildingContactId}>
+                                            <SelectTrigger className="h-6 text-[10px] flex-1" data-testid={`select-reassign-contact-${b.id}`}>
+                                              <SelectValue placeholder="Select contact" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {(contacts ?? []).map(ct => (
+                                                <SelectItem key={ct.id} value={String(ct.id)}>{ct.name}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                          <Button size="sm" className="h-6 px-1.5 text-[10px]" disabled={!reassignBuildingContactId || reassignBuildingMutation.isPending} onClick={() => reassignBuildingMutation.mutate({ buildingId: b.id, contactId: parseInt(reassignBuildingContactId) })} data-testid={`button-confirm-reassign-${b.id}`}>Save</Button>
+                                          <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => setReassignBuildingId(null)} data-testid={`button-cancel-reassign-${b.id}`}>✕</Button>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                            <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
+                                            <div className="flex flex-col min-w-0">
+                                              <span className="text-xs font-medium truncate">{b.name ?? b.address ?? "Unnamed building"}</span>
+                                              {b.address && b.name && <span className="text-[10px] text-muted-foreground truncate">· {b.address}</span>}
+                                            </div>
+                                            <span className="text-[9px] bg-primary/10 text-primary rounded px-1 shrink-0 hidden group-hover:inline" data-testid={`building-contact-label-${b.id}`} title={`Linked to ${contact.name}`}>
+                                              <Users className="h-2 w-2 inline mr-0.5" />{contact.name.split(" ")[0]}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
+                                            <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-muted-foreground hover:text-foreground" onClick={() => openAddContactForOffice(contact.officeId ?? null, b.id)} data-testid={`button-add-contact-building-${b.id}`} title="Add new contact and link to this building">
+                                              <Plus className="h-2.5 w-2.5" />
+                                            </Button>
+                                            <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-foreground" onClick={() => { setReassignBuildingId(b.id); setReassignBuildingContactId(String(contact.id)); }} data-testid={`button-link-contact-${b.id}`} title="Reassign building to different contact">
+                                              <Users className="h-2.5 w-2.5 mr-0.5" />Link
+                                            </Button>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  ))}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground w-full justify-start"
+                                    onClick={() => {
+                                      setIsNewBuildingContactId(contact.id);
+                                      setIsAddBuildingOpen(true);
+                                    }}
+                                    data-testid={`button-add-building-contact-${contact.id}`}
+                                  >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Add Building
+                                  </Button>
+                                </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </CardContent>
@@ -2497,7 +2917,9 @@ export default function ClientDetail() {
                       </CardHeader>
                       <CardContent className="pt-0">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {unassigned.map(contact => (
+                          {unassigned.map(contact => {
+                            const contactBuildings = allBuildings.filter(b => b.contactId === contact.id);
+                            return (
                             <div
                               key={contact.id}
                               draggable
@@ -2512,14 +2934,36 @@ export default function ClientDetail() {
                                 onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
                                 onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
                               />
+                              {/* ── Buildings chain ── */}
+                              <div className="mt-1 ml-3 border-l-2 border-border/40 pl-3 space-y-1" data-testid={`contact-buildings-chain-${contact.id}`}>
+                                {contactBuildings.map(b => (
+                                  <div key={b.id} className="flex items-center gap-1.5 py-1 px-2 rounded-md bg-muted/30 border border-border/30 text-xs" data-testid={`building-row-${b.id}`}>
+                                    <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
+                                    <span className="font-medium truncate">{b.name ?? b.address ?? "Unnamed building"}</span>
+                                    {b.address && b.name && <span className="text-muted-foreground truncate hidden sm:block">· {b.address}</span>}
+                                  </div>
+                                ))}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground w-full justify-start"
+                                  onClick={() => { setIsNewBuildingContactId(contact.id); setIsAddBuildingOpen(true); }}
+                                  data-testid={`button-add-building-contact-${contact.id}`}
+                                >
+                                  <Plus className="h-3 w-3 mr-1" />Add Building
+                                </Button>
+                              </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </CardContent>
                     </Card>
                   );
                 })()}
               </div>
+            )}
+            </div>
             )}
 
             {/* Card Scanner Dialog */}
@@ -2533,8 +2977,9 @@ export default function ClientDetail() {
               defaultClientId={String(clientId)}
             />
 
+            {/* Organization shared dialogs — rendered outside sub-tab conditionals so they work from any sub-view */}
             {/* Add Contact Dialog */}
-            <Dialog open={isContactDialogOpen} onOpenChange={(open) => { setIsContactDialogOpen(open); if (!open) setDefaultOfficeId(null); }}>
+            <Dialog open={isContactDialogOpen} onOpenChange={(open) => { setIsContactDialogOpen(open); if (!open) { setDefaultOfficeId(null); setAddContactForBuildingId(null); } }}>
               <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
                 <DialogHeader>
                   <DialogTitle>Add Contact</DialogTitle>
@@ -3028,13 +3473,221 @@ export default function ClientDetail() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            {/* orgchart sub-tab */}
+            {orgSubTab === "orgchart" && (
+              <Card className="border-none shadow-sm bg-card">
+                <CardHeader className="flex flex-row items-start justify-between pb-4">
+                  <div>
+                    <CardTitle>{orgChartView === "people" ? "Organization Chart" : "Portfolio View"}</CardTitle>
+                    <CardDescription>
+                      {orgChartView === "people"
+                        ? "Visual hierarchy of contacts. Click any node to view details or change reporting relationships."
+                        : "Portfolios and their associated buildings and contacts."}
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex rounded-md border border-border overflow-hidden">
+                      <button
+                        className={cn("px-3 py-1.5 text-xs font-medium transition-colors", orgChartView === "people" ? "bg-primary text-white" : "bg-background text-muted-foreground hover:text-foreground")}
+                        onClick={() => setOrgChartView("people")}
+                        data-testid="button-org-view-people"
+                      >
+                        People
+                      </button>
+                      <button
+                        className={cn("px-3 py-1.5 text-xs font-medium border-l border-border transition-colors", orgChartView === "portfolio" ? "bg-primary text-white" : "bg-background text-muted-foreground hover:text-foreground")}
+                        onClick={() => setOrgChartView("portfolio")}
+                        data-testid="button-org-view-portfolio"
+                      >
+                        Portfolio
+                      </button>
+                    </div>
+                    {orgChartView === "people" && (
+                      <>
+                        <Button variant="outline" size="sm" onClick={() => verifyEmploymentMutation.mutate()} disabled={verifyEmploymentMutation.isPending} data-testid="button-verify-employment">
+                          <RefreshCw className={`mr-2 h-4 w-4 ${verifyEmploymentMutation.isPending ? "animate-spin" : ""}`} />
+                          {verifyEmploymentMutation.isPending ? "Verifying..." : "Verify via LinkedIn"}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setIsContactDialogOpen(true)} data-testid="button-add-contact-org">
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add Contact
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {orgChartView === "people" ? (
+                    isLoadingContacts ? (
+                      <div className="flex items-center justify-center h-64">
+                        <div className="text-muted-foreground text-sm">Loading org chart...</div>
+                      </div>
+                    ) : (
+                      <OrgChart
+                        contacts={contacts || []}
+                        offices={offices || []}
+                        onUpdateReportsTo={(contactId, reportsTo) => {
+                          updateContactMutation.mutate({ contactId, data: { reportsTo: reportsTo } });
+                        }}
+                        onEditContact={openEditContact}
+                        isUpdating={updateContactMutation.isPending}
+                      />
+                    )
+                  ) : (
+                    clientPortfolios.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2">
+                        <Folders className="h-10 w-10 opacity-20" />
+                        <p className="text-sm">No portfolios yet — create one in the Contacts &amp; Offices view.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {clientPortfolios.map((portfolio: any) => {
+                          const portfolioBuildings = (portfolio.buildings ?? []).map((pb: any) => allBuildings.find((b: any) => b.id === pb.buildingId)).filter(Boolean);
+                          const portfolioContacts = (portfolio.contacts ?? []).map((pc: any) => (contacts || []).find((c: any) => c.id === pc.contactId)).filter(Boolean);
+                          return (
+                            <div key={portfolio.id} className="border rounded-lg bg-card overflow-hidden" data-testid={`card-portfolio-view-${portfolio.id}`}>
+                              <div className="bg-muted/40 px-4 py-2.5 border-b">
+                                <p className="text-sm font-semibold flex items-center gap-2"><Folders className="h-4 w-4 text-primary" />{portfolio.name}</p>
+                              </div>
+                              <div className="p-4 space-y-4">
+                                <div>
+                                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Buildings</p>
+                                  {portfolioBuildings.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground italic">No buildings assigned</p>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      {portfolioBuildings.map((b: any) => (
+                                        <div key={b.id} className="flex items-start gap-2 text-xs">
+                                          <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                                          <div>
+                                            <p className="font-medium">{b.name || b.address || "Unnamed Building"}</p>
+                                            {b.name && b.address && <p className="text-[10px] text-muted-foreground truncate">{b.address}</p>}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Contacts</p>
+                                  {portfolioContacts.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground italic">No contacts assigned</p>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {portfolioContacts.map((c: any) => (
+                                        <div key={c.id} className="flex items-center gap-1.5 bg-muted rounded-full px-2.5 py-1 text-xs">
+                                          <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-semibold text-primary shrink-0">{c.name.charAt(0)}</div>
+                                          <div><span className="font-medium">{c.name}</span>{c.title && <span className="text-muted-foreground ml-1 text-[10px]">· {c.title}</span>}</div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )
+                  )}
+                </CardContent>
+              </Card>
+            )}
+            {/* map sub-tab */}
+            {orgSubTab === "map" && (
+              <>
+                <Card className="border-none shadow-sm bg-card">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2">
+                      <Map className="h-5 w-5 text-primary" />
+                      Portfolio Map
+                    </CardTitle>
+                    <CardDescription>
+                      Offices and buildings for {client.name} — {allBuildings.filter(b => b.lat).length} of {allBuildings.length} location{allBuildings.length !== 1 ? "s" : ""} mapped
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pb-6">
+                    <BuildingsMap buildings={allBuildings} className="h-[520px] w-full" />
+                    {allBuildings.length > 0 && (
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {allBuildings.map(b => (
+                          <div key={`${b.type}-${b.id}`} className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${b.lat ? "border-border bg-card" : "border-dashed border-border/50 bg-muted/20"}`} data-testid={`map-list-item-${b.type}-${b.id}`}>
+                            {b.type === "office" ? <Building2 className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-slate-500" : "text-muted-foreground/50"}`} /> : <MapPin className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-primary" : "text-muted-foreground/50"}`} />}
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="font-medium truncate">{b.name || b.address || "Unnamed Building"}</p>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${b.type === "office" ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"}`}>
+                                  {b.type === "office" ? "Office" : "Building"}
+                                </span>
+                                {(b as any).propertyType && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300 font-medium capitalize">
+                                    {(b as any).propertyType.replace(/_/g, " ")}
+                                  </span>
+                                )}
+                                {isAdminOrManager && (b as any).buildopsIsInactive && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium">Inactive in BuildOps</span>
+                                )}
+                              </div>
+                              {b.type === "building" && <p className="text-[11px] text-muted-foreground truncate">{b.contactName}</p>}
+                              {b.address && <AddressLink address={b.address} className="text-xs text-muted-foreground mt-0.5 truncate" />}
+                              {!b.lat && <p className="text-[10px] text-amber-500 mt-0.5 italic">No location — edit to add address</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card className="border-none shadow-sm bg-card mt-4">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Company Portfolios</CardTitle>
+                    <CardDescription>Manage building portfolios linked to {client.name}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pb-6 px-0">
+                    <PortfolioManager
+                      filterClientId={clientId}
+                      allBuildings={(allBuildings as any[]).filter(b => b.type === "building").map(b => ({
+                        id: b.id, name: b.name, address: b.address ?? null, lat: b.lat ?? null, lng: b.lng ?? null,
+                        notes: null, contactId: b.contactId, createdAt: new Date(),
+                      }))}
+                      allContacts={contacts ?? []}
+                      clients={client ? [client] : []}
+                    />
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </TabsContent>
 
-          <TabsContent value="deals" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>Sales Deals</CardTitle>
+          {/* ─── Revenue Tab ─── */}
+          <TabsContent value="revenue" className="m-0 space-y-4">
+            <div className="flex items-center gap-1 border-b pb-3 flex-wrap">
+              {(["leads", "estimates"] as const).map(sub => (
+                <button
+                  key={sub}
+                  onClick={() => setRevenueSubTab(sub)}
+                  className={cn("px-3 py-1.5 text-sm font-medium rounded-md transition-colors", revenueSubTab === sub ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted")}
+                  data-testid={`button-revenue-sub-${sub}`}
+                >
+                  {sub === "leads" ? "Leads" : "Estimates"}
+                </button>
+              ))}
+              {client?.buildopsId && (["jobs", "invoices", "agreements"] as const).map(sub => (
+                <button
+                  key={sub}
+                  onClick={() => setRevenueSubTab(sub)}
+                  className={cn("px-3 py-1.5 text-sm font-medium rounded-md transition-colors", revenueSubTab === sub ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted")}
+                  data-testid={`button-revenue-sub-${sub}`}
+                >
+                  {sub === "jobs" ? "Jobs" : sub === "invoices" ? "Invoices" : "Agreements"}
+                </button>
+              ))}
+            </div>
+            {revenueSubTab === "leads" && (
+              <Card className="border-none shadow-sm bg-card">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>Sales Deals</CardTitle>
                   <CardDescription>Pipeline opportunities associated with this client</CardDescription>
                 </div>
               </CardHeader>
@@ -3077,14 +3730,13 @@ export default function ClientDetail() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="estimates" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>Quotes &amp; Estimates</CardTitle>
-                  <CardDescription>CRM estimates and BuildOps quotes for this client</CardDescription>
+            )}
+            {revenueSubTab === "estimates" && (
+              <Card className="border-none shadow-sm bg-card">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>Quotes &amp; Estimates</CardTitle>
+                    <CardDescription>CRM estimates and BuildOps quotes for this client</CardDescription>
                 </div>
               </CardHeader>
               <CardContent>
@@ -3148,276 +3800,58 @@ export default function ClientDetail() {
                 })()}
               </CardContent>
             </Card>
+            )}
+            {/* BuildOps sub-tabs inside revenue */}
+            {revenueSubTab === "jobs" && client?.buildopsId && (
+              <BuildOpsJobsTab clientId={clientId} />
+            )}
+            {revenueSubTab === "invoices" && client?.buildopsId && (
+              <BuildOpsInvoicesTab clientId={clientId} />
+            )}
+            {revenueSubTab === "agreements" && client?.buildopsId && (
+              <BuildOpsAgreementsTab clientId={clientId} />
+            )}
           </TabsContent>
 
-          <TabsContent value="orgchart" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
-              <CardHeader className="flex flex-row items-start justify-between pb-4">
-                <div>
-                  <CardTitle>{orgChartView === "people" ? "Organization Chart" : "Portfolio View"}</CardTitle>
-                  <CardDescription>
-                    {orgChartView === "people"
-                      ? "Visual hierarchy of contacts. Click any node to view details or change reporting relationships."
-                      : "Portfolios and their associated buildings and contacts."}
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  {/* View toggle */}
-                  <div className="flex rounded-md border border-border overflow-hidden">
-                    <button
-                      className={cn(
-                        "px-3 py-1.5 text-xs font-medium transition-colors",
-                        orgChartView === "people"
-                          ? "bg-primary text-white"
-                          : "bg-background text-muted-foreground hover:text-foreground"
-                      )}
-                      onClick={() => setOrgChartView("people")}
-                      data-testid="button-org-view-people"
-                    >
-                      People
-                    </button>
-                    <button
-                      className={cn(
-                        "px-3 py-1.5 text-xs font-medium border-l border-border transition-colors",
-                        orgChartView === "portfolio"
-                          ? "bg-primary text-white"
-                          : "bg-background text-muted-foreground hover:text-foreground"
-                      )}
-                      onClick={() => setOrgChartView("portfolio")}
-                      data-testid="button-org-view-portfolio"
-                    >
-                      Portfolio
-                    </button>
-                  </div>
-                  {orgChartView === "people" && (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => verifyEmploymentMutation.mutate()}
-                        disabled={verifyEmploymentMutation.isPending}
-                        data-testid="button-verify-employment"
-                      >
-                        <RefreshCw className={`mr-2 h-4 w-4 ${verifyEmploymentMutation.isPending ? "animate-spin" : ""}`} />
-                        {verifyEmploymentMutation.isPending ? "Verifying..." : "Verify via LinkedIn"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setIsContactDialogOpen(true)}
-                        data-testid="button-add-contact-org"
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Contact
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {orgChartView === "people" ? (
-                  isLoadingContacts ? (
-                    <div className="flex items-center justify-center h-64">
-                      <div className="text-muted-foreground text-sm">Loading org chart...</div>
-                    </div>
-                  ) : (
-                    <OrgChart
-                      contacts={contacts || []}
-                      offices={offices || []}
-                      onUpdateReportsTo={(contactId, reportsTo) => {
-                        updateContactMutation.mutate({
-                          contactId,
-                          data: { reportsTo: reportsTo },
-                        });
-                      }}
-                      onEditContact={openEditContact}
-                      isUpdating={updateContactMutation.isPending}
-                    />
-                  )
-                ) : (
-                  /* Portfolio View */
-                  clientPortfolios.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2">
-                      <Folders className="h-10 w-10 opacity-20" />
-                      <p className="text-sm">No portfolios yet — create one in the Portfolio tab.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {clientPortfolios.map((portfolio: any) => {
-                        const portfolioBuildings = (portfolio.buildings ?? []).map((pb: any) =>
-                          allBuildings.find((b: any) => b.id === pb.buildingId)
-                        ).filter(Boolean);
-                        const portfolioContacts = (portfolio.contacts ?? []).map((pc: any) =>
-                          (contacts || []).find((c: any) => c.id === pc.contactId)
-                        ).filter(Boolean);
-                        return (
-                          <div key={portfolio.id} className="border rounded-lg bg-card overflow-hidden" data-testid={`card-portfolio-view-${portfolio.id}`}>
-                            <div className="bg-muted/40 px-4 py-2.5 border-b">
-                              <p className="text-sm font-semibold flex items-center gap-2">
-                                <Folders className="h-4 w-4 text-primary" />
-                                {portfolio.name}
-                              </p>
-                            </div>
-                            <div className="p-4 space-y-4">
-                              {/* Buildings */}
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Buildings</p>
-                                {portfolioBuildings.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground italic">No buildings assigned</p>
-                                ) : (
-                                  <div className="space-y-1.5">
-                                    {portfolioBuildings.map((b: any) => (
-                                      <div key={b.id} className="flex items-start gap-2 text-xs">
-                                        <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                                        <div>
-                                          <p className="font-medium">{b.name || b.address || "Unnamed Building"}</p>
-                                          {b.name && b.address && <p className="text-[10px] text-muted-foreground truncate">{b.address}</p>}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              {/* Contacts */}
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Contacts</p>
-                                {portfolioContacts.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground italic">No contacts assigned</p>
-                                ) : (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {portfolioContacts.map((c: any) => (
-                                      <div key={c.id} className="flex items-center gap-1.5 bg-muted rounded-full px-2.5 py-1 text-xs">
-                                        <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-semibold text-primary shrink-0">
-                                          {c.name.charAt(0)}
-                                        </div>
-                                        <div>
-                                          <span className="font-medium">{c.name}</span>
-                                          {c.title && <span className="text-muted-foreground ml-1 text-[10px]">· {c.title}</span>}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="portfolio-map" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2">
-                  <Map className="h-5 w-5 text-primary" />
-                  Portfolio Map
-                </CardTitle>
-                <CardDescription>
-                  Offices and buildings for {client.name} — {allBuildings.filter(b => b.lat).length} of {allBuildings.length} location{allBuildings.length !== 1 ? "s" : ""} mapped
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pb-6">
-                <BuildingsMap
-                  buildings={allBuildings}
-                  className="h-[520px] w-full"
-                />
-                {allBuildings.length > 0 && (
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                    {allBuildings.map(b => (
-                      <div key={`${b.type}-${b.id}`} className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${b.lat ? "border-border bg-card" : "border-dashed border-border/50 bg-muted/20"}`}
-                        data-testid={`map-list-item-${b.type}-${b.id}`}>
-                        {b.type === "office"
-                          ? <Building2 className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-slate-500" : "text-muted-foreground/50"}`} />
-                          : <MapPin className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-primary" : "text-muted-foreground/50"}`} />
-                        }
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="font-medium truncate">{b.name || b.address || "Unnamed Building"}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${b.type === "office" ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"}`}>
-                              {b.type === "office" ? "Office" : "Building"}
-                            </span>
-                            {(b as any).propertyType && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300 font-medium capitalize">
-                                {(b as any).propertyType.replace(/_/g, " ")}
-                              </span>
-                            )}
-                            {isAdminOrManager && (b as any).buildopsIsInactive && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 font-medium">
-                                Inactive in BuildOps
-                              </span>
-                            )}
-                          </div>
-                          {b.type === "building" && <p className="text-[11px] text-muted-foreground truncate">{b.contactName}</p>}
-                          {b.address && <AddressLink address={b.address} className="text-xs text-muted-foreground mt-0.5 truncate" />}
-                          {!b.lat && <p className="text-[10px] text-amber-500 mt-0.5 italic">No location — edit to add address</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Company Portfolios section */}
-            <Card className="border-none shadow-sm bg-card mt-4">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Company Portfolios</CardTitle>
-                <CardDescription>Manage building portfolios linked to {client.name}</CardDescription>
-              </CardHeader>
-              <CardContent className="pb-6 px-0">
-                <PortfolioManager
-                  filterClientId={clientId}
-                  allBuildings={(allBuildings as any[]).filter(b => b.type === "building").map(b => ({
-                    id: b.id,
-                    name: b.name,
-                    address: b.address ?? null,
-                    lat: b.lat ?? null,
-                    lng: b.lng ?? null,
-                    notes: null,
-                    contactId: b.contactId,
-                    createdAt: new Date(),
-                  }))}
-                  allContacts={contacts ?? []}
-                  clients={client ? [client] : []}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="activity" className="m-0">
+          {/* ─── History Tab: unified chronological feed ─── */}
+          <TabsContent value="history" className="m-0">
             <Card className="border-none shadow-sm bg-card">
               <CardHeader className="pb-0">
-                <CardTitle>Activity Timeline</CardTitle>
-                <CardDescription>Complete history of interactions and changes</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <History className="h-4 w-4 text-primary" />
+                      Full History
+                    </CardTitle>
+                    <CardDescription className="mt-1">All activity, emails, and files — sorted by date</CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => {
+                      const el = document.getElementById(`history-files-panel-${clientId}`);
+                      el?.scrollIntoView({ behavior: "smooth" });
+                    }}
+                    data-testid="button-history-upload-file"
+                  >
+                    <Paperclip className="h-3.5 w-3.5 mr-1.5" />
+                    Upload File
+                  </Button>
+                </div>
               </CardHeader>
-              <CardContent className="h-[600px] pt-6">
-                <ActivityTimeline entityType="client" entityId={clientId} />
+              <CardContent className="pt-4">
+                <UnifiedHistoryFeed clientId={clientId} />
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="emails" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
-              <CardHeader className="pb-0">
-                <CardTitle>Email History</CardTitle>
-                <CardDescription>Gmail communications linked to this client, analyzed by AI</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <ClientEmailsTab clientId={clientId} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="attachments" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
+            {/* Files upload panel still available below the feed */}
+            <Card className="border-none shadow-sm bg-card mt-4" id={`history-files-panel-${clientId}`}>
               <CardHeader>
-                <CardTitle>Files & Photos</CardTitle>
-                <CardDescription>Manage documents and site photos for this client</CardDescription>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Paperclip className="h-4 w-4 text-primary" />
+                  Files &amp; Photos
+                </CardTitle>
+                <CardDescription>Upload documents and site photos to this client record</CardDescription>
               </CardHeader>
               <CardContent>
                 <AttachmentsPanel entityType="client" entityId={clientId} />
@@ -3425,24 +3859,60 @@ export default function ClientDetail() {
             </Card>
           </TabsContent>
 
-          {client?.buildopsId && (
-            <>
-              <TabsContent value="buildops-jobs" className="m-0">
-                <BuildOpsJobsTab clientId={clientId} />
-              </TabsContent>
-              <TabsContent value="buildops-invoices" className="m-0">
-                <BuildOpsInvoicesTab clientId={clientId} />
-              </TabsContent>
-              <TabsContent value="buildops-agreements" className="m-0">
-                <BuildOpsAgreementsTab clientId={clientId} />
-              </TabsContent>
-            </>
-          )}
           <TabsContent value="intelligence" className="m-0">
             <IntelligenceTab clientId={clientId} childClients={childClients} />
           </TabsContent>
         </div>
       </Tabs>
+      </div>
+
+      {/* Add Building to Contact Dialog */}
+      <Dialog open={isAddBuildingOpen} onOpenChange={(open) => { setIsAddBuildingOpen(open); if (!open) { setIsNewBuildingContactId(null); setNewBuildingName(""); setNewBuildingAddress(""); } }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Add Building</DialogTitle>
+            <DialogDescription>
+              {isNewBuildingContactId && (() => {
+                const ct = contacts?.find(c => c.id === isNewBuildingContactId);
+                return ct ? `Link a building to ${ct.name}` : "Link a building to this contact";
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Building Name</label>
+              <Input
+                placeholder="e.g. 123 Main St – North Tower"
+                value={newBuildingName}
+                onChange={e => setNewBuildingName(e.target.value)}
+                data-testid="input-new-building-name"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Address <span className="text-destructive">*</span></label>
+              <Input
+                placeholder="Full street address"
+                value={newBuildingAddress}
+                onChange={e => setNewBuildingAddress(e.target.value)}
+                data-testid="input-new-building-address"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsAddBuildingOpen(false)} data-testid="button-cancel-add-building">Cancel</Button>
+            <Button
+              disabled={!newBuildingAddress.trim() || addBuildingToContactMutation.isPending}
+              onClick={() => {
+                if (!isNewBuildingContactId) return;
+                addBuildingToContactMutation.mutate({ contactId: isNewBuildingContactId, name: newBuildingName.trim(), address: newBuildingAddress.trim() });
+              }}
+              data-testid="button-save-add-building"
+            >
+              Add Building
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Contact Dialog */}
       <Dialog open={isEditContactDialogOpen} onOpenChange={(open) => {
