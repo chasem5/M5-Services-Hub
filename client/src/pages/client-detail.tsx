@@ -1160,6 +1160,7 @@ export default function ClientDetail() {
         "buildops-agreements": { tab: "revenue", revSub: "agreements" },
         activity: { tab: "history" },
         emails: { tab: "history" },
+        communications: { tab: "history" },
         attachments: { tab: "history" },
       };
       const mapped = legacyMap[tab];
@@ -1870,34 +1871,10 @@ export default function ClientDetail() {
             <History className="h-4 w-4 md:mr-2" />
             <span className="hidden md:inline">History</span>
           </TabsTrigger>
-          <TabsTrigger value="emails" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-emails">
-            <Mail className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Emails</span>
-          </TabsTrigger>
-          <TabsTrigger value="communications" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-communications">
-            <MessageSquareDot className="h-4 w-4 md:mr-2" />
-            <span className="hidden md:inline">Timeline</span>
-          </TabsTrigger>
           <TabsTrigger value="attachments" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
             <Paperclip className="h-4 w-4 md:mr-2" />
             <span className="hidden md:inline">Files</span>
           </TabsTrigger>
-          {client?.buildopsId && (
-            <>
-              <TabsTrigger value="buildops-jobs" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-jobs">
-                <Briefcase className="h-4 w-4 md:mr-2" />
-                <span className="hidden md:inline">Jobs</span>
-              </TabsTrigger>
-              <TabsTrigger value="buildops-invoices" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-invoices">
-                <Receipt className="h-4 w-4 md:mr-2" />
-                <span className="hidden md:inline">Invoices</span>
-              </TabsTrigger>
-              <TabsTrigger value="buildops-agreements" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-agreements">
-                <FileSignature className="h-4 w-4 md:mr-2" />
-                <span className="hidden md:inline">Agreements</span>
-              </TabsTrigger>
-            </>
-          )}
           <TabsTrigger value="intelligence" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-intelligence">
             <HeartPulse className="h-4 w-4 md:mr-2" />
             <span className="hidden md:inline">Intelligence</span>
@@ -4014,30 +3991,6 @@ export default function ClientDetail() {
               </CardHeader>
               <CardContent className="pt-4">
                 <UnifiedHistoryFeed clientId={clientId} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="emails" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
-              <CardHeader className="pb-0">
-                <CardTitle>Email History</CardTitle>
-                <CardDescription>Gmail communications linked to this client, analyzed by AI</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <ClientEmailsTab clientId={clientId} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="communications" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
-              <CardHeader className="pb-0">
-                <CardTitle>Client Communications Timeline</CardTitle>
-                <CardDescription>Chronological feed of all emails, meetings, and tasks for this client</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <ClientCommunicationsTab clientId={clientId} />
               </CardContent>
             </Card>
           </TabsContent>
