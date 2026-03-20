@@ -43,7 +43,7 @@ import { z } from "zod";
 import multer from "multer";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
 import webpush from "web-push";
-import { sendSpendReceiptEmail } from "./email";
+import { sendSpendReceiptEmail, sendTaskAssignedEmail, sendTaskDueEmail, sendAnnouncementEmail, sendReminderEmail } from "./email";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const objectStorageService = new ObjectStorageService();
@@ -157,6 +157,7 @@ export async function registerRoutes(
   await storage.migrateContactStages();
   await storage.migrateIndustryOptions();
   await storage.migrateDashboardFilter();
+  await storage.migrateEmailNotificationPreferences();
   await storage.migrateBuildopsClientColumns();
   await storage.migrateBuildopsPropertyColumns();
   await storage.migrateParentClientColumn();
@@ -233,6 +234,8 @@ export async function registerRoutes(
       return d >= startOfDay && d <= endOfDay && t.status !== 'done';
     });
 
+    // Group due tasks by assignee for email batching
+    const tasksByUser = new Map<string, typeof tasksDueToday>();
     for (const task of tasksDueToday) {
       if (task.assignedTo) {
         // Verify the assignee can access this board before sending notification
@@ -245,6 +248,23 @@ export async function registerRoutes(
           body: `Reminder: "${task.title}" is due today.`,
           url: `/tasks`
         });
+        const existing = tasksByUser.get(task.assignedTo) ?? [];
+        existing.push(task);
+        tasksByUser.set(task.assignedTo, existing);
+      }
+    }
+
+    // Send batched task due emails
+    for (const [assigneeId, userTasks] of tasksByUser.entries()) {
+      try {
+        const assigneeUser = await storage.getUser(assigneeId);
+        if (assigneeUser?.email && assigneeUser.emailNotifyTaskDue) {
+          await sendTaskDueEmail(assigneeUser.email, {
+            tasks: userTasks.map(t => ({ title: t.title, dueDate: t.dueDate! })),
+          });
+        }
+      } catch (err) {
+        console.error("[email] sendTaskDueEmail error:", err);
       }
     }
   };
@@ -2180,6 +2200,21 @@ Respond ONLY with JSON — no markdown:
     }
     const task = await storage.createTask(taskData);
     await logActivity(req, "task", task.id, "created");
+
+    if (task.assignedTo) {
+      const assigneeUser = await storage.getUser(task.assignedTo);
+      if (assigneeUser?.email && assigneeUser.emailNotifyTaskAssigned) {
+        const assignerUser = await storage.getUser(userId);
+        const assignerName = assignerUser ? `${assignerUser.firstName ?? ""} ${assignerUser.lastName ?? ""}`.trim() || "A team member" : "A team member";
+        sendTaskAssignedEmail(assigneeUser.email, {
+          taskTitle: task.title,
+          assignedByName: assignerName,
+          dueDate: task.dueDate,
+          description: task.description,
+        }).catch((err) => console.error("[email] sendTaskAssignedEmail error:", err));
+      }
+    }
+
     res.json(task);
   });
 
@@ -2212,6 +2247,22 @@ Respond ONLY with JSON — no markdown:
     }
     const task = await storage.updateTask(id, taskData);
     await logActivity(req, "task", task.id, "updated", taskData);
+
+    // Send assignment email if assignee changed
+    if (taskData.assignedTo && taskData.assignedTo !== existing.assignedTo) {
+      const assigneeUser = await storage.getUser(taskData.assignedTo);
+      if (assigneeUser?.email && assigneeUser.emailNotifyTaskAssigned) {
+        const assignerUser = await storage.getUser(userId);
+        const assignerName = assignerUser ? `${assignerUser.firstName ?? ""} ${assignerUser.lastName ?? ""}`.trim() || "A team member" : "A team member";
+        sendTaskAssignedEmail(assigneeUser.email, {
+          taskTitle: task.title,
+          assignedByName: assignerName,
+          dueDate: task.dueDate,
+          description: task.description,
+        }).catch((err) => console.error("[email] sendTaskAssignedEmail error:", err));
+      }
+    }
+
     res.json(task);
   });
 
@@ -2343,6 +2394,16 @@ Respond ONLY with JSON — no markdown:
     const userId = (req as any).user.claims.sub;
     const reminderData = insertReminderSchema.parse({ ...req.body, userId });
     const reminder = await storage.createReminder(reminderData);
+
+    const reminderUser = await storage.getUser(userId);
+    if (reminderUser?.email && reminderUser.emailNotifyReminder) {
+      sendReminderEmail(reminderUser.email, {
+        title: reminder.title,
+        message: reminder.message,
+        dueAt: reminder.dueAt,
+      }).catch((err) => console.error("[email] sendReminderEmail error:", err));
+    }
+
     res.json(reminder);
   });
 
@@ -2584,13 +2645,30 @@ If after translating all commits you still have nothing meaningful, return an em
 
       res.json(announcement);
 
-      // Send push notifications to target users
+      // Send push notifications and emails to target users
       for (const targetUserId of targetIds) {
         await sendPushNotification(targetUserId, {
           title: data.type === "announcement" ? "New Announcement" : `New ${data.type}`,
           body: data.title || "You have a new update",
           url: data.type === "announcement" ? "/announcements" : (data.type === "task" ? "/tasks" : "/dashboard")
         });
+
+        // Send announcement email if user has opted in
+        if (data.type === "announcement") {
+          try {
+            const targetUser = await storage.getUser(targetUserId);
+            if (targetUser?.email && targetUser.emailNotifyAnnouncement) {
+              await sendAnnouncementEmail(targetUser.email, {
+                title: data.title,
+                message: data.message,
+                priority: data.priority,
+                type: data.type,
+              });
+            }
+          } catch (err) {
+            console.error("[email] sendAnnouncementEmail error:", err);
+          }
+        }
       }
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -4607,8 +4685,8 @@ Respond with this JSON:
   app.patch("/api/users/me", isAuthenticated, async (req, res) => {
     const userId = (req as any).user?.claims?.sub;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
-    const { firstName, lastName, phone, profileImageUrl, dashboardFilter } = req.body;
-    const user = await storage.updateUserProfile(userId, { firstName, lastName, phone, profileImageUrl, dashboardFilter });
+    const { firstName, lastName, phone, profileImageUrl, dashboardFilter, emailNotifyTaskAssigned, emailNotifyTaskDue, emailNotifyAnnouncement, emailNotifyReminder } = req.body;
+    const user = await storage.updateUserProfile(userId, { firstName, lastName, phone, profileImageUrl, dashboardFilter, emailNotifyTaskAssigned, emailNotifyTaskDue, emailNotifyAnnouncement, emailNotifyReminder });
     res.json(user);
   });
 

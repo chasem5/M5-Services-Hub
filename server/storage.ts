@@ -258,6 +258,7 @@ export interface IStorage {
   migrateLeadServiceTypes(): Promise<void>;
   migrateIndustryOptions(): Promise<void>;
   migrateDashboardFilter(): Promise<void>;
+  migrateEmailNotificationPreferences(): Promise<void>;
   migrateBuildopsClientColumns(): Promise<void>;
   migrateBuildopsPropertyColumns(): Promise<void>;
   migrateTaskBoards(): Promise<void>;
@@ -418,7 +419,7 @@ export interface IStorage {
   ensureDealTag(name: string): Promise<DealTag>;
 
   // User Profile Self-Edit
-  updateUserProfile(id: string, data: { firstName?: string; lastName?: string; phone?: string; profileImageUrl?: string; dashboardFilter?: string }): Promise<User>;
+  updateUserProfile(id: string, data: { firstName?: string; lastName?: string; phone?: string; profileImageUrl?: string; dashboardFilter?: string; emailNotifyTaskAssigned?: boolean; emailNotifyTaskDue?: boolean; emailNotifyAnnouncement?: boolean; emailNotifyReminder?: boolean }): Promise<User>;
 
   // BuildOps Rep Matching
   getBuildOpsRepsForMatching(): Promise<{ buildopsId: string; name: string; email: string | null }[]>;
@@ -1535,6 +1536,17 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS dashboard_filter varchar DEFAULT 'all'`);
     } catch (e) {
       console.error("migrateDashboardFilter error:", e);
+    }
+  }
+
+  async migrateEmailNotificationPreferences(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notify_task_assigned boolean NOT NULL DEFAULT true`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notify_task_due boolean NOT NULL DEFAULT true`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notify_announcement boolean NOT NULL DEFAULT true`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notify_reminder boolean NOT NULL DEFAULT true`);
+    } catch (e) {
+      console.error("migrateEmailNotificationPreferences error:", e);
     }
   }
 
@@ -2807,7 +2819,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // User Profile Self-Edit
-  async updateUserProfile(id: string, data: { firstName?: string; lastName?: string; phone?: string; profileImageUrl?: string; dashboardFilter?: string }): Promise<User> {
+  async updateUserProfile(id: string, data: { firstName?: string; lastName?: string; phone?: string; profileImageUrl?: string; dashboardFilter?: string; emailNotifyTaskAssigned?: boolean; emailNotifyTaskDue?: boolean; emailNotifyAnnouncement?: boolean; emailNotifyReminder?: boolean }): Promise<User> {
     const [user] = await db
       .update(users)
       .set({ ...data, updatedAt: new Date() })

@@ -26,7 +26,9 @@ import { useForm } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { User as UserIcon, Shield, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera, LogOut } from "lucide-react";
+import { User as UserIcon, Shield, Mail, CheckCircle2, AlertCircle, Loader2, Unlink, CalendarDays, Bell, BellOff, Phone, Camera, LogOut, MailCheck } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -172,6 +174,45 @@ export default function Settings() {
       toast({ title: "Failed to disable notifications", description: error.message, variant: "destructive" });
     },
   });
+
+  const [emailPrefs, setEmailPrefs] = useState<{
+    emailNotifyTaskAssigned: boolean;
+    emailNotifyTaskDue: boolean;
+    emailNotifyAnnouncement: boolean;
+    emailNotifyReminder: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (currentUser) {
+      setEmailPrefs({
+        emailNotifyTaskAssigned: currentUser.emailNotifyTaskAssigned ?? true,
+        emailNotifyTaskDue: currentUser.emailNotifyTaskDue ?? true,
+        emailNotifyAnnouncement: currentUser.emailNotifyAnnouncement ?? true,
+        emailNotifyReminder: currentUser.emailNotifyReminder ?? true,
+      });
+    }
+  }, [currentUser]);
+
+  const updateEmailPrefsMutation = useMutation({
+    mutationFn: async (prefs: { emailNotifyTaskAssigned: boolean; emailNotifyTaskDue: boolean; emailNotifyAnnouncement: boolean; emailNotifyReminder: boolean }) => {
+      const res = await apiRequest("PATCH", "/api/users/me", prefs);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      toast({ title: "Email preferences saved" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save email preferences", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleEmailPrefChange = (key: keyof NonNullable<typeof emailPrefs>, value: boolean) => {
+    if (!emailPrefs) return;
+    const updated = { ...emailPrefs, [key]: value };
+    setEmailPrefs(updated);
+    updateEmailPrefsMutation.mutate(updated);
+  };
 
   const disconnectGmailMutation = useMutation({
     mutationFn: () => apiRequest("DELETE", "/api/auth/gmail/disconnect", undefined),
@@ -560,6 +601,57 @@ export default function Settings() {
                 <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
                 <p className="text-xs text-blue-700">
                   <strong>Setup note:</strong> Before connecting, add <code className="bg-blue-100 px-1 rounded">https://M5App.replit.app/api/auth/calendar/callback</code> as an authorized redirect URI in your Google Cloud Console OAuth app.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Email Notifications Card */}
+        <Card className="shadow-sm border-2 border-primary/5 overflow-hidden">
+          <CardHeader className="bg-muted/30 pb-6 border-b">
+            <div className="flex items-center gap-4">
+              <div className="bg-primary/10 p-2 rounded-full">
+                <MailCheck className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-xl font-heading">Email Notifications</CardTitle>
+                <CardDescription>Choose which events send you an email</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6 space-y-5">
+            {emailPrefs === null ? (
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Loading preferences...</span>
+              </div>
+            ) : (
+              [
+                { key: "emailNotifyTaskAssigned" as const, label: "Task Assigned", description: "Email when a task is assigned to you" },
+                { key: "emailNotifyTaskDue" as const, label: "Task Due", description: "Daily email listing tasks due today" },
+                { key: "emailNotifyAnnouncement" as const, label: "Announcements", description: "Email when a company announcement is posted" },
+                { key: "emailNotifyReminder" as const, label: "Reminders", description: "Email when a reminder is created for you" },
+              ].map(({ key, label, description }) => (
+                <div key={key} className="flex items-center justify-between gap-4">
+                  <div>
+                    <Label className="text-sm font-semibold text-gray-800">{label}</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+                  </div>
+                  <Switch
+                    checked={emailPrefs[key]}
+                    onCheckedChange={(checked) => handleEmailPrefChange(key, checked)}
+                    disabled={updateEmailPrefsMutation.isPending}
+                    data-testid={`toggle-${key}`}
+                  />
+                </div>
+              ))
+            )}
+            {!currentUser?.email && (
+              <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-amber-700">
+                  <strong>No email address on file.</strong> Email notifications require your account to have an email address.
                 </p>
               </div>
             )}
