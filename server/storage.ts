@@ -11,6 +11,8 @@ import {
   bdSpendEntries,
   leads,
   tasks,
+  taskBoards,
+  taskBoardMembers,
   taskLabelDefinitions,
   taskColumns,
   reminders,
@@ -100,6 +102,10 @@ import {
   type InsertContactBuilding,
   type PipelineView,
   type InsertPipelineView,
+  type TaskBoard,
+  type InsertTaskBoard,
+  type TaskBoardMember,
+  type InsertTaskBoardMember,
   type TaskLabelDefinition,
   type InsertTaskLabelDefinition,
   type TaskColumn,
@@ -187,7 +193,9 @@ export interface IStorage {
   deleteLead(id: number): Promise<void>;
 
   // Tasks
-  listTasks(userId?: string): Promise<Task[]>;
+  listTasks(userId?: string, boardId?: number): Promise<Task[]>;
+  listVisibleTasks(requestingUserId: string, scopedUserId?: string): Promise<Task[]>;
+  listNonPrivateTasks(requestingUserId?: string): Promise<Task[]>;
   getTask(id: number): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, task: Partial<InsertTask>): Promise<Task>;
@@ -249,6 +257,7 @@ export interface IStorage {
   migrateDashboardFilter(): Promise<void>;
   migrateBuildopsClientColumns(): Promise<void>;
   migrateBuildopsPropertyColumns(): Promise<void>;
+  migrateTaskBoards(): Promise<void>;
 
   // Industry Options
   listIndustryOptions(): Promise<IndustryOption[]>;
@@ -281,8 +290,21 @@ export interface IStorage {
   updateTaskLabelDefinition(id: number, data: Partial<InsertTaskLabelDefinition>): Promise<TaskLabelDefinition>;
   deleteTaskLabelDefinition(id: number): Promise<void>;
 
+  // Task Boards
+  listTaskBoards(userId: string): Promise<(TaskBoard & { memberCount: number; myRole: string })[]>;
+  getTaskBoard(id: number): Promise<TaskBoard | undefined>;
+  createTaskBoard(data: InsertTaskBoard): Promise<TaskBoard>;
+  updateTaskBoard(id: number, data: Partial<InsertTaskBoard>): Promise<TaskBoard>;
+  deleteTaskBoard(id: number): Promise<void>;
+  canUserAccessBoard(boardId: number, userId: string): Promise<boolean>;
+  getTaskBoardMembers(boardId: number): Promise<(TaskBoardMember & { user: { id: string; firstName: string | null; lastName: string | null; email: string | null; profileImageUrl: string | null } })[]>;
+  addTaskBoardMember(boardId: number, userId: string, role?: "owner" | "member"): Promise<TaskBoardMember>;
+  removeTaskBoardMember(boardId: number, userId: string): Promise<void>;
+  getDefaultBoardId(): Promise<number | undefined>;
+  seedDefaultTaskBoard(): Promise<void>;
+
   // Task Columns
-  listTaskColumns(): Promise<TaskColumn[]>;
+  listTaskColumns(boardId?: number): Promise<TaskColumn[]>;
   createTaskColumn(col: InsertTaskColumn): Promise<TaskColumn>;
   updateTaskColumn(id: number, data: Partial<InsertTaskColumn>): Promise<TaskColumn>;
   deleteTaskColumn(id: number): Promise<void>;
@@ -744,11 +766,79 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Tasks
-  async listTasks(userId?: string): Promise<Task[]> {
-    if (userId) {
-      return await db.select().from(tasks).where(eq(tasks.assignedTo, userId)).orderBy(desc(tasks.createdAt));
+  async listTasks(userId?: string, boardId?: number): Promise<Task[]> {
+    const conditions = [];
+    if (userId) conditions.push(eq(tasks.assignedTo, userId));
+    if (boardId !== undefined) conditions.push(eq(tasks.boardId, boardId));
+    if (conditions.length > 0) {
+      return await db.select().from(tasks).where(and(...conditions)).orderBy(desc(tasks.createdAt));
     }
     return await db.select().from(tasks).orderBy(desc(tasks.createdAt));
+  }
+
+  async listVisibleTasks(requestingUserId: string, scopedUserId?: string): Promise<Task[]> {
+    // Get all boards and determine which the requesting user can access
+    const allBoards = await db.select().from(taskBoards);
+    const memberRows = await db.select().from(taskBoardMembers).where(eq(taskBoardMembers.userId, requestingUserId));
+    const memberBoardIds = new Set(memberRows.map(m => m.boardId));
+
+    const accessibleBoardIds = allBoards
+      .filter(b => {
+        if (b.visibility === "team") return true;
+        if (b.visibility === "private") return b.createdBy === requestingUserId;
+        // invite-only: owner or explicit member
+        return b.createdBy === requestingUserId || memberBoardIds.has(b.id);
+      })
+      .map(b => b.id);
+
+    if (accessibleBoardIds.length === 0) return [];
+
+    const conditions: ReturnType<typeof eq>[] = [];
+    if (scopedUserId) conditions.push(eq(tasks.assignedTo, scopedUserId));
+
+    // NULL-boardId tasks are treated as belonging to the General board (legacy/migration safety)
+    // After full migration, all tasks will have a boardId
+    const boardFilter = or(
+      sql`${tasks.boardId} IS NULL`,
+      sql`${tasks.boardId} IN (${sql.join(accessibleBoardIds.map(id => sql`${id}`), sql`, `)})`
+    );
+
+    const where = conditions.length > 0 ? and(boardFilter, ...conditions) : boardFilter;
+    return await db.select().from(tasks).where(where).orderBy(desc(tasks.createdAt));
+  }
+
+  async listNonPrivateTasks(requestingUserId?: string): Promise<Task[]> {
+    // For AI: exclude private boards; for invite-only, only include if user is a member
+    // NULL-boardId tasks are treated as pre-migration legacy (team-visible)
+    const allBoards = await db.select().from(taskBoards);
+
+    let accessibleBoardIds: number[];
+    if (requestingUserId) {
+      const memberRows = await db.select().from(taskBoardMembers).where(eq(taskBoardMembers.userId, requestingUserId));
+      const memberBoardIds = new Set(memberRows.map(m => m.boardId));
+      accessibleBoardIds = allBoards
+        .filter(b => {
+          if (b.visibility === "team") return true;
+          if (b.visibility === "private") return false; // always exclude private from AI
+          // invite-only: only if owner or member
+          return b.createdBy === requestingUserId || memberBoardIds.has(b.id);
+        })
+        .map(b => b.id);
+    } else {
+      // No user context: only include team boards
+      accessibleBoardIds = allBoards.filter(b => b.visibility === "team").map(b => b.id);
+    }
+
+    if (accessibleBoardIds.length === 0) {
+      // No accessible boards: only return legacy NULL-boardId tasks
+      return await db.select().from(tasks).where(sql`${tasks.boardId} IS NULL`).orderBy(desc(tasks.createdAt));
+    }
+    return await db.select().from(tasks).where(
+      or(
+        sql`${tasks.boardId} IS NULL`,
+        sql`${tasks.boardId} IN (${sql.join(accessibleBoardIds.map(id => sql`${id}`), sql`, `)})`
+      )
+    ).orderBy(desc(tasks.createdAt));
   }
 
   async getTask(id: number): Promise<Task | undefined> {
@@ -1472,6 +1562,76 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async migrateTaskBoards(): Promise<void> {
+    // 1. Create task_boards table if it doesn't exist
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS task_boards (
+          id serial PRIMARY KEY,
+          name varchar NOT NULL,
+          description text,
+          visibility varchar NOT NULL DEFAULT 'team',
+          created_by varchar NOT NULL,
+          created_at timestamp DEFAULT now()
+        )
+      `);
+    } catch (e) {
+      console.error("migrateTaskBoards: create task_boards error:", e);
+    }
+
+    // 2. Create task_board_members table if it doesn't exist
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS task_board_members (
+          id serial PRIMARY KEY,
+          board_id integer NOT NULL REFERENCES task_boards(id) ON DELETE CASCADE,
+          user_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          role varchar NOT NULL DEFAULT 'member'
+        )
+      `);
+    } catch (e) {
+      console.error("migrateTaskBoards: create task_board_members error:", e);
+    }
+
+    // 3. Add board_id column to task_columns if it doesn't exist
+    try {
+      await db.execute(sql`ALTER TABLE task_columns ADD COLUMN IF NOT EXISTS board_id integer REFERENCES task_boards(id) ON DELETE CASCADE`);
+    } catch (e) {
+      console.error("migrateTaskBoards: add board_id to task_columns error:", e);
+    }
+
+    // 4. Add board_id column to tasks if it doesn't exist
+    try {
+      await db.execute(sql`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS board_id integer REFERENCES task_boards(id) ON DELETE SET NULL`);
+    } catch (e) {
+      console.error("migrateTaskBoards: add board_id to tasks error:", e);
+    }
+
+    // 5. Drop the global unique constraint on task_columns.slug (if it exists) to allow per-board duplicate slugs
+    try {
+      await db.execute(sql`
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE constraint_name = 'task_columns_slug_unique'
+            AND table_name = 'task_columns'
+          ) THEN
+            ALTER TABLE task_columns DROP CONSTRAINT task_columns_slug_unique;
+          END IF;
+        END $$
+      `);
+    } catch (e) {
+      console.error("migrateTaskBoards: drop slug unique constraint error:", e);
+    }
+
+    // 6. Seed default board and migrate existing data
+    try {
+      await this.seedDefaultTaskBoard();
+    } catch (e) {
+      console.error("migrateTaskBoards: seedDefaultTaskBoard error:", e);
+    }
+  }
+
   async listIndustryOptions(): Promise<IndustryOption[]> {
     return db.select().from(industryOptions).orderBy(industryOptions.sortOrder, industryOptions.createdAt);
   }
@@ -1788,7 +1948,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Task Columns
-  async listTaskColumns(): Promise<TaskColumn[]> {
+  async listTaskColumns(boardId?: number): Promise<TaskColumn[]> {
+    if (boardId !== undefined) {
+      return await db.select().from(taskColumns).where(eq(taskColumns.boardId, boardId)).orderBy(taskColumns.sortOrder);
+    }
     return await db.select().from(taskColumns).orderBy(taskColumns.sortOrder);
   }
 
@@ -1807,14 +1970,202 @@ export class DatabaseStorage implements IStorage {
   }
 
   async seedDefaultTaskColumns(): Promise<void> {
+    // Seed default task board first
+    await this.seedDefaultTaskBoard();
+  }
+
+  // Task Boards
+  async getDefaultBoardId(): Promise<number | undefined> {
+    // Look for the canonical "General" team board first, then fall back to any team board
+    const [generalBoard] = await db.select().from(taskBoards)
+      .where(and(eq(taskBoards.name, "General"), eq(taskBoards.visibility, "team")))
+      .limit(1);
+    if (generalBoard) return generalBoard.id;
+    // Fallback: any team board (supports renamed installs)
+    const [anyTeamBoard] = await db.select().from(taskBoards)
+      .where(eq(taskBoards.visibility, "team"))
+      .limit(1);
+    return anyTeamBoard?.id;
+  }
+
+  async seedDefaultTaskBoard(): Promise<void> {
+    // Get any user to be the owner (first user found)
+    const [firstUser] = await db.select().from(users).limit(1);
+    if (!firstUser) return;
+
+    // Step 1: Backfill NULL board_id rows FIRST, before inserting any new columns.
+    // This prevents duplicate slugs when pre-existing unscoped columns are later migrated.
+    // Find the canonical General board if it already exists.
+    let board: TaskBoard | undefined;
+    const [existingGeneral] = await db.select().from(taskBoards)
+      .where(and(eq(taskBoards.name, "General"), eq(taskBoards.visibility, "team")))
+      .limit(1);
+    if (existingGeneral) {
+      board = existingGeneral;
+    } else {
+      // Try any existing team board
+      const [anyTeam] = await db.select().from(taskBoards)
+        .where(eq(taskBoards.visibility, "team"))
+        .limit(1);
+      if (anyTeam) board = anyTeam;
+    }
+
+    // If a board already exists, immediately backfill nulls onto it (covers partial deploy states)
+    if (board) {
+      await db.execute(sql`UPDATE task_columns SET board_id = ${board.id} WHERE board_id IS NULL`);
+      await db.execute(sql`UPDATE tasks SET board_id = ${board.id} WHERE board_id IS NULL`);
+      return;
+    }
+
+    // Step 2: No boards at all — create General board first, then backfill (no slug conflict possible)
+    const [created] = await db.insert(taskBoards).values({
+      name: "General",
+      description: "Default shared team board",
+      visibility: "team",
+      createdBy: firstUser.id,
+    }).returning();
+    board = created;
+
+    // Backfill before inserting new columns to avoid slug duplicates from pre-existing rows
+    await db.execute(sql`UPDATE task_columns SET board_id = ${board.id} WHERE board_id IS NULL`);
+    await db.execute(sql`UPDATE tasks SET board_id = ${board.id} WHERE board_id IS NULL`);
+
+    // Insert missing default columns only if they don't already exist for this board
+    const slugsToEnsure = [
+      { name: "To Do", slug: "todo", sortOrder: 0 },
+      { name: "In Progress", slug: "in_progress", sortOrder: 1 },
+      { name: "Done", slug: "done", sortOrder: 2 },
+    ];
+    const existingCols = await db.select({ slug: taskColumns.slug })
+      .from(taskColumns)
+      .where(eq(taskColumns.boardId, board.id));
+    const existingSlugs = new Set(existingCols.map(c => c.slug));
+    for (const col of slugsToEnsure) {
+      if (!existingSlugs.has(col.slug)) {
+        await db.insert(taskColumns).values({ ...col, isDefault: true, boardId: board.id });
+      }
+    }
+  }
+
+  async listTaskBoards(userId: string): Promise<(TaskBoard & { memberCount: number; myRole: string })[]> {
+    const allBoards = await db.select().from(taskBoards);
+    const allMembers = await db.select().from(taskBoardMembers);
+
+    const result: (TaskBoard & { memberCount: number; myRole: string })[] = [];
+
+    for (const board of allBoards) {
+      const members = allMembers.filter(m => m.boardId === board.id);
+      const myMembership = members.find(m => m.userId === userId);
+
+      if (board.visibility === "team") {
+        const myRole = myMembership?.role ?? (board.createdBy === userId ? "owner" : "member");
+        result.push({ ...board, memberCount: members.length, myRole });
+      } else if (board.visibility === "private") {
+        if (board.createdBy === userId) {
+          result.push({ ...board, memberCount: members.length, myRole: "owner" });
+        }
+      } else if (board.visibility === "invite") {
+        if (board.createdBy === userId || myMembership) {
+          const myRole = myMembership?.role ?? (board.createdBy === userId ? "owner" : "member");
+          result.push({ ...board, memberCount: members.length, myRole });
+        }
+      }
+    }
+
+    return result;
+  }
+
+  async getTaskBoard(id: number): Promise<TaskBoard | undefined> {
+    const [board] = await db.select().from(taskBoards).where(eq(taskBoards.id, id));
+    return board;
+  }
+
+  async createTaskBoard(data: InsertTaskBoard): Promise<TaskBoard> {
+    const [board] = await db.insert(taskBoards).values(data).returning();
+    // Add creator as owner in board members
+    await db.insert(taskBoardMembers).values({ boardId: board.id, userId: data.createdBy, role: "owner" });
+    // Create default columns using canonical slugs (boards are now independently scoped)
     const defaults = [
-      { name: "To Do", slug: "todo", sortOrder: 0, isDefault: true },
-      { name: "In Progress", slug: "in_progress", sortOrder: 1, isDefault: true },
-      { name: "Done", slug: "done", sortOrder: 2, isDefault: true },
+      { name: "To Do", slug: "todo", sortOrder: 0, isDefault: true, boardId: board.id },
+      { name: "In Progress", slug: "in_progress", sortOrder: 1, isDefault: true, boardId: board.id },
+      { name: "Done", slug: "done", sortOrder: 2, isDefault: true, boardId: board.id },
     ];
     for (const col of defaults) {
-      await db.execute(sql`INSERT INTO task_columns (name, slug, sort_order, is_default) VALUES (${col.name}, ${col.slug}, ${col.sortOrder}, ${col.isDefault}) ON CONFLICT (slug) DO NOTHING`);
+      await db.insert(taskColumns).values(col);
     }
+    return board;
+  }
+
+  async updateTaskBoard(id: number, data: Partial<InsertTaskBoard>): Promise<TaskBoard> {
+    const [board] = await db.update(taskBoards).set(data).where(eq(taskBoards.id, id)).returning();
+    return board;
+  }
+
+  async deleteTaskBoard(id: number): Promise<void> {
+    const [board] = await db.select().from(taskBoards).where(eq(taskBoards.id, id));
+    if (!board) return;
+
+    if (board.visibility === "private") {
+      // Delete tasks on private boards — they should not be visible to anyone after deletion
+      await db.delete(tasks).where(eq(tasks.boardId, id));
+    } else {
+      // Rehome tasks to General team board so they're not orphaned with NULL boardId
+      const generalBoard = await this.getDefaultBoardId();
+      const targetBoardId = generalBoard && generalBoard !== id ? generalBoard : null;
+      if (targetBoardId) {
+        await db.execute(sql`UPDATE tasks SET board_id = ${targetBoardId} WHERE board_id = ${id}`);
+      } else {
+        // No other board: delete tasks to avoid NULL-board orphans
+        await db.delete(tasks).where(eq(tasks.boardId, id));
+      }
+    }
+
+    // Columns cascade via FK (ON DELETE CASCADE on taskColumns.boardId)
+    // Members cascade via FK (ON DELETE CASCADE on taskBoardMembers.boardId)
+    await db.delete(taskBoards).where(eq(taskBoards.id, id));
+  }
+
+  async canUserAccessBoard(boardId: number, userId: string): Promise<boolean> {
+    const [board] = await db.select().from(taskBoards).where(eq(taskBoards.id, boardId));
+    if (!board) return false;
+    if (board.visibility === "team") return true;
+    if (board.visibility === "private") return board.createdBy === userId;
+    // invite
+    if (board.createdBy === userId) return true;
+    const [member] = await db.select().from(taskBoardMembers).where(
+      and(eq(taskBoardMembers.boardId, boardId), eq(taskBoardMembers.userId, userId))
+    );
+    return !!member;
+  }
+
+  async getTaskBoardMembers(boardId: number): Promise<(TaskBoardMember & { user: { id: string; firstName: string | null; lastName: string | null; email: string | null; profileImageUrl: string | null } })[]> {
+    const members = await db.select().from(taskBoardMembers).where(eq(taskBoardMembers.boardId, boardId));
+    const result = [];
+    for (const member of members) {
+      const [user] = await db.select().from(users).where(eq(users.id, member.userId));
+      if (user) {
+        result.push({
+          ...member,
+          user: { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, profileImageUrl: user.profileImageUrl },
+        });
+      }
+    }
+    return result;
+  }
+
+  async addTaskBoardMember(boardId: number, userId: string, role: "owner" | "member" = "member"): Promise<TaskBoardMember> {
+    // Upsert: delete existing then insert
+    await db.delete(taskBoardMembers).where(
+      and(eq(taskBoardMembers.boardId, boardId), eq(taskBoardMembers.userId, userId))
+    );
+    const [member] = await db.insert(taskBoardMembers).values({ boardId, userId, role }).returning();
+    return member;
+  }
+
+  async removeTaskBoardMember(boardId: number, userId: string): Promise<void> {
+    await db.delete(taskBoardMembers).where(
+      and(eq(taskBoardMembers.boardId, boardId), eq(taskBoardMembers.userId, userId))
+    );
   }
 
   // Meetings

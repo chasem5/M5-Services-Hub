@@ -153,6 +153,22 @@ export const leads = pgTable("leads", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const taskBoards = pgTable("task_boards", {
+  id: serial("id").primaryKey(),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  visibility: varchar("visibility", { enum: ["private", "invite", "team"] }).notNull().default("team"),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const taskBoardMembers = pgTable("task_board_members", {
+  id: serial("id").primaryKey(),
+  boardId: integer("board_id").references(() => taskBoards.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  role: varchar("role", { enum: ["owner", "member"] }).notNull().default("member"),
+});
+
 export const taskLabelDefinitions = pgTable("task_label_definitions", {
   id: serial("id").primaryKey(),
   name: varchar("name").notNull(),
@@ -162,14 +178,16 @@ export const taskLabelDefinitions = pgTable("task_label_definitions", {
 
 export const taskColumns = pgTable("task_columns", {
   id: serial("id").primaryKey(),
+  boardId: integer("board_id").references(() => taskBoards.id, { onDelete: "cascade" }),
   name: varchar("name").notNull(),
-  slug: varchar("slug").notNull().unique(),
+  slug: varchar("slug").notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
   isDefault: boolean("is_default").default(false).notNull(),
 });
 
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
+  boardId: integer("board_id").references(() => taskBoards.id, { onDelete: "set null" }),
   title: varchar("title").notNull(),
   description: text("description"),
   assignedTo: varchar("assigned_to").references(() => users.id),
@@ -496,12 +514,17 @@ export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, creat
   lossNote: z.string().optional().nullable(),
 });
 export const insertPipelineViewSchema = createInsertSchema(pipelineViews).omit({ id: true, createdAt: true });
+export const insertTaskBoardSchema = createInsertSchema(taskBoards).omit({ id: true, createdAt: true });
+export const insertTaskBoardMemberSchema = createInsertSchema(taskBoardMembers).omit({ id: true });
 export const insertTaskLabelDefinitionSchema = createInsertSchema(taskLabelDefinitions).omit({ id: true });
-export const insertTaskColumnSchema = createInsertSchema(taskColumns).omit({ id: true });
+export const insertTaskColumnSchema = createInsertSchema(taskColumns).omit({ id: true }).extend({
+  boardId: z.number().optional().nullable(),
+});
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true }).extend({
   checklist: z.array(z.object({ id: z.string(), text: z.string(), done: z.boolean() })).optional().default([]),
   labels: z.array(z.string()).optional().default([]),
   sortOrder: z.number().optional().default(0),
+  boardId: z.number().optional().nullable(),
 });
 export const insertReminderSchema = createInsertSchema(reminders).omit({ id: true, createdAt: true });
 export const insertServiceCatalogSchema = createInsertSchema(serviceCatalog).omit({ id: true });
@@ -545,6 +568,10 @@ export type PipelineStage = typeof pipelineStages.$inferSelect;
 export type InsertPipelineStage = z.infer<typeof insertPipelineStageSchema>;
 export type PipelineView = typeof pipelineViews.$inferSelect;
 export type InsertPipelineView = z.infer<typeof insertPipelineViewSchema>;
+export type TaskBoard = typeof taskBoards.$inferSelect;
+export type InsertTaskBoard = z.infer<typeof insertTaskBoardSchema>;
+export type TaskBoardMember = typeof taskBoardMembers.$inferSelect;
+export type InsertTaskBoardMember = z.infer<typeof insertTaskBoardMemberSchema>;
 export type TaskLabelDefinition = typeof taskLabelDefinitions.$inferSelect;
 export type InsertTaskLabelDefinition = z.infer<typeof insertTaskLabelDefinitionSchema>;
 export type TaskColumn = typeof taskColumns.$inferSelect;

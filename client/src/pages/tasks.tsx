@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Task, Lead, Client, ClientContact, User, InsertTask, insertTaskSchema, TaskLabelDefinition, TaskColumn } from "@shared/schema";
+import { Task, Lead, Client, ClientContact, User, InsertTask, insertTaskSchema, TaskLabelDefinition, TaskColumn, TaskBoard } from "@shared/schema";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,7 +74,23 @@ import {
   MoreHorizontal,
   Tag,
   Pencil,
+  Settings,
+  Globe,
+  Users,
+  Lock,
+  ChevronRight,
+  ArrowRight,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   DndContext,
   DragEndEvent,
@@ -451,6 +467,20 @@ function ColumnHeader({
   );
 }
 
+type BoardWithMeta = TaskBoard & { memberCount: number; myRole: string };
+type BoardMember = { id: number; boardId: number; userId: string; role: string; user: { id: string; firstName: string | null; lastName: string | null; email: string | null; profileImageUrl: string | null } };
+
+const VISIBILITY_ICONS = {
+  team: Globe,
+  invite: Users,
+  private: Lock,
+};
+const VISIBILITY_LABELS = {
+  team: "Team — everyone can access",
+  invite: "Invite-only — only invited members",
+  private: "Private — only you",
+};
+
 export default function TasksPage() {
   const searchParams = useSearch();
   const { toast } = useToast();
@@ -464,6 +494,21 @@ export default function TasksPage() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState("");
 
+  // Board state
+  const [selectedBoardId, setSelectedBoardId] = useState<number | null>(null);
+  const [isNewBoardOpen, setIsNewBoardOpen] = useState(false);
+  const [newBoardName, setNewBoardName] = useState("");
+  const [newBoardDescription, setNewBoardDescription] = useState("");
+  const [newBoardVisibility, setNewBoardVisibility] = useState<"team" | "invite" | "private">("team");
+  const [isBoardSettingsOpen, setIsBoardSettingsOpen] = useState(false);
+  const [editBoardName, setEditBoardName] = useState("");
+  const [editBoardDescription, setEditBoardDescription] = useState("");
+  const [editBoardVisibility, setEditBoardVisibility] = useState<"team" | "invite" | "private">("team");
+  const [deleteBoardConfirm, setDeleteBoardConfirm] = useState(false);
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [moveTaskId, setMoveTaskId] = useState<number | null>(null);
+  const [moveToBoardId, setMoveToBoardId] = useState<number | null>(null);
+
   // Column management state
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
@@ -476,8 +521,27 @@ export default function TasksPage() {
   const [editingLabelId, setEditingLabelId] = useState<number | null>(null);
   const [editingLabelName, setEditingLabelName] = useState("");
 
+  const { data: boards = [], isLoading: isLoadingBoards } = useQuery<BoardWithMeta[]>({
+    queryKey: ["/api/task-boards"],
+  });
+
+  const currentBoard = boards.find(b => b.id === selectedBoardId) ?? boards[0] ?? null;
+  const currentBoardId = currentBoard?.id;
+
+  useEffect(() => {
+    if (boards.length > 0 && selectedBoardId === null) {
+      setSelectedBoardId(boards[0].id);
+    }
+  }, [boards, selectedBoardId]);
+
   const { data: tasks = [], isLoading: isLoadingTasks } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
+    queryKey: ["/api/tasks", currentBoardId],
+    queryFn: async () => {
+      if (!currentBoardId) return [];
+      const res = await fetch(`/api/tasks?boardId=${currentBoardId}`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: !!currentBoardId,
   });
 
   useEffect(() => {
@@ -493,7 +557,24 @@ export default function TasksPage() {
   }, [tasks, isLoadingTasks, searchParams]);
 
   const { data: taskColumns = [], isLoading: isLoadingColumns } = useQuery<TaskColumn[]>({
-    queryKey: ["/api/task-columns"],
+    queryKey: ["/api/task-columns", currentBoardId],
+    queryFn: async () => {
+      if (!currentBoardId) return [];
+      const res = await fetch(`/api/task-columns?boardId=${currentBoardId}`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: !!currentBoardId,
+  });
+
+  const { data: boardMembers = [] } = useQuery<BoardMember[]>({
+    queryKey: ["/api/task-boards", currentBoardId, "members"],
+    queryFn: async () => {
+      if (!currentBoardId) return [];
+      const res = await fetch(`/api/task-boards/${currentBoardId}/members`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!currentBoardId,
   });
   const { data: labelDefs = [] } = useQuery<TaskLabelDefinition[]>({
     queryKey: ["/api/task-labels"],
@@ -534,11 +615,11 @@ export default function TasksPage() {
   // Task mutations
   const createMutation = useMutation({
     mutationFn: async (data: InsertTask) => {
-      const res = await apiRequest("POST", "/api/tasks", data);
+      const res = await apiRequest("POST", "/api/tasks", { ...data, boardId: currentBoardId });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentBoardId] });
       setIsAddOpen(false);
       addForm.reset();
       toast({ title: "Task created" });
@@ -551,7 +632,7 @@ export default function TasksPage() {
       return res.json();
     },
     onSuccess: (updated) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentBoardId] });
       setSelectedTask(updated);
     },
   });
@@ -562,7 +643,7 @@ export default function TasksPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentBoardId] });
     },
   });
 
@@ -571,7 +652,7 @@ export default function TasksPage() {
       await apiRequest("DELETE", `/api/tasks/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentBoardId] });
       setSelectedTask(null);
       toast({ title: "Task deleted" });
     },
@@ -588,24 +669,26 @@ export default function TasksPage() {
         sortOrder: maxOrder + 1,
         checklist: [],
         labels: [],
+        boardId: currentBoardId,
       });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentBoardId] });
     },
   });
 
   // Column mutations
   const createColumnMutation = useMutation({
     mutationFn: async (name: string) => {
-      const slug = name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+      // Use canonical slug (board-scoped columns no longer require globally unique slugs)
+      const slug = name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "") || `col_${Date.now()}`;
       const maxOrder = taskColumns.length > 0 ? Math.max(...taskColumns.map((c) => c.sortOrder ?? 0)) : -1;
-      const res = await apiRequest("POST", "/api/task-columns", { name, slug: slug || `col_${Date.now()}`, sortOrder: maxOrder + 1, isDefault: false });
+      const res = await apiRequest("POST", "/api/task-columns", { name, slug, sortOrder: maxOrder + 1, isDefault: false, boardId: currentBoardId });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/task-columns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/task-columns", currentBoardId] });
       setNewColumnName("");
       setIsAddingColumn(false);
       toast({ title: "Column added" });
@@ -618,7 +701,7 @@ export default function TasksPage() {
       const res = await apiRequest("PUT", `/api/task-columns/${id}`, { name });
       return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/task-columns"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/task-columns", currentBoardId] }),
     onError: () => toast({ title: "Failed to rename column", variant: "destructive" }),
   });
 
@@ -631,7 +714,7 @@ export default function TasksPage() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/task-columns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/task-columns", currentBoardId] });
       setDeleteColTarget(null);
       toast({ title: "Column deleted" });
     },
@@ -680,6 +763,92 @@ export default function TasksPage() {
       toast({ title: "Label deleted" });
     },
     onError: () => toast({ title: "Failed to delete label", variant: "destructive" }),
+  });
+
+  // Board mutations
+  const createBoardMutation = useMutation({
+    mutationFn: async (data: { name: string; description: string; visibility: string }) => {
+      const res = await apiRequest("POST", "/api/task-boards", data);
+      return res.json();
+    },
+    onSuccess: (board) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-boards"] });
+      setIsNewBoardOpen(false);
+      setNewBoardName("");
+      setNewBoardDescription("");
+      setNewBoardVisibility("team");
+      setSelectedBoardId(board.id);
+      toast({ title: "Board created" });
+    },
+    onError: () => toast({ title: "Failed to create board", variant: "destructive" }),
+  });
+
+  const updateBoardMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { name: string; description: string; visibility: string } }) => {
+      const res = await apiRequest("PUT", `/api/task-boards/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-boards"] });
+      setIsBoardSettingsOpen(false);
+      toast({ title: "Board updated" });
+    },
+    onError: () => toast({ title: "Failed to update board", variant: "destructive" }),
+  });
+
+  const deleteBoardMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/task-boards/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-boards"] });
+      setIsBoardSettingsOpen(false);
+      setDeleteBoardConfirm(false);
+      setSelectedBoardId(null);
+      toast({ title: "Board deleted" });
+    },
+    onError: () => toast({ title: "Failed to delete board", variant: "destructive" }),
+  });
+
+  const addMemberMutation = useMutation({
+    mutationFn: async ({ boardId, userId }: { boardId: number; userId: string }) => {
+      const res = await apiRequest("POST", `/api/task-boards/${boardId}/members`, { userId, role: "member" });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-boards", currentBoardId, "members"] });
+      setMemberSearchQuery("");
+      toast({ title: "Member added" });
+    },
+    onError: () => toast({ title: "Failed to add member", variant: "destructive" }),
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: async ({ boardId, userId }: { boardId: number; userId: string }) => {
+      await apiRequest("DELETE", `/api/task-boards/${boardId}/members/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/task-boards", currentBoardId, "members"] });
+      toast({ title: "Member removed" });
+    },
+    onError: () => toast({ title: "Failed to remove member", variant: "destructive" }),
+  });
+
+  const moveTaskMutation = useMutation({
+    mutationFn: async ({ taskId, boardId }: { taskId: number; boardId: number }) => {
+      const targetColumns = await fetch(`/api/task-columns?boardId=${boardId}`, { credentials: "include" }).then(r => r.json());
+      const firstCol = targetColumns[0];
+      const res = await apiRequest("PUT", `/api/tasks/${taskId}`, { boardId, status: firstCol?.slug ?? "todo" });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", currentBoardId] });
+      setMoveTaskId(null);
+      setMoveToBoardId(null);
+      setSelectedTask(null);
+      toast({ title: "Task moved to board" });
+    },
+    onError: () => toast({ title: "Failed to move task", variant: "destructive" }),
   });
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -761,7 +930,9 @@ export default function TasksPage() {
   const checklistDone = checklist.filter((i) => i.done).length;
   const checklistPct = checklist.length > 0 ? Math.round((checklistDone / checklist.length) * 100) : 0;
 
-  if (isLoadingTasks || isLoadingColumns) {
+  const VisibilityIcon = currentBoard ? VISIBILITY_ICONS[currentBoard.visibility as keyof typeof VISIBILITY_ICONS] : Globe;
+
+  if (isLoadingBoards) {
     return (
       <div className="p-8 space-y-6">
         <div className="flex justify-between items-center">
@@ -779,11 +950,67 @@ export default function TasksPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Board switcher bar */}
+      <div className="flex items-center gap-2 px-4 md:px-6 py-2 bg-muted/30 border-b overflow-x-auto shrink-0">
+        <div className="flex items-center gap-1 min-w-0">
+          {boards.map((board) => {
+            const VIcon = VISIBILITY_ICONS[board.visibility as keyof typeof VISIBILITY_ICONS];
+            return (
+              <button
+                key={board.id}
+                onClick={() => setSelectedBoardId(board.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
+                  board.id === currentBoardId
+                    ? "bg-background text-foreground shadow-sm border border-border"
+                    : "text-muted-foreground hover:text-foreground hover:bg-background/60"
+                )}
+                data-testid={`button-board-${board.id}`}
+              >
+                <VIcon className="h-3.5 w-3.5 shrink-0" />
+                {board.name}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-1 ml-auto shrink-0">
+          {currentBoard && currentBoard.myRole === "owner" && (
+            <button
+              onClick={() => {
+                setEditBoardName(currentBoard.name);
+                setEditBoardDescription(currentBoard.description ?? "");
+                setEditBoardVisibility(currentBoard.visibility as "team" | "invite" | "private");
+                setIsBoardSettingsOpen(true);
+              }}
+              className="h-7 w-7 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+              title="Board settings"
+              data-testid="button-board-settings"
+            >
+              <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          )}
+          <button
+            onClick={() => setIsNewBoardOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors whitespace-nowrap"
+            data-testid="button-new-board"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Board
+          </button>
+        </div>
+      </div>
+
       {/* Header */}
       <header className="flex items-center justify-between flex-wrap gap-3 px-4 md:px-6 py-4 bg-background border-b shadow-sm shrink-0">
         <div>
-          <h1 className="text-2xl font-heading font-bold">Tasks</h1>
-          <p className="text-sm text-muted-foreground">{tasks.length} task{tasks.length !== 1 ? "s" : ""} total</p>
+          <h1 className="text-2xl font-heading font-bold flex items-center gap-2">
+            {currentBoard && <VisibilityIcon className="h-5 w-5 text-muted-foreground" />}
+            {currentBoard?.name ?? "Tasks"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {isLoadingTasks ? "Loading…" : `${tasks.length} task${tasks.length !== 1 ? "s" : ""} total`}
+            {currentBoard?.visibility === "private" && <span className="ml-2 text-amber-600 dark:text-amber-400 font-medium">Private board</span>}
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
@@ -1662,6 +1889,39 @@ export default function TasksPage() {
                     </div>
                   )}
 
+                  {/* Move to another board */}
+                  {boards.length > 1 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Move to Board</p>
+                      <Select
+                        value={moveToBoardId?.toString() ?? ""}
+                        onValueChange={(v) => setMoveToBoardId(parseInt(v))}
+                      >
+                        <SelectTrigger className="h-9 text-sm" data-testid="select-move-board">
+                          <SelectValue placeholder="Select a board…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {boards.filter(b => b.id !== currentBoardId).map(b => (
+                            <SelectItem key={b.id} value={b.id.toString()}>{b.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {moveToBoardId && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full h-8"
+                          onClick={() => moveTaskMutation.mutate({ taskId: selectedTask.id, boardId: moveToBoardId })}
+                          disabled={moveTaskMutation.isPending}
+                          data-testid="button-move-task"
+                        >
+                          <ArrowRight className="h-3.5 w-3.5 mr-1.5" />
+                          Move Task
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
                   {/* Delete */}
                   <div className="pt-2 border-t border-border/50">
                     <Button
@@ -1682,6 +1942,230 @@ export default function TasksPage() {
           })()}
         </SheetContent>
       </Sheet>
+
+      {/* New Board Dialog */}
+      <Dialog open={isNewBoardOpen} onOpenChange={setIsNewBoardOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Board</DialogTitle>
+            <DialogDescription>Set up a new Kanban board with its own columns and tasks.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-board-name">Board Name</Label>
+              <Input
+                id="new-board-name"
+                placeholder="e.g. Sales Ops, Q2 Goals…"
+                value={newBoardName}
+                onChange={(e) => setNewBoardName(e.target.value)}
+                data-testid="input-new-board-name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-board-desc">Description (optional)</Label>
+              <Input
+                id="new-board-desc"
+                placeholder="Brief description…"
+                value={newBoardDescription}
+                onChange={(e) => setNewBoardDescription(e.target.value)}
+                data-testid="input-new-board-description"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Visibility</Label>
+              <RadioGroup value={newBoardVisibility} onValueChange={(v) => setNewBoardVisibility(v as "team" | "invite" | "private")} data-testid="radio-new-board-visibility">
+                {(["team", "invite", "private"] as const).map((vis) => {
+                  const VIcon = VISIBILITY_ICONS[vis];
+                  return (
+                    <div key={vis} className="flex items-start gap-2.5 p-2.5 rounded-lg border border-transparent hover:border-border hover:bg-muted/30 transition-colors">
+                      <RadioGroupItem value={vis} id={`vis-${vis}`} className="mt-0.5" />
+                      <Label htmlFor={`vis-${vis}`} className="cursor-pointer flex-1">
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <VIcon className="h-3.5 w-3.5" />
+                          {vis === "team" ? "Team" : vis === "invite" ? "Invite-only" : "Private"}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{VISIBILITY_LABELS[vis]}</p>
+                      </Label>
+                    </div>
+                  );
+                })}
+              </RadioGroup>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsNewBoardOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!newBoardName.trim() || createBoardMutation.isPending}
+              onClick={() => createBoardMutation.mutate({ name: newBoardName.trim(), description: newBoardDescription, visibility: newBoardVisibility })}
+              data-testid="button-create-board"
+            >
+              Create Board
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Board Settings Dialog */}
+      {currentBoard && (
+        <Dialog open={isBoardSettingsOpen} onOpenChange={setIsBoardSettingsOpen}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Board Settings</DialogTitle>
+              <DialogDescription>Manage settings for "{currentBoard.name}".</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-5 py-2">
+              <div className="space-y-1.5">
+                <Label>Board Name</Label>
+                <Input
+                  value={editBoardName}
+                  onChange={(e) => setEditBoardName(e.target.value)}
+                  data-testid="input-edit-board-name"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Description</Label>
+                <Input
+                  value={editBoardDescription}
+                  onChange={(e) => setEditBoardDescription(e.target.value)}
+                  placeholder="Optional description…"
+                  data-testid="input-edit-board-description"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Visibility</Label>
+                <RadioGroup value={editBoardVisibility} onValueChange={(v) => setEditBoardVisibility(v as "team" | "invite" | "private")}>
+                  {(["team", "invite", "private"] as const).map((vis) => {
+                    const VIcon = VISIBILITY_ICONS[vis];
+                    return (
+                      <div key={vis} className="flex items-start gap-2.5 p-2.5 rounded-lg border border-transparent hover:border-border hover:bg-muted/30 transition-colors">
+                        <RadioGroupItem value={vis} id={`edit-vis-${vis}`} className="mt-0.5" />
+                        <Label htmlFor={`edit-vis-${vis}`} className="cursor-pointer flex-1">
+                          <div className="flex items-center gap-1.5 font-medium">
+                            <VIcon className="h-3.5 w-3.5" />
+                            {vis === "team" ? "Team" : vis === "invite" ? "Invite-only" : "Private"}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">{VISIBILITY_LABELS[vis]}</p>
+                        </Label>
+                      </div>
+                    );
+                  })}
+                </RadioGroup>
+              </div>
+
+              {/* Members section — for invite-only boards owned by current user */}
+              {editBoardVisibility === "invite" && (
+                <div className="space-y-3">
+                  <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Members</Label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {boardMembers.map(m => (
+                      <div key={m.userId} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg border border-border/50 bg-muted/20">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarImage src={m.user.profileImageUrl ? `/api/users/${m.user.id}/avatar-img` : undefined} />
+                            <AvatarFallback className="text-[9px] bg-primary text-primary-foreground">{m.user.firstName?.[0]}{m.user.lastName?.[0]}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">{m.user.firstName} {m.user.lastName}</span>
+                          <Badge variant="outline" className="text-[10px] py-0">{m.role}</Badge>
+                        </div>
+                        {m.role !== "owner" && (
+                          <button
+                            onClick={() => removeMemberMutation.mutate({ boardId: currentBoardId!, userId: m.userId })}
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            data-testid={`button-remove-member-${m.userId}`}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {boardMembers.length === 0 && <p className="text-xs text-muted-foreground italic">No members yet.</p>}
+                  </div>
+                  {/* Add member search */}
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="Search users to add…"
+                      value={memberSearchQuery}
+                      onChange={(e) => setMemberSearchQuery(e.target.value)}
+                      className="h-8 text-sm"
+                      data-testid="input-member-search"
+                    />
+                    {memberSearchQuery && (
+                      <div className="border border-border rounded-lg overflow-hidden max-h-32 overflow-y-auto">
+                        {users
+                          .filter(u => {
+                            const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.toLowerCase();
+                            const isMember = boardMembers.some(m => m.userId === u.id);
+                            return !isMember && name.includes(memberSearchQuery.toLowerCase());
+                          })
+                          .slice(0, 5)
+                          .map(u => (
+                            <button
+                              key={u.id}
+                              className="flex items-center gap-2 px-3 py-2 w-full hover:bg-muted/50 transition-colors text-sm text-left"
+                              onClick={() => {
+                                addMemberMutation.mutate({ boardId: currentBoardId!, userId: u.id });
+                              }}
+                              data-testid={`button-add-member-${u.id}`}
+                            >
+                              <Avatar className="h-5 w-5">
+                                <AvatarFallback className="text-[8px] bg-muted">{u.firstName?.[0]}{u.lastName?.[0]}</AvatarFallback>
+                              </Avatar>
+                              {u.firstName} {u.lastName}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-border/50 pt-4">
+                {deleteBoardConfirm ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-destructive font-medium">Are you sure? This will permanently delete this board and all its columns. Tasks will be unassigned from this board.</p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setDeleteBoardConfirm(false)}>Cancel</Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => currentBoardId && deleteBoardMutation.mutate(currentBoardId)}
+                        disabled={deleteBoardMutation.isPending}
+                        data-testid="button-confirm-delete-board"
+                      >
+                        Delete Board
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setDeleteBoardConfirm(true)}
+                    data-testid="button-delete-board"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Board
+                  </Button>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsBoardSettingsOpen(false)}>Cancel</Button>
+              <Button
+                disabled={!editBoardName.trim() || updateBoardMutation.isPending}
+                onClick={() => currentBoardId && updateBoardMutation.mutate({
+                  id: currentBoardId,
+                  data: { name: editBoardName.trim(), description: editBoardDescription, visibility: editBoardVisibility },
+                })}
+                data-testid="button-save-board-settings"
+              >
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Mobile FAB — Add Task */}
       <button

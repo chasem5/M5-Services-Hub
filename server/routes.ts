@@ -17,6 +17,7 @@ import {
   insertLeadSchema,
   type InsertLead,
   insertTaskSchema, 
+  insertTaskBoardSchema,
   insertReminderSchema, 
   insertServiceCatalogSchema, 
   insertEstimateSchema, 
@@ -161,14 +162,14 @@ export async function registerRoutes(
   await storage.migrateParentClientColumn();
   await storage.migrateClientOnboardingChecklist();
   await storage.migrateLeadLossColumns();
+  // Multi-board task system: create tables, add columns, backfill data
+  await storage.migrateTaskBoards();
   // Seed default value tier settings
   await storage.getValueTierSettings();
   // Seed default contact stages on startup
   await storage.seedDefaultContactStages();
   // Seed default pipeline stages on startup
   await storage.seedDefaultPipelineStages();
-  // Seed default task columns on startup
-  await storage.seedDefaultTaskColumns();
   // Seed default role permissions and configs on startup
   await storage.seedDefaultPermissions();
   // One-time migration: promote existing admin users to super_admin
@@ -222,8 +223,10 @@ export async function registerRoutes(
     const startOfDay = new Date(now.setHours(0, 0, 0, 0));
     const endOfDay = new Date(now.setHours(23, 59, 59, 999));
     
-    const allTasks = await storage.listTasks();
-    const tasksDueToday = allTasks.filter(t => {
+    // Use listNonPrivateTasks without userId to get only team-board tasks (safe default)
+    // Then for each task with an assignee, check if that user can actually access the board
+    const teamTasks = await storage.listNonPrivateTasks();
+    const tasksDueToday = teamTasks.filter(t => {
       if (!t.dueDate) return false;
       const d = new Date(t.dueDate);
       return d >= startOfDay && d <= endOfDay && t.status !== 'done';
@@ -231,6 +234,11 @@ export async function registerRoutes(
 
     for (const task of tasksDueToday) {
       if (task.assignedTo) {
+        // Verify the assignee can access this board before sending notification
+        const canAccess = task.boardId
+          ? await storage.canUserAccessBoard(task.boardId, task.assignedTo)
+          : true; // NULL-boardId = legacy team task, always accessible
+        if (!canAccess) continue;
         await sendPushNotification(task.assignedTo, {
           title: "Deal Task Due Today",
           body: `Reminder: "${task.title}" is due today.`,
@@ -1663,6 +1671,7 @@ Do not include any other text, just the JSON.`,
             : "Client";
           const tomorrow = new Date();
           tomorrow.setDate(tomorrow.getDate() + 1);
+          const defaultBoardId = await storage.getDefaultBoardId();
           await storage.createTask({
             title: `Follow up on expired quote – ${clientName}`,
             description: `Quote "${lead.title}" has expired. Reach out to re-engage and discuss next steps.`,
@@ -1671,6 +1680,7 @@ Do not include any other text, just the JSON.`,
             assignedTo: lead.assignedTo ?? null,
             relatedLeadId: id,
             dueDate: tomorrow,
+            boardId: defaultBoardId ?? null,
           });
         }
       } catch (taskErr: any) {
@@ -1828,8 +1838,9 @@ Do not include any other text, just the JSON.`,
     const lead = await storage.getLead(id);
     if (!lead) return res.status(404).json({ message: "Lead not found" });
 
+    const userId = (req as any).user.claims.sub;
     const [leadTasks, activityLogs, company, contact, leadNotesList, linkedEmails] = await Promise.all([
-      storage.listTasks().then(t => t.filter(t => t.relatedLeadId === id).slice(0, 15)),
+      storage.listNonPrivateTasks(userId).then(t => t.filter(t => t.relatedLeadId === id).slice(0, 15)),
       storage.listActivityLogs("lead", id).then(a => a.slice(0, 15)),
       lead.clientId ? storage.getClient(lead.clientId) : Promise.resolve(undefined),
       lead.contactId ? storage.getClientContact(lead.contactId) : Promise.resolve(undefined),
@@ -1982,12 +1993,13 @@ Rules:
     const id = parseInt(req.params.id as string);
     const lead = await storage.getLead(id);
     if (!lead) return res.status(404).json({ message: "Lead not found" });
+    const userId = (req as any).user.claims.sub;
 
     const { completedTaskTitle } = z.object({ completedTaskTitle: z.string().min(1) }).parse(req.body);
 
     const [leadNotesList, leadTasks, company] = await Promise.all([
       storage.listLeadNotes(id).then(n => n.slice(0, 10)),
-      storage.listTasks().then(t => t.filter(t => t.relatedLeadId === id && t.status !== "done").slice(0, 5)),
+      storage.listNonPrivateTasks(userId).then(t => t.filter(t => t.relatedLeadId === id && t.status !== "done").slice(0, 5)),
       lead.clientId ? storage.getClient(lead.clientId) : Promise.resolve(undefined),
     ]);
 
@@ -2074,37 +2086,143 @@ Respond ONLY with JSON — no markdown:
     res.sendStatus(204);
   });
 
+  // Task Boards
+  app.get("/api/task-boards", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const boards = await storage.listTaskBoards(userId);
+    res.json(boards);
+  });
+
+  app.post("/api/task-boards", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const data = insertTaskBoardSchema.parse({ ...req.body, createdBy: userId });
+    const board = await storage.createTaskBoard(data);
+    res.json(board);
+  });
+
+  app.put("/api/task-boards/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const userId = (req as any).user.claims.sub;
+    const board = await storage.getTaskBoard(id);
+    if (!board) return res.status(404).json({ message: "Board not found" });
+    if (board.createdBy !== userId) return res.status(403).json({ message: "Only the board owner can update it" });
+    const data = insertTaskBoardSchema.partial().parse(req.body);
+    const updated = await storage.updateTaskBoard(id, data);
+    res.json(updated);
+  });
+
+  app.delete("/api/task-boards/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const userId = (req as any).user.claims.sub;
+    const board = await storage.getTaskBoard(id);
+    if (!board) return res.status(404).json({ message: "Board not found" });
+    if (board.createdBy !== userId) return res.status(403).json({ message: "Only the board owner can delete it" });
+    await storage.deleteTaskBoard(id);
+    res.sendStatus(204);
+  });
+
+  app.get("/api/task-boards/:id/members", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const userId = (req as any).user.claims.sub;
+    const canAccess = await storage.canUserAccessBoard(id, userId);
+    if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    const members = await storage.getTaskBoardMembers(id);
+    res.json(members);
+  });
+
+  app.post("/api/task-boards/:id/members", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const userId = (req as any).user.claims.sub;
+    const board = await storage.getTaskBoard(id);
+    if (!board) return res.status(404).json({ message: "Board not found" });
+    if (board.createdBy !== userId) return res.status(403).json({ message: "Only the board owner can manage members" });
+    const { userId: targetUserId, role } = z.object({ userId: z.string(), role: z.enum(["owner", "member"]).optional().default("member") }).parse(req.body);
+    const member = await storage.addTaskBoardMember(id, targetUserId, role);
+    res.json(member);
+  });
+
+  app.delete("/api/task-boards/:id/members/:userId", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const targetUserId = req.params.userId as string;
+    const requestUserId = (req as any).user.claims.sub;
+    const board = await storage.getTaskBoard(id);
+    if (!board) return res.status(404).json({ message: "Board not found" });
+    if (board.createdBy !== requestUserId) return res.status(403).json({ message: "Only the board owner can manage members" });
+    await storage.removeTaskBoardMember(id, targetUserId);
+    res.sendStatus(204);
+  });
+
   // Tasks
   app.get("/api/tasks", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
     const scopedUserId = await getScopedUserId(req, "tasks");
-    const tasks = await storage.listTasks(scopedUserId);
+    const boardIdParam = req.query.boardId ? parseInt(req.query.boardId as string) : undefined;
+
+    if (boardIdParam !== undefined) {
+      const canAccess = await storage.canUserAccessBoard(boardIdParam, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
+      const tasks = await storage.listTasks(scopedUserId, boardIdParam);
+      return res.json(tasks);
+    }
+
+    // No boardId filter: return tasks from boards the user can access
+    const tasks = await storage.listVisibleTasks(userId, scopedUserId);
     res.json(tasks);
   });
 
   app.post("/api/tasks", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
     const taskData = insertTaskSchema.extend({ dueDate: z.coerce.date().optional().nullable() }).parse(req.body);
+    if (taskData.boardId) {
+      const canAccess = await storage.canUserAccessBoard(taskData.boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied to this board" });
+    }
     const task = await storage.createTask(taskData);
     await logActivity(req, "task", task.id, "created");
     res.json(task);
   });
 
   app.get("/api/tasks/:id", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
     const id = parseInt(req.params.id as string);
     const task = await storage.getTask(id);
     if (!task) return res.status(404).json({ message: "Task not found" });
+    if (task.boardId) {
+      const canAccess = await storage.canUserAccessBoard(task.boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    }
     res.json(task);
   });
 
   app.put("/api/tasks/:id", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
     const id = parseInt(req.params.id as string);
+    const existing = await storage.getTask(id);
+    if (!existing) return res.status(404).json({ message: "Task not found" });
+    if (existing.boardId) {
+      const canAccess = await storage.canUserAccessBoard(existing.boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    }
     const taskData = insertTaskSchema.extend({ dueDate: z.coerce.date().optional().nullable() }).partial().parse(req.body);
+    // If moving to a new board, verify access to target board too
+    if (taskData.boardId && taskData.boardId !== existing.boardId) {
+      const canAccess = await storage.canUserAccessBoard(taskData.boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied to target board" });
+    }
     const task = await storage.updateTask(id, taskData);
     await logActivity(req, "task", task.id, "updated", taskData);
     res.json(task);
   });
 
   app.patch("/api/tasks/:id/move", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
     const id = parseInt(req.params.id as string);
+    const existing = await storage.getTask(id);
+    if (!existing) return res.status(404).json({ message: "Task not found" });
+    if (existing.boardId) {
+      const canAccess = await storage.canUserAccessBoard(existing.boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    }
     const { status, sortOrder } = z.object({
       status: z.string(),
       sortOrder: z.number(),
@@ -2114,7 +2232,14 @@ Respond ONLY with JSON — no markdown:
   });
 
   app.delete("/api/tasks/:id", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
     const id = parseInt(req.params.id as string);
+    const existing = await storage.getTask(id);
+    if (!existing) return res.status(404).json({ message: "Task not found" });
+    if (existing.boardId) {
+      const canAccess = await storage.canUserAccessBoard(existing.boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    }
     await storage.deleteTask(id);
     res.sendStatus(204);
   });
@@ -2145,30 +2270,62 @@ Respond ONLY with JSON — no markdown:
   });
 
   // Task Columns
-  app.get("/api/task-columns", isAuthenticated, async (_req, res) => {
-    const cols = await storage.listTaskColumns();
-    res.json(cols);
+  app.get("/api/task-columns", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
+    const boardId = req.query.boardId ? parseInt(req.query.boardId as string) : undefined;
+    if (boardId !== undefined) {
+      const canAccess = await storage.canUserAccessBoard(boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
+      const cols = await storage.listTaskColumns(boardId);
+      return res.json(cols);
+    }
+    // Unscoped: only return columns from boards accessible to this user
+    const accessibleBoards = await storage.listTaskBoards(userId);
+    const accessibleBoardIds = accessibleBoards.map(b => b.id);
+    if (accessibleBoardIds.length === 0) return res.json([]);
+    const allCols = await storage.listTaskColumns();
+    const visible = allCols.filter(c => !c.boardId || accessibleBoardIds.includes(c.boardId));
+    res.json(visible);
   });
 
   app.post("/api/task-columns", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
     const data = insertTaskColumnSchema.parse(req.body);
+    if (data.boardId) {
+      const canAccess = await storage.canUserAccessBoard(data.boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied to this board" });
+    }
     const col = await storage.createTaskColumn(data);
     res.json(col);
   });
 
   app.put("/api/task-columns/:id", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
     const id = parseInt(req.params.id as string);
+    const existingCols = await storage.listTaskColumns();
+    const existing = existingCols.find((c) => c.id === id);
+    if (!existing) return res.status(404).json({ message: "Column not found" });
+    if (existing.boardId) {
+      const canAccess = await storage.canUserAccessBoard(existing.boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    }
     const data = insertTaskColumnSchema.partial().parse(req.body);
     const col = await storage.updateTaskColumn(id, data);
     res.json(col);
   });
 
   app.delete("/api/task-columns/:id", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user.claims.sub;
     const id = parseInt(req.params.id as string);
     const col = await storage.listTaskColumns();
     const target = col.find((c) => c.id === id);
+    if (!target) return res.status(404).json({ message: "Column not found" });
     if (target?.isDefault) {
       return res.status(400).json({ message: "Cannot delete a default column." });
+    }
+    if (target.boardId) {
+      const canAccess = await storage.canUserAccessBoard(target.boardId, userId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
     }
     await storage.deleteTaskColumn(id);
     res.sendStatus(204);
@@ -2399,6 +2556,7 @@ If after translating all commits you still have nothing meaningful, return an em
 
       if (data.type === "task" && data.title) {
         const { insertTaskSchema } = await import("@shared/schema");
+        const announcementDefaultBoardId = await storage.getDefaultBoardId();
         for (const targetUserId of targetIds) {
           const taskData = insertTaskSchema.parse({
             title: data.title,
@@ -2406,6 +2564,7 @@ If after translating all commits you still have nothing meaningful, return an em
             assignedTo: targetUserId,
             priority: data.priority === "urgent" ? "high" : "medium",
             status: "todo",
+            boardId: announcementDefaultBoardId ?? null,
           });
           await storage.createTask(taskData);
         }
@@ -3981,6 +4140,7 @@ Respond with this JSON:
     const email = await storage.getEmailMessage(id);
     if (!email) return res.status(404).json({ message: "Email not found" });
 
+    const emailDefaultBoardId = await storage.getDefaultBoardId();
     const created = [];
     for (const t of taskList) {
       const dueDate = t.dueInDays ? new Date(Date.now() + t.dueInDays * 86400000) : null;
@@ -3995,6 +4155,7 @@ Respond with this JSON:
         description: `Created from email: "${email.subject}"`,
         labels: [],
         checklist: [],
+        boardId: emailDefaultBoardId ?? null,
       });
       created.push(task);
     }
@@ -5772,6 +5933,7 @@ Respond with this JSON:
               const clientName = matchedClient?.name ?? (allClients.find((c: any) => c.id === existingLead.clientId)?.name) ?? "Client";
               const tomorrow = new Date();
               tomorrow.setDate(tomorrow.getDate() + 1);
+              const bopsDefaultBoardId = await storage.getDefaultBoardId();
               await storage.createTask({
                 title: `Follow up on expired quote – ${clientName}`,
                 description: `Quote "${quoteTitle}" has expired. Reach out to re-engage and discuss next steps.`,
@@ -5780,6 +5942,7 @@ Respond with this JSON:
                 assignedTo: existingLead.assignedTo ?? null,
                 relatedLeadId: existingLead.id,
                 dueDate: tomorrow,
+                boardId: bopsDefaultBoardId ?? null,
               });
             }
           }
@@ -5810,6 +5973,7 @@ Respond with this JSON:
             const clientName = matchedClient?.name ?? "Client";
             const tomorrow = new Date();
             tomorrow.setDate(tomorrow.getDate() + 1);
+            const bopsNewDefaultBoardId = await storage.getDefaultBoardId();
             await storage.createTask({
               title: `Follow up on expired quote – ${clientName}`,
               description: `Quote "${quoteTitle}" has expired. Reach out to re-engage and discuss next steps.`,
@@ -5818,6 +5982,7 @@ Respond with this JSON:
               assignedTo: null,
               relatedLeadId: newLead.id,
               dueDate: tomorrow,
+              boardId: bopsNewDefaultBoardId ?? null,
             });
           }
         }
@@ -6047,8 +6212,8 @@ Respond with this JSON:
       }
 
       // ── Section F: Expired quotes needing follow-up ────────────────────────
-      const { tasks: tasksTable } = await import("@shared/schema");
-      const allOpenTasks = await db.select().from(tasksTable);
+      const pulseUserId = (req as any).user.claims.sub;
+      const allOpenTasks = await storage.listNonPrivateTasks(pulseUserId);
       const expiredLeads = allLeads.filter((l: any) => l.stage === "expired" && l.clientId);
 
       for (const lead of expiredLeads) {
