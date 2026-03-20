@@ -30,7 +30,7 @@ import {
   ClipboardList,
   Paperclip,
   X,
-  Map,
+  Map as MapIcon,
   Linkedin,
   AlertCircle,
   RefreshCw,
@@ -3748,7 +3748,7 @@ export default function ClientDetail() {
                 <Card className="border-none shadow-sm bg-card">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center gap-2">
-                      <Map className="h-5 w-5 text-primary" />
+                      <MapIcon className="h-5 w-5 text-primary" />
                       Portfolio Map
                     </CardTitle>
                     <CardDescription>
