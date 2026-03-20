@@ -29,6 +29,7 @@ import {
   roleConfigs,
   rolePermissions,
   emailMessages,
+  emailThreadNotes,
   dismissedSenders,
   leadNotes,
   announcements,
@@ -120,6 +121,8 @@ import {
   type RolePermission,
   type EmailMessage,
   type InsertEmailMessage,
+  type EmailThreadNote,
+  type InsertEmailThreadNote,
   type LeadNote,
   type InsertLeadNote,
   type Announcement,
@@ -359,6 +362,14 @@ export interface IStorage {
   upsertEmailMessage(data: InsertEmailMessage): Promise<EmailMessage>;
   updateEmailMessage(id: number, data: Partial<InsertEmailMessage>): Promise<EmailMessage>;
   listUnrespondedInboundEmails(olderThanDays: number, userId: string): Promise<EmailMessage[]>;
+  bulkAssignEmailThreads(gmailThreadIds: string[], assignedUserId: string): Promise<void>;
+  migrateEmailMessageColumns(): Promise<void>;
+
+  // Email Thread Notes
+  listEmailThreadNotes(gmailThreadId: string): Promise<(EmailThreadNote & { userName: string })[]>;
+  createEmailThreadNote(data: InsertEmailThreadNote): Promise<EmailThreadNote>;
+  getEmailThreadNote(id: number): Promise<EmailThreadNote | undefined>;
+  deleteEmailThreadNote(id: number): Promise<void>;
 
   // Dismissed Senders
   getDismissedSenders(userId: string): Promise<DismissedSender[]>;
@@ -2418,6 +2429,8 @@ export class DatabaseStorage implements IStorage {
     if (!filters?.includeDismissed) {
       conditions.push(eq(emailMessages.isDismissed, false));
     }
+    // Always exclude suppressed (auto-filtered noise)
+    conditions.push(eq(emailMessages.isSuppressed, false));
     let query = db.select().from(emailMessages).orderBy(desc(emailMessages.receivedAt)) as any;
     if (conditions.length > 0) {
       query = query.where(and(...conditions));
@@ -2489,6 +2502,56 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return results;
+  }
+
+  async bulkAssignEmailThreads(gmailThreadIds: string[], assignedUserId: string): Promise<void> {
+    if (gmailThreadIds.length === 0) return;
+    await db.update(emailMessages)
+      .set({ assignedUserId })
+      .where(inArray(emailMessages.gmailThreadId, gmailThreadIds));
+  }
+
+  async migrateEmailMessageColumns(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS assigned_user_id varchar REFERENCES users(id)`);
+      await db.execute(sql`ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS request_type varchar`);
+      await db.execute(sql`ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS is_suppressed boolean NOT NULL DEFAULT false`);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS email_thread_notes (
+          id serial PRIMARY KEY,
+          gmail_thread_id varchar NOT NULL,
+          user_id varchar REFERENCES users(id) NOT NULL,
+          content text NOT NULL,
+          created_at timestamp DEFAULT now() NOT NULL
+        )
+      `);
+    } catch (e: any) {
+      console.log("[migration] email_message columns/email_thread_notes:", e.message);
+    }
+  }
+
+  // Email Thread Notes
+  async listEmailThreadNotes(gmailThreadId: string): Promise<(EmailThreadNote & { userName: string })[]> {
+    const notes = await db.select().from(emailThreadNotes)
+      .where(eq(emailThreadNotes.gmailThreadId, gmailThreadId))
+      .orderBy(emailThreadNotes.createdAt);
+    const allUsers = await db.select().from(users);
+    const userMap = new Map(allUsers.map(u => [u.id, `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || u.id]));
+    return notes.map(n => ({ ...n, userName: userMap.get(n.userId) ?? n.userId }));
+  }
+
+  async createEmailThreadNote(data: InsertEmailThreadNote): Promise<EmailThreadNote> {
+    const [note] = await db.insert(emailThreadNotes).values(data).returning();
+    return note;
+  }
+
+  async getEmailThreadNote(id: number): Promise<EmailThreadNote | undefined> {
+    const [note] = await db.select().from(emailThreadNotes).where(eq(emailThreadNotes.id, id));
+    return note;
+  }
+
+  async deleteEmailThreadNote(id: number): Promise<void> {
+    await db.delete(emailThreadNotes).where(eq(emailThreadNotes.id, id));
   }
 
   // Dismissed Senders

@@ -355,8 +355,23 @@ export const emailMessages = pgTable("email_messages", {
   isProcessed: boolean("is_processed").default(false).notNull(),
   isDismissed: boolean("is_dismissed").default(false).notNull(),
   autoLinked: boolean("auto_linked").default(false).notNull(),
+  assignedUserId: varchar("assigned_user_id").references(() => users.id),
+  requestType: varchar("request_type"), // quote_request|support_issue|complaint|general_inquiry|follow_up|other
+  isSuppressed: boolean("is_suppressed").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const emailThreadNotes = pgTable("email_thread_notes", {
+  id: serial("id").primaryKey(),
+  gmailThreadId: varchar("gmail_thread_id").notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertEmailThreadNoteSchema = createInsertSchema(emailThreadNotes).omit({ id: true, createdAt: true });
+export type EmailThreadNote = typeof emailThreadNotes.$inferSelect;
+export type InsertEmailThreadNote = z.infer<typeof insertEmailThreadNoteSchema>;
 
 export const attachments = pgTable("attachments", {
   id: serial("id").primaryKey(),

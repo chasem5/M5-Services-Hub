@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -18,7 +19,7 @@ import {
   Mail, RefreshCw, AlertCircle, Bell, ArrowDownLeft, ArrowUpRight,
   Plus, TrendingUp, MoreVertical, X, UserPlus, Zap, Building2,
   ChevronRight, ChevronLeft, Clock, Eye, EyeOff, Search, Users, ChevronDown, ChevronUp, Ban,
-  ThumbsUp, ThumbsDown, Check, ChevronsUpDown, Pencil,
+  ThumbsUp, ThumbsDown, Check, ChevronsUpDown, Pencil, Tag, MessageSquare, UserCheck, ArrowRightLeft, SortAsc, Trash2,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -67,6 +68,8 @@ interface EmailMessage {
   isProcessed: boolean;
   isDismissed: boolean;
   autoLinked: boolean;
+  assignedUserId: string | null;
+  requestType: string | null;
 }
 
 interface DismissedSender {
@@ -88,8 +91,10 @@ interface EmailThread {
 interface Client { id: number; name: string; }
 interface Lead { id: number; title: string; clientId: number | null; }
 interface Contact { id: number; name: string; email: string | null; clientId: number | null; }
+interface DirectoryUser { id: string; firstName: string | null; lastName: string | null; email: string; role: string; }
+interface ThreadNote { id: number; gmailThreadId: string; userId: string; content: string; createdAt: string; userName: string; }
 
-function groupIntoThreads(emails: EmailMessage[]): EmailThread[] {
+function groupIntoThreads(emails: EmailMessage[], sortMode: "newest" | "needs_action" = "newest"): EmailThread[] {
   const map = new Map<string, EmailMessage[]>();
   for (const e of emails) {
     if (!map.has(e.gmailThreadId)) map.set(e.gmailThreadId, []);
@@ -109,6 +114,26 @@ function groupIntoThreads(emails: EmailMessage[]): EmailThread[] {
       requiresResponse: messages.some(m => m.requiresResponse && !m.followUpReminderCreated),
       hasCC: messages.some(m => m.direction === "cc"),
     });
+  }
+  if (sortMode === "needs_action") {
+    // Sort "needs action" threads by oldest unanswered inbound first, others after
+    const needsAction = threads.filter(t => t.requiresResponse);
+    const rest = threads.filter(t => !t.requiresResponse);
+    needsAction.sort((a, b) => {
+      const oldestUnanswered = (thread: EmailThread) => {
+        const outboundTimes = thread.messages.filter(m => m.direction === "outbound").map(m => new Date(m.receivedAt).getTime());
+        const latestOutbound = outboundTimes.length > 0 ? Math.max(...outboundTimes) : 0;
+        const unansweredInbound = thread.messages.filter(m => m.direction === "inbound" && new Date(m.receivedAt).getTime() > latestOutbound);
+        if (unansweredInbound.length === 0) {
+          const inbound = thread.messages.filter(m => m.direction === "inbound");
+          return inbound.length > 0 ? Math.min(...inbound.map(m => new Date(m.receivedAt).getTime())) : new Date(thread.latestMessage.receivedAt).getTime();
+        }
+        return Math.min(...unansweredInbound.map(m => new Date(m.receivedAt).getTime()));
+      };
+      return oldestUnanswered(a) - oldestUnanswered(b);
+    });
+    rest.sort((a, b) => new Date(b.latestMessage.receivedAt).getTime() - new Date(a.latestMessage.receivedAt).getTime());
+    return [...needsAction, ...rest];
   }
   return threads.sort((a, b) => new Date(b.latestMessage.receivedAt).getTime() - new Date(a.latestMessage.receivedAt).getTime());
 }
@@ -158,9 +183,10 @@ function EmailBodyRenderer({ body }: { body: string }) {
   );
 }
 
-function ThreadRow({ thread, clients, isSelected, isChecked, showCheckboxes, onSelect, onToggleCheck }: {
+function ThreadRow({ thread, clients, directoryUsers, isSelected, isChecked, showCheckboxes, onSelect, onToggleCheck }: {
   thread: EmailThread;
   clients: Client[];
+  directoryUsers: DirectoryUser[];
   isSelected: boolean;
   isChecked: boolean;
   showCheckboxes: boolean;
@@ -240,6 +266,20 @@ function ThreadRow({ thread, clients, isSelected, isChecked, showCheckboxes, onS
         {latest.isDismissed && (
           <span className="text-xs text-gray-400 italic">dismissed</span>
         )}
+        {latest.assignedUserId && (() => {
+          const assignee = directoryUsers.find(u => u.id === latest.assignedUserId);
+          const name = assignee ? `${assignee.firstName ?? ""} ${assignee.lastName ?? ""}`.trim() || assignee.email : "Assigned";
+          return (
+            <span className="inline-flex items-center gap-0.5 text-xs text-blue-600 bg-blue-50 border border-blue-100 rounded px-1 py-0">
+              <UserCheck className="h-2.5 w-2.5" /> {name}
+            </span>
+          );
+        })()}
+        {latest.requestType && (
+          <span className="inline-flex items-center gap-0.5 text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-1 py-0">
+            <Tag className="h-2.5 w-2.5" /> {latest.requestType.replace(/_/g, " ")}
+          </span>
+        )}
         {(() => {
           const hasLead = thread.messages.some(m => m.leadId);
           if (!hasLead || latest.direction !== "inbound") return null;
@@ -264,12 +304,14 @@ function ThreadRow({ thread, clients, isSelected, isChecked, showCheckboxes, onS
 
 export default function EmailSyncPage() {
   const { toast } = useToast();
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id;
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   // Prevents auto-select from overriding the user's explicit "Back" tap on mobile
   const [mobileDeselected, setMobileDeselected] = useState(false);
   const [showDismissed, setShowDismissed] = useState(false);
   const [viewFilter, setViewFilter] = useState<"all" | "customers" | "other">("customers");
-  const [needsResponseOnly, setNeedsResponseOnly] = useState(false);
+  const [needsResponseOnly, setNeedsResponseOnly] = useState(true);
   const [hasTasksOnly, setHasTasksOnly] = useState(false);
   const [unlinkedOnly, setUnlinkedOnly] = useState(false);
   const [showBlockedSenders, setShowBlockedSenders] = useState(false);
@@ -298,6 +340,22 @@ export default function EmailSyncPage() {
   const [quickClientName, setQuickClientName] = useState("");
   const [quickClientIndustry, setQuickClientIndustry] = useState("");
   const [quickClientEmailForLink, setQuickClientEmailForLink] = useState<number | null>(null);
+  // New M5 overhaul state
+  const [sortMode, setSortMode] = useState<"newest" | "needs_action">(() => {
+    const saved = localStorage.getItem("emailSortMode");
+    return saved === "newest" || saved === "needs_action" ? saved : "needs_action";
+  });
+  const [assigneeFilter, setAssigneeFilter] = useState<"all" | "mine" | "unassigned">("all");
+  const [handoffDialogOpen, setHandoffDialogOpen] = useState(false);
+  const [handoffFromUserId, setHandoffFromUserId] = useState("");
+  const [handoffToUserId, setHandoffToUserId] = useState("");
+  const [handoffPreviewThreads, setHandoffPreviewThreads] = useState<{ gmailThreadId: string; subject: string; clientId: number | null; receivedAt: string; requiresResponse: boolean; openTaskCount: number }[]>([]);
+  const [handoffSelectedThreadIds, setHandoffSelectedThreadIds] = useState<Set<string>>(new Set());
+  const [handoffLoading, setHandoffLoading] = useState(false);
+  const [newNoteContent, setNewNoteContent] = useState("");
+  const [showNotesPanel, setShowNotesPanel] = useState(false);
+  const [requestTypeFilter, setRequestTypeFilter] = useState<string>("");
+  const [showSuppressedManagement, setShowSuppressedManagement] = useState(false);
 
   const { data: emails = [], isLoading } = useQuery<EmailMessage[]>({
     queryKey: ["/api/email-messages", "all"],
@@ -316,14 +374,46 @@ export default function EmailSyncPage() {
     queryKey: ["/api/email/sync-status"],
     refetchInterval: 60000,
   });
+  const { data: myPerms } = useQuery<{ role: string; permissions: Record<string, string>; isSuperAdmin: boolean }>({
+    queryKey: ["/api/my-permissions"],
+  });
+  const isAdminOrAbove = myPerms?.role === "super_admin" || myPerms?.role === "admin";
+  const { data: directoryUsers = [] } = useQuery<DirectoryUser[]>({
+    queryKey: ["/api/users/directory"],
+    enabled: isAdminOrAbove || myPerms?.role === "manager",
+  });
+  const { data: threadNotes = [] } = useQuery<ThreadNote[]>({
+    queryKey: ["/api/email-thread-notes", selectedThreadId],
+    queryFn: () => selectedThreadId
+      ? fetch(`/api/email-thread-notes/${selectedThreadId}`, { credentials: "include" }).then(r => r.json())
+      : Promise.resolve([]),
+    enabled: !!selectedThreadId && showNotesPanel,
+  });
+  const { data: suppressedSenders = [] } = useQuery<{ email: string; count: number; latestSubject: string; latestDate: string }[]>({
+    queryKey: ["/api/email/suppressed-senders"],
+    queryFn: () => fetch("/api/email/suppressed-senders", { credentials: "include" }).then(r => r.json()),
+    enabled: isAdminOrAbove && showSuppressedManagement,
+  });
+  const restoreSuppressedMutation = useMutation({
+    mutationFn: (senderEmail: string) => apiRequest("POST", "/api/email/restore-suppressed", { senderEmail }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/suppressed-senders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] });
+      toast({ title: "Sender restored" });
+    },
+    onError: () => toast({ title: "Failed to restore sender", variant: "destructive" }),
+  });
 
   const activeEmails = emails.filter(e => showDismissed ? e.isDismissed : !e.isDismissed);
-  const allThreads = groupIntoThreads(activeEmails);
+  const allThreads = groupIntoThreads(activeEmails, sortMode);
 
   const filteredThreads = allThreads.filter(thread => {
     if (needsResponseOnly && !thread.requiresResponse) return false;
     if (hasTasksOnly && !thread.messages.some(m => m.aiSuggestedTasks && m.aiSuggestedTasks.length > 0)) return false;
     if (unlinkedOnly && thread.messages.some(m => m.clientId !== null || m.leadId !== null)) return false;
+    if (requestTypeFilter && !thread.messages.some(m => m.requestType === requestTypeFilter)) return false;
+    if (assigneeFilter === "mine" && !thread.messages.some(m => m.assignedUserId === currentUserId)) return false;
+    if (assigneeFilter === "unassigned" && thread.messages.some(m => m.assignedUserId)) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       return thread.messages.some(m => {
@@ -349,11 +439,17 @@ export default function EmailSyncPage() {
   // until they explicitly select a thread again.
   // Desktop: always auto-selects so the center panel is never empty.
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const threadParam = params.get("thread");
+    if (threadParam && visibleThreads.find(t => t.threadId === threadParam)) {
+      setSelectedThreadId(threadParam);
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
+    }
     if (visibleThreads.length === 0) {
       setSelectedThreadId(null);
       return;
     }
-    // On mobile, respect the user's explicit "Back" choice
     if (isMobileViewport && mobileDeselected) return;
     if (!selectedThreadId || !visibleThreads.find(t => t.threadId === selectedThreadId)) {
       setSelectedThreadId(visibleThreads[0].threadId);
@@ -546,6 +642,59 @@ export default function EmailSyncPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] }),
   });
 
+  const assignThreadMutation = useMutation({
+    mutationFn: ({ id, assignedUserId }: { id: number; assignedUserId: string | null }) =>
+      apiRequest("PATCH", `/api/email-messages/${id}/assign`, { assignedUserId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] });
+      toast({ title: "Thread assigned" });
+    },
+    onError: () => toast({ title: "Failed to assign thread", variant: "destructive" }),
+  });
+
+  const requestTypeMutation = useMutation({
+    mutationFn: ({ id, requestType }: { id: number; requestType: string | null }) =>
+      apiRequest("PATCH", `/api/email-messages/${id}/request-type`, { requestType }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] });
+      toast({ title: "Request type updated" });
+    },
+    onError: () => toast({ title: "Failed to update request type", variant: "destructive" }),
+  });
+
+  const createNoteMutation = useMutation({
+    mutationFn: ({ gmailThreadId, content }: { gmailThreadId: string; content: string }) =>
+      apiRequest("POST", "/api/email-thread-notes", { gmailThreadId, content }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-thread-notes", selectedThreadId] });
+      setNewNoteContent("");
+      toast({ title: "Note added" });
+    },
+    onError: () => toast({ title: "Failed to add note", variant: "destructive" }),
+  });
+
+  const deleteNoteMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/email-thread-notes/${id}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-thread-notes", selectedThreadId] });
+      toast({ title: "Note deleted" });
+    },
+    onError: () => toast({ title: "Failed to delete note", variant: "destructive" }),
+  });
+
+  const handoffMutation = useMutation({
+    mutationFn: ({ fromUserId, toUserId, gmailThreadIds }: { fromUserId: string; toUserId: string; gmailThreadIds: string[] }) =>
+      apiRequest("POST", "/api/email/handoff", { fromUserId, toUserId, gmailThreadIds }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-messages"] });
+      setHandoffDialogOpen(false);
+      setHandoffFromUserId("");
+      setHandoffToUserId("");
+      toast({ title: `${data.count} thread${data.count !== 1 ? "s" : ""} reassigned` });
+    },
+    onError: (e: any) => toast({ title: "Handoff failed", description: e.message, variant: "destructive" }),
+  });
+
   const bulkBlockSenders = async () => {
     const toBlock = Array.from(selectedThreadIds).map(tid => {
       const thread = threads.find(t => t.threadId === tid);
@@ -603,29 +752,6 @@ export default function EmailSyncPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
-            onClick={() => {
-              if (primaryEmail) setQuickClientEmailForLink(primaryEmail.id);
-              setQuickClientDialogOpen(true);
-            }}
-            className="gap-1.5 h-8 text-sm px-2 sm:px-3"
-            data-testid="button-new-company"
-            title="New Company"
-          >
-            <Building2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">New Company</span>
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setAddContactDialogOpen(true)}
-            className="gap-1.5 h-8 text-sm px-2 sm:px-3"
-            data-testid="button-new-contact"
-            title="New Contact"
-          >
-            <UserPlus className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">New Contact</span>
-          </Button>
-          <Button
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending}
             className="gap-2 bg-primary hover:bg-primary/90 text-white h-8 text-sm px-2 sm:px-4"
@@ -634,6 +760,47 @@ export default function EmailSyncPage() {
             <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">{syncMutation.isPending ? "Syncing..." : "Sync Now"}</span>
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" data-testid="button-email-actions-menu">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem
+                onClick={() => {
+                  if (primaryEmail) setQuickClientEmailForLink(primaryEmail.id);
+                  setQuickClientDialogOpen(true);
+                }}
+                data-testid="menu-new-company"
+              >
+                <Building2 className="h-3.5 w-3.5 mr-2 text-gray-500" /> New Company
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setAddContactDialogOpen(true)}
+                data-testid="menu-new-contact"
+              >
+                <UserPlus className="h-3.5 w-3.5 mr-2 text-gray-500" /> New Contact
+              </DropdownMenuItem>
+              {isAdminOrAbove && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => setHandoffDialogOpen(true)}
+                    data-testid="menu-handoff"
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5 mr-2 text-gray-500" /> Employee Handoff
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setShowSuppressedManagement(true)}
+                    data-testid="menu-suppressed"
+                  >
+                    <Ban className="h-3.5 w-3.5 mr-2 text-gray-500" /> Manage Suppressed
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -641,6 +808,38 @@ export default function EmailSyncPage() {
       <div className="px-5 py-2 border-b border-gray-100 bg-white shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap flex-1">
+            {/* Sort mode toggle */}
+            <button
+              onClick={() => setSortMode(prev => { const next = prev === "newest" ? "needs_action" : "newest"; localStorage.setItem("emailSortMode", next); return next; })}
+              data-testid="button-sort-mode"
+              title="Toggle sort: Needs Action First"
+              className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors flex items-center gap-1 ${
+                sortMode === "needs_action" ? "bg-primary text-white" : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+              }`}
+            >
+              <SortAsc className="h-3 w-3" />
+              {sortMode === "needs_action" ? "Oldest First" : "Newest First"}
+            </button>
+            <button
+              onClick={() => setAssigneeFilter(prev => prev === "mine" ? "all" : "mine")}
+              data-testid="filter-assigned-mine"
+              className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors flex items-center gap-1 ${
+                assigneeFilter === "mine" ? "bg-blue-500 text-white" : "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+              }`}
+            >
+              <UserCheck className="h-3 w-3" />
+              Assigned to Me
+            </button>
+            <button
+              onClick={() => setAssigneeFilter(prev => prev === "unassigned" ? "all" : "unassigned")}
+              data-testid="filter-unassigned"
+              className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors flex items-center gap-1 ${
+                assigneeFilter === "unassigned" ? "bg-gray-600 text-white" : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+              }`}
+            >
+              <Users className="h-3 w-3" />
+              Unassigned
+            </button>
             {needsResponseCount > 0 && (
               <button
                 onClick={() => setNeedsResponseOnly(!needsResponseOnly)}
@@ -689,6 +888,25 @@ export default function EmailSyncPage() {
                 Dismissed ({dismissedCount})
               </button>
             )}
+            {/* Request type filter */}
+            {(["quote_request","support_issue","complaint","general_inquiry","follow_up","other"] as const).map(rt => {
+              const count = allThreads.filter(t => t.messages.some(m => m.requestType === rt)).length;
+              if (count === 0) return null;
+              const labels: Record<string, string> = { quote_request: "Quote", support_issue: "Support", complaint: "Complaint", general_inquiry: "Inquiry", follow_up: "Follow-up", other: "Other" };
+              return (
+                <button
+                  key={rt}
+                  onClick={() => setRequestTypeFilter(prev => prev === rt ? "" : rt)}
+                  data-testid={`filter-request-type-${rt}`}
+                  className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors flex items-center gap-1 ${
+                    requestTypeFilter === rt ? "bg-indigo-500 text-white" : "bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                  }`}
+                >
+                  <Tag className="h-3 w-3" />
+                  {labels[rt]} ({count})
+                </button>
+              );
+            })}
           </div>
           {/* Search */}
           <div className="relative">
@@ -774,6 +992,7 @@ export default function EmailSyncPage() {
                     key={thread.threadId}
                     thread={thread}
                     clients={clients}
+                    directoryUsers={directoryUsers}
                     isSelected={thread.threadId === selectedThreadId}
                     isChecked={selectedThreadIds.has(thread.threadId)}
                     showCheckboxes={selectedThreadIds.size > 0}
@@ -1193,6 +1412,136 @@ export default function EmailSyncPage() {
                 </div>
               </div>
 
+              {/* Assignee + Request Type */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Thread Actions</p>
+                <div className="rounded-lg border border-gray-200 divide-y divide-gray-100">
+                  {/* Assignee */}
+                  <div className="flex items-center gap-2 px-3 py-2.5">
+                    <UserCheck className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 mb-1">Assigned To</p>
+                      {isAdminOrAbove ? (
+                        <Select
+                          value={primaryEmail?.assignedUserId ?? "unassigned"}
+                          onValueChange={val => primaryEmail && assignThreadMutation.mutate({ id: primaryEmail.id, assignedUserId: val === "unassigned" ? null : val })}
+                        >
+                          <SelectTrigger className="h-7 text-xs" data-testid="select-assignee">
+                            <SelectValue placeholder="Unassigned" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {directoryUsers.map(u => (
+                              <SelectItem key={u.id} value={u.id}>
+                                {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-xs text-gray-700">
+                          {primaryEmail?.assignedUserId
+                            ? (directoryUsers.find(u => u.id === primaryEmail.assignedUserId) ? `${directoryUsers.find(u => u.id === primaryEmail.assignedUserId)?.firstName ?? ""} ${directoryUsers.find(u => u.id === primaryEmail.assignedUserId)?.lastName ?? ""}`.trim() : "Assigned")
+                            : "Unassigned"
+                          }
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Request Type */}
+                  <div className="flex items-center gap-2 px-3 py-2.5">
+                    <Tag className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 mb-1">Request Type</p>
+                      <Select
+                        value={primaryEmail?.requestType ?? "none"}
+                        onValueChange={val => primaryEmail && requestTypeMutation.mutate({ id: primaryEmail.id, requestType: val === "none" ? null : val })}
+                      >
+                        <SelectTrigger className="h-7 text-xs" data-testid="select-request-type">
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="quote_request">Quote Request</SelectItem>
+                          <SelectItem value="support_issue">Support Issue</SelectItem>
+                          <SelectItem value="complaint">Complaint</SelectItem>
+                          <SelectItem value="general_inquiry">General Inquiry</SelectItem>
+                          <SelectItem value="follow_up">Follow-up</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Internal Notes */}
+              <div className="space-y-1.5">
+                <button
+                  className="flex items-center justify-between w-full text-xs font-semibold text-gray-500 uppercase tracking-wide hover:text-gray-700"
+                  onClick={() => setShowNotesPanel(!showNotesPanel)}
+                  data-testid="button-toggle-notes"
+                >
+                  <span className="flex items-center gap-1.5"><MessageSquare className="h-3.5 w-3.5" /> Internal Notes {threadNotes.length > 0 && <span className="bg-gray-200 text-gray-600 rounded-full px-1.5 text-[10px]">{threadNotes.length}</span>}</span>
+                  {showNotesPanel ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                </button>
+                {showNotesPanel && (
+                  <div className="space-y-2">
+                    {threadNotes.length > 0 && (
+                      <div className="space-y-2">
+                        {threadNotes.map(note => (
+                          <div key={note.id} className="rounded-lg border border-gray-200 bg-yellow-50 px-3 py-2 relative group" data-testid={`note-${note.id}`}>
+                            <div className="flex items-start justify-between gap-1">
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium text-gray-700">{note.userName}</p>
+                                <p className="text-xs text-gray-500">{formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}</p>
+                              </div>
+                              <button
+                                onClick={() => deleteNoteMutation.mutate(note.id)}
+                                className="shrink-0 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                data-testid={`delete-note-${note.id}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-800 mt-1.5 leading-relaxed">{note.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Input
+                        value={newNoteContent}
+                        onChange={e => setNewNoteContent(e.target.value)}
+                        placeholder="Add internal note..."
+                        className="h-7 text-xs flex-1"
+                        data-testid="input-new-note"
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && !e.shiftKey && newNoteContent.trim() && selectedThreadId) {
+                            e.preventDefault();
+                            createNoteMutation.mutate({ gmailThreadId: selectedThreadId, content: newNoteContent.trim() });
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        disabled={!newNoteContent.trim() || createNoteMutation.isPending}
+                        onClick={() => {
+                          if (newNoteContent.trim() && selectedThreadId) {
+                            createNoteMutation.mutate({ gmailThreadId: selectedThreadId, content: newNoteContent.trim() });
+                          }
+                        }}
+                        data-testid="button-add-note"
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* People in This Thread */}
               {(threadParticipants.external.length > 0 || threadParticipants.internal.length > 0) && (
                 <div className="space-y-1.5">
@@ -1520,6 +1869,168 @@ export default function EmailSyncPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+      {/* Employee Handoff Dialog */}
+      <Dialog open={handoffDialogOpen} onOpenChange={(v) => { setHandoffDialogOpen(v); if (!v) { setHandoffPreviewThreads([]); setHandoffSelectedThreadIds(new Set()); } }}>
+        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ArrowRightLeft className="h-4 w-4" /> Employee Handoff</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2 flex-1 overflow-hidden flex flex-col">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-500">Transfer FROM</Label>
+                <Select value={handoffFromUserId} onValueChange={async (val) => {
+                  setHandoffFromUserId(val);
+                  setHandoffPreviewThreads([]);
+                  setHandoffSelectedThreadIds(new Set());
+                  if (val) {
+                    setHandoffLoading(true);
+                    try {
+                      const threads = await fetch(`/api/email/assigned-threads/${val}`, { credentials: "include" }).then(r => r.json());
+                      setHandoffPreviewThreads(threads);
+                      setHandoffSelectedThreadIds(new Set(threads.map((t: any) => t.gmailThreadId)));
+                    } catch {} finally { setHandoffLoading(false); }
+                  }
+                }}>
+                  <SelectTrigger data-testid="select-handoff-from">
+                    <SelectValue placeholder="Select employee..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {directoryUsers.map(u => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-500">Reassign TO</Label>
+                <Select value={handoffToUserId} onValueChange={setHandoffToUserId}>
+                  <SelectTrigger data-testid="select-handoff-to">
+                    <SelectValue placeholder="Select employee..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {directoryUsers.filter(u => u.id !== handoffFromUserId).map(u => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {handoffLoading && (
+              <div className="flex items-center justify-center py-4 text-gray-400 text-sm"><RefreshCw className="h-3.5 w-3.5 animate-spin mr-2" /> Loading threads...</div>
+            )}
+
+            {handoffPreviewThreads.length > 0 && (
+              <div className="flex-1 overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-500 font-medium">{handoffSelectedThreadIds.size} of {handoffPreviewThreads.length} threads selected</span>
+                  <button
+                    className="text-xs text-primary hover:underline"
+                    onClick={() => {
+                      if (handoffSelectedThreadIds.size === handoffPreviewThreads.length) {
+                        setHandoffSelectedThreadIds(new Set());
+                      } else {
+                        setHandoffSelectedThreadIds(new Set(handoffPreviewThreads.map(t => t.gmailThreadId)));
+                      }
+                    }}
+                    data-testid="button-handoff-select-all"
+                  >
+                    {handoffSelectedThreadIds.size === handoffPreviewThreads.length ? "Deselect All" : "Select All"}
+                  </button>
+                </div>
+                <div className="overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[300px]">
+                  {handoffPreviewThreads.map(thread => {
+                    const age = formatDistanceToNow(new Date(thread.receivedAt), { addSuffix: true });
+                    const clientName = thread.clientId ? clients.find(c => c.id === thread.clientId)?.companyName : null;
+                    return (
+                      <label key={thread.gmailThreadId} className="flex items-start gap-2.5 px-3 py-2.5 hover:bg-gray-50 cursor-pointer" data-testid={`handoff-thread-${thread.gmailThreadId}`}>
+                        <Checkbox
+                          checked={handoffSelectedThreadIds.has(thread.gmailThreadId)}
+                          onCheckedChange={(checked) => {
+                            const next = new Set(handoffSelectedThreadIds);
+                            if (checked) next.add(thread.gmailThreadId); else next.delete(thread.gmailThreadId);
+                            setHandoffSelectedThreadIds(next);
+                          }}
+                          className="mt-0.5"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{thread.subject || "(no subject)"}</p>
+                          <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
+                            {clientName && <span className="text-gray-600">{clientName}</span>}
+                            <span>{age}</span>
+                            {thread.requiresResponse && <span className="text-amber-600 font-medium">Needs response</span>}
+                            {thread.openTaskCount > 0 && <span className="text-indigo-600 font-medium">{thread.openTaskCount} open task{thread.openTaskCount > 1 ? "s" : ""}</span>}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {handoffFromUserId && !handoffLoading && handoffPreviewThreads.length === 0 && (
+              <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded p-3 text-center">
+                No assigned threads found for this employee.
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHandoffDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!handoffFromUserId || !handoffToUserId || handoffSelectedThreadIds.size === 0) return;
+                handoffMutation.mutate({ fromUserId: handoffFromUserId, toUserId: handoffToUserId, gmailThreadIds: Array.from(handoffSelectedThreadIds) });
+              }}
+              disabled={!handoffFromUserId || !handoffToUserId || handoffSelectedThreadIds.size === 0 || handoffMutation.isPending}
+              data-testid="button-confirm-handoff"
+            >
+              {handoffMutation.isPending ? "Transferring..." : `Transfer ${handoffSelectedThreadIds.size} Thread${handoffSelectedThreadIds.size !== 1 ? "s" : ""}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Suppressed Sender Management Dialog */}
+      <Dialog open={showSuppressedManagement} onOpenChange={setShowSuppressedManagement}>
+        <DialogContent className="max-w-lg max-h-[70vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Ban className="h-4 w-4" /> Suppressed Senders</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-gray-500">These senders were auto-filtered as noise (no-reply, newsletters, alerts, etc.). You can restore any sender to make their emails visible again.</p>
+          <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[400px]">
+            {suppressedSenders.length === 0 ? (
+              <div className="text-center text-gray-400 text-sm py-8">No suppressed senders found.</div>
+            ) : suppressedSenders.map(sender => (
+              <div key={sender.email} className="flex items-center justify-between px-3 py-2.5 hover:bg-gray-50" data-testid={`suppressed-sender-${sender.email}`}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-900 truncate">{sender.email}</p>
+                  <p className="text-xs text-gray-400 truncate">{sender.count} email{sender.count > 1 ? "s" : ""} · Latest: {sender.latestSubject || "(no subject)"}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs shrink-0 ml-2"
+                  onClick={() => restoreSuppressedMutation.mutate(sender.email)}
+                  disabled={restoreSuppressedMutation.isPending}
+                  data-testid={`button-restore-${sender.email}`}
+                >
+                  Restore
+                </Button>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSuppressedManagement(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Quick-create company dialog (from AI create suggestion) */}
       <Dialog open={quickClientDialogOpen} onOpenChange={v => { setQuickClientDialogOpen(v); if (!v) { setQuickClientName(""); setQuickClientIndustry(""); setQuickClientEmailForLink(null); } }}>

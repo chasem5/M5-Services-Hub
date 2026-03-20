@@ -164,6 +164,7 @@ export async function registerRoutes(
   await storage.migrateLeadLossColumns();
   // Multi-board task system: create tables, add columns, backfill data
   await storage.migrateTaskBoards();
+  await storage.migrateEmailMessageColumns();
   // Seed default value tier settings
   await storage.getValueTierSettings();
   // Seed default contact stages on startup
@@ -3676,7 +3677,8 @@ Return only valid JSON, no markdown.`;
             requiresResponse: false,
             followUpReminderCreated: false,
             isProcessed: false,
-            isDismissed: true,
+            isDismissed: false,
+            isSuppressed: true,
             autoLinked: false,
           } as any);
         }
@@ -4195,6 +4197,257 @@ Respond with this JSON:
     const userId = (req as any).user?.claims?.sub;
     await storage.removeDismissedSender(userId, decodeURIComponent(req.params.emailAddress));
     res.json({ ok: true });
+  });
+
+  // Thread assignment
+  app.patch("/api/email-messages/:id/assign", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { assignedUserId } = z.object({ assignedUserId: z.string().nullable() }).parse(req.body);
+    const msg = await storage.getEmailMessage(id);
+    if (!msg) return res.sendStatus(404);
+    const { db: dbInst } = await import("./db");
+    const { emailMessages: emailMsgs } = await import("../shared/schema");
+    const { eq: eqOp } = await import("drizzle-orm");
+    await dbInst.update(emailMsgs)
+      .set({ assignedUserId: assignedUserId ?? null })
+      .where(eqOp(emailMsgs.gmailThreadId, msg.gmailThreadId));
+    const updated = await storage.getEmailMessage(id);
+    res.json(updated);
+  });
+
+  // Thread request type tagging
+  app.patch("/api/email-messages/:id/request-type", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { requestType } = z.object({ requestType: z.string().nullable() }).parse(req.body);
+    const msg = await storage.getEmailMessage(id);
+    if (!msg) return res.sendStatus(404);
+    const { db: dbInst } = await import("./db");
+    const { emailMessages: emailMsgs } = await import("../shared/schema");
+    const { eq: eqOp } = await import("drizzle-orm");
+    await dbInst.update(emailMsgs).set({ requestType: requestType ?? null }).where(eqOp(emailMsgs.gmailThreadId, msg.gmailThreadId));
+    const updated = await storage.getEmailMessage(id);
+    res.json(updated);
+  });
+
+  // Email thread notes
+  app.get("/api/email-thread-notes/:gmailThreadId", isAuthenticated, async (req, res) => {
+    const notes = await storage.listEmailThreadNotes(req.params.gmailThreadId);
+    res.json(notes);
+  });
+
+  app.post("/api/email-thread-notes", isAuthenticated, async (req, res) => {
+    const userId = (req as any).user?.claims?.sub;
+    const { gmailThreadId, content } = z.object({
+      gmailThreadId: z.string().min(1),
+      content: z.string().min(1),
+    }).parse(req.body);
+    const note = await storage.createEmailThreadNote({ gmailThreadId, userId, content });
+    const notes = await storage.listEmailThreadNotes(gmailThreadId);
+    const withName = notes.find(n => n.id === note.id) ?? { ...note, userName: userId };
+    res.json(withName);
+  });
+
+  app.delete("/api/email-thread-notes/:id", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const userId = (req as any).user?.claims?.sub;
+    const note = await storage.getEmailThreadNote(id);
+    if (!note) return res.sendStatus(404);
+    const userRole = (req as any).user?.claims?.metadata?.role;
+    const isAdmin = userRole === "super_admin" || userRole === "admin";
+    if (note.userId !== userId && !isAdmin) {
+      return res.status(403).json({ message: "You can only delete your own notes" });
+    }
+    await storage.deleteEmailThreadNote(id);
+    res.sendStatus(204);
+  });
+
+  // Handoff: bulk reassign all threads from one user to another
+  app.post("/api/email/handoff", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const { fromUserId, toUserId, gmailThreadIds } = z.object({
+        fromUserId: z.string().min(1),
+        toUserId: z.string().min(1),
+        gmailThreadIds: z.array(z.string()).min(1),
+      }).parse(req.body);
+      await storage.bulkAssignEmailThreads(gmailThreadIds, toUserId);
+      res.json({ ok: true, count: gmailThreadIds.length });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Get all threads assigned to a specific user (for handoff preview)
+  app.get("/api/email/assigned-threads/:userId", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const { db: dbInst } = await import("./db");
+      const { emailMessages: emailMsgs } = await import("../shared/schema");
+      const { eq: eqOp, and: andOp } = await import("drizzle-orm");
+      const allForUser = await dbInst.select().from(emailMsgs).where(
+        andOp(
+          eqOp(emailMsgs.assignedUserId, req.params.userId),
+          eqOp(emailMsgs.isDismissed, false)
+        )
+      );
+      const threadMap = new Map<string, typeof allForUser[0]>();
+      for (const msg of allForUser) {
+        if (!threadMap.has(msg.gmailThreadId) || new Date(msg.receivedAt) > new Date(threadMap.get(msg.gmailThreadId)!.receivedAt)) {
+          threadMap.set(msg.gmailThreadId, msg);
+        }
+      }
+      const allTasks = await storage.listTasks();
+      const threads = Array.from(threadMap.values()).map(msg => {
+        const linkedTasks = allTasks.filter(t =>
+          t.relatedClientId === msg.clientId && msg.clientId &&
+          (t.status === "todo" || t.status === "in_progress")
+        );
+        return {
+          gmailThreadId: msg.gmailThreadId,
+          subject: msg.subject,
+          clientId: msg.clientId,
+          receivedAt: msg.receivedAt,
+          requiresResponse: msg.requiresResponse,
+          openTaskCount: linkedTasks.length,
+        };
+      });
+      res.json(threads);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Suppressed (auto-filtered) senders management
+  app.get("/api/email/suppressed-senders", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const { db: dbInst } = await import("./db");
+      const { emailMessages: emailMsgs } = await import("../shared/schema");
+      const { eq: eqOp, and: andOp } = await import("drizzle-orm");
+      const suppressed = await dbInst.select().from(emailMsgs).where(andOp(eqOp(emailMsgs.isSuppressed, true), eqOp(emailMsgs.userId, userId)));
+      const senderMap = new Map<string, { email: string; count: number; latestSubject: string; latestDate: string }>();
+      for (const msg of suppressed) {
+        const existing = senderMap.get(msg.fromEmail.toLowerCase());
+        if (!existing) {
+          senderMap.set(msg.fromEmail.toLowerCase(), { email: msg.fromEmail, count: 1, latestSubject: msg.subject ?? "", latestDate: msg.receivedAt });
+        } else {
+          existing.count++;
+          if (new Date(msg.receivedAt) > new Date(existing.latestDate)) {
+            existing.latestSubject = msg.subject ?? "";
+            existing.latestDate = msg.receivedAt;
+          }
+        }
+      }
+      res.json(Array.from(senderMap.values()).sort((a, b) => b.count - a.count));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/email/restore-suppressed", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const { senderEmail } = z.object({ senderEmail: z.string().min(1) }).parse(req.body);
+      const { db: dbInst } = await import("./db");
+      const { emailMessages: emailMsgs } = await import("../shared/schema");
+      const { eq: eqOp, and: andOp } = await import("drizzle-orm");
+      const allSuppressed = await dbInst.select().from(emailMsgs).where(andOp(eqOp(emailMsgs.isSuppressed, true), eqOp(emailMsgs.userId, userId)));
+      const toRestore = allSuppressed.filter(m => m.fromEmail.toLowerCase() === senderEmail.toLowerCase());
+      for (const msg of toRestore) {
+        await dbInst.update(emailMsgs).set({ isSuppressed: false }).where(eqOp(emailMsgs.id, msg.id));
+      }
+      res.json({ ok: true, restoredCount: toRestore.length });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Client communications timeline (emails + meetings + tasks + notes)
+  app.get("/api/clients/:id/communications", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id);
+      const { db: dbInst } = await import("./db");
+      const { meetings: meetingsTable } = await import("../shared/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+      const [clientEmails, allClientLeads, clientMeetingsRaw, clientTasksRaw] = await Promise.all([
+        storage.listEmailMessages({ clientId, includeDismissed: false }),
+        storage.listLeads(),
+        dbInst.select().from(meetingsTable).where(eqOp(meetingsTable.clientId, clientId)),
+        storage.listTasks(),
+      ]);
+
+      const leadIds = new Set(allClientLeads.filter(l => l.clientId === clientId).map(l => l.id));
+      const filteredMeetings = clientMeetingsRaw;
+      const filteredTasks = clientTasksRaw.filter(t => t.relatedClientId === clientId || (t.relatedLeadId && leadIds.has(t.relatedLeadId)));
+
+      const threadMap = new Map<string, typeof clientEmails[0]>();
+      for (const msg of clientEmails) {
+        if (!threadMap.has(msg.gmailThreadId) || new Date(msg.receivedAt) > new Date(threadMap.get(msg.gmailThreadId)!.receivedAt)) {
+          threadMap.set(msg.gmailThreadId, msg);
+        }
+      }
+      const emailItems = Array.from(threadMap.values()).map(msg => ({
+        type: "email" as const,
+        id: `email-${msg.gmailThreadId}`,
+        date: msg.receivedAt,
+        subject: msg.subject,
+        snippet: msg.bodySnippet,
+        fromEmail: msg.fromEmail,
+        fromName: msg.fromName,
+        gmailThreadId: msg.gmailThreadId,
+        requiresResponse: msg.requiresResponse,
+        aiSentiment: msg.aiSentiment,
+        assignedUserId: msg.assignedUserId,
+        requestType: msg.requestType,
+      }));
+
+      const meetingItems = filteredMeetings.map(m => ({
+        type: "meeting" as const,
+        id: `meeting-${m.id}`,
+        date: m.date,
+        subject: m.title,
+        snippet: m.summary?.slice(0, 150) ?? null,
+        meetingId: m.id,
+      }));
+
+      const taskItems = filteredTasks.map(t => ({
+        type: "task" as const,
+        id: `task-${t.id}`,
+        date: t.createdAt,
+        subject: t.title,
+        snippet: t.description?.slice(0, 150) ?? null,
+        status: t.status,
+        priority: t.priority,
+        taskId: t.id,
+        dueDate: t.dueDate,
+      }));
+
+      const emailThreadIds = Array.from(threadMap.keys());
+      let noteItems: any[] = [];
+      if (emailThreadIds.length > 0) {
+        const { emailThreadNotes: notesTable } = await import("../shared/schema");
+        const { users: usersTable } = await import("../shared/schema");
+        const { inArray: inArrayOp } = await import("drizzle-orm");
+        const allNotes = await dbInst.select().from(notesTable).where(inArrayOp(notesTable.gmailThreadId, emailThreadIds));
+        const allUsers = await dbInst.select().from(usersTable);
+        const userMap = new Map(allUsers.map(u => [u.id, `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || u.id]));
+        noteItems = allNotes.map(n => ({
+          type: "note" as const,
+          id: `note-${n.id}`,
+          date: n.createdAt,
+          subject: `Internal note on thread`,
+          snippet: n.content.slice(0, 150),
+          gmailThreadId: n.gmailThreadId,
+          authorName: userMap.get(n.userId) ?? n.userId,
+        }));
+      }
+
+      const all = [...emailItems, ...meetingItems, ...taskItems, ...noteItems].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      res.json(all);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
 
   // AI Feedback (thumbs up/down on AI-generated content)

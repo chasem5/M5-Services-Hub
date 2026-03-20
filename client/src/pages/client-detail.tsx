@@ -51,6 +51,11 @@ import {
   HeartPulse,
   TrendingDown,
   Minus,
+  MessageSquareDot,
+  CalendarDays,
+  Tag,
+  ClipboardCheck,
+  StickyNote,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as ReTooltip } from "recharts";
@@ -799,6 +804,145 @@ function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+interface CommItem {
+  type: "email" | "meeting" | "task" | "note";
+  id: string;
+  date: string;
+  subject: string;
+  snippet: string | null;
+  fromEmail?: string;
+  fromName?: string | null;
+  gmailThreadId?: string;
+  requiresResponse?: boolean;
+  aiSentiment?: string | null;
+  assignedUserId?: string | null;
+  requestType?: string | null;
+  meetingId?: number;
+  taskId?: number;
+  status?: string;
+  priority?: string;
+  dueDate?: string | null;
+  authorName?: string;
+}
+
+function ClientCommunicationsTab({ clientId }: { clientId: number }) {
+  const { data: items = [], isLoading } = useQuery<CommItem[]>({
+    queryKey: ["/api/clients", clientId, "communications"],
+    queryFn: () => fetch(`/api/clients/${clientId}/communications`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-32 text-gray-400"><RefreshCw className="h-4 w-4 animate-spin mr-2" /> Loading...</div>;
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-48 text-center text-gray-400">
+        <MessageSquareDot className="h-10 w-10 mb-3 text-gray-300" />
+        <p className="font-medium text-gray-600">No communications yet</p>
+        <p className="text-sm mt-1">Emails, meetings, and tasks will appear here in chronological order.</p>
+      </div>
+    );
+  }
+
+  const requestTypeColors: Record<string, string> = {
+    quote_request: "text-green-700 bg-green-50 border-green-200",
+    support_issue: "text-orange-700 bg-orange-50 border-orange-200",
+    complaint: "text-red-700 bg-red-50 border-red-200",
+    general_inquiry: "text-blue-700 bg-blue-50 border-blue-200",
+    follow_up: "text-purple-700 bg-purple-50 border-purple-200",
+    other: "text-gray-700 bg-gray-50 border-gray-200",
+  };
+
+  return (
+    <div className="space-y-2">
+      {items.map(item => (
+        <div key={item.id} className="border border-gray-200 rounded-lg bg-white shadow-sm overflow-hidden" data-testid={`comm-item-${item.id}`}>
+          <div className="flex items-start gap-3 px-4 py-3">
+            <div className={`shrink-0 mt-0.5 w-7 h-7 rounded-full flex items-center justify-center ${
+              item.type === "email" ? "bg-blue-50" : item.type === "meeting" ? "bg-green-50" : item.type === "note" ? "bg-purple-50" : "bg-amber-50"
+            }`}>
+              {item.type === "email" ? <Mail className="h-3.5 w-3.5 text-blue-600" /> :
+               item.type === "meeting" ? <CalendarDays className="h-3.5 w-3.5 text-green-600" /> :
+               item.type === "note" ? <StickyNote className="h-3.5 w-3.5 text-purple-600" /> :
+               <ClipboardCheck className="h-3.5 w-3.5 text-amber-600" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{item.subject}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {item.type === "email" && item.fromName ? `${item.fromName} · ` : ""}
+                    {item.type === "note" && item.authorName ? `${item.authorName} · ` : ""}
+                    {formatDistanceToNow(new Date(item.date), { addSuffix: true })}
+                    {item.type === "task" && item.status && <span className="ml-1 capitalize">· {item.status}</span>}
+                  </p>
+                </div>
+                <span className={`shrink-0 text-xs font-medium border rounded px-1.5 py-0.5 ${
+                  item.type === "email" ? "text-blue-700 bg-blue-50 border-blue-200" :
+                  item.type === "meeting" ? "text-green-700 bg-green-50 border-green-200" :
+                  item.type === "note" ? "text-purple-700 bg-purple-50 border-purple-200" :
+                  "text-amber-700 bg-amber-50 border-amber-200"
+                }`}>
+                  {item.type === "note" ? "Internal Note" : item.type.charAt(0).toUpperCase() + item.type.slice(1)}
+                </span>
+              </div>
+              {item.snippet && (
+                <p className="text-xs text-gray-600 mt-1.5 line-clamp-2 leading-relaxed">{item.snippet}</p>
+              )}
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                {item.requiresResponse && (
+                  <span className="inline-flex items-center gap-0.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                    <AlertCircle className="h-3 w-3" /> Needs Response
+                  </span>
+                )}
+                {item.aiSentiment && item.aiSentiment !== "neutral" && (
+                  <span className={`inline-flex items-center text-xs border rounded px-1.5 py-0.5 ${
+                    item.aiSentiment === "urgent" ? "text-red-700 bg-red-50 border-red-200" :
+                    item.aiSentiment === "negative" ? "text-orange-700 bg-orange-50 border-orange-200" :
+                    "text-green-700 bg-green-50 border-green-200"
+                  }`}>
+                    {item.aiSentiment.charAt(0).toUpperCase() + item.aiSentiment.slice(1)}
+                  </span>
+                )}
+                {item.requestType && (
+                  <span className={`inline-flex items-center gap-0.5 text-xs border rounded px-1.5 py-0.5 ${requestTypeColors[item.requestType] ?? "text-gray-700 bg-gray-50 border-gray-200"}`}>
+                    <Tag className="h-3 w-3" /> {item.requestType.replace(/_/g, " ")}
+                  </span>
+                )}
+                {item.type === "task" && item.priority && (
+                  <span className={`inline-flex items-center text-xs border rounded px-1.5 py-0.5 ${
+                    item.priority === "urgent" ? "text-red-700 bg-red-50 border-red-200" :
+                    item.priority === "high" ? "text-orange-700 bg-orange-50 border-orange-200" :
+                    "text-gray-600 bg-gray-50 border-gray-200"
+                  }`}>
+                    {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                  </span>
+                )}
+                {(item.type === "email" || item.type === "note") && item.gmailThreadId && (
+                  <Link href={`/email-sync?thread=${item.gmailThreadId}`}>
+                    <span className="inline-flex items-center text-xs text-primary hover:underline cursor-pointer">View thread →</span>
+                  </Link>
+                )}
+                {item.type === "meeting" && item.meetingId && (
+                  <Link href={`/meetings`}>
+                    <span className="inline-flex items-center text-xs text-primary hover:underline cursor-pointer">View meeting →</span>
+                  </Link>
+                )}
+                {item.type === "task" && item.taskId && (
+                  <Link href={`/tasks`}>
+                    <span className="inline-flex items-center text-xs text-primary hover:underline cursor-pointer">View task →</span>
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1726,6 +1870,34 @@ export default function ClientDetail() {
             <History className="h-4 w-4 md:mr-2" />
             <span className="hidden md:inline">History</span>
           </TabsTrigger>
+          <TabsTrigger value="emails" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-emails">
+            <Mail className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Emails</span>
+          </TabsTrigger>
+          <TabsTrigger value="communications" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-communications">
+            <MessageSquareDot className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Timeline</span>
+          </TabsTrigger>
+          <TabsTrigger value="attachments" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap">
+            <Paperclip className="h-4 w-4 md:mr-2" />
+            <span className="hidden md:inline">Files</span>
+          </TabsTrigger>
+          {client?.buildopsId && (
+            <>
+              <TabsTrigger value="buildops-jobs" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-jobs">
+                <Briefcase className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Jobs</span>
+              </TabsTrigger>
+              <TabsTrigger value="buildops-invoices" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-invoices">
+                <Receipt className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Invoices</span>
+              </TabsTrigger>
+              <TabsTrigger value="buildops-agreements" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-buildops-agreements">
+                <FileSignature className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Agreements</span>
+              </TabsTrigger>
+            </>
+          )}
           <TabsTrigger value="intelligence" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-3 font-medium shrink-0 whitespace-nowrap" data-testid="tab-intelligence">
             <HeartPulse className="h-4 w-4 md:mr-2" />
             <span className="hidden md:inline">Intelligence</span>
@@ -3844,8 +4016,34 @@ export default function ClientDetail() {
                 <UnifiedHistoryFeed clientId={clientId} />
               </CardContent>
             </Card>
-            {/* Files upload panel still available below the feed */}
-            <Card className="border-none shadow-sm bg-card mt-4" id={`history-files-panel-${clientId}`}>
+          </TabsContent>
+
+          <TabsContent value="emails" className="m-0">
+            <Card className="border-none shadow-sm bg-card">
+              <CardHeader className="pb-0">
+                <CardTitle>Email History</CardTitle>
+                <CardDescription>Gmail communications linked to this client, analyzed by AI</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <ClientEmailsTab clientId={clientId} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="communications" className="m-0">
+            <Card className="border-none shadow-sm bg-card">
+              <CardHeader className="pb-0">
+                <CardTitle>Client Communications Timeline</CardTitle>
+                <CardDescription>Chronological feed of all emails, meetings, and tasks for this client</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <ClientCommunicationsTab clientId={clientId} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="attachments" className="m-0">
+            <Card className="border-none shadow-sm bg-card">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Paperclip className="h-4 w-4 text-primary" />
