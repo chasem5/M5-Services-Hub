@@ -38,7 +38,7 @@ import {
   DealTag,
   type Estimate,
 } from "@shared/schema";
-import { useSearch, Link } from "wouter";
+import { useSearch, useLocation, Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -537,6 +537,7 @@ function KanbanColumn({
   suppressedLeadIds = new Set(),
   selectedIds,
   onToggleSelect,
+  isBuildopsTab = false,
 }: { 
   stage: PipelineStage;
   sc: any;
@@ -561,6 +562,7 @@ function KanbanColumn({
   suppressedLeadIds?: Set<number>;
   selectedIds: Set<number>;
   onToggleSelect: (id: number) => void;
+  isBuildopsTab?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.slug,
@@ -623,6 +625,7 @@ function KanbanColumn({
                 suppressedLeadIds={suppressedLeadIds}
                 isSelected={selectedIds.has(lead.id)}
                 onToggleSelect={onToggleSelect}
+                isBuildopsTab={isBuildopsTab}
               />
             ))}
         </div>
@@ -651,6 +654,7 @@ function LeadCard({
   suppressedLeadIds = new Set(),
   isSelected = false,
   onToggleSelect,
+  isBuildopsTab = false,
 }: { 
   lead: Lead; 
   formatCurrency: (v: string | number) => string;
@@ -671,6 +675,7 @@ function LeadCard({
   suppressedLeadIds?: Set<number>;
   isSelected?: boolean;
   onToggleSelect?: (id: number) => void;
+  isBuildopsTab?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: lead.id,
@@ -726,8 +731,28 @@ function LeadCard({
           onMouseEnter={() => fetchAiSummary(lead.id)}
         >
           <CardHeader className="p-3 pb-0 space-y-1">
+            {isBuildopsTab && lead.buildopsQuoteId && (
+              <div className="flex items-center gap-1.5 mb-0.5" data-testid={`badge-buildops-prominent-${lead.id}`}>
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300">
+                  <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="text-xs font-bold">
+                    {lead.buildopsQuoteNumber ? `#${lead.buildopsQuoteNumber}` : "Quote"}
+                  </span>
+                  {lead.buildopsQuoteStatus && (
+                    <span className="text-[10px] font-semibold capitalize text-blue-600 dark:text-blue-400">
+                      · {lead.buildopsQuoteStatus}
+                    </span>
+                  )}
+                </div>
+                {lead.buildopsQuoteTotal && (
+                  <span className="text-xs font-bold text-blue-700 dark:text-blue-400 tabular-nums">
+                    {formatCurrency(lead.buildopsQuoteTotal)}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="flex items-start justify-between gap-2">
-              <h4 className="font-bold text-sm leading-tight line-clamp-2 flex-1">{lead.title}</h4>
+              <h4 className={`font-bold text-sm leading-tight line-clamp-2 flex-1 ${isBuildopsTab && lead.buildopsQuoteId ? "text-muted-foreground font-medium" : ""}`}>{lead.title}</h4>
               {!isOverlay && onToggleSelect && (
                 <div
                   className="shrink-0 mt-0.5"
@@ -1010,6 +1035,25 @@ function LeadCard({
 
 export default function Leads() {
   const searchParams = useSearch();
+  const [, setLocation] = useLocation();
+  const sourceTab = useMemo(() => {
+    const p = new URLSearchParams(searchParams);
+    const v = p.get("source");
+    if (v === "deals" || v === "buildops" || v === "all") return v;
+    return "all";
+  }, [searchParams]);
+
+  const setSourceTab = (tab: "deals" | "buildops" | "all") => {
+    const p = new URLSearchParams(searchParams);
+    if (tab === "all") {
+      p.delete("source");
+    } else {
+      p.set("source", tab);
+    }
+    const qs = p.toString();
+    setLocation(qs ? `/leads?${qs}` : "/leads", { replace: true });
+  };
+
   const [view, setView] = useState<"kanban" | "list">(() => window.innerWidth < 768 ? "list" : "kanban");
   const [isAddDealOpen, setIsAddDealOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -1058,7 +1102,6 @@ export default function Leads() {
   const [selectedClientIdForBuildingEdit, setSelectedClientIdForBuildingEdit] = useState<number | null>(null);
   // Pipeline views
   const [activeViewId, setActiveViewId] = useState<number | null>(null);
-  const [buildopsView, setBuildopsView] = useState(false);
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>(() => localStorage.getItem("kanban-date-filter") ?? "all");
   const [activeDragId, setActiveDragId] = useState<number | null>(null);
@@ -1698,7 +1741,12 @@ export default function Leads() {
     const matchesTag = tagFilter === "all" || (lead.tags && lead.tags.includes(tagFilter));
     const leadDate = new Date(lead.createdAt);
     const matchesDate = !dateFilterStart || (leadDate >= dateFilterStart && (!dateFilterEnd || leadDate <= dateFilterEnd));
-    return matchesSearch && matchesStage && matchesViewStage && matchesViewService && matchesViewTier && matchesViewTag && matchesTier && matchesTag && matchesDate;
+    const matchesSource = sourceTab === "all"
+      ? true
+      : sourceTab === "buildops"
+        ? !!lead.buildopsQuoteId
+        : !lead.buildopsQuoteId;
+    return matchesSearch && matchesStage && matchesViewStage && matchesViewService && matchesViewTier && matchesViewTag && matchesTier && matchesTag && matchesDate && matchesSource;
   });
 
   const getClientName = (clientId: number | null) => {
@@ -1905,6 +1953,14 @@ export default function Leads() {
                   <BookmarkPlus className="h-4 w-4 mr-2" />
                   New View
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => syncBuildopsQuotesMutation.mutate()}
+                  disabled={syncBuildopsQuotesMutation.isPending}
+                  data-testid="option-sync-buildops"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${syncBuildopsQuotesMutation.isPending ? "animate-spin" : ""}`} />
+                  Sync BuildOps Quotes
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             {/* Add Deal — desktop only; on mobile use FAB */}
@@ -1924,7 +1980,7 @@ export default function Leads() {
         <div className="md:hidden px-0 pb-1 overflow-x-auto no-scrollbar">
           <div className="flex gap-2 min-w-max pb-1">
             {stages.map((stage) => {
-              const count = leads?.filter(l => l.stage === stage.slug).length ?? 0;
+              const count = filteredLeads?.filter(l => l.stage === stage.slug).length ?? 0;
               return (
                 <Button
                   key={stage.slug}
@@ -1943,11 +1999,39 @@ export default function Leads() {
           </div>
         </div>
 
+        {/* Source tab switcher — Deals / BuildOps Quotes / All */}
+        <div className="flex items-center" data-testid="source-tab-switcher">
+          <div className="inline-flex rounded-lg border bg-muted p-0.5 gap-0.5">
+            <button
+              onClick={() => setSourceTab("deals")}
+              className={`px-3 py-1 text-sm rounded-md font-medium transition-colors ${sourceTab === "deals" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              data-testid="button-source-tab-deals"
+            >
+              Deals
+            </button>
+            <button
+              onClick={() => setSourceTab("buildops")}
+              className={`px-3 py-1 text-sm rounded-md font-medium transition-colors flex items-center gap-1.5 ${sourceTab === "buildops" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              data-testid="button-source-tab-buildops"
+            >
+              <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />
+              BuildOps Quotes
+            </button>
+            <button
+              onClick={() => setSourceTab("all")}
+              className={`px-3 py-1 text-sm rounded-md font-medium transition-colors ${sourceTab === "all" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              data-testid="button-source-tab-all"
+            >
+              All
+            </button>
+          </div>
+        </div>
+
         {/* Pipeline View switcher — desktop only */}
         <div className="hidden md:flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => { setActiveViewId(null); setBuildopsView(false); }}
-            className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${!activeViewId && !buildopsView ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+            onClick={() => setActiveViewId(null)}
+            className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${!activeViewId ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
             data-testid="button-view-all"
           >
             All Deals
@@ -1955,21 +2039,13 @@ export default function Leads() {
           {pipelineViews.map(v => (
             <button
               key={v.id}
-              onClick={() => { setActiveViewId(v.id); setBuildopsView(false); }}
-              className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${activeViewId === v.id && !buildopsView ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+              onClick={() => setActiveViewId(v.id)}
+              className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${activeViewId === v.id ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
               data-testid={`button-view-${v.id}`}
             >
               {v.name}
             </button>
           ))}
-          <button
-            onClick={() => { setBuildopsView(true); setActiveViewId(null); }}
-            className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium flex items-center gap-1.5 ${buildopsView ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
-            data-testid="button-view-buildops"
-          >
-            <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />
-            BuildOps Quotes
-          </button>
           <Button size="sm" variant="outline" className="h-7 rounded-full text-xs gap-1.5" onClick={() => {
             setEditingView(null);
             setNewViewName("");
@@ -2074,100 +2150,6 @@ export default function Leads() {
               </div>
             ))}
           </div>
-        ) : buildopsView ? (
-          <div className="p-4 md:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-heading font-bold flex items-center gap-2">
-                  <BuildOpsIcon className="h-5 w-5 shrink-0" />
-                  BuildOps Quotes
-                </h2>
-                <p className="text-sm text-muted-foreground">Quotes synced from BuildOps — tracked as deals</p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                onClick={() => syncBuildopsQuotesMutation.mutate()}
-                disabled={syncBuildopsQuotesMutation.isPending}
-                data-testid="button-sync-buildops-quotes"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${syncBuildopsQuotesMutation.isPending ? "animate-spin" : ""}`} />
-                Sync BuildOps Quotes
-              </Button>
-            </div>
-            {(() => {
-              const buildopsLeads = (leads ?? []).filter((l: any) => l.buildopsQuoteId);
-              const boCols = [
-                { key: "draft", label: "Quote Needed", statuses: ["draft", "new", "open"], color: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300" },
-                { key: "sent", label: "Quote Sent", statuses: ["sent", "submitted", "pending", "review", "awaitingapproval", "senttocustomer", "customerviewed"], color: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300" },
-                { key: "approved", label: "Approved / Won", statuses: ["approved", "won", "accepted", "jobadded", "converted", "projectadded"], color: "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300" },
-                { key: "rejected", label: "Rejected / Expired", statuses: ["rejected", "expired", "lost", "cancelled", "declined"], color: "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300" },
-              ];
-              const formatCurrencyLocal = (v: any) =>
-                v != null && Number(v) !== 0 ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v)) : "—";
-              return (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  {boCols.map(col => {
-                    const colLeads = buildopsLeads.filter((l: any) => {
-                      const statusLower = l.buildopsQuoteStatus?.toLowerCase() ?? null;
-                      return col.statuses.includes(statusLower) ||
-                        (col.key === "draft" && !statusLower);
-                    });
-                    return (
-                      <div key={col.key}>
-                        <div className={`rounded-t-lg border-b-0 border px-3 py-2 flex items-center justify-between ${col.color}`}>
-                          <span className="text-xs font-semibold uppercase tracking-wider">{col.label}</span>
-                          <span className="text-xs font-bold">{colLeads.length}</span>
-                        </div>
-                        <div className="border border-t-0 rounded-b-lg min-h-[80px] divide-y divide-border/40 bg-card">
-                          {colLeads.length === 0 ? (
-                            <p className="px-3 py-4 text-xs text-muted-foreground italic text-center">None</p>
-                          ) : (
-                            colLeads.map((l: any) => {
-                              const daysOld = Math.floor((Date.now() - new Date(l.updatedAt).getTime()) / 86400000);
-                              return (
-                                <div
-                                  key={l.id}
-                                  className="px-3 py-2.5 hover:bg-muted/20 cursor-pointer"
-                                  onClick={() => openLeadDetail(l)}
-                                  data-testid={`buildops-card-${l.id}`}
-                                >
-                                  <div className="flex items-start justify-between gap-1.5">
-                                    <div className="min-w-0">
-                                      <p className="font-semibold text-xs truncate">{getClientName(l.clientId)}</p>
-                                      <p className="text-[11px] text-muted-foreground truncate">{l.title}</p>
-                                      {l.buildopsQuoteNumber && (
-                                        <p className="text-[10px] text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                                          <BuildOpsIcon className="h-2.5 w-2.5 shrink-0" />
-                                          #{l.buildopsQuoteNumber}
-                                        </p>
-                                      )}
-                                      {l.buildopsExpirationDate && (
-                                        <p className="text-[10px] text-muted-foreground">
-                                          Exp {new Date(l.buildopsExpirationDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" })}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <div className="shrink-0 text-right">
-                                      <p className="text-xs font-semibold tabular-nums">{formatCurrencyLocal(l.buildopsQuoteTotal ?? l.value)}</p>
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${daysOld >= 7 ? "bg-red-100 text-red-700" : daysOld >= 3 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}>
-                                        {daysOld}d
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>
         ) : view === "kanban" ? (
           <DndContext 
             sensors={sensors}
@@ -2223,6 +2205,7 @@ export default function Leads() {
                               suppressedLeadIds={new Set([...suppressedByServer, ...followUpSentLeadIds])}
                               selectedIds={selectedIds}
                               onToggleSelect={toggleSelectId}
+                              isBuildopsTab={sourceTab === "buildops"}
                             />
                           );
                         })}
@@ -2275,6 +2258,7 @@ export default function Leads() {
                               suppressedLeadIds={new Set([...suppressedByServer, ...followUpSentLeadIds])}
                               selectedIds={selectedIds}
                               onToggleSelect={toggleSelectId}
+                              isBuildopsTab={sourceTab === "buildops"}
                             />
                           );
                         })}
@@ -2303,6 +2287,7 @@ export default function Leads() {
                     fetchAiSummary={fetchAiSummary}
                     activitySummary={activitySummary}
                     isOverlay
+                    isBuildopsTab={sourceTab === "buildops"}
                   />
                 </div>
               ) : null}
