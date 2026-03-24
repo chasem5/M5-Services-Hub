@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { formatDistanceToNow, differenceInDays } from "date-fns";
+import { formatDistanceToNow, differenceInDays, format } from "date-fns";
+import { cn } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   DndContext, 
@@ -37,6 +38,7 @@ import {
   InsertTask,
   DealTag,
   type Estimate,
+  TaskLabelDefinition,
 } from "@shared/schema";
 import { useSearch, useLocation, Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -93,6 +95,7 @@ import {
   UserCheck,
   Archive,
   MoveRight,
+  AlignLeft,
 } from "lucide-react";
 import {
   Card,
@@ -178,6 +181,7 @@ import {
 } from "@/components/ui/hover-card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar } from "@/components/ui/calendar";
 
 const STAGE_COLORS = {
   green: {
@@ -214,6 +218,25 @@ const priorityColors: Record<string, string> = {
   medium: "bg-yellow-100 text-yellow-700 border-yellow-200",
   high: "bg-red-100 text-red-700 border-red-200",
 };
+
+type ChecklistItem = { id: string; text: string; done: boolean };
+
+const TASK_COLOR_PALETTE: Record<string, { bg: string; ring: string; label: string }> = {
+  red:    { bg: "bg-red-500",    ring: "ring-red-400",    label: "Red" },
+  orange: { bg: "bg-orange-400", ring: "ring-orange-400", label: "Orange" },
+  yellow: { bg: "bg-yellow-400", ring: "ring-yellow-400", label: "Yellow" },
+  green:  { bg: "bg-green-500",  ring: "ring-green-400",  label: "Green" },
+  blue:   { bg: "bg-blue-500",   ring: "ring-blue-400",   label: "Blue" },
+  purple: { bg: "bg-purple-500", ring: "ring-purple-400", label: "Purple" },
+};
+
+function genTaskId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function getTaskLabelDef(labelDefs: TaskLabelDefinition[], id: string) {
+  return labelDefs.find((l) => String(l.id) === id);
+}
 
 function getConfidenceColor(score: number) {
   if (score >= 70) return "text-green-600";
@@ -1092,6 +1115,11 @@ export default function Leads() {
   const [editFormServiceTypes, setEditFormServiceTypes] = useState<string[]>([]);
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
   const [pendingTaskId, setPendingTaskId] = useState<number | null>(null);
+  const [selectedDealTask, setSelectedDealTask] = useState<Task | null>(null);
+  const [dealTaskNewChecklistText, setDealTaskNewChecklistText] = useState("");
+  const [isDealTaskEditingTitle, setIsDealTaskEditingTitle] = useState(false);
+  const [dealTaskEditTitleValue, setDealTaskEditTitleValue] = useState("");
+  const [dealTaskDescriptionDraft, setDealTaskDescriptionDraft] = useState<string>("");
   const [suggestedTask, setSuggestedTask] = useState<{ title: string; description: string; priority: string; dueInDays: number } | null>(null);
   const [suggestedTaskLoading, setSuggestedTaskLoading] = useState(false);
   const [isFollowUpEmailOpen, setIsFollowUpEmailOpen] = useState(false);
@@ -1228,6 +1256,10 @@ export default function Leads() {
     staleTime: 60000,
   });
   const suppressedByServer = new Set<number>(expirySuppressionData?.suppressedLeadIds ?? []);
+
+  const { data: taskLabelDefs = [] } = useQuery<TaskLabelDefinition[]>({
+    queryKey: ["/api/task-label-definitions"],
+  });
 
   const hasFollowUpEmailSinceExpiry = suppressedByServer.has(selectedLead?.id ?? -1) || followUpSentLeadIds.has(selectedLead?.id ?? -1);
 
@@ -1493,6 +1525,53 @@ export default function Leads() {
     onError: () => toast({ title: "Error adding task", variant: "destructive" }),
   });
 
+  const updateDealTaskMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Record<string, unknown> }) => {
+      const res = await apiRequest("PUT", `/api/tasks/${id}`, data);
+      return res.json();
+    },
+    onSuccess: (updatedTask) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setSelectedDealTask((prev) => (prev && prev.id === updatedTask.id ? updatedTask : prev));
+    },
+    onError: () => toast({ title: "Error updating task", variant: "destructive" }),
+  });
+
+  const updateDealTaskField = (field: string, value: unknown) => {
+    if (!selectedDealTask) return;
+    updateDealTaskMutation.mutate({ id: selectedDealTask.id, data: { [field]: value } });
+  };
+
+  const toggleDealTaskLabel = (labelId: number) => {
+    if (!selectedDealTask) return;
+    const current = (selectedDealTask.labels as string[]) || [];
+    const idStr = String(labelId);
+    const next = current.includes(idStr) ? current.filter((l) => l !== idStr) : [...current, idStr];
+    updateDealTaskMutation.mutate({ id: selectedDealTask.id, data: { labels: next } });
+  };
+
+  const addDealTaskChecklistItem = () => {
+    if (!selectedDealTask || !dealTaskNewChecklistText.trim()) return;
+    const current = (selectedDealTask.checklist as ChecklistItem[]) || [];
+    const next = [...current, { id: genTaskId(), text: dealTaskNewChecklistText.trim(), done: false }];
+    updateDealTaskMutation.mutate({ id: selectedDealTask.id, data: { checklist: next } });
+    setDealTaskNewChecklistText("");
+  };
+
+  const toggleDealTaskChecklistItem = (itemId: string) => {
+    if (!selectedDealTask) return;
+    const current = (selectedDealTask.checklist as ChecklistItem[]) || [];
+    const next = current.map((i) => (i.id === itemId ? { ...i, done: !i.done } : i));
+    updateDealTaskMutation.mutate({ id: selectedDealTask.id, data: { checklist: next } });
+  };
+
+  const deleteDealTaskChecklistItem = (itemId: string) => {
+    if (!selectedDealTask) return;
+    const current = (selectedDealTask.checklist as ChecklistItem[]) || [];
+    const next = current.filter((i) => i.id !== itemId);
+    updateDealTaskMutation.mutate({ id: selectedDealTask.id, data: { checklist: next } });
+  };
+
   const sendFollowUpEmailMutation = useMutation({
     mutationFn: async ({ leadId, to, subject, body }: { leadId: number; to: string; subject: string; body: string }) => {
       const res = await apiRequest("POST", `/api/leads/${leadId}/send-followup-email`, { to, subject, body });
@@ -1584,6 +1663,14 @@ export default function Leads() {
   useEffect(() => {
     if (selectedLead?.id) fetchAiSummary(selectedLead.id);
   }, [selectedLead?.id]);
+
+  // Reset deal task editing state when selected task changes
+  useEffect(() => {
+    setIsDealTaskEditingTitle(false);
+    setDealTaskEditTitleValue("");
+    setDealTaskDescriptionDraft(selectedDealTask?.description || "");
+    setDealTaskNewChecklistText("");
+  }, [selectedDealTask?.id]);
 
   // Run pipeline review: fetch AI for all active deals in batches of 3
   const runPipelineReview = async () => {
@@ -4229,22 +4316,27 @@ export default function Leads() {
                       const isDone = task.status === "done";
                       const isPending = pendingTaskId === task.id;
                       return (
-                        <Card key={task.id} className={`border-l-4 ${
-                          isDone ? "border-l-green-400 opacity-70" :
-                          task.priority === "high" ? "border-l-red-400" :
-                          task.priority === "medium" ? "border-l-yellow-400" : "border-l-blue-400"
-                        }`} data-testid={`card-lead-task-${task.id}`}>
+                        <Card
+                          key={task.id}
+                          className={`border-l-4 cursor-pointer hover:bg-muted/30 transition-colors ${
+                            isDone ? "border-l-green-400 opacity-70" :
+                            task.priority === "high" ? "border-l-red-400" :
+                            task.priority === "medium" ? "border-l-yellow-400" : "border-l-blue-400"
+                          }`}
+                          onClick={() => { setSelectedDealTask(task); setDealTaskDescriptionDraft(task.description || ""); }}
+                          data-testid={`card-lead-task-${task.id}`}
+                        >
                           <CardContent className="p-3 flex items-start gap-3">
                             <button
                               className={`h-4 w-4 mt-0.5 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
                                 isDone ? "bg-green-500 border-green-500 text-white" : "border-muted-foreground/40 hover:border-green-500"
                               }`}
-                              onClick={() => completeTaskMutation.mutate({
+                              onClick={(e) => { e.stopPropagation(); completeTaskMutation.mutate({
                                 id: task.id,
                                 status: isDone ? "todo" : "done",
                                 title: task.title,
                                 completing: !isDone,
-                              })}
+                              }); }}
                               disabled={isPending}
                               data-testid={`button-toggle-task-${task.id}`}
                               title={isDone ? "Mark as todo" : "Mark as done"}
@@ -4255,7 +4347,10 @@ export default function Leads() {
                                 <Check className="h-2.5 w-2.5" />
                               ) : null}
                             </button>
-                            <div className="flex-1 min-w-0">
+                            <div
+                              className="flex-1 min-w-0"
+                              data-testid={`body-deal-task-${task.id}`}
+                            >
                               <p className={`text-sm font-medium ${isDone ? "line-through text-muted-foreground" : ""}`}>
                                 {task.title}
                               </p>
@@ -4292,6 +4387,234 @@ export default function Leads() {
               </Tabs>
             </>
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Deal Task Detail Sheet */}
+      <Sheet open={!!selectedDealTask} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedDealTask(null);
+          setIsDealTaskEditingTitle(false);
+          setDealTaskNewChecklistText("");
+          setDealTaskDescriptionDraft("");
+        }
+      }}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+          {selectedDealTask && (() => {
+            const taskLabelIds = (selectedDealTask.labels as string[]) || [];
+            const activeLabelDefs = taskLabelIds.map((id) => getTaskLabelDef(taskLabelDefs, id)).filter(Boolean) as TaskLabelDefinition[];
+            const dealTaskChecklist = (selectedDealTask.checklist as ChecklistItem[]) || [];
+            const dealTaskChecklistDone = dealTaskChecklist.filter((i) => i.done).length;
+            const dealTaskChecklistPct = dealTaskChecklist.length > 0 ? Math.round((dealTaskChecklistDone / dealTaskChecklist.length) * 100) : 0;
+            return (
+              <>
+                <SheetHeader className="pb-0">
+                  <SheetDescription className="sr-only">Task detail</SheetDescription>
+                  {activeLabelDefs.length > 0 && (
+                    <div className="flex gap-1.5 mb-3">
+                      {activeLabelDefs.map((def) => (
+                        <span key={def.id} className={cn("h-2.5 rounded-full w-10", TASK_COLOR_PALETTE[def.color]?.bg)} title={def.name} />
+                      ))}
+                    </div>
+                  )}
+                  {isDealTaskEditingTitle ? (
+                    <input
+                      autoFocus
+                      className="text-xl font-heading font-bold bg-transparent border-b-2 border-primary outline-none w-full pb-1"
+                      value={dealTaskEditTitleValue}
+                      onChange={(e) => setDealTaskEditTitleValue(e.target.value)}
+                      onBlur={() => {
+                        if (dealTaskEditTitleValue.trim() && dealTaskEditTitleValue !== selectedDealTask.title) {
+                          updateDealTaskMutation.mutate({ id: selectedDealTask.id, data: { title: dealTaskEditTitleValue.trim() } });
+                        }
+                        setIsDealTaskEditingTitle(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          if (dealTaskEditTitleValue.trim() && dealTaskEditTitleValue !== selectedDealTask.title) {
+                            updateDealTaskMutation.mutate({ id: selectedDealTask.id, data: { title: dealTaskEditTitleValue.trim() } });
+                          }
+                          setIsDealTaskEditingTitle(false);
+                        }
+                        if (e.key === "Escape") setIsDealTaskEditingTitle(false);
+                      }}
+                      data-testid="input-deal-task-title"
+                    />
+                  ) : (
+                    <SheetTitle
+                      className="text-xl cursor-pointer hover:bg-muted/50 rounded px-1 -ml-1 transition-colors"
+                      onClick={() => { setIsDealTaskEditingTitle(true); setDealTaskEditTitleValue(selectedDealTask.title); }}
+                      data-testid="title-deal-task-detail"
+                    >
+                      {selectedDealTask.title}
+                    </SheetTitle>
+                  )}
+                </SheetHeader>
+
+                <div className="space-y-6 mt-4">
+                  {/* Labels picker */}
+                  {taskLabelDefs.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Labels</p>
+                      <div className="flex flex-wrap gap-2">
+                        {taskLabelDefs.map((def) => {
+                          const active = taskLabelIds.includes(String(def.id));
+                          return (
+                            <button
+                              key={def.id}
+                              onClick={() => toggleDealTaskLabel(def.id)}
+                              className={cn(
+                                "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all border",
+                                TASK_COLOR_PALETTE[def.color]?.bg ?? "bg-muted",
+                                "text-white border-transparent",
+                                active ? "opacity-100 ring-2 ring-offset-1 ring-foreground/20" : "opacity-40 hover:opacity-70"
+                              )}
+                              data-testid={`button-deal-task-label-${def.id}`}
+                            >
+                              {active && <Check className="h-3 w-3" />}
+                              {def.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <AlignLeft className="h-3.5 w-3.5" /> Description
+                    </p>
+                    <Textarea
+                      className="resize-none min-h-[80px]"
+                      placeholder="Add a description…"
+                      value={dealTaskDescriptionDraft}
+                      onChange={(e) => setDealTaskDescriptionDraft(e.target.value)}
+                      onBlur={() => {
+                        if (dealTaskDescriptionDraft !== (selectedDealTask.description || "")) {
+                          updateDealTaskMutation.mutate({ id: selectedDealTask.id, data: { description: dealTaskDescriptionDraft } });
+                        }
+                      }}
+                      data-testid="textarea-deal-task-description"
+                    />
+                  </div>
+
+                  {/* Checklist */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Checklist
+                      {dealTaskChecklist.length > 0 && (
+                        <span className="ml-auto font-bold text-xs text-foreground">{dealTaskChecklistDone}/{dealTaskChecklist.length}</span>
+                      )}
+                    </p>
+                    {dealTaskChecklist.length > 0 && (
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full bg-green-500 transition-all duration-300"
+                          style={{ width: `${dealTaskChecklistPct}%` }}
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      {dealTaskChecklist.map((item) => (
+                        <div key={item.id} className="flex items-center gap-2 group/item">
+                          <button
+                            onClick={() => toggleDealTaskChecklistItem(item.id)}
+                            className={cn("h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                              item.done ? "bg-green-500 border-green-500" : "border-border hover:border-primary"
+                            )}
+                            data-testid={`button-deal-checklist-toggle-${item.id}`}
+                          >
+                            {item.done && <Check className="h-2.5 w-2.5 text-white" />}
+                          </button>
+                          <span className={cn("flex-1 text-sm", item.done && "line-through text-muted-foreground")}>
+                            {item.text}
+                          </span>
+                          <button
+                            onClick={() => deleteDealTaskChecklistItem(item.id)}
+                            className="opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+                            data-testid={`button-deal-checklist-delete-${item.id}`}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <Input
+                        placeholder="Add an item…"
+                        value={dealTaskNewChecklistText}
+                        onChange={(e) => setDealTaskNewChecklistText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDealTaskChecklistItem(); } }}
+                        className="h-8 text-sm"
+                        data-testid="input-deal-checklist-new"
+                      />
+                      <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={addDealTaskChecklistItem} data-testid="button-deal-checklist-add">
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Priority */}
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Priority</p>
+                    <Select
+                      value={selectedDealTask.priority}
+                      onValueChange={(v) => updateDealTaskField("priority", v)}
+                    >
+                      <SelectTrigger className="h-9 text-sm" data-testid="select-deal-task-priority">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Assignee */}
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Assigned To</p>
+                    <Select value={selectedDealTask.assignedTo || "none"} onValueChange={(v) => updateDealTaskField("assignedTo", v === "none" ? null : v)}>
+                      <SelectTrigger className="h-9 text-sm" data-testid="select-deal-task-assignee">
+                        <SelectValue placeholder="Unassigned" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Unassigned</SelectItem>
+                        {(users ?? []).map((u) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.firstName} {u.lastName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Due date */}
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Due Date</p>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start text-sm h-9 font-normal" data-testid="button-deal-task-date-picker">
+                          <CalendarIcon className="mr-2 h-4 w-4 opacity-50" />
+                          {selectedDealTask.dueDate ? format(new Date(selectedDealTask.dueDate), "PPP") : "No due date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={selectedDealTask.dueDate ? new Date(selectedDealTask.dueDate) : undefined}
+                          onSelect={(d) => updateDealTaskField("dueDate", d ?? null)}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </SheetContent>
       </Sheet>
 
