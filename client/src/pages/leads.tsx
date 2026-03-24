@@ -1058,6 +1058,7 @@ export default function Leads() {
   const [isAddDealOpen, setIsAddDealOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const autoOpenedRef = useRef(false);
+  const boardScrollRef = useRef<HTMLDivElement>(null);
   const [localScore, setLocalScore] = useState(50);
   useEffect(() => { setLocalScore(selectedLead?.confidenceScore ?? 50); }, [selectedLead?.id, selectedLead?.confidenceScore]);
   useEffect(() => {
@@ -2157,7 +2158,34 @@ export default function Leads() {
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
-            <div className="flex h-full overflow-x-auto p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth">
+            <div
+              ref={boardScrollRef}
+              className="flex h-full overflow-x-scroll p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth"
+              onWheel={(e) => {
+                const board = boardScrollRef.current;
+                if (!board) return;
+
+                if (e.shiftKey) {
+                  e.preventDefault();
+                  board.scrollLeft += e.deltaY;
+                  return;
+                }
+
+                const target = e.target as Element;
+                const isOverColumnScrollArea = !!target.closest("[data-radix-scroll-area-viewport]");
+
+                if (e.deltaX !== 0 && !isOverColumnScrollArea) {
+                  e.preventDefault();
+                  board.scrollLeft += e.deltaX;
+                  return;
+                }
+
+                if (e.deltaY !== 0 && !isOverColumnScrollArea) {
+                  e.preventDefault();
+                  board.scrollLeft += e.deltaY;
+                }
+              }}
+            >
               {(() => {
                 const visibleStages = activeFilters?.stages?.length
                   ? stages.filter(s => activeFilters!.stages!.includes(s.slug))
