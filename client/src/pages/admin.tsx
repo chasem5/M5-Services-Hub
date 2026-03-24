@@ -58,6 +58,7 @@ import {
   Unlink,
   Link2,
   Search,
+  MapPin,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -263,9 +264,21 @@ function BuildOpsPanel() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/buildops/last-sync"] });
-      toast({ title: "Properties synced", description: `${data.total} properties: ${data.created} created, ${data.updated} updated` });
+      toast({ title: "Properties synced", description: `${data.total} properties: ${data.created} created, ${data.updated} updated, ${data.geocoded ?? 0} geocoded` });
     },
     onError: (err: any) => toast({ title: "Property sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  const geocodeBuildingsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buildops/geocode-buildings", {});
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Map coordinates updated", description: `${data.geocoded} buildings geocoded, ${data.failed} could not be resolved` });
+    },
+    onError: (err: any) => toast({ title: "Geocoding failed", description: err.message, variant: "destructive" }),
   });
 
   const syncJobsMutation = useMutation({
@@ -463,7 +476,7 @@ function BuildOpsPanel() {
                 <Building2 className="h-4 w-4 text-primary" />
                 Sync Properties
               </h4>
-              <p className="text-xs text-muted-foreground">Pull BuildOps properties into CRM buildings. Stores property type and inactive status.</p>
+              <p className="text-xs text-muted-foreground">Pull BuildOps properties into CRM buildings. Stores address, property type, and geocodes coordinates for the portfolio map.</p>
               <Button
                 variant="outline"
                 size="sm"
@@ -474,6 +487,24 @@ function BuildOpsPanel() {
               >
                 {syncPropertiesMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Building2 className="h-3.5 w-3.5 mr-1.5" />}
                 {syncPropertiesMutation.isPending ? "Syncing..." : "Sync Properties"}
+              </Button>
+            </div>
+            <div className="border rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-primary" />
+                Fix Map Coordinates
+              </h4>
+              <p className="text-xs text-muted-foreground">Geocode any existing buildings that have an address but are missing map coordinates. Run this once to backfill properties synced before the address fix.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => geocodeBuildingsMutation.mutate()}
+                disabled={geocodeBuildingsMutation.isPending}
+                data-testid="button-geocode-buildings"
+              >
+                {geocodeBuildingsMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5 mr-1.5" />}
+                {geocodeBuildingsMutation.isPending ? "Geocoding..." : "Fix Map Coordinates"}
               </Button>
             </div>
             <div className="border rounded-lg p-4 space-y-2">

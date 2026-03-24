@@ -5664,6 +5664,28 @@ Respond with this JSON:
     }
   });
 
+  // ── Shared geocoding helper (Nominatim / OpenStreetMap) ──────────────────
+  async function geocodeAddress(address: string): Promise<{ lat: string; lng: string } | null> {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=us`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": "M5Services-CRM/1.0 (chase@m5svcs.com)" },
+      });
+      if (!res.ok) return null;
+      const data: any[] = await res.json();
+      if (!data.length) return null;
+      return { lat: data[0].lat, lng: data[0].lon };
+    } catch {
+      return null;
+    }
+  }
+
+  function buildAddressString(addr: { street?: string; city?: string; state?: string; zipCode?: string } | null): string | null {
+    if (!addr) return null;
+    const parts = [addr.street, addr.city, addr.state, addr.zipCode].filter(Boolean);
+    return parts.length > 0 ? parts.join(", ") : null;
+  }
+
   // ── Sync Properties (Locations) from BuildOps → CRM buildings ────────────
   app.post("/api/buildops/sync-properties", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
@@ -5682,6 +5704,7 @@ Respond with this JSON:
       let created = 0;
       let updated = 0;
       let skipped = 0;
+      let geocoded = 0;
 
       for (const prop of allProperties) {
         if (!prop.id) { skipped++; continue; }
@@ -5696,23 +5719,51 @@ Respond with this JSON:
         const propertyType = prop.customerPropertyTypeValue || null;
         const isInactive = prop.isActive === false;
 
+        // Extract address — BuildOps properties return either a single `address` or an `addresses` array
+        const rawAddrs = Array.isArray(prop.addresses) ? prop.addresses : (prop.address ? [prop.address] : []);
+        const primaryAddr = rawAddrs.find((a: any) => a.addressType === "service" || a.addressType === "billing") ?? rawAddrs[0] ?? null;
+        const addressStr = buildAddressString(primaryAddr);
+
         const existing = existingBuildings.find(b => b.buildopsId === prop.id);
 
         if (existing) {
+          // Only geocode if address changed or lat/lng not yet set
+          const addressChanged = addressStr && addressStr !== existing.address;
+          const needsGeocode = addressStr && (!existing.lat || !existing.lng || addressChanged);
+          let lat = existing.lat;
+          let lng = existing.lng;
+          if (needsGeocode) {
+            const coords = await geocodeAddress(addressStr!);
+            if (coords) { lat = coords.lat; lng = coords.lng; geocoded++; }
+            await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit: 1 req/sec
+          }
           await db.update(contactBuildings).set({
             clientId: matchedClient?.id ?? existing.clientId,
             name,
             propertyType,
             buildopsIsInactive: isInactive,
+            ...(addressStr ? { address: addressStr } : {}),
+            ...(lat ? { lat } : {}),
+            ...(lng ? { lng } : {}),
           }).where(eq(contactBuildings.id, existing.id));
           updated++;
         } else {
+          let lat: string | null = null;
+          let lng: string | null = null;
+          if (addressStr) {
+            const coords = await geocodeAddress(addressStr);
+            if (coords) { lat = coords.lat; lng = coords.lng; geocoded++; }
+            await new Promise(r => setTimeout(r, 1100));
+          }
           await db.insert(contactBuildings).values({
             buildopsId: prop.id,
             clientId: matchedClient?.id ?? null,
             name,
             propertyType,
             buildopsIsInactive: isInactive,
+            ...(addressStr ? { address: addressStr } : {}),
+            ...(lat ? { lat } : {}),
+            ...(lng ? { lng } : {}),
           });
           created++;
         }
@@ -5721,14 +5772,49 @@ Respond with this JSON:
       await storage.createBuildopsSyncLog({
         entityType: "property",
         action: "pull",
-        message: `Synced ${allProperties.length} properties: ${created} created, ${updated} updated, ${skipped} skipped`,
+        message: `Synced ${allProperties.length} properties: ${created} created, ${updated} updated, ${skipped} skipped, ${geocoded} geocoded`,
       });
 
-      console.log(`[BuildOps sync-properties] Done: ${created} created, ${updated} updated, ${skipped} skipped out of ${allProperties.length}`);
-      res.json({ ok: true, created, updated, skipped, total: allProperties.length });
+      console.log(`[BuildOps sync-properties] Done: ${created} created, ${updated} updated, ${skipped} skipped, ${geocoded} geocoded`);
+      res.json({ ok: true, created, updated, skipped, geocoded, total: allProperties.length });
     } catch (err: any) {
       console.error("[BuildOps sync-properties] Error:", err.message);
       await storage.createBuildopsSyncLog({ entityType: "property", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Backfill geocoding for buildings that have an address but no lat/lng ──
+  app.post("/api/buildops/geocode-buildings", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { contactBuildings } = await import("@shared/schema");
+
+      // Find buildings that have an address but missing lat or lng
+      const allBuildings = await db.select().from(contactBuildings);
+      const needsGeocode = allBuildings.filter(b => b.address && (!b.lat || !b.lng));
+
+      let geocoded = 0;
+      let failed = 0;
+
+      for (const building of needsGeocode) {
+        const coords = await geocodeAddress(building.address!);
+        if (coords) {
+          await db.update(contactBuildings)
+            .set({ lat: coords.lat, lng: coords.lng })
+            .where(eq(contactBuildings.id, building.id));
+          geocoded++;
+        } else {
+          failed++;
+        }
+        await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit
+      }
+
+      console.log(`[geocode-buildings] Done: ${geocoded} geocoded, ${failed} failed out of ${needsGeocode.length} candidates`);
+      res.json({ ok: true, geocoded, failed, total: needsGeocode.length });
+    } catch (err: any) {
+      console.error("[geocode-buildings] Error:", err.message);
       res.status(500).json({ message: err.message });
     }
   });

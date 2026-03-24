@@ -566,6 +566,8 @@ export interface BuildOpsProperty {
   status?: string;
   isActive?: boolean;
   customerPropertyTypeValue?: string;
+  address?: BuildOpsAddress;
+  addresses?: BuildOpsAddress[];
 }
 
 export async function getProperties(
