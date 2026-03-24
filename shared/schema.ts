@@ -291,6 +291,7 @@ export const activityLogs = pgTable("activity_logs", {
 export const meetings = pgTable("meetings", {
   id: serial("id").primaryKey(),
   title: varchar("title").notNull(),
+  meetingType: varchar("meeting_type").default("standard").notNull(),
   date: timestamp("date").defaultNow().notNull(),
   status: varchar("status").default("recording").notNull(),
   rawTranscript: text("raw_transcript").default(""),
@@ -596,6 +597,7 @@ export type InsertTaskColumn = z.infer<typeof insertTaskColumnSchema>;
 
 export const insertMeetingSchema = createInsertSchema(meetings).omit({ id: true, createdAt: true }).extend({
   date: z.coerce.date().optional(),
+  meetingType: z.enum(["standard", "pipeline_review"]).optional().default("standard"),
   leadId: z.number().optional().nullable(),
   clientId: z.number().optional().nullable(),
   attendeeContactIds: z.array(z.number()).optional().default([]),

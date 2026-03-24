@@ -166,6 +166,7 @@ export async function registerRoutes(
   // Multi-board task system: create tables, add columns, backfill data
   await storage.migrateTaskBoards();
   await storage.migrateEmailMessageColumns();
+  await storage.migrateMeetingTypeColumn();
   // Seed default value tier settings
   await storage.getValueTierSettings();
   // Seed default contact stages on startup
@@ -3125,14 +3126,15 @@ If after translating all commits you still have nothing meaningful, return an em
 
   app.post("/api/meetings", isAuthenticated, async (req, res) => {
     const userId = (req as any).user.claims.sub;
-    const { title, clientId, leadId, attendeeContactIds, attendeeUserIds } = z.object({
+    const { title, clientId, leadId, attendeeContactIds, attendeeUserIds, meetingType } = z.object({
       title: z.string().min(1),
       clientId: z.number().int().optional(),
       leadId: z.number().int().optional(),
       attendeeContactIds: z.array(z.number()).optional(),
       attendeeUserIds: z.array(z.string()).optional(),
+      meetingType: z.enum(["standard", "pipeline_review"]).optional().default("standard"),
     }).parse(req.body);
-    const meeting = await storage.createMeeting({ title, createdBy: userId, status: "recording", clientId: clientId ?? null, leadId: leadId ?? null, attendeeContactIds: attendeeContactIds ?? [], attendeeUserIds: attendeeUserIds ?? [] });
+    const meeting = await storage.createMeeting({ title, createdBy: userId, status: "recording", meetingType: meetingType ?? "standard", clientId: clientId ?? null, leadId: leadId ?? null, attendeeContactIds: attendeeContactIds ?? [], attendeeUserIds: attendeeUserIds ?? [] });
     res.json(meeting);
   });
 
@@ -3206,8 +3208,106 @@ If after translating all commits you still have nothing meaningful, return an em
 
     try {
       const { openai } = await import("./openai");
+      const { ilike, eq } = await import("drizzle-orm");
+      const { db } = await import("./db");
+      const { leads: leadsTable } = await import("@shared/schema");
 
-      const systemPrompt = `You are an AI assistant for M5 Services, a facility maintenance company.
+      const isPipelineReview = meeting.meetingType === "pipeline_review";
+
+      if (isPipelineReview) {
+        // Pipeline Review mode: identify all deals mentioned and group output per deal
+        const systemPrompt = `You are an AI assistant for M5 Services, a facility maintenance company.
+This is a pipeline review meeting where multiple deals/leads are discussed back-to-back.
+
+Analyze the transcript and identify every deal or lead mentioned by name. For each deal, produce:
+- "dealName": the name of the deal or lead as mentioned in the transcript
+- "summary": a 1-2 sentence summary of what was discussed for this deal
+- "actions": an array of action objects for this deal. Each action must have:
+  - "type": one of "create_task", "update_lead", "update_client", "note"
+  - "description": A clear, human-readable description of what will happen (1 sentence).
+  - "payload": An object with relevant fields:
+    
+    For create_task: { "title": string, "description": string (optional), "priority": "low"|"medium"|"high" (optional), "dueDate": "YYYY-MM-DD" (optional) }
+    For update_lead: { "leadTitle": string (the deal name), "stage": string (optional), "notes": string (optional), "value": number (optional) }
+    For update_client: { "clientName": string, "notes": string (optional) }
+    For note: { "text": string }
+
+Return a JSON object with:
+- "summary": A concise 2-3 sentence overall summary of the pipeline review session.
+- "deals": An array of deal objects, each with "dealName", "summary", and "actions".
+
+Only include deals clearly mentioned. Do not invent deals or actions.
+Return only valid JSON, no markdown.`;
+
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Pipeline review transcript:\n\n${meeting.rawTranscript}` },
+          ],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 4000,
+        });
+
+        const raw = completion.choices[0].message.content || "{}";
+        const parsed = JSON.parse(raw);
+        const overallSummary: string = parsed.summary || "";
+        const dealGroups: any[] = Array.isArray(parsed.deals) ? parsed.deals : [];
+
+        // For each deal group, try fuzzy-match against leads.title and save actions
+        for (const dealGroup of dealGroups) {
+          const dealName: string = dealGroup.dealName || "";
+          const dealActions: any[] = Array.isArray(dealGroup.actions) ? dealGroup.actions : [];
+
+          // Fuzzy match: find lead by title
+          let matchedLeadId: number | null = null;
+          if (dealName) {
+            const [matchedLead] = await db.select({ id: leadsTable.id, title: leadsTable.title })
+              .from(leadsTable)
+              .where(ilike(leadsTable.title, `%${dealName}%`))
+              .limit(1);
+            if (matchedLead) matchedLeadId = matchedLead.id;
+          }
+
+          for (const item of dealActions) {
+            await storage.createMeetingAction({
+              meetingId: id,
+              type: item.type,
+              description: item.description,
+              payload: {
+                ...((item.payload as Record<string, any>) || {}),
+                dealName,
+                dealSummary: dealGroup.summary || "",
+                matchedLeadId,
+              },
+              status: "pending",
+            });
+          }
+
+          // If a deal group has no actions, still store a note action to represent it
+          if (dealActions.length === 0 && dealGroup.summary) {
+            await storage.createMeetingAction({
+              meetingId: id,
+              type: "note",
+              description: `${dealName}: ${dealGroup.summary}`,
+              payload: {
+                text: dealGroup.summary,
+                dealName,
+                dealSummary: dealGroup.summary,
+                matchedLeadId,
+              },
+              status: "pending",
+            });
+          }
+        }
+
+        await storage.updateMeeting(id, { status: "review", summary: overallSummary });
+
+        const actions = await storage.listMeetingActions(id);
+        res.json({ summary: overallSummary, actions });
+      } else {
+        // Standard single-deal mode
+        const systemPrompt = `You are an AI assistant for M5 Services, a facility maintenance company.
 Analyze the following meeting transcript and extract actionable items to create or update in their CRM.
 
 Return a JSON object with two keys:
@@ -3226,36 +3326,37 @@ Return a JSON object with two keys:
 Only include items that are clearly mentioned or implied in the transcript. Do not invent items.
 Return only valid JSON, no markdown.`;
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Meeting transcript:\n\n${meeting.rawTranscript}` },
-        ],
-        response_format: { type: "json_object" },
-        max_completion_tokens: 2000,
-      });
-
-      const raw = completion.choices[0].message.content || "{}";
-      const parsed = JSON.parse(raw);
-      const summary: string = parsed.summary || "";
-      const actionItems: any[] = Array.isArray(parsed.actions) ? parsed.actions : [];
-
-      // Save actions
-      for (const item of actionItems) {
-        await storage.createMeetingAction({
-          meetingId: id,
-          type: item.type,
-          description: item.description,
-          payload: item.payload || {},
-          status: "pending",
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Meeting transcript:\n\n${meeting.rawTranscript}` },
+          ],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 2000,
         });
+
+        const raw = completion.choices[0].message.content || "{}";
+        const parsed = JSON.parse(raw);
+        const summary: string = parsed.summary || "";
+        const actionItems: any[] = Array.isArray(parsed.actions) ? parsed.actions : [];
+
+        // Save actions
+        for (const item of actionItems) {
+          await storage.createMeetingAction({
+            meetingId: id,
+            type: item.type,
+            description: item.description,
+            payload: item.payload || {},
+            status: "pending",
+          });
+        }
+
+        await storage.updateMeeting(id, { status: "review", summary });
+
+        const actions = await storage.listMeetingActions(id);
+        res.json({ summary, actions });
       }
-
-      await storage.updateMeeting(id, { status: "review", summary });
-
-      const actions = await storage.listMeetingActions(id);
-      res.json({ summary, actions });
     } catch (err: any) {
       console.error("Analysis error:", err);
       await storage.updateMeeting(id, { status: "recording" });

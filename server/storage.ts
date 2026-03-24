@@ -365,6 +365,7 @@ export interface IStorage {
   listUnrespondedInboundEmails(olderThanDays: number, userId: string): Promise<EmailMessage[]>;
   bulkAssignEmailThreads(gmailThreadIds: string[], assignedUserId: string): Promise<void>;
   migrateEmailMessageColumns(): Promise<void>;
+  migrateMeetingTypeColumn(): Promise<void>;
 
   // Email Thread Notes
   listEmailThreadNotes(gmailThreadId: string): Promise<(EmailThreadNote & { userName: string })[]>;
@@ -2539,6 +2540,14 @@ export class DatabaseStorage implements IStorage {
       `);
     } catch (e: any) {
       console.log("[migration] email_message columns/email_thread_notes:", e.message);
+    }
+  }
+
+  async migrateMeetingTypeColumn(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE meetings ADD COLUMN IF NOT EXISTS meeting_type varchar NOT NULL DEFAULT 'standard'`);
+    } catch (e: any) {
+      console.log("[migration] meetings.meeting_type:", e.message);
     }
   }
 

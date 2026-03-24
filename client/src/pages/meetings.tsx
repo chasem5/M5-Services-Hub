@@ -27,7 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { format, isToday, isTomorrow } from "date-fns";
-import { Mic, Plus, Trash2, ChevronRight, CheckCircle2, Clock, AlertCircle, Radio, CalendarDays, ExternalLink, ChevronDown, ChevronUp, Target, Building2 } from "lucide-react";
+import { Mic, Plus, Trash2, ChevronRight, CheckCircle2, Clock, AlertCircle, Radio, CalendarDays, ExternalLink, ChevronDown, ChevronUp, Target, Building2, ClipboardList } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { Label } from "@/components/ui/label";
@@ -57,6 +57,7 @@ function formatEventTime(startTime: string, allDay: boolean): string {
 type MeetingWithCounts = {
   id: number;
   title: string;
+  meetingType: string;
   date: string;
   status: string;
   summary: string | null;
@@ -99,6 +100,7 @@ export default function MeetingsPage() {
   const [, navigate] = useLocation();
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [meetingType, setMeetingType] = useState<"standard" | "pipeline_review">("standard");
   const [selectedLeadId, setSelectedLeadId] = useState<string>("");
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedAttendeeIds, setSelectedAttendeeIds] = useState<number[]>([]);
@@ -138,7 +140,7 @@ export default function MeetingsPage() {
     : allContacts;
 
   const createMutation = useMutation({
-    mutationFn: async (data: { title: string; leadId?: number; clientId?: number; attendeeContactIds?: number[]; attendeeUserIds?: string[] }) => {
+    mutationFn: async (data: { title: string; meetingType?: string; leadId?: number; clientId?: number; attendeeContactIds?: number[]; attendeeUserIds?: string[] }) => {
       const res = await apiRequest("POST", "/api/meetings", data);
       return res.json();
     },
@@ -146,6 +148,7 @@ export default function MeetingsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
       setIsNewOpen(false);
       setNewTitle("");
+      setMeetingType("standard");
       setSelectedLeadId("");
       setSelectedClientId("");
       setSelectedAttendeeIds([]);
@@ -171,8 +174,9 @@ export default function MeetingsPage() {
     if (newTitle.trim()) {
       createMutation.mutate({
         title: newTitle.trim(),
-        leadId: selectedLeadId ? parseInt(selectedLeadId) : undefined,
-        clientId: selectedClientId ? parseInt(selectedClientId) : undefined,
+        meetingType,
+        leadId: meetingType === "standard" && selectedLeadId ? parseInt(selectedLeadId) : undefined,
+        clientId: meetingType === "standard" && selectedClientId ? parseInt(selectedClientId) : undefined,
         attendeeContactIds: selectedAttendeeIds.length > 0 ? selectedAttendeeIds : undefined,
         attendeeUserIds: selectedAttendeeUserIds.length > 0 ? selectedAttendeeUserIds : undefined,
       });
@@ -307,7 +311,7 @@ export default function MeetingsPage() {
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <p className="font-semibold text-sm truncate">{meeting.title}</p>
                       <Badge
                         variant="outline"
@@ -317,6 +321,16 @@ export default function MeetingsPage() {
                         {config.icon}
                         {config.label}
                       </Badge>
+                      {meeting.meetingType === "pipeline_review" && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] font-bold flex items-center gap-1 shrink-0 border-primary/30 text-primary bg-primary/5"
+                          data-testid={`badge-pipeline-review-${meeting.id}`}
+                        >
+                          <ClipboardList className="h-2.5 w-2.5" />
+                          Pipeline Review
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span>{format(new Date(meeting.date), "MMM d, yyyy 'at' h:mm a")}</span>
@@ -361,6 +375,57 @@ export default function MeetingsPage() {
             <DialogDescription>Give your meeting a title so you can find it later.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* Meeting Type Toggle */}
+            <div className="space-y-2">
+              <Label>Meeting Type</Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMeetingType("standard")}
+                  className={cn(
+                    "flex-1 flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all",
+                    meetingType === "standard"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/40"
+                  )}
+                  data-testid="button-type-standard"
+                >
+                  <Mic className="h-4 w-4 shrink-0" />
+                  <div className="text-left">
+                    <div>Standard</div>
+                    <div className="text-[11px] font-normal opacity-70">Single deal focus</div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMeetingType("pipeline_review");
+                    setSelectedAttendeeIds([]);
+                    setSelectedClientId("");
+                    setAttendeeTab("internal");
+                  }}
+                  className={cn(
+                    "flex-1 flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all",
+                    meetingType === "pipeline_review"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/40"
+                  )}
+                  data-testid="button-type-pipeline-review"
+                >
+                  <ClipboardList className="h-4 w-4 shrink-0" />
+                  <div className="text-left">
+                    <div>Pipeline Review</div>
+                    <div className="text-[11px] font-normal opacity-70">Multi-deal analysis</div>
+                  </div>
+                </button>
+              </div>
+              {meetingType === "pipeline_review" && (
+                <p className="text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
+                  The AI will automatically identify every deal mentioned in the transcript and group notes and action items per deal — no manual linking required.
+                </p>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="title">Meeting Title</Label>
               <Input
@@ -374,7 +439,7 @@ export default function MeetingsPage() {
               />
             </div>
 
-            {/* Attendees — tabbed: Internal (M5 Users) / External (Contacts) */}
+            {/* Attendees — tabbed: Internal (M5 Users) / External (Contacts, hidden in pipeline review) */}
             <div className="space-y-2">
               <Label>Attendees</Label>
               <div className="border rounded-lg overflow-hidden">
@@ -387,14 +452,16 @@ export default function MeetingsPage() {
                   >
                     M5 Team {selectedAttendeeUserIds.length > 0 && <span className="ml-1 bg-primary/15 text-primary rounded-full px-1.5 py-0.5 text-[10px]">{selectedAttendeeUserIds.length}</span>}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setAttendeeTab("external")}
-                    className={cn("flex-1 px-3 py-2 text-xs font-medium transition-colors", attendeeTab === "external" ? "bg-background text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground")}
-                    data-testid="tab-external-attendees"
-                  >
-                    External {selectedAttendeeIds.length > 0 && <span className="ml-1 bg-primary/15 text-primary rounded-full px-1.5 py-0.5 text-[10px]">{selectedAttendeeIds.length}</span>}
-                  </button>
+                  {meetingType === "standard" && (
+                    <button
+                      type="button"
+                      onClick={() => setAttendeeTab("external")}
+                      className={cn("flex-1 px-3 py-2 text-xs font-medium transition-colors", attendeeTab === "external" ? "bg-background text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground")}
+                      data-testid="tab-external-attendees"
+                    >
+                      External {selectedAttendeeIds.length > 0 && <span className="ml-1 bg-primary/15 text-primary rounded-full px-1.5 py-0.5 text-[10px]">{selectedAttendeeIds.length}</span>}
+                    </button>
+                  )}
                 </div>
 
                 {attendeeTab === "internal" && (
@@ -425,7 +492,7 @@ export default function MeetingsPage() {
                   </div>
                 )}
 
-                {attendeeTab === "external" && (
+                {meetingType === "standard" && attendeeTab === "external" && (
                   <div>
                     <div className="px-3 pt-2.5 pb-1.5 border-b bg-muted/20">
                       <p className="text-[11px] text-muted-foreground mb-2">Filter by company (optional)</p>
@@ -466,34 +533,36 @@ export default function MeetingsPage() {
                   </div>
                 )}
               </div>
-              {(selectedAttendeeUserIds.length + selectedAttendeeIds.length) > 0 && (
+              {(selectedAttendeeUserIds.length + (meetingType === "standard" ? selectedAttendeeIds.length : 0)) > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  {selectedAttendeeUserIds.length + selectedAttendeeIds.length} attendee{(selectedAttendeeUserIds.length + selectedAttendeeIds.length) !== 1 ? "s" : ""} selected
+                  {selectedAttendeeUserIds.length + (meetingType === "standard" ? selectedAttendeeIds.length : 0)} attendee{(selectedAttendeeUserIds.length + (meetingType === "standard" ? selectedAttendeeIds.length : 0)) !== 1 ? "s" : ""} selected
                 </p>
               )}
             </div>
 
-            {/* Optional link to deal */}
-            <div className="space-y-2">
-              <Label>Related Deal (Optional)</Label>
-              <SearchableSelect
-                options={[{ value: "", label: "None" }, ...leads.map(l => ({
-                  value: l.id.toString(),
-                  label: l.title,
-                  sublabel: clients.find(c => c.id === l.clientId)?.name
-                }))]}
-                value={selectedLeadId}
-                onChange={(val) => {
-                  setSelectedLeadId(val);
-                  const lead = leads.find(l => l.id.toString() === val);
-                  if (lead?.clientId && attendeeTab === "external") {
-                    setSelectedClientId(lead.clientId.toString());
-                  }
-                }}
-                placeholder="Select a deal..."
-                data-testid="select-related-deal"
-              />
-            </div>
+            {/* Optional link to deal — hidden for pipeline_review */}
+            {meetingType === "standard" && (
+              <div className="space-y-2">
+                <Label>Related Deal (Optional)</Label>
+                <SearchableSelect
+                  options={[{ value: "", label: "None" }, ...leads.map(l => ({
+                    value: l.id.toString(),
+                    label: l.title,
+                    sublabel: clients.find(c => c.id === l.clientId)?.name
+                  }))]}
+                  value={selectedLeadId}
+                  onChange={(val) => {
+                    setSelectedLeadId(val);
+                    const lead = leads.find(l => l.id.toString() === val);
+                    if (lead?.clientId && attendeeTab === "external") {
+                      setSelectedClientId(lead.clientId.toString());
+                    }
+                  }}
+                  placeholder="Select a deal..."
+                  data-testid="select-related-deal"
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsNewOpen(false)}>Cancel</Button>

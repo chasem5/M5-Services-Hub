@@ -31,6 +31,8 @@ import {
   CalendarDays,
   ExternalLink,
   Pencil,
+  AlertTriangle,
+  Link2,
 } from "lucide-react";
 import {
   Popover,
@@ -65,6 +67,7 @@ type MeetingAction = {
 type Meeting = {
   id: number;
   title: string;
+  meetingType: string;
   date: string;
   status: string;
   rawTranscript: string | null;
@@ -207,6 +210,98 @@ function ActionCard({
   );
 }
 
+function PipelineDealSection({
+  dealName,
+  dealSummary,
+  matchedLeadId,
+  actions,
+  onApprove,
+  onDecline,
+  actioningIds,
+}: {
+  dealName: string;
+  dealSummary: string;
+  matchedLeadId: number | null;
+  actions: MeetingAction[];
+  onApprove: (id: number) => void;
+  onDecline: (id: number) => void;
+  actioningIds: Record<number, "approve" | "decline">;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const pendingCount = actions.filter(a => a.status === "pending").length;
+
+  return (
+    <div className="border border-border/60 rounded-xl overflow-hidden bg-white dark:bg-card" data-testid={`section-deal-${dealName.replace(/\s+/g, "-").toLowerCase()}`}>
+      {/* Deal header */}
+      <button
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors text-left"
+        onClick={() => setCollapsed(c => !c)}
+        data-testid={`button-toggle-deal-${dealName.replace(/\s+/g, "-").toLowerCase()}`}
+      >
+        <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <Target className="h-4 w-4 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm truncate">{dealName}</span>
+            {matchedLeadId ? (
+              <a
+                href={`/leads/${matchedLeadId}`}
+                onClick={e => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-[10px] font-medium text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5 hover:bg-primary/20 transition-colors"
+                data-testid={`link-lead-${matchedLeadId}`}
+              >
+                <Link2 className="h-2.5 w-2.5" />
+                View in CRM
+              </a>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800">
+                <AlertTriangle className="h-2.5 w-2.5" />
+                No CRM match
+              </span>
+            )}
+            {pendingCount > 0 && (
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground">
+                {pendingCount}
+              </Badge>
+            )}
+          </div>
+          {dealSummary && (
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{dealSummary}</p>
+          )}
+        </div>
+        <div className="shrink-0 text-muted-foreground">
+          {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+        </div>
+      </button>
+
+      {/* Deal content */}
+      {!collapsed && (
+        <div className="border-t border-border/40 p-3 space-y-2.5">
+          {dealSummary && (
+            <div className="bg-muted/40 rounded-lg px-3 py-2 text-xs text-muted-foreground leading-relaxed">
+              {dealSummary}
+            </div>
+          )}
+          {actions.map(action => (
+            <ActionCard
+              key={action.id}
+              action={action}
+              isApproving={actioningIds[action.id] === "approve"}
+              isDeclining={actioningIds[action.id] === "decline"}
+              onApprove={() => onApprove(action.id)}
+              onDecline={() => onDecline(action.id)}
+            />
+          ))}
+          {actions.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-2">No actions for this deal.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MeetingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const meetingId = parseInt(id);
@@ -227,6 +322,8 @@ export default function MeetingDetailPage() {
   const finalTranscriptRef = useRef<string>("");
   const isRecordingRef = useRef<boolean>(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const transcriptScrollRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
 
   const [showFollowUpPrompt, setShowFollowUpPrompt] = useState(false);
   const [isEditingAttendees, setIsEditingAttendees] = useState(false);
@@ -255,8 +352,17 @@ export default function MeetingDetailPage() {
   }, [meeting?.rawTranscript]);
 
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!userScrolledUpRef.current) {
+      transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [liveTranscript]);
+
+  const handleTranscriptScroll = () => {
+    const el = transcriptScrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    userScrolledUpRef.current = distanceFromBottom > 80;
+  };
 
   const updateMutation = useMutation({
     mutationFn: async (data: { title?: string; status?: string; rawTranscript?: string; attendeeContactIds?: number[] }) => {
@@ -526,15 +632,23 @@ export default function MeetingDetailPage() {
               {meeting.title}
             </h1>
           )}
-          <p className="text-xs text-muted-foreground">
-            {format(new Date(meeting.date), "MMMM d, yyyy")}
-            {isRecording && (
-              <span className="ml-2 text-red-500 font-medium flex items-center gap-1 inline-flex">
-                <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
-                Recording…
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-muted-foreground">
+              {format(new Date(meeting.date), "MMMM d, yyyy")}
+              {isRecording && (
+                <span className="ml-2 text-red-500 font-medium flex items-center gap-1 inline-flex">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                  Recording…
+                </span>
+              )}
+            </p>
+            {meeting.meetingType === "pipeline_review" && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5" data-testid="badge-pipeline-review">
+                <ClipboardList className="h-2.5 w-2.5" />
+                Pipeline Review
               </span>
             )}
-          </p>
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {/* Calendar sync */}
@@ -863,7 +977,7 @@ export default function MeetingDetailPage() {
           )}
 
           {/* Transcript display */}
-          <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="flex-1 overflow-y-auto px-6 py-5 relative" ref={transcriptScrollRef} onScroll={handleTranscriptScroll}>
             <div className="flex items-center gap-2 mb-3">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Transcript</p>
               {isProcessing && (
@@ -886,6 +1000,21 @@ export default function MeetingDetailPage() {
               </div>
             )}
             <div ref={transcriptEndRef} />
+
+            {/* Floating stop button — always visible while recording */}
+            {isRecording && (
+              <div className="sticky bottom-4 flex justify-center pointer-events-none">
+                <Button
+                  onClick={stopRecording}
+                  variant="destructive"
+                  className="gap-2 shadow-lg pointer-events-auto"
+                  data-testid="button-stop-recording-floating"
+                >
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                  Stop Recording
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -938,7 +1067,9 @@ export default function MeetingDetailPage() {
                   {/* Summary */}
                   {meeting.summary && (
                     <div className="bg-muted/60 border border-border/50 rounded-lg p-3 text-xs leading-relaxed text-muted-foreground mb-4">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 mb-1.5">Meeting Summary</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 mb-1.5">
+                        {meeting.meetingType === "pipeline_review" ? "Pipeline Review Summary" : "Meeting Summary"}
+                      </p>
                       {meeting.summary}
                     </div>
                   )}
@@ -948,6 +1079,38 @@ export default function MeetingDetailPage() {
                       <ClipboardList className="h-8 w-8 mb-2 opacity-20" />
                       <p className="text-sm">No action items were identified.</p>
                     </div>
+                  ) : meeting.meetingType === "pipeline_review" ? (
+                    // Pipeline Review: group actions by dealName
+                    (() => {
+                      const dealMap = new Map<string, { dealSummary: string; matchedLeadId: number | null; actions: MeetingAction[] }>();
+                      for (const action of actions) {
+                        const dealName = (action.payload as Record<string, any>).dealName || "Unknown Deal";
+                        const dealSummary = (action.payload as Record<string, any>).dealSummary || "";
+                        const matchedLeadId = (action.payload as Record<string, any>).matchedLeadId ?? null;
+                        if (!dealMap.has(dealName)) {
+                          dealMap.set(dealName, { dealSummary, matchedLeadId, actions: [] });
+                        }
+                        dealMap.get(dealName)!.actions.push(action);
+                      }
+                      return Array.from(dealMap.entries()).map(([dealName, group]) => (
+                        <PipelineDealSection
+                          key={dealName}
+                          dealName={dealName}
+                          dealSummary={group.dealSummary}
+                          matchedLeadId={group.matchedLeadId}
+                          actions={group.actions}
+                          actioningIds={actioningIds}
+                          onApprove={(actionId) => {
+                            setActioningIds((prev) => ({ ...prev, [actionId]: "approve" }));
+                            approveMutation.mutate(actionId);
+                          }}
+                          onDecline={(actionId) => {
+                            setActioningIds((prev) => ({ ...prev, [actionId]: "decline" }));
+                            declineMutation.mutate(actionId);
+                          }}
+                        />
+                      ));
+                    })()
                   ) : (
                     actions.map((action) => (
                       <ActionCard
