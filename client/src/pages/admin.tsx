@@ -494,7 +494,7 @@ function BuildOpsPanel() {
                 <MapPin className="h-4 w-4 text-primary" />
                 Fix Map Coordinates
               </h4>
-              <p className="text-xs text-muted-foreground">Geocode any existing buildings that have an address but are missing map coordinates. Run this once to backfill properties synced before the address fix.</p>
+              <p className="text-xs text-muted-foreground">Geocode any buildings that have a manually-entered address but are missing map coordinates. Add addresses directly on each building card in the client's Portfolio Map tab, then run this to batch-geocode any that were missed.</p>
               <Button
                 variant="outline"
                 size="sm"

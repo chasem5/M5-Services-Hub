@@ -1207,6 +1207,43 @@ export async function registerRoutes(
     res.json(activity);
   });
 
+  // Manually update a building's address and geocode it
+  app.patch("/api/buildings/:id/address", isAuthenticated, async (req, res) => {
+    try {
+      const buildingId = parseInt(req.params.id as string);
+      const { address } = req.body;
+      if (!address || typeof address !== "string") {
+        return res.status(400).json({ message: "address is required" });
+      }
+
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { contactBuildings } = await import("@shared/schema");
+
+      // Geocode the provided address
+      async function nominatimGeocode(addr: string) {
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1&countrycodes=us`;
+          const r = await fetch(url, { headers: { "User-Agent": "M5Services-CRM/1.0 (chase@m5svcs.com)" } });
+          if (!r.ok) return null;
+          const data: any[] = await r.json();
+          return data.length ? { lat: data[0].lat, lng: data[0].lon } : null;
+        } catch { return null; }
+      }
+
+      const coords = await nominatimGeocode(address);
+      const update: Record<string, any> = { address };
+      if (coords) { update.lat = coords.lat; update.lng = coords.lng; }
+
+      await db.update(contactBuildings).set(update).where(eq(contactBuildings.id, buildingId));
+
+      const [updated] = await db.select().from(contactBuildings).where(eq(contactBuildings.id, buildingId));
+      res.json({ ok: true, geocoded: !!coords, building: updated });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Client Offices
   app.get("/api/clients/:id/offices", isAuthenticated, async (req, res) => {
     const clientId = parseInt(req.params.id as string);
@@ -5649,6 +5686,7 @@ Respond with this JSON:
     }
   });
 
+
   app.get("/api/buildops/debug-quote/:quoteId", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     try {
       const creds = await getBuildOpsCreds();
@@ -5704,7 +5742,6 @@ Respond with this JSON:
       let created = 0;
       let updated = 0;
       let skipped = 0;
-      let geocoded = 0;
 
       for (const prop of allProperties) {
         if (!prop.id) { skipped++; continue; }
@@ -5719,51 +5756,26 @@ Respond with this JSON:
         const propertyType = prop.customerPropertyTypeValue || null;
         const isInactive = prop.isActive === false;
 
-        // Extract address — BuildOps properties return either a single `address` or an `addresses` array
-        const rawAddrs = Array.isArray(prop.addresses) ? prop.addresses : (prop.address ? [prop.address] : []);
-        const primaryAddr = rawAddrs.find((a: any) => a.addressType === "service" || a.addressType === "billing") ?? rawAddrs[0] ?? null;
-        const addressStr = buildAddressString(primaryAddr);
+        // NOTE: BuildOps /v1/properties API does NOT return address data (confirmed via API inspection).
+        // Addresses must be entered manually in the CRM. We preserve any existing manually-entered address/lat/lng.
 
         const existing = existingBuildings.find(b => b.buildopsId === prop.id);
 
         if (existing) {
-          // Only geocode if address changed or lat/lng not yet set
-          const addressChanged = addressStr && addressStr !== existing.address;
-          const needsGeocode = addressStr && (!existing.lat || !existing.lng || addressChanged);
-          let lat = existing.lat;
-          let lng = existing.lng;
-          if (needsGeocode) {
-            const coords = await geocodeAddress(addressStr!);
-            if (coords) { lat = coords.lat; lng = coords.lng; geocoded++; }
-            await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit: 1 req/sec
-          }
           await db.update(contactBuildings).set({
             clientId: matchedClient?.id ?? existing.clientId,
             name,
             propertyType,
             buildopsIsInactive: isInactive,
-            ...(addressStr ? { address: addressStr } : {}),
-            ...(lat ? { lat } : {}),
-            ...(lng ? { lng } : {}),
           }).where(eq(contactBuildings.id, existing.id));
           updated++;
         } else {
-          let lat: string | null = null;
-          let lng: string | null = null;
-          if (addressStr) {
-            const coords = await geocodeAddress(addressStr);
-            if (coords) { lat = coords.lat; lng = coords.lng; geocoded++; }
-            await new Promise(r => setTimeout(r, 1100));
-          }
           await db.insert(contactBuildings).values({
             buildopsId: prop.id,
             clientId: matchedClient?.id ?? null,
             name,
             propertyType,
             buildopsIsInactive: isInactive,
-            ...(addressStr ? { address: addressStr } : {}),
-            ...(lat ? { lat } : {}),
-            ...(lng ? { lng } : {}),
           });
           created++;
         }
@@ -5772,11 +5784,11 @@ Respond with this JSON:
       await storage.createBuildopsSyncLog({
         entityType: "property",
         action: "pull",
-        message: `Synced ${allProperties.length} properties: ${created} created, ${updated} updated, ${skipped} skipped, ${geocoded} geocoded`,
+        message: `Synced ${allProperties.length} properties: ${created} created, ${updated} updated, ${skipped} skipped. Note: BuildOps API does not expose property addresses — add addresses manually per building.`,
       });
 
-      console.log(`[BuildOps sync-properties] Done: ${created} created, ${updated} updated, ${skipped} skipped, ${geocoded} geocoded`);
-      res.json({ ok: true, created, updated, skipped, geocoded, total: allProperties.length });
+      console.log(`[BuildOps sync-properties] Done: ${created} created, ${updated} updated, ${skipped} skipped`);
+      res.json({ ok: true, created, updated, skipped, total: allProperties.length });
     } catch (err: any) {
       console.error("[BuildOps sync-properties] Error:", err.message);
       await storage.createBuildopsSyncLog({ entityType: "property", action: "error", message: err.message });

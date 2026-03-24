@@ -1592,6 +1592,21 @@ export default function ClientDetail() {
     onError: () => toast({ title: "Failed to add building", variant: "destructive" }),
   });
 
+  const [editingBuildingAddressId, setEditingBuildingAddressId] = useState<number | null>(null);
+  const [editingBuildingAddress, setEditingBuildingAddress] = useState("");
+
+  const updateBuildingAddressMutation = useMutation({
+    mutationFn: ({ id, address }: { id: number; address: string }) =>
+      apiRequest("PATCH", `/api/buildings/${id}/address`, { address }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "all-buildings"] });
+      setEditingBuildingAddressId(null);
+      setEditingBuildingAddress("");
+      toast({ title: data?.geocoded ? "Address saved & mapped" : "Address saved (geocoding failed — check the address format)" });
+    },
+    onError: () => toast({ title: "Failed to save address", variant: "destructive" }),
+  });
+
   const openAddContactForOffice = (officeId: number | null, buildingId?: number) => {
     setDefaultOfficeId(officeId);
     contactForm.setValue("officeId" as any, officeId ?? undefined);
@@ -3762,7 +3777,7 @@ export default function ClientDetail() {
                         {allBuildings.map(b => (
                           <div key={`${b.type}-${b.id}`} className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${b.lat ? "border-border bg-card" : "border-dashed border-border/50 bg-muted/20"}`} data-testid={`map-list-item-${b.type}-${b.id}`}>
                             {b.type === "office" ? <Building2 className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-slate-500" : "text-muted-foreground/50"}`} /> : <MapPin className={`h-4 w-4 mt-0.5 shrink-0 ${b.lat ? "text-primary" : "text-muted-foreground/50"}`} />}
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <p className="font-medium truncate">{b.name || b.address || "Unnamed Building"}</p>
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${b.type === "office" ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"}`}>
@@ -3778,8 +3793,47 @@ export default function ClientDetail() {
                                 )}
                               </div>
                               {b.type === "building" && <p className="text-[11px] text-muted-foreground truncate">{b.contactName}</p>}
-                              {b.address && <AddressLink address={b.address} className="text-xs text-muted-foreground mt-0.5 truncate" />}
-                              {!b.lat && <p className="text-[10px] text-amber-500 mt-0.5 italic">No location — edit to add address</p>}
+                              {b.address && editingBuildingAddressId !== b.id && <AddressLink address={b.address} className="text-xs text-muted-foreground mt-0.5 truncate" />}
+                              {/* Inline address editor for buildings */}
+                              {b.type === "building" && (
+                                editingBuildingAddressId === b.id ? (
+                                  <div className="mt-2 flex gap-1.5" onClick={e => e.stopPropagation()}>
+                                    <input
+                                      className="flex-1 text-xs border rounded px-2 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                      placeholder="123 Main St, City, CA 94000"
+                                      value={editingBuildingAddress}
+                                      onChange={e => setEditingBuildingAddress(e.target.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === "Enter" && editingBuildingAddress.trim()) updateBuildingAddressMutation.mutate({ id: b.id, address: editingBuildingAddress.trim() });
+                                        if (e.key === "Escape") { setEditingBuildingAddressId(null); setEditingBuildingAddress(""); }
+                                      }}
+                                      autoFocus
+                                      data-testid={`input-building-address-${b.id}`}
+                                    />
+                                    <button
+                                      className="text-[10px] px-2 py-1 bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50 shrink-0"
+                                      disabled={!editingBuildingAddress.trim() || updateBuildingAddressMutation.isPending}
+                                      onClick={() => updateBuildingAddressMutation.mutate({ id: b.id, address: editingBuildingAddress.trim() })}
+                                      data-testid={`button-save-building-address-${b.id}`}
+                                    >{updateBuildingAddressMutation.isPending ? "…" : "Save"}</button>
+                                    <button
+                                      className="text-[10px] px-2 py-1 border rounded hover:bg-muted shrink-0"
+                                      onClick={() => { setEditingBuildingAddressId(null); setEditingBuildingAddress(""); }}
+                                    >✕</button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    className="mt-1 text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 group"
+                                    onClick={() => { setEditingBuildingAddressId(b.id); setEditingBuildingAddress(b.address ?? ""); }}
+                                    data-testid={`button-edit-building-address-${b.id}`}
+                                  >
+                                    <Pencil className="h-2.5 w-2.5 group-hover:text-primary" />
+                                    <span className={b.lat ? "opacity-60 group-hover:opacity-100" : "text-amber-500 group-hover:text-amber-600"}>
+                                      {b.lat ? "Edit address" : "Add address to map"}
+                                    </span>
+                                  </button>
+                                )
+                              )}
                             </div>
                           </div>
                         ))}
