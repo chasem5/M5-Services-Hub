@@ -1,20 +1,18 @@
 import { useState } from "react";
 import {
-  X, Mail, Phone, ExternalLink, MapPin, Building2, Star,
-  StickyNote, TrendingUp, Calendar, DollarSign, Edit2,
-  ChevronRight, ChevronDown, Briefcase, Clock, Users, ArrowUpRight
+  X, Mail, Phone, ExternalLink, Building2, StickyNote,
+  TrendingUp, Calendar, DollarSign, Edit2, ChevronRight,
+  ChevronDown, Clock, ArrowUpRight
 } from "lucide-react";
 
 const RED = "#BE1916";
 
 const contact = {
-  id: 11,
   name: "James Cho",
   title: "Sr. Property Manager",
   company: "Cushman & Wakefield",
   email: "jcho@cushwake.com",
   phone: "(415) 882-4412",
-  linkedinUrl: "https://linkedin.com/in/james-cho-cw",
   photo: "https://randomuser.me/api/portraits/men/32.jpg",
   tier: "A",
   stage: "Active",
@@ -22,26 +20,26 @@ const contact = {
   team: "Bay Area Portfolio",
   teamColor: "#BE1916",
   reportsTo: "Lisa Nakamura",
-  buildings: [
-    { id: 103, name: "101 California Street", address: "101 California St, SF", sqft: "430,000", type: "Class A Office" },
-    { id: 102, name: "Embarcadero Center Tower 3", address: "3 Embarcadero Ctr, SF", sqft: "580,000", type: "Class A Office" },
-  ],
-  notes: "James is the main point of contact for day-to-day work at 101 Cal. Always responds to email within 2 hours. Prefers brief scope summaries before formal proposals. Building engineer background — very detail-oriented on specs.",
   lastContact: "2 days ago",
   lastMeeting: "Mar 20, 2025",
 };
 
-const activity = [
-  { type: "email", label: "Email to James Cho", detail: "Re: Lobby HVAC quote — itemized breakdown", time: "2 days ago", photo: "https://randomuser.me/api/portraits/men/1.jpg", author: "Chase" },
-  { type: "email", label: "Email from James Cho", detail: "Re: Site walk schedule for Embarcadero Tower 1 — next Tuesday works.", time: "4 days ago", photo: "https://randomuser.me/api/portraits/men/32.jpg", author: "James" },
-  { type: "meeting", label: "Site walk — Emb. Tower 3", detail: "James, Lisa, Chase · 45 min · Notes captured", time: "Mar 20", photo: "https://randomuser.me/api/portraits/men/32.jpg", author: "James" },
-  { type: "spend", label: "BD Spend — Lunch at Ferry Building", detail: "With James Cho · $84.50 · Meals & Entertainment", time: "Mar 12", photo: "https://randomuser.me/api/portraits/men/1.jpg", author: "Chase" },
-  { type: "note", label: "Note by Chase", detail: "James flagged a new TI scope coming for suite 420 — watch for RFP.", time: "Mar 8", photo: "https://randomuser.me/api/portraits/men/1.jpg", author: "Chase" },
+const buildings = [
+  { id: 103, name: "101 California Street", address: "101 California St, SF", sqft: "430,000" },
+  { id: 102, name: "Embarcadero Center Tower 3", address: "3 Embarcadero Ctr, SF", sqft: "580,000" },
 ];
 
 const deals = [
   { id: 1, name: "Suite 200 Vacant Prep", amount: "$48,217", status: "sent", stage: "Proposal Sent" },
   { id: 2, name: "Lobby Refresh + HVAC Repair", amount: "$31,500", status: "draft", stage: "Scoping" },
+];
+
+const activity = [
+  { type: "email", label: "Email to James Cho", detail: "Re: Lobby HVAC quote — itemized breakdown", time: "2 days ago" },
+  { type: "email", label: "Email from James Cho", detail: "Re: Site walk schedule for Emb. Tower 1 — next Tuesday works.", time: "4 days ago" },
+  { type: "meeting", label: "Site walk — Emb. Tower 3", detail: "James, Lisa, Chase · 45 min · Notes captured", time: "Mar 20" },
+  { type: "spend", label: "BD Spend — Lunch at Ferry Building", detail: "With James Cho · $84.50 · Meals & Entertainment", time: "Mar 12" },
+  { type: "note", label: "Note by Chase", detail: "James flagged a new TI scope coming for suite 420 — watch for RFP.", time: "Mar 8" },
 ];
 
 const typeIcon: Record<string, React.ReactNode> = {
@@ -54,18 +52,6 @@ const typeBg: Record<string, string> = {
   email: "bg-blue-50", meeting: "bg-purple-50", spend: "bg-rose-50", note: "bg-amber-50",
 };
 
-function Photo({ src, name, size = 9 }: { src?: string; name: string; size?: number }) {
-  const [failed, setFailed] = useState(false);
-  const cls = `w-${size} h-${size} rounded-full object-cover flex-shrink-0`;
-  if (src && !failed) return <img src={src} alt={name} onError={() => setFailed(true)} className={cls} />;
-  return <div className={`${cls} bg-gray-300 flex items-center justify-center text-xs font-bold text-white`}>{name[0]}</div>;
-}
-
-function TierBadge({ tier }: { tier: string }) {
-  const c: Record<string, string> = { A: "bg-emerald-100 text-emerald-700", B: "bg-blue-100 text-blue-700" };
-  return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${c[tier] || "bg-gray-100 text-gray-600"}`}>{tier}-Tier</span>;
-}
-
 function StatusBadge({ status }: { status: string }) {
   const c: Record<string, string> = { sent: "bg-blue-100 text-blue-700", draft: "bg-gray-100 text-gray-600", accepted: "bg-emerald-100 text-emerald-700" };
   return <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full capitalize ${c[status] || "bg-gray-100 text-gray-600"}`}>{status}</span>;
@@ -73,7 +59,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export function ContactPanel() {
   const [editingNotes, setEditingNotes] = useState(false);
-  const [notes, setNotes] = useState(contact.notes);
+  const [notes, setNotes] = useState("James is the main point of contact for day-to-day work at 101 Cal. Always responds to email within 2 hours. Prefers brief scope summaries before formal proposals. Building engineer background — very detail-oriented on specs.");
   const [showAll, setShowAll] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
 
@@ -81,10 +67,8 @@ export function ContactPanel() {
 
   return (
     <div className="min-h-screen bg-gray-100 font-['Space_Grotesk',sans-serif] flex items-start justify-end p-0">
-      {/* Simulated background page */}
       <div className="fixed inset-0 bg-gray-100 opacity-60 backdrop-blur-sm" />
 
-      {/* Slide-over panel */}
       <div className="relative w-[480px] h-screen bg-white shadow-2xl flex flex-col overflow-hidden border-l border-gray-200">
         {/* Header */}
         <div className="flex items-start gap-4 px-5 pt-5 pb-4 border-b border-gray-100">
@@ -98,7 +82,7 @@ export function ContactPanel() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-bold text-gray-900 font-['Archivo_Black',sans-serif]">{contact.name}</h2>
-              <TierBadge tier={contact.tier} />
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700`}>{contact.tier}-Tier</span>
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${contact.stageColor}`}>{contact.stage}</span>
             </div>
             <p className="text-sm text-gray-600 mt-0.5">{contact.title}</p>
@@ -110,16 +94,13 @@ export function ContactPanel() {
                 <span>{contact.team}</span>
               </div>
             </div>
-            {contact.reportsTo && (
-              <div className="text-xs text-gray-400 mt-0.5">Reports to {contact.reportsTo}</div>
-            )}
+            <div className="text-xs text-gray-400 mt-0.5">Reports to {contact.reportsTo}</div>
           </div>
           <button className="p-1.5 rounded-lg hover:bg-gray-100 flex-shrink-0 text-gray-400 hover:text-gray-600">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
           {/* Contact info */}
           <div className="px-5 py-4 border-b border-gray-100">
@@ -182,7 +163,7 @@ export function ContactPanel() {
           <div className="px-5 py-4 border-b border-gray-100">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Buildings Managed</h3>
             <div className="space-y-2">
-              {contact.buildings.map(b => (
+              {buildings.map(b => (
                 <div key={b.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 cursor-pointer group">
                   <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
                     <Building2 className="w-4 h-4 text-gray-500" />
