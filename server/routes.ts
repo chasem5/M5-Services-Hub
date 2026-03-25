@@ -1207,6 +1207,56 @@ export async function registerRoutes(
     res.json(activity);
   });
 
+  // BuildOps data for a specific building (jobs + quotes by buildopsPropertyId)
+  app.get("/api/buildings/:id/buildops-data", isAuthenticated, async (req, res) => {
+    try {
+      const buildingId = parseInt(req.params.id as string);
+      const { db } = await import("./db");
+      const { eq, desc } = await import("drizzle-orm");
+      const { contactBuildings, buildopsJobs, leads } = await import("@shared/schema");
+      const [building] = await db.select().from(contactBuildings).where(eq(contactBuildings.id, buildingId));
+      if (!building) return res.status(404).json({ message: "Building not found" });
+      if (!building.buildopsId) return res.json({ building, jobs: [], quotes: [] });
+      const [jobs, quotes] = await Promise.all([
+        db.select().from(buildopsJobs)
+          .where(eq(buildopsJobs.buildopsPropertyId, building.buildopsId))
+          .orderBy(desc(buildopsJobs.completedDate))
+          .limit(10),
+        db.select().from(leads)
+          .where(eq(leads.buildopsPropertyId, building.buildopsId))
+          .orderBy(desc(leads.updatedAt))
+          .limit(10),
+      ]);
+      res.json({ building, jobs, quotes });
+    } catch (err: any) {
+      console.error("Building buildops-data error:", err);
+      res.status(500).json({ message: err.message || "Failed to fetch building data" });
+    }
+  });
+
+  // Contact panel data (contact + buildings + linked deals)
+  app.get("/api/contacts/:id/panel-data", isAuthenticated, async (req, res) => {
+    try {
+      const contactId = parseInt(req.params.id as string);
+      const { db } = await import("./db");
+      const { eq, desc } = await import("drizzle-orm");
+      const { clientContacts, leads } = await import("@shared/schema");
+      const [[contact], buildings, deals] = await Promise.all([
+        db.select().from(clientContacts).where(eq(clientContacts.id, contactId)).limit(1),
+        storage.listContactBuildings(contactId),
+        db.select().from(leads)
+          .where(eq(leads.contactId, contactId))
+          .orderBy(desc(leads.updatedAt))
+          .limit(5),
+      ]);
+      if (!contact) return res.status(404).json({ message: "Contact not found" });
+      res.json({ contact, buildings, deals });
+    } catch (err: any) {
+      console.error("Contact panel-data error:", err);
+      res.status(500).json({ message: err.message || "Failed to fetch contact data" });
+    }
+  });
+
   // Manually update a building's address and geocode it
   app.patch("/api/buildings/:id/address", isAuthenticated, async (req, res) => {
     try {

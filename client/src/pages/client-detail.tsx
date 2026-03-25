@@ -87,6 +87,8 @@ import { SearchableSelect } from "@/components/SearchableSelect";
 import { CardScannerDialog } from "@/components/CardScannerDialog";
 import { AddressLink } from "@/components/AddressLink";
 import { TierBadge } from "@/components/TierBadge";
+import { ContactPanel } from "@/components/contact-panel";
+import { BuildingPanel } from "@/components/building-panel";
 import { 
   Card, 
   CardContent, 
@@ -410,11 +412,13 @@ function ContactCard({
   onEdit,
   onDelete,
   onAddToPortfolio,
+  onOpenPanel,
 }: {
   contact: ClientContact;
   onEdit: (c: ClientContact) => void;
   onDelete: (id: number) => void;
   onAddToPortfolio?: (contactId: number) => void;
+  onOpenPanel?: (contactId: number) => void;
 }) {
   const [avatarError, setAvatarError] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ label: string; description: string; onConfirm: () => void } | null>(null);
@@ -464,7 +468,11 @@ function ContactCard({
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="font-bold">{contact.name}</p>
+                {onOpenPanel ? (
+                  <button onClick={() => onOpenPanel(contact.id)} className="font-bold hover:underline text-left" data-testid={`button-open-contact-panel-${contact.id}`}>{contact.name}</button>
+                ) : (
+                  <p className="font-bold">{contact.name}</p>
+                )}
                 {contact.isPrimary && (
                   <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 uppercase">Primary</Badge>
                 )}
@@ -1181,6 +1189,8 @@ export default function ClientDetail() {
     }
   }, [searchParams]);
 
+  const [openContactPanelId, setOpenContactPanelId] = useState<number | null>(null);
+  const [openBuildingPanelId, setOpenBuildingPanelId] = useState<number | null>(null);
   const [isEditCompanyOpen, setIsEditCompanyOpen] = useState(false);
   const [spendFormData, setSpendFormData] = useState({ amount: "", category: "meals_entertainment", date: new Date().toISOString().split("T")[0], description: "", contactId: "" });
   const [isSubmittingSpend, setIsSubmittingSpend] = useState(false);
@@ -2346,7 +2356,7 @@ export default function ClientDetail() {
                           {ct.name.charAt(0)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <button onClick={() => { setActiveTab("organization"); }} className="text-xs font-medium hover:underline text-left truncate block w-full" data-testid={`overview-contact-link-${ct.id}`}>{ct.name}</button>
+                          <button onClick={() => setOpenContactPanelId(ct.id)} className="text-xs font-medium hover:underline text-left truncate block w-full" data-testid={`overview-contact-link-${ct.id}`}>{ct.name}</button>
                           {ct.title && <p className="text-[10px] text-muted-foreground truncate">{ct.title}</p>}
                         </div>
                         {ct.isPrimary && <span className="text-[9px] bg-primary/10 text-primary rounded px-1 shrink-0">Primary</span>}
@@ -2996,6 +3006,7 @@ export default function ClientDetail() {
                                   onEdit={openEditContact}
                                   onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
                                   onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
+                                  onOpenPanel={setOpenContactPanelId}
                                 />
                                 {/* ── Buildings under this contact (chain view) ── */}
                                 <div className="mt-1 ml-3 border-l-2 border-border/40 pl-3 space-y-1" data-testid={`contact-buildings-chain-${contact.id}`}>
@@ -3020,10 +3031,10 @@ export default function ClientDetail() {
                                         <>
                                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                             <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
-                                            <div className="flex flex-col min-w-0">
-                                              <span className="text-xs font-medium truncate">{b.name ?? b.address ?? "Unnamed building"}</span>
+                                            <button onClick={() => setOpenBuildingPanelId(b.id)} className="flex flex-col min-w-0 text-left hover:text-primary" data-testid={`button-open-building-panel-${b.id}`}>
+                                              <span className="text-xs font-medium truncate hover:underline">{b.name ?? b.address ?? "Unnamed building"}</span>
                                               {b.address && b.name && <span className="text-[10px] text-muted-foreground truncate">· {b.address}</span>}
-                                            </div>
+                                            </button>
                                             <span className="text-[9px] bg-primary/10 text-primary rounded px-1 shrink-0 hidden group-hover:inline" data-testid={`building-contact-label-${b.id}`} title={`Linked to ${contact.name}`}>
                                               <Users className="h-2 w-2 inline mr-0.5" />{contact.name.split(" ")[0]}
                                             </span>
@@ -3122,6 +3133,7 @@ export default function ClientDetail() {
                                 onEdit={openEditContact}
                                 onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
                                 onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
+                                onOpenPanel={setOpenContactPanelId}
                               />
                               {/* ── Buildings chain ── */}
                               <div className="mt-1 ml-3 border-l-2 border-border/40 pl-3 space-y-1" data-testid={`contact-buildings-chain-${contact.id}`}>
@@ -5430,6 +5442,18 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
           </CardContent>
         </Card>
       )}
+
+      {/* Slide-over panels */}
+      <ContactPanel
+        contactId={openContactPanelId}
+        onClose={() => setOpenContactPanelId(null)}
+        onOpenBuilding={(id) => { setOpenContactPanelId(null); setOpenBuildingPanelId(id); }}
+      />
+      <BuildingPanel
+        buildingId={openBuildingPanelId}
+        onClose={() => setOpenBuildingPanelId(null)}
+        onOpenContact={(id) => { setOpenBuildingPanelId(null); setOpenContactPanelId(id); }}
+      />
     </div>
   );
 }
