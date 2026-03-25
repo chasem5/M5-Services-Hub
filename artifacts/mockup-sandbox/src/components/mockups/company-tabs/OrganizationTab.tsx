@@ -88,7 +88,7 @@ function MemberRow({ member, indent = false, teamColor }: { member: Member; inde
       </div>
       <div className="opacity-0 group-hover:opacity-100 flex gap-1">
         <button className="p-1 rounded hover:bg-gray-200"><Mail className="w-3 h-3 text-gray-500" /></button>
-        <button className="p-1 rounded hover:bg-gray-200 text-[10px] text-gray-500">Move team</button>
+        <button className="p-1 rounded hover:bg-gray-200 text-[10px] text-gray-500 whitespace-nowrap">Move to team</button>
       </div>
     </div>
   );
@@ -114,7 +114,7 @@ function BuildingRow({ building, teamColor }: { building: typeof teams[0]["build
         <User className="w-3 h-3" /><span>{building.primaryContact.split(" ")[0]}</span>
       </div>
       <div className="opacity-0 group-hover:opacity-100 flex gap-1">
-        <button className="p-1 rounded hover:bg-gray-200 text-[10px] text-gray-500 whitespace-nowrap">Reassign</button>
+        <button className="p-1 rounded hover:bg-gray-200 text-[10px] text-gray-500 whitespace-nowrap">Reassign team</button>
         <button className="p-1 rounded hover:bg-gray-200"><MoreHorizontal className="w-3 h-3 text-gray-500" /></button>
       </div>
     </div>

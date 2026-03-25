@@ -138,16 +138,15 @@ export function HistoryTab() {
               </button>
             ))}
           </div>
-          <div className="flex gap-2">
-            <button className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 flex items-center gap-1.5">
-              <StickyNote className="w-3 h-3" /> Log Note
-            </button>
-            <button className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 flex items-center gap-1.5">
-              <Calendar className="w-3 h-3" /> Log Meeting
-            </button>
+          <div className="relative group">
             <button className="text-xs px-3 py-1.5 rounded-lg text-white font-medium flex items-center gap-1.5" style={{ backgroundColor: RED }}>
-              <Plus className="w-3 h-3" /> Log Activity
+              <Plus className="w-3 h-3" /> Log Activity <ChevronDown className="w-3 h-3" />
             </button>
+            <div className="hidden group-hover:block absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10 overflow-hidden">
+              <button className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"><StickyNote className="w-3 h-3 text-amber-500" /> Note</button>
+              <button className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"><Calendar className="w-3 h-3 text-purple-500" /> Meeting</button>
+              <button className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"><Mic className="w-3 h-3 text-blue-500" /> Call</button>
+            </div>
           </div>
         </div>
 
