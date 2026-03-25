@@ -1626,7 +1626,6 @@ export default function ClientDetail() {
   // Forms
   const clientForm = useForm({
     resolver: zodResolver(insertClientSchema.partial()),
-    resetOptions: { keepDirtyValues: true },
     values: client ? {
       name: client.name,
       industry: client.industry || "",
@@ -1657,6 +1656,32 @@ export default function ClientDetail() {
       prospectRevenueTier: null,
     },
   });
+
+  // Reset the form whenever the clientId changes (navigating between customers).
+  // Without this, fields the user has typed into (marked "dirty") persist across
+  // navigation and bleed the previous customer's values into the next customer's form.
+  useEffect(() => {
+    clientForm.reset(client ? {
+      name: client.name,
+      industry: client.industry || "",
+      address: client.address || "",
+      phone: client.phone || "",
+      email: client.email || "",
+      website: client.website || "",
+      notes: client.notes || "",
+      tier: client.tier ?? null,
+      annualRevenue: client.annualRevenue ?? null,
+      logoUrl: client.logoUrl ?? "",
+      parentClientId: client.parentClientId ?? null,
+      serviceNeeds: (client.serviceNeeds as string[] | null) ?? [],
+      prospectRevenueTier: client.prospectRevenueTier ?? null,
+    } : {
+      name: "", industry: "", address: "", phone: "", email: "",
+      website: "", notes: "", tier: null, annualRevenue: null,
+      logoUrl: "", serviceNeeds: [], parentClientId: null, prospectRevenueTier: null,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
 
   const contactForm = useForm({
     resolver: zodResolver(insertClientContactSchema),
