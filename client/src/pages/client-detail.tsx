@@ -4565,6 +4565,18 @@ export default function ClientDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Slide-over panels */}
+      <ContactPanel
+        contactId={openContactPanelId}
+        onClose={() => setOpenContactPanelId(null)}
+        onOpenBuilding={(id) => { setOpenContactPanelId(null); setOpenBuildingPanelId(id); }}
+      />
+      <BuildingPanel
+        buildingId={openBuildingPanelId}
+        onClose={() => setOpenBuildingPanelId(null)}
+        onOpenContact={(id) => { setOpenBuildingPanelId(null); setOpenContactPanelId(id); }}
+      />
     </div>
   );
 }
@@ -5442,18 +5454,6 @@ function IntelligenceTab({ clientId, childClients = [] }: { clientId: number; ch
           </CardContent>
         </Card>
       )}
-
-      {/* Slide-over panels */}
-      <ContactPanel
-        contactId={openContactPanelId}
-        onClose={() => setOpenContactPanelId(null)}
-        onOpenBuilding={(id) => { setOpenContactPanelId(null); setOpenBuildingPanelId(id); }}
-      />
-      <BuildingPanel
-        buildingId={openBuildingPanelId}
-        onClose={() => setOpenBuildingPanelId(null)}
-        onOpenContact={(id) => { setOpenBuildingPanelId(null); setOpenContactPanelId(id); }}
-      />
     </div>
   );
 }

@@ -52,7 +52,7 @@ const dealStatusColors: Record<string, string> = {
 
 function ContactAvatar({ contact }: { contact: ClientContact }) {
   const [failed, setFailed] = useState(false);
-  const src = (contact as any).profilePictureUrl;
+  const src = contact.profilePictureUrl;
   const photoSrc = src?.startsWith("https://storage.googleapis.com/")
     ? `/api/contacts/${contact.id}/photo-img`
     : src;
