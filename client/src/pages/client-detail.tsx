@@ -618,6 +618,8 @@ const SERVICE_NEEDS = [
   { key: "property_assessment", label: "Property Assessment", Icon: ClipboardList, color: "text-primary" },
 ] as const;
 
+const TEAM_COLORS = ["#BE1916", "#2563EB", "#059669", "#D97706", "#7C3AED", "#0891B2", "#DC2626", "#0284C7"];
+
 interface EmailMsg {
   id: number;
   gmailThreadId: string;
@@ -684,6 +686,7 @@ interface FeedEvent {
 }
 
 function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
+  const [historySearch, setHistorySearch] = useState("");
   const { data: actLogs = [], isLoading: loadAct } = useQuery<ActivityLog[]>({
     queryKey: ["/api/activity-logs", "client", clientId],
     queryFn: async () => {
@@ -749,16 +752,10 @@ function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
 
   events.sort((a, b) => b.date.getTime() - a.date.getTime());
 
-  const kindIcon = (kind: FeedEventKind) => {
-    if (kind === "activity") return <History className="h-3.5 w-3.5 text-primary" />;
-    if (kind === "email") return <Mail className="h-3.5 w-3.5 text-blue-500" />;
-    return <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />;
-  };
-
-  const kindLabel = (kind: FeedEventKind) => {
-    if (kind === "activity") return "Activity";
-    if (kind === "email") return "Email";
-    return "File";
+  const kindConfig = (kind: FeedEventKind) => {
+    if (kind === "email") return { icon: <Mail className="h-3.5 w-3.5 text-blue-500" />, bg: "bg-blue-50 border-blue-200", label: "Email" };
+    if (kind === "file") return { icon: <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />, bg: "bg-muted border-border", label: "File" };
+    return { icon: <Activity className="h-3.5 w-3.5 text-primary" />, bg: "bg-primary/5 border-primary/20", label: "Activity" };
   };
 
   if (isLoading) {
@@ -787,30 +784,66 @@ function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
     );
   }
 
+  const filteredEvents = historySearch.trim()
+    ? events.filter(ev =>
+        ev.title.toLowerCase().includes(historySearch.toLowerCase()) ||
+        (ev.subtitle ?? "").toLowerCase().includes(historySearch.toLowerCase()) ||
+        (ev.meta ?? "").toLowerCase().includes(historySearch.toLowerCase())
+      )
+    : events;
+
   return (
-    <div className="relative" data-testid="unified-history-feed">
-      <div className="absolute left-[27px] top-0 bottom-0 w-px bg-border/60" />
-      <div className="space-y-0">
-        {events.map(ev => (
-          <div key={ev.id} className="flex gap-3 group hover:bg-muted/30 rounded-lg px-3 py-2.5 transition-colors" data-testid={`history-event-${ev.id}`}>
-            <div className="relative mt-0.5 shrink-0">
-              <div className="h-7 w-7 rounded-full bg-background border flex items-center justify-center shadow-sm group-hover:border-primary/40 transition-colors">
-                {kindIcon(ev.kind)}
+    <div data-testid="unified-history-feed">
+      {/* Search bar */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            placeholder="Search history…"
+            value={historySearch}
+            onChange={e => setHistorySearch(e.target.value)}
+            className="w-full h-8 pl-8 pr-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+            data-testid="input-history-search"
+          />
+          <History className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        </div>
+        {historySearch && (
+          <button onClick={() => setHistorySearch("")} className="text-[11px] text-muted-foreground hover:text-foreground shrink-0">Clear</button>
+        )}
+      </div>
+      {filteredEvents.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+          <History className="h-8 w-8 mb-2 opacity-30" />
+          <p className="text-sm">No results for "{historySearch}"</p>
+        </div>
+      )}
+      <div className="relative">
+        <div className="absolute left-[15px] top-0 bottom-0 w-px bg-border/60" />
+        <div className="space-y-0">
+          {filteredEvents.map(ev => {
+            const cfg = kindConfig(ev.kind);
+            return (
+              <div key={ev.id} className="flex gap-3 group hover:bg-muted/30 rounded-lg px-3 py-2.5 transition-colors" data-testid={`history-event-${ev.id}`}>
+                <div className="relative mt-0.5 shrink-0">
+                  <div className={`h-7 w-7 rounded-full border flex items-center justify-center shadow-sm ${cfg.bg}`}>
+                    {cfg.icon}
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{cfg.label}</span>
+                    <span className="font-medium text-sm truncate">{ev.title}</span>
+                  </div>
+                  {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ev.subtitle}</p>}
+                  <div className="flex items-center gap-2 mt-1">
+                    {ev.meta && <span className="text-[11px] text-muted-foreground/70">{ev.meta}</span>}
+                    <span className="text-[11px] text-muted-foreground/50 ml-auto">{formatDistanceToNow(ev.date, { addSuffix: true })}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{kindLabel(ev.kind)}</span>
-                <span className="font-medium text-sm truncate">{ev.title}</span>
-              </div>
-              {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ev.subtitle}</p>}
-              <div className="flex items-center gap-2 mt-1">
-                {ev.meta && <span className="text-[11px] text-muted-foreground/70">{ev.meta}</span>}
-                <span className="text-[11px] text-muted-foreground/50 ml-auto">{formatDistanceToNow(ev.date, { addSuffix: true })}</span>
-              </div>
-            </div>
-          </div>
-        ))}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1846,6 +1879,10 @@ export default function ClientDetail() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="font-heading font-bold text-lg leading-tight" data-testid="text-client-name">{client.name}</h1>
               {client.tier && <TierBadge tier={client.tier} size="xs" />}
+              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${healthScore >= 75 ? "bg-green-100 text-green-700" : healthScore >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600"}`} data-testid="badge-health-chip">
+                <HeartPulse className="h-3 w-3" />
+                {healthLabel}
+              </span>
               {client.buildopsId && (
                 <TooltipProvider>
                   <Tooltip>
@@ -2350,18 +2387,32 @@ export default function ClientDetail() {
                   {(contacts ?? []).length === 0 ? (
                     <p className="text-xs text-muted-foreground italic">No contacts yet</p>
                   ) : (
-                    (contacts ?? []).slice(0, 4).map(ct => (
-                      <div key={ct.id} className="flex items-center gap-2" data-testid={`overview-contact-row-${ct.id}`}>
-                        <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
-                          {ct.name.charAt(0)}
+                    (contacts ?? []).slice(0, 5).map((ct, ctIdx) => {
+                      const ctPhoto = (ct as any).profilePictureUrl;
+                      const ctResolvedPhoto = ctPhoto?.startsWith("https://storage.googleapis.com/")
+                        ? `/api/contacts/${ct.id}/photo-img`
+                        : ctPhoto;
+                      const ctColor = TEAM_COLORS[ctIdx % TEAM_COLORS.length];
+                      return (
+                        <div key={ct.id} className="flex items-center gap-2.5 group" data-testid={`overview-contact-row-${ct.id}`}>
+                          <div className="h-8 w-8 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-[11px] font-bold" style={{ backgroundColor: ctColor }}>
+                            {ctResolvedPhoto ? (
+                              <img src={ctResolvedPhoto} alt={ct.name} className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                            ) : (
+                              ct.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <button onClick={() => setOpenContactPanelId(ct.id)} className="text-xs font-semibold hover:underline text-left leading-tight" data-testid={`overview-contact-link-${ct.id}`}>{ct.name}</button>
+                              {ct.isPrimary && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-400 shrink-0" />}
+                              {(ct as any).tier && <TierBadge tier={(ct as any).tier} size="xs" />}
+                            </div>
+                            {ct.title && <p className="text-[10px] text-muted-foreground truncate">{ct.title}</p>}
+                          </div>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <button onClick={() => setOpenContactPanelId(ct.id)} className="text-xs font-medium hover:underline text-left truncate block w-full" data-testid={`overview-contact-link-${ct.id}`}>{ct.name}</button>
-                          {ct.title && <p className="text-[10px] text-muted-foreground truncate">{ct.title}</p>}
-                        </div>
-                        {ct.isPrimary && <span className="text-[9px] bg-primary/10 text-primary rounded px-1 shrink-0">Primary</span>}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </CardContent>
               </Card>
@@ -2826,7 +2877,7 @@ export default function ClientDetail() {
                   )}
                   data-testid={`button-org-sub-${sub}`}
                 >
-                  {sub === "list" ? "Contacts & Offices" : sub === "orgchart" ? "Org Chart" : "Portfolio Map"}
+                  {sub === "list" ? "Teams" : sub === "orgchart" ? "Org Chart" : "Portfolio Map"}
                 </button>
               ))}
             </div>
@@ -2884,194 +2935,269 @@ export default function ClientDetail() {
               </div>
             ) : (
               <div className="space-y-4">
-                {/* Offices with their contacts */}
-                {(offices || []).map(office => {
+                {/* Teams (offices) with their contacts */}
+                {(offices || []).map((office, officeIndex) => {
+                  const teamColor = TEAM_COLORS[officeIndex % TEAM_COLORS.length];
                   const officeContacts = (contacts || []).filter(c => c.officeId === office.id);
+                  const officeBuildings = allBuildings.filter(b => officeContacts.some(c => c.id === b.contactId));
                   return (
-                    <Card
+                    <div
                       key={office.id}
-                      className={`border-none shadow-sm bg-card transition-colors ${dragOverOfficeId === office.id ? "ring-2 ring-primary/50 bg-primary/5" : ""}`}
+                      className={`rounded-xl border border-border/50 bg-card overflow-hidden shadow-sm transition-colors ${dragOverOfficeId === office.id ? "ring-2 ring-primary/40" : ""}`}
+                      style={{ borderLeftColor: teamColor, borderLeftWidth: 4 }}
                       onDragOver={(e) => { e.preventDefault(); setDragOverOfficeId(office.id); }}
                       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverOfficeId(null); }}
                       onDrop={(e) => { e.preventDefault(); if (dragContactId !== null) moveContactToOfficeMutation.mutate({ contactId: dragContactId, officeId: office.id }); setDragContactId(null); setDragOverOfficeId(null); }}
                     >
-                      <CardHeader className="pb-3">
-                        <div className="flex flex-wrap items-start gap-2">
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                              <Building2 className="h-4 w-4 text-primary" />
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="font-semibold text-base truncate">{office.name}</h4>
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-0.5">
-                                {office.address && <AddressLink address={office.address} showIcon className="text-xs text-muted-foreground truncate max-w-[200px]" iconClassName="h-3 w-3" />}
-                                {office.phone && <span className="flex items-center gap-1 shrink-0"><Phone className="h-3 w-3" />{office.phone}</span>}
-                                <span className="shrink-0">{officeContacts.length} contact{officeContacts.length !== 1 ? "s" : ""}</span>
-                              </div>
-                            </div>
+                      {/* Team header */}
+                      <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border/30">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0 text-white text-sm font-bold" style={{ backgroundColor: teamColor }}>
+                            {office.name.charAt(0).toUpperCase()}
                           </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 px-3 text-muted-foreground hover:text-foreground text-xs"
-                              onClick={() => openAddContactForOffice(office.id)}
-                              data-testid={`button-add-contact-to-office-${office.id}`}
-                            >
-                              <Plus className="mr-1 h-3.5 w-3.5" />
-                              Add Contact
-                            </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                  data-testid={`button-office-menu-${office.id}`}
-                                >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() => openEditOffice(office)}
-                                  data-testid={`button-edit-office-${office.id}`}
-                                >
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Edit Office
-                                </DropdownMenuItem>
-                                {officeContacts.filter((c: any) => c.linkedinUrl).length > 0 && (
-                                  <DropdownMenuItem
-                                    onClick={async () => {
-                                      const withLinkedin = officeContacts.filter((c: any) => c.linkedinUrl);
-                                      toast({ title: `Syncing ${withLinkedin.length} LinkedIn profile${withLinkedin.length !== 1 ? "s" : ""}...` });
-                                      for (const c of withLinkedin) {
-                                        try {
-                                          await apiRequest("POST", `/api/contacts/${c.id}/linkedin-enrich`, { linkedinUrl: (c as any).linkedinUrl, preview: false });
-                                          await new Promise(r => setTimeout(r, 500));
-                                        } catch {}
-                                      }
-                                      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
-                                      toast({ title: "LinkedIn sync complete", description: `Updated ${withLinkedin.length} contact${withLinkedin.length !== 1 ? "s" : ""}` });
-                                    }}
-                                    data-testid={`button-bulk-linkedin-${office.id}`}
-                                  >
-                                    <SiLinkedin className="h-4 w-4 mr-2 text-[#0A66C2]" />
-                                    Sync LinkedIn for All Contacts
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  onClick={() => {
-                                    setDeleteConfirm({
-                                      label: `Delete "${office.name}"`,
-                                      description: "Contacts assigned to this office will become unassigned. This cannot be undone.",
-                                      onConfirm: () => deleteOfficeMutation.mutate(office.id),
-                                    });
-                                  }}
-                                  data-testid={`button-delete-office-${office.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Delete Office
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                          <div className="min-w-0">
+                            <h4 className="font-semibold text-sm truncate">{office.name}</h4>
+                            <div className="flex items-center gap-x-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                              <span>{officeContacts.length} contact{officeContacts.length !== 1 ? "s" : ""}</span>
+                              {officeBuildings.length > 0 && <span>{officeBuildings.length} building{officeBuildings.length !== 1 ? "s" : ""}</span>}
+                              {office.address && <AddressLink address={office.address} showIcon className="text-xs text-muted-foreground truncate max-w-[200px]" iconClassName="h-3 w-3" />}
+                            </div>
                           </div>
                         </div>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        {officeContacts.length === 0 ? (
-                          <div className="py-6 text-center border-2 border-dashed border-border/40 rounded-lg">
-                            <p className="text-sm text-muted-foreground">No contacts in this office yet.</p>
-                            <Button variant="ghost" size="sm" className="mt-2 h-8 text-xs" onClick={() => openAddContactForOffice(office.id)}>
-                              <Plus className="mr-1 h-3 w-3" />Add Contact
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {officeContacts.map(contact => {
-                              const contactBuildings = allBuildings.filter(b => b.contactId === contact.id);
-                              return (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-3 text-muted-foreground hover:text-foreground text-xs"
+                            onClick={() => openAddContactForOffice(office.id)}
+                            data-testid={`button-add-contact-to-office-${office.id}`}
+                          >
+                            <Plus className="mr-1 h-3.5 w-3.5" />
+                            Add Contact
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                data-testid={`button-office-menu-${office.id}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => openEditOffice(office)}
+                                data-testid={`button-edit-office-${office.id}`}
+                              >
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit Office
+                              </DropdownMenuItem>
+                              {officeContacts.filter((c: any) => c.linkedinUrl).length > 0 && (
+                                <DropdownMenuItem
+                                  onClick={async () => {
+                                    const withLinkedin = officeContacts.filter((c: any) => c.linkedinUrl);
+                                    toast({ title: `Syncing ${withLinkedin.length} LinkedIn profile${withLinkedin.length !== 1 ? "s" : ""}...` });
+                                    for (const c of withLinkedin) {
+                                      try {
+                                        await apiRequest("POST", `/api/contacts/${c.id}/linkedin-enrich`, { linkedinUrl: (c as any).linkedinUrl, preview: false });
+                                        await new Promise(r => setTimeout(r, 500));
+                                      } catch {}
+                                    }
+                                    queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
+                                    toast({ title: "LinkedIn sync complete", description: `Updated ${withLinkedin.length} contact${withLinkedin.length !== 1 ? "s" : ""}` });
+                                  }}
+                                  data-testid={`button-bulk-linkedin-${office.id}`}
+                                >
+                                  <SiLinkedin className="h-4 w-4 mr-2 text-[#0A66C2]" />
+                                  Sync LinkedIn for All Contacts
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => {
+                                  setDeleteConfirm({
+                                    label: `Delete "${office.name}"`,
+                                    description: "Contacts assigned to this office will become unassigned. This cannot be undone.",
+                                    onConfirm: () => deleteOfficeMutation.mutate(office.id),
+                                  });
+                                }}
+                                data-testid={`button-delete-office-${office.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Office
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+
+                      {/* Contacts */}
+                      {officeContacts.length === 0 ? (
+                        <div className="py-6 text-center">
+                          <p className="text-sm text-muted-foreground">No contacts in this team yet.</p>
+                          <Button variant="ghost" size="sm" className="mt-2 h-8 text-xs" onClick={() => openAddContactForOffice(office.id)}>
+                            <Plus className="mr-1 h-3 w-3" />Add Contact
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-border/30">
+                          {officeContacts.map(contact => {
+                            const photoSrc = (contact as any).profilePictureUrl;
+                            const resolvedPhoto = photoSrc?.startsWith("https://storage.googleapis.com/")
+                              ? `/api/contacts/${contact.id}/photo-img`
+                              : photoSrc;
+                            const contactBuildings = allBuildings.filter(b => b.contactId === contact.id);
+                            return (
                               <div
                                 key={contact.id}
                                 draggable
                                 onDragStart={() => setDragContactId(contact.id)}
                                 onDragEnd={() => { setDragContactId(null); setDragOverOfficeId(null); }}
-                                className={`transition-all rounded-lg ${dragContactId === contact.id ? "opacity-40" : ""} ${highlightedContactId === contact.id ? "ring-2 ring-primary/60 ring-offset-2" : ""}`}
+                                className={`group transition-all ${dragContactId === contact.id ? "opacity-40" : ""} ${highlightedContactId === contact.id ? "ring-2 ring-primary/60 ring-inset" : ""}`}
                                 data-testid={`drag-contact-${contact.id}`}
                               >
-                                <ContactCard
-                                  contact={contact}
-                                  onEdit={openEditContact}
-                                  onDelete={(id) => { setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(id) }); }}
-                                  onAddToPortfolio={clientPortfolios.length > 0 ? (id) => { setPortfolioPickerContactId(id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } : undefined}
-                                  onOpenPanel={setOpenContactPanelId}
-                                />
-                                {/* ── Buildings under this contact (chain view) ── */}
-                                <div className="mt-1 ml-3 border-l-2 border-border/40 pl-3 space-y-1" data-testid={`contact-buildings-chain-${contact.id}`}>
-                                  {contactBuildings.map(b => (
-                                    <div key={b.id} className="group flex items-center justify-between gap-2 py-1 px-2 rounded-md bg-muted/30 border border-border/30 hover:border-primary/30 transition-colors" data-testid={`building-row-${b.id}`}>
-                                      {reassignBuildingId === b.id ? (
-                                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                          <Select value={reassignBuildingContactId} onValueChange={setReassignBuildingContactId}>
-                                            <SelectTrigger className="h-6 text-[10px] flex-1" data-testid={`select-reassign-contact-${b.id}`}>
-                                              <SelectValue placeholder="Select contact" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {(contacts ?? []).map(ct => (
-                                                <SelectItem key={ct.id} value={String(ct.id)}>{ct.name}</SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                          <Button size="sm" className="h-6 px-1.5 text-[10px]" disabled={!reassignBuildingContactId || reassignBuildingMutation.isPending} onClick={() => reassignBuildingMutation.mutate({ buildingId: b.id, contactId: parseInt(reassignBuildingContactId) })} data-testid={`button-confirm-reassign-${b.id}`}>Save</Button>
-                                          <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => setReassignBuildingId(null)} data-testid={`button-cancel-reassign-${b.id}`}>✕</Button>
-                                        </div>
-                                      ) : (
-                                        <>
-                                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                            <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
-                                            <button onClick={() => setOpenBuildingPanelId(b.id)} className="flex flex-col min-w-0 text-left hover:text-primary" data-testid={`button-open-building-panel-${b.id}`}>
-                                              <span className="text-xs font-medium truncate hover:underline">{b.name ?? b.address ?? "Unnamed building"}</span>
-                                              {b.address && b.name && <span className="text-[10px] text-muted-foreground truncate">· {b.address}</span>}
-                                            </button>
-                                            <span className="text-[9px] bg-primary/10 text-primary rounded px-1 shrink-0 hidden group-hover:inline" data-testid={`building-contact-label-${b.id}`} title={`Linked to ${contact.name}`}>
-                                              <Users className="h-2 w-2 inline mr-0.5" />{contact.name.split(" ")[0]}
-                                            </span>
-                                          </div>
-                                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
-                                            <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-muted-foreground hover:text-foreground" onClick={() => openAddContactForOffice(contact.officeId ?? null, b.id)} data-testid={`button-add-contact-building-${b.id}`} title="Add new contact and link to this building">
-                                              <Plus className="h-2.5 w-2.5" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-foreground" onClick={() => { setReassignBuildingId(b.id); setReassignBuildingContactId(String(contact.id)); }} data-testid={`button-link-contact-${b.id}`} title="Reassign building to different contact">
-                                              <Users className="h-2.5 w-2.5 mr-0.5" />Link
-                                            </Button>
-                                          </div>
-                                        </>
+                                <div className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors">
+                                  {/* Avatar */}
+                                  <div className="w-9 h-9 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: teamColor }}>
+                                    {resolvedPhoto ? (
+                                      <img
+                                        src={resolvedPhoto}
+                                        alt={contact.name}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                      />
+                                    ) : (
+                                      contact.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+                                    )}
+                                  </div>
+                                  {/* Info */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <button
+                                        onClick={() => setOpenContactPanelId(contact.id)}
+                                        className="font-semibold text-sm hover:underline text-left leading-tight"
+                                        data-testid={`button-open-contact-panel-team-${contact.id}`}
+                                      >
+                                        {contact.name}
+                                      </button>
+                                      {contact.isPrimary && <Star className="h-3 w-3 text-amber-500 fill-amber-400 shrink-0" />}
+                                      {(contact as any).tier && <TierBadge tier={(contact as any).tier} size="xs" />}
+                                    </div>
+                                    {contact.title && <p className="text-xs text-muted-foreground mt-0.5">{contact.title}</p>}
+                                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                                      {contact.email && (
+                                        <a href={`mailto:${contact.email}`} className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-1" onClick={e => e.stopPropagation()} data-testid={`link-contact-email-team-${contact.id}`}>
+                                          <Mail className="h-3 w-3" />{contact.email}
+                                        </a>
+                                      )}
+                                      {contact.phone && (
+                                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                          <Phone className="h-3 w-3" />{contact.phone}
+                                        </span>
                                       )}
                                     </div>
-                                  ))}
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground w-full justify-start"
-                                    onClick={() => {
-                                      setIsNewBuildingContactId(contact.id);
-                                      setIsAddBuildingOpen(true);
-                                    }}
-                                    data-testid={`button-add-building-contact-${contact.id}`}
-                                  >
-                                    <Plus className="h-3 w-3 mr-1" />
-                                    Add Building
-                                  </Button>
+                                    {/* Buildings under this contact */}
+                                    {contactBuildings.length > 0 && (
+                                      <div className="mt-2 space-y-1" data-testid={`contact-buildings-chain-${contact.id}`}>
+                                        {contactBuildings.map(b => (
+                                          <div key={b.id} className="group/b flex items-center justify-between gap-2 py-1 px-2 rounded-md bg-muted/30 border border-border/30 hover:border-primary/30 transition-colors" data-testid={`building-row-${b.id}`}>
+                                            {reassignBuildingId === b.id ? (
+                                              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                                <Select value={reassignBuildingContactId} onValueChange={setReassignBuildingContactId}>
+                                                  <SelectTrigger className="h-6 text-[10px] flex-1" data-testid={`select-reassign-contact-${b.id}`}>
+                                                    <SelectValue placeholder="Select contact" />
+                                                  </SelectTrigger>
+                                                  <SelectContent>
+                                                    {(contacts ?? []).map(ct => (
+                                                      <SelectItem key={ct.id} value={String(ct.id)}>{ct.name}</SelectItem>
+                                                    ))}
+                                                  </SelectContent>
+                                                </Select>
+                                                <Button size="sm" className="h-6 px-1.5 text-[10px]" disabled={!reassignBuildingContactId || reassignBuildingMutation.isPending} onClick={() => reassignBuildingMutation.mutate({ buildingId: b.id, contactId: parseInt(reassignBuildingContactId) })} data-testid={`button-confirm-reassign-${b.id}`}>Save</Button>
+                                                <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => setReassignBuildingId(null)} data-testid={`button-cancel-reassign-${b.id}`}>✕</Button>
+                                              </div>
+                                            ) : (
+                                              <>
+                                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                                  <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                  <button onClick={() => setOpenBuildingPanelId(b.id)} className="flex flex-col min-w-0 text-left hover:text-primary" data-testid={`button-open-building-panel-${b.id}`}>
+                                                    <span className="text-xs font-medium truncate hover:underline">{b.name ?? b.address ?? "Unnamed building"}</span>
+                                                    {b.address && b.name && <span className="text-[10px] text-muted-foreground truncate">· {b.address}</span>}
+                                                  </button>
+                                                </div>
+                                                <div className="flex items-center gap-0.5 opacity-0 group-hover/b:opacity-100 shrink-0">
+                                                  <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-muted-foreground hover:text-foreground" onClick={() => openAddContactForOffice(contact.officeId ?? null, b.id)} data-testid={`button-add-contact-building-${b.id}`} title="Add new contact and link to this building">
+                                                    <Plus className="h-2.5 w-2.5" />
+                                                  </Button>
+                                                  <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-foreground" onClick={() => { setReassignBuildingId(b.id); setReassignBuildingContactId(String(contact.id)); }} data-testid={`button-link-contact-${b.id}`} title="Reassign building to different contact">
+                                                    <Users className="h-2.5 w-2.5 mr-0.5" />Link
+                                                  </Button>
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
+                                        ))}
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground w-full justify-start"
+                                          onClick={() => { setIsNewBuildingContactId(contact.id); setIsAddBuildingOpen(true); }}
+                                          data-testid={`button-add-building-contact-${contact.id}`}
+                                        >
+                                          <Plus className="h-3 w-3 mr-1" />Add Building
+                                        </Button>
+                                      </div>
+                                    )}
+                                    {contactBuildings.length === 0 && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2 mt-1 text-[10px] text-muted-foreground hover:text-foreground justify-start opacity-0 group-hover:opacity-100 transition-opacity"
+                                        onClick={() => { setIsNewBuildingContactId(contact.id); setIsAddBuildingOpen(true); }}
+                                        data-testid={`button-add-building-contact-${contact.id}`}
+                                      >
+                                        <Plus className="h-3 w-3 mr-1" />Add Building
+                                      </Button>
+                                    )}
+                                  </div>
+                                  {/* Actions (visible on hover) */}
+                                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" data-testid={`button-contact-more-${contact.id}`}>
+                                          <MoreVertical className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => openEditContact(contact)} data-testid={`button-edit-contact-${contact.id}`}>
+                                          <Pencil className="h-4 w-4 mr-2" />Edit Contact
+                                        </DropdownMenuItem>
+                                        {clientPortfolios.length > 0 && (
+                                          <DropdownMenuItem onClick={() => { setPortfolioPickerContactId(contact.id); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); }} data-testid={`button-add-to-portfolio-${contact.id}`}>
+                                            <Plus className="h-4 w-4 mr-2" />Add to Portfolio
+                                          </DropdownMenuItem>
+                                        )}
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          className="text-destructive focus:text-destructive"
+                                          onClick={() => setDeleteConfirm({ label: "Delete contact", description: "This will permanently remove the contact and cannot be undone.", onConfirm: () => deleteContactMutation.mutate(contact.id) })}
+                                          data-testid={`button-delete-contact-${contact.id}`}
+                                        >
+                                          <Trash2 className="h-4 w-4 mr-2" />Delete Contact
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
                                 </div>
                               </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
 
@@ -3901,6 +4027,33 @@ export default function ClientDetail() {
 
           {/* ─── Revenue Tab ─── */}
           <TabsContent value="revenue" className="m-0 space-y-4">
+            {/* ── Revenue summary stats ── */}
+            {(() => {
+              const fmt3 = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+              const allLeads = leads ?? [];
+              const openQuotesVal = allLeads.filter(l => ["proposal_sent", "qualifying", "new_lead"].includes(l.stage)).reduce((s, l) => s + (parseFloat(l.value ?? "0") || 0), 0);
+              const wonLeads = allLeads.filter(l => l.stage === "won");
+              const closedLeads = allLeads.filter(l => l.stage === "won" || l.stage === "lost");
+              const winRate = closedLeads.length > 0 ? Math.round(wonLeads.length / closedLeads.length * 100) : null;
+              const wonRevenue = wonLeads.reduce((s, l) => s + (parseFloat(l.value ?? "0") || 0), 0);
+              return (
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Won Revenue", value: wonRevenue > 0 ? fmt3(wonRevenue) : "—", sub: `${wonLeads.length} deal${wonLeads.length !== 1 ? "s" : ""} closed`, color: "text-emerald-600" },
+                    { label: "Open Pipeline", value: openQuotesVal > 0 ? fmt3(openQuotesVal) : "—", sub: `${allLeads.filter(l => !["won","lost"].includes(l.stage)).length} active deal${allLeads.filter(l => !["won","lost"].includes(l.stage)).length !== 1 ? "s" : ""}`, color: "text-blue-600" },
+                    { label: "Win Rate", value: winRate !== null ? `${winRate}%` : "—", sub: `${closedLeads.length} closed deal${closedLeads.length !== 1 ? "s" : ""}`, color: "text-foreground" },
+                  ].map(s => (
+                    <Card key={s.label} className="shadow-sm border-border/40 bg-card">
+                      <CardContent className="px-4 py-3">
+                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{s.label}</p>
+                        <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{s.sub}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              );
+            })()}
             <div className="flex items-center gap-1 border-b pb-3 flex-wrap">
               {(["leads", "estimates"] as const).map(sub => (
                 <button
