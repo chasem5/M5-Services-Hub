@@ -1240,7 +1240,7 @@ export async function registerRoutes(
       const contactId = parseInt(req.params.id as string);
       const { db } = await import("./db");
       const { eq, desc } = await import("drizzle-orm");
-      const { clientContacts, leads } = await import("@shared/schema");
+      const { clientContacts, clientOffices, leads } = await import("@shared/schema");
       const [[contact], buildings, deals] = await Promise.all([
         db.select().from(clientContacts).where(eq(clientContacts.id, contactId)).limit(1),
         storage.listContactBuildings(contactId),
@@ -1250,7 +1250,12 @@ export async function registerRoutes(
           .limit(5),
       ]);
       if (!contact) return res.status(404).json({ message: "Contact not found" });
-      res.json({ contact, buildings, deals });
+      let office = null;
+      if (contact.officeId) {
+        const [o] = await db.select().from(clientOffices).where(eq(clientOffices.id, contact.officeId)).limit(1);
+        office = o ?? null;
+      }
+      res.json({ contact, buildings, deals, office });
     } catch (err: any) {
       console.error("Contact panel-data error:", err);
       res.status(500).json({ message: err.message || "Failed to fetch contact data" });

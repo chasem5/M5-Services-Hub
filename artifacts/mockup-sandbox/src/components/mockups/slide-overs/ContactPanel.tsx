@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   X, Mail, Phone, ExternalLink, Building2, StickyNote,
   TrendingUp, Calendar, DollarSign, Edit2, ChevronRight,
-  ChevronDown, Clock, ArrowUpRight
+  ChevronDown, Clock, ArrowUpRight, MapPin, Navigation
 } from "lucide-react";
 
 const RED = "#BE1916";
@@ -22,6 +22,13 @@ const contact = {
   reportsTo: "Lisa Nakamura",
   lastContact: "2 days ago",
   lastMeeting: "Mar 20, 2025",
+  office: {
+    building: "101 California Street",
+    floor: "Suite 1400, 14th Floor",
+    address: "101 California St, San Francisco, CA 94111",
+    dropInNote: "Lobby security desk — ask for Cushman & Wakefield. Best drop-in window 8–10am or after 3pm.",
+    mapsUrl: "https://maps.google.com/?q=101+California+St+San+Francisco+CA",
+  },
 };
 
 const buildings = [
@@ -124,6 +131,30 @@ export function ContactPanel() {
               <Clock className="w-3 h-3" /><span>Last contact: {contact.lastContact}</span>
               <span>·</span>
               <Calendar className="w-3 h-3" /><span>Last meeting: {contact.lastMeeting}</span>
+            </div>
+          </div>
+
+          {/* Office / Drop-in */}
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2.5">Office Location</h3>
+            <div className="rounded-xl border border-gray-200 overflow-hidden">
+              <div className="flex items-start gap-3 p-3 bg-gray-50">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-white border border-gray-200">
+                  <MapPin className="w-4 h-4 text-gray-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-gray-900">{contact.office.building}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{contact.office.floor}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{contact.office.address}</div>
+                </div>
+                <a href={contact.office.mapsUrl} target="_blank" rel="noreferrer" className="flex-shrink-0 w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:border-blue-300 hover:bg-blue-50 transition-colors group" title="Open in Google Maps">
+                  <Navigation className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500" />
+                </a>
+              </div>
+              <div className="px-3 py-2.5 bg-amber-50 border-t border-amber-100 flex items-start gap-2">
+                <span className="text-amber-500 mt-0.5 flex-shrink-0">💡</span>
+                <p className="text-[11px] text-amber-800 leading-relaxed">{contact.office.dropInNote}</p>
+              </div>
             </div>
           </div>
 
