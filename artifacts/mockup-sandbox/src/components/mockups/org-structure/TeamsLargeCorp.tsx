@@ -206,7 +206,7 @@ function OrgNode({ member, teamColor }: { member: Member; teamColor: string }) {
   return (
     <div className="flex flex-col items-center px-2 py-2 rounded-xl border border-gray-200 bg-white min-w-[130px] shadow-sm hover:shadow-md transition-shadow">
       {member.photo && !failed
-        ? <img src={member.photo} alt={member.name} onError={() => setFailed(true)} className="w-12 h-12 rounded-full object-cover mb-2 ring-2" style={{ ringColor: teamColor }} />
+        ? <img src={member.photo} alt={member.name} onError={() => setFailed(true)} className="w-12 h-12 rounded-full object-cover mb-2" style={{ outline: `2px solid ${teamColor}`, outlineOffset: "2px" }} />
         : <div className="w-12 h-12 rounded-full flex items-center justify-center text-white text-sm font-bold mb-2" style={{ backgroundColor: teamColor }}>
             {member.name.split(" ").map((n: string) => n[0]).join("")}
           </div>

@@ -208,6 +208,9 @@ function OrgNode({ member, teamColor }: { member: Member; teamColor: string }) {
       }
       <div className="text-[11px] font-semibold text-gray-900 text-center leading-tight">{member.name}</div>
       <div className="text-[10px] text-gray-500 text-center">{member.title}</div>
+      <div className="text-[9px] text-gray-400 text-center mt-0.5 flex items-center gap-0.5 justify-center">
+        <MapPin className="w-2.5 h-2.5 flex-shrink-0" />{member.location.split(",")[0]}
+      </div>
       <div className="mt-1 flex items-center gap-1">
         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: teamColor }} />
         <span className="text-[9px]" style={{ color: teamColor }}>{teams.find(t => t.members.some(m => m.id === member.id))?.name?.split(" ")[0]}</span>
