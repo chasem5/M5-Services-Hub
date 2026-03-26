@@ -57,6 +57,7 @@ import {
   ClipboardCheck,
   StickyNote,
   ArrowRightLeft,
+  Clock,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as ReTooltip } from "recharts";
@@ -2411,6 +2412,21 @@ export default function ClientDetail() {
                 : n >= 1000
                 ? `$${(n / 1000).toFixed(0)}K`
                 : `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+              // Last Activity calculation
+              const allActivityDates: { time: Date; label: string }[] = [];
+              recentEmails.forEach(em => {
+                if (em.receivedAt) allActivityDates.push({ time: new Date(em.receivedAt), label: em.subject ? `Email: ${em.subject}` : "Email" });
+              });
+              (activityLogs ?? []).forEach(a => {
+                allActivityDates.push({ time: new Date(a.createdAt), label: a.action || "Activity" });
+              });
+              spendEntries.forEach(s => {
+                allActivityDates.push({ time: new Date(s.createdAt), label: s.description || "BD spend" });
+              });
+              allActivityDates.sort((a, b) => b.time.getTime() - a.time.getTime());
+              const lastAct = allActivityDates[0];
+              const lastActText = lastAct ? formatDistanceToNow(lastAct.time, { addSuffix: true }) : "—";
+              const lastActSub = lastAct ? lastAct.label.slice(0, 40) + (lastAct.label.length > 40 ? "…" : "") : "No activity yet";
               return (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="overview-stat-bar">
                   <Card className="shadow-sm border-border/40 bg-card">
@@ -2447,15 +2463,11 @@ export default function ClientDetail() {
                       <p className="text-xl font-heading font-bold mt-1" data-testid="stat-total-spend">{totalBdSpend > 0 ? fmtS(totalBdSpend) : "—"}</p>
                     </CardContent>
                   </Card>
-                  <Card className="shadow-sm border-border/40 bg-card" data-testid="panel-health-score">
+                  <Card className="shadow-sm border-border/40 bg-card" data-testid="stat-last-activity">
                     <CardContent className="px-4 py-3">
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Health</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <p className={`text-xl font-heading font-bold ${healthColor}`}>{healthLabel}</p>
-                      </div>
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-1">
-                        <div className={`h-full rounded-full transition-all ${healthScore >= 75 ? "bg-green-500" : healthScore >= 50 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${healthScore}%` }} />
-                      </div>
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Last Activity</p>
+                      <p className="text-xl font-heading font-bold mt-1">{lastActText}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{lastActSub}</p>
                     </CardContent>
                   </Card>
                 </div>
@@ -2482,6 +2494,13 @@ export default function ClientDetail() {
                           ? `/api/contacts/${ct.id}/photo-img`
                           : ctPhoto;
                         const ctColor = TEAM_COLORS[ctIdx % TEAM_COLORS.length];
+                        // Find last email involving this contact
+                        const lastEmail = ct.email ? recentEmails.find(em =>
+                          em.fromEmail === ct.email || em.toEmail === ct.email || em.toEmail?.includes(ct.email!)
+                        ) : null;
+                        const lastContactTime = lastEmail?.receivedAt
+                          ? formatDistanceToNow(new Date(lastEmail.receivedAt), { addSuffix: true })
+                          : null;
                         return (
                           <button
                             key={ct.id}
@@ -2502,6 +2521,11 @@ export default function ClientDetail() {
                                 {ct.tier && <TierBadge tier={ct.tier} size="xs" />}
                               </div>
                               {ct.title && <p className="text-[10px] text-muted-foreground truncate">{ct.title}</p>}
+                              {lastContactTime && (
+                                <p className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-0.5">
+                                  <Clock className="w-2.5 h-2.5 shrink-0" />{lastContactTime}
+                                </p>
+                              )}
                             </div>
                           </button>
                         );
@@ -3258,7 +3282,7 @@ export default function ClientDetail() {
                                 className={`group transition-all ${dragContactId === contact.id ? "opacity-40" : ""} ${highlightedContactId === contact.id ? "ring-2 ring-primary/60 ring-inset" : ""}`}
                                 data-testid={`drag-contact-${contact.id}`}
                               >
-                                <div className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors">
+                                <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors">
                                   {/* Avatar */}
                                   <div className="w-9 h-9 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: teamColor }}>
                                     {resolvedPhoto ? (
@@ -3285,13 +3309,15 @@ export default function ClientDetail() {
                                       {contact.isPrimary && <Star className="h-3 w-3 text-amber-500 fill-amber-400 shrink-0" />}
                                       {contact.tier && <TierBadge tier={contact.tier} size="xs" />}
                                     </div>
-                                    {contact.title && <p className="text-xs text-muted-foreground mt-0.5">{contact.title}</p>}
+                                    {contact.title && <p className="text-xs text-muted-foreground">{contact.title}</p>}
+                                    {contactBuildings.length > 0 && contactBuildings[0].address && (
+                                      <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                                        <MapPin className="h-2.5 w-2.5 shrink-0" />
+                                        <span className="truncate">{contactBuildings[0].name ?? contactBuildings[0].address?.split(",")[0]}</span>
+                                      </p>
+                                    )}
+                                    {/* inline email/phone removed to row-level hover actions */}
                                     <div className="flex items-center gap-3 mt-1 flex-wrap">
-                                      {contact.email && (
-                                        <a href={`mailto:${contact.email}`} className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-1" onClick={e => e.stopPropagation()} data-testid={`link-contact-email-team-${contact.id}`}>
-                                          <Mail className="h-3 w-3" />{contact.email}
-                                        </a>
-                                      )}
                                       {contact.phone && (
                                         <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                                           <Phone className="h-3 w-3" />{contact.phone}
@@ -3364,6 +3390,26 @@ export default function ClientDetail() {
                                   </div>
                                   {/* Actions (visible on hover) */}
                                   <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {contact.email && (
+                                      <a
+                                        href={`mailto:${contact.email}`}
+                                        onClick={e => e.stopPropagation()}
+                                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                                        title={contact.email}
+                                        data-testid={`link-contact-email-hover-${contact.id}`}
+                                      >
+                                        <Mail className="h-3.5 w-3.5" />
+                                      </a>
+                                    )}
+                                    {(offices || []).filter(o => o.id !== office.id).length > 0 && (
+                                      <button
+                                        className="p-1 px-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground text-[10px] whitespace-nowrap"
+                                        onClick={() => toast({ title: "Move to Team", description: "Coming soon — drag contact to the target team to reassign." })}
+                                        data-testid={`button-move-team-hover-${contact.id}`}
+                                      >
+                                        Move to team
+                                      </button>
+                                    )}
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
                                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" data-testid={`button-contact-more-${contact.id}`}>
@@ -3420,28 +3466,32 @@ export default function ClientDetail() {
                               officeBuildings.map(b => {
                                 const bContact = officeContacts.find(c => c.id === b.contactId);
                                 return (
-                                  <div key={b.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors group/brow" data-testid={`building-row-office-${b.id}`}>
-                                    <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                                  <div key={b.id} className="flex items-start gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors group/brow rounded-lg mx-2" data-testid={`building-row-office-${b.id}`}>
+                                    <div className="w-7 h-7 rounded bg-muted flex items-center justify-center shrink-0 mt-0.5">
                                       <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2">
-                                        <button onClick={() => setOpenBuildingPanelId(b.id)} className="text-sm font-medium hover:underline text-left leading-tight" data-testid={`button-open-building-panel-office-${b.id}`}>
-                                          {b.name ?? b.address ?? "Unnamed building"}
-                                        </button>
-                                        {b.notes && (
-                                          <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">
-                                            <StickyNote className="w-2.5 h-2.5" /> note
-                                          </span>
-                                        )}
-                                      </div>
-                                      {b.address && b.name && <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 truncate"><MapPin className="h-3 w-3 flex-shrink-0" />{b.address}</p>}
-                                      {bContact && (
-                                        <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                                          <Users className="h-3 w-3" />
-                                          <button onClick={() => setOpenContactPanelId(bContact.id)} className="hover:underline">{bContact.name}</button>
-                                        </p>
+                                      <button onClick={() => setOpenBuildingPanelId(b.id)} className="text-sm font-medium hover:underline text-left leading-tight" data-testid={`button-open-building-panel-office-${b.id}`}>
+                                        {b.name ?? b.address ?? "Unnamed building"}
+                                      </button>
+                                      {b.address && <p className="text-xs text-muted-foreground truncate">{b.address}</p>}
+                                      {b.notes && (
+                                        <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded w-fit">
+                                          <StickyNote className="w-2.5 h-2.5 shrink-0" />{b.notes}
+                                        </div>
                                       )}
+                                    </div>
+                                    {b.propertyType && (
+                                      <div className="text-xs text-muted-foreground hidden sm:block whitespace-nowrap capitalize">{b.propertyType}</div>
+                                    )}
+                                    {bContact && (
+                                      <div className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
+                                        <Users className="w-3 h-3 shrink-0" />
+                                        <button onClick={() => setOpenContactPanelId(bContact.id)} className="hover:underline">{bContact.name.split(" ")[0]}</button>
+                                      </div>
+                                    )}
+                                    <div className="opacity-0 group-hover/brow:opacity-100 flex gap-1">
+                                      <button onClick={() => toast({ title: "Reassign Team", description: "Coming soon — team reassignment for buildings." })} className="p-1 rounded hover:bg-muted text-[10px] text-muted-foreground whitespace-nowrap">Reassign team</button>
                                     </div>
                                   </div>
                                 );
