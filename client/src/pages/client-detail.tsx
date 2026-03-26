@@ -674,7 +674,7 @@ function threadDirectionLabel(messages: EmailMsg[]) {
 // ──────────────────────────────────────────────────────────────────────
 // Unified chronological history feed
 // ──────────────────────────────────────────────────────────────────────
-type FeedEventKind = "activity" | "email" | "file";
+type FeedEventKind = "activity" | "email" | "file" | "meeting" | "note" | "deal" | "spend";
 interface FeedEvent {
   id: string;
   kind: FeedEventKind;
@@ -683,9 +683,11 @@ interface FeedEvent {
   subtitle?: string;
   meta?: string;
   href?: string;
+  attendeeContactIds?: number[];
+  attendeeCount?: number;
 }
 
-function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
+function UnifiedHistoryFeed({ clientId, contacts = [] }: { clientId: number; contacts?: { id: number; name: string; profilePictureUrl?: string | null }[] }) {
   const [historySearch, setHistorySearch] = useState("");
   const { data: actLogs = [], isLoading: loadAct } = useQuery<ActivityLog[]>({
     queryKey: ["/api/activity-logs", "client", clientId],
@@ -703,6 +705,12 @@ function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
 
   const { data: attachments = [], isLoading: loadFiles } = useQuery<{ id: number; fileName: string; fileType: string; fileSize: number; objectKey: string; createdAt: string }[]>({
     queryKey: ["/api/attachments", "client", clientId],
+  });
+
+  const { data: clientMeetings = [] } = useQuery<{ id: number; title: string; date: string | null; summary?: string | null; attendeeContactIds?: number[]; attendeeCount?: number }[]>({
+    queryKey: ["/api/clients", clientId, "communications"],
+    queryFn: () => fetch(`/api/clients/${clientId}/communications`, { credentials: "include" }).then(r => r.json()),
+    select: (items: any[]) => items.filter((i: any) => i.type === "meeting"),
   });
 
   const { data: users = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/users"] });
@@ -750,10 +758,28 @@ function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
     });
   });
 
+  clientMeetings.forEach((m: any) => {
+    if (!m.date) return;
+    events.push({
+      id: `meeting-${m.id ?? m.meetingId}`,
+      kind: "meeting",
+      date: new Date(m.date),
+      title: m.subject ?? m.title ?? "Meeting",
+      subtitle: m.snippet ?? undefined,
+      meta: `${m.attendeeCount ?? 0} attendee${(m.attendeeCount ?? 0) !== 1 ? "s" : ""}`,
+      attendeeContactIds: m.attendeeContactIds ?? [],
+      attendeeCount: m.attendeeCount,
+    });
+  });
+
   events.sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const kindConfig = (kind: FeedEventKind) => {
     if (kind === "email") return { icon: <Mail className="h-3.5 w-3.5 text-blue-500" />, bg: "bg-blue-50 border-blue-200", label: "Email" };
+    if (kind === "meeting") return { icon: <CalendarDays className="h-3.5 w-3.5 text-purple-500" />, bg: "bg-purple-50 border-purple-200", label: "Meeting" };
+    if (kind === "note") return { icon: <StickyNote className="h-3.5 w-3.5 text-amber-500" />, bg: "bg-amber-50 border-amber-200", label: "Note" };
+    if (kind === "deal") return { icon: <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />, bg: "bg-emerald-50 border-emerald-200", label: "Deal" };
+    if (kind === "spend") return { icon: <DollarSign className="h-3.5 w-3.5 text-rose-500" />, bg: "bg-rose-50 border-rose-200", label: "BD Spend" };
     if (kind === "file") return { icon: <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />, bg: "bg-muted border-border", label: "File" };
     return { icon: <Activity className="h-3.5 w-3.5 text-primary" />, bg: "bg-primary/5 border-primary/20", label: "Activity" };
   };
@@ -822,6 +848,11 @@ function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
         <div className="space-y-0">
           {filteredEvents.map(ev => {
             const cfg = kindConfig(ev.kind);
+            const isMeeting = ev.kind === "meeting";
+            const meetingAttendees = isMeeting && ev.attendeeContactIds && ev.attendeeContactIds.length > 0
+              ? ev.attendeeContactIds.slice(0, 3).map(cid => contacts.find(c => c.id === cid)).filter(Boolean)
+              : [];
+            const extraAttendees = isMeeting && (ev.attendeeCount ?? 0) > 3 ? (ev.attendeeCount ?? 0) - 3 : 0;
             return (
               <div key={ev.id} className="flex gap-3 group hover:bg-muted/30 rounded-lg px-3 py-2.5 transition-colors" data-testid={`history-event-${ev.id}`}>
                 <div className="relative mt-0.5 shrink-0">
@@ -836,7 +867,26 @@ function UnifiedHistoryFeed({ clientId }: { clientId: number }) {
                   </div>
                   {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ev.subtitle}</p>}
                   <div className="flex items-center gap-2 mt-1">
-                    {ev.meta && <span className="text-[11px] text-muted-foreground/70">{ev.meta}</span>}
+                    {isMeeting && meetingAttendees.length > 0 && (
+                      <div className="flex items-center gap-1">
+                        <div className="flex -space-x-1.5">
+                          {meetingAttendees.map((c, i) => c && (
+                            <div key={c.id} className="h-5 w-5 rounded-full border-2 border-background bg-primary/20 flex items-center justify-center text-[8px] font-bold overflow-hidden" title={c.name} style={{ zIndex: 10 - i }}>
+                              {c.profilePictureUrl ? (
+                                <img src={c.profilePictureUrl.startsWith("https://storage.googleapis.com/") ? `/api/contacts/${c.id}/photo-img` : c.profilePictureUrl} className="w-full h-full object-cover" alt={c.name} />
+                              ) : (
+                                c.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
+                              )}
+                            </div>
+                          ))}
+                          {extraAttendees > 0 && (
+                            <div className="h-5 w-5 rounded-full border-2 border-background bg-muted flex items-center justify-center text-[8px] font-bold text-muted-foreground">+{extraAttendees}</div>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-muted-foreground/70">{ev.meta}</span>
+                      </div>
+                    )}
+                    {(!isMeeting || meetingAttendees.length === 0) && ev.meta && <span className="text-[11px] text-muted-foreground/70">{ev.meta}</span>}
                     <span className="text-[11px] text-muted-foreground/50 ml-auto">{formatDistanceToNow(ev.date, { addSuffix: true })}</span>
                   </div>
                 </div>
@@ -868,6 +918,8 @@ interface CommItem {
   priority?: string;
   dueDate?: string | null;
   authorName?: string;
+  attendeeContactIds?: number[];
+  attendeeCount?: number;
 }
 
 function ClientCommunicationsTab({ clientId }: { clientId: number }) {
@@ -1328,7 +1380,7 @@ export default function ClientDetail() {
     },
   });
 
-  const { data: allBuildings = [] } = useQuery<Array<{ id: number; name: string; address?: string | null; lat?: string | null; lng?: string | null; notes?: string | null; contactName: string; contactId: number | null; type: "building" | "office" }>>({
+  const { data: allBuildings = [] } = useQuery<Array<{ id: number; name: string; address?: string | null; lat?: string | null; lng?: string | null; notes?: string | null; contactName: string; contactId: number | null; type: "building" | "office"; propertyType?: string | null }>>({
     queryKey: ["/api/clients", clientId, "all-buildings"],
   });
 
@@ -1846,8 +1898,8 @@ export default function ClientDetail() {
   const lastActivityDate = activityLogs && activityLogs.length > 0 ? new Date(activityLogs[0].createdAt) : null;
   const daysSinceActivity = lastActivityDate ? Math.floor((Date.now() - lastActivityDate.getTime()) / (1000 * 60 * 60 * 24)) : null;
   const isDormantClient = daysSinceActivity !== null && daysSinceActivity > 60;
-  const healthLabel = isDormantClient ? "Dormant" : healthScore >= 75 ? "Healthy" : healthScore >= 50 ? "Watch" : "At Risk";
-  const healthColor = isDormantClient ? "text-gray-500" : healthScore >= 75 ? "text-green-600" : healthScore >= 50 ? "text-amber-600" : "text-red-500";
+  const healthLabel = isDormantClient ? "Dormant" : healthScore >= 75 ? "Healthy" : "At Risk";
+  const healthColor = isDormantClient ? "text-red-700" : healthScore >= 75 ? "text-green-600" : "text-amber-600";
 
   const fmtMoney = (n: number) => n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n / 1_000).toFixed(0)}K` : `$${n.toLocaleString()}`;
 
@@ -1885,7 +1937,7 @@ export default function ClientDetail() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="font-heading font-bold text-lg leading-tight" data-testid="text-client-name">{client.name}</h1>
               {client.tier && <TierBadge tier={client.tier} size="xs" />}
-              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${isDormantClient ? "bg-gray-100 text-gray-500" : healthScore >= 75 ? "bg-green-100 text-green-700" : healthScore >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600"}`} data-testid="badge-health-chip">
+              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${isDormantClient ? "bg-red-100 text-red-700" : healthScore >= 75 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`} data-testid="badge-health-chip">
                 <HeartPulse className="h-3 w-3" />
                 {healthLabel}
               </span>
@@ -3262,6 +3314,7 @@ export default function ClientDetail() {
                                       {b.name ?? b.address ?? "Unnamed building"}
                                     </button>
                                     {b.address && b.name && <p className="text-xs text-muted-foreground mt-0.5 truncate">{b.address}</p>}
+                                    {b.propertyType && <p className="text-[11px] text-muted-foreground/60 mt-0.5 capitalize">{b.propertyType}</p>}
                                   </div>
                                 </div>
                               ))
@@ -4105,8 +4158,8 @@ export default function ClientDetail() {
               const fmt3 = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
               const allLeads = leads ?? [];
               const allEstimates = estimates ?? [];
-              const wonLeads = allLeads.filter(l => l.stage === "won");
-              const wonRevenue = wonLeads.reduce((s, l) => s + (parseFloat(l.value ?? "0") || 0), 0);
+              const ltmRevenue = buildopsRevenue > 0 ? buildopsRevenue : allLeads.filter(l => l.stage === "won").reduce((s, l) => s + (parseFloat(l.value ?? "0") || 0), 0);
+              const ltmSub = buildopsRevenue > 0 ? "From BuildOps invoices" : `${allLeads.filter(l => l.stage === "won").length} CRM deals won`;
               const openQuotes = allEstimates.filter(e => e.status === "sent");
               const openQuotesVal = openQuotes.reduce((s, e) => s + (parseFloat(e.total ?? "0") || 0), 0);
               const acceptedQuotes = allEstimates.filter(e => e.status === "accepted");
@@ -4116,7 +4169,7 @@ export default function ClientDetail() {
               return (
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: "Won Revenue", value: wonRevenue > 0 ? fmt3(wonRevenue) : "—", sub: `${wonLeads.length} deal${wonLeads.length !== 1 ? "s" : ""} closed`, color: "text-emerald-600" },
+                    { label: "Revenue (LTM)", value: ltmRevenue > 0 ? fmt3(ltmRevenue) : "—", sub: ltmSub, color: "text-emerald-600" },
                     { label: "Open Quotes", value: openQuotesVal > 0 ? fmt3(openQuotesVal) : "—", sub: `${openQuotes.length} quote${openQuotes.length !== 1 ? "s" : ""} awaiting response`, color: "text-blue-600" },
                     { label: "Quote Win Rate", value: quoteWinRate !== null ? `${quoteWinRate}%` : "—", sub: `${closedQuotes} quote${closedQuotes !== 1 ? "s" : ""} decided`, color: "text-foreground" },
                   ].map(s => (
@@ -4129,6 +4182,50 @@ export default function ClientDetail() {
                     </Card>
                   ))}
                 </div>
+              );
+            })()}
+            {/* ── Service type breakdown ── */}
+            {(() => {
+              const allLeads = leads ?? [];
+              const SERVICE_LABELS: Record<string, string> = {
+                special_projects: "Special Projects",
+                janitorial: "Janitorial",
+                facility_solutions: "Facility Solutions",
+                building_engineering: "Building Engineering",
+                property_assessment: "Property Assessment",
+              };
+              const SERVICE_COLORS = ["#BE1916", "#2563EB", "#059669", "#D97706", "#0891B2"];
+              const counts = allLeads.reduce((acc: Record<string, number>, l) => {
+                const st = (l as any).serviceType;
+                if (st) acc[st] = (acc[st] ?? 0) + 1;
+                return acc;
+              }, {});
+              const total = Object.values(counts).reduce((s, v) => s + v, 0);
+              if (total === 0) return null;
+              const sorted = Object.entries(counts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 4)
+                .map(([key, count], i) => ({ key, label: SERVICE_LABELS[key] ?? key, count, pct: Math.round(count / total * 100), color: SERVICE_COLORS[i] }));
+              return (
+                <Card className="shadow-sm border-border/40 bg-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold">Service Breakdown</CardTitle>
+                    <CardDescription className="text-xs">By deal count across service types</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 pb-4">
+                    {sorted.map(s => (
+                      <div key={s.key} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-foreground">{s.label}</span>
+                          <span className="text-muted-foreground">{s.count} deal{s.count !== 1 ? "s" : ""} · {s.pct}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${s.pct}%`, backgroundColor: s.color }} />
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
               );
             })()}
             <div className="flex items-center gap-1 border-b pb-3 flex-wrap">
@@ -4325,7 +4422,7 @@ export default function ClientDetail() {
                 </div>
               </CardHeader>
               <CardContent className="pt-4">
-                <UnifiedHistoryFeed clientId={clientId} />
+                <UnifiedHistoryFeed clientId={clientId} contacts={contacts ?? []} />
               </CardContent>
             </Card>
           </TabsContent>

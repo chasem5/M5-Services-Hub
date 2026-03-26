@@ -4677,6 +4677,8 @@ Respond with this JSON:
         subject: m.title,
         snippet: m.summary?.slice(0, 150) ?? null,
         meetingId: m.id,
+        attendeeContactIds: m.attendeeContactIds ?? [],
+        attendeeCount: (m.attendeeContactIds?.length ?? 0) + (m.attendeeUserIds?.length ?? 0),
       }));
 
       const taskItems = filteredTasks.map(t => ({
