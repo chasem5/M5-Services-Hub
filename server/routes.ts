@@ -1276,16 +1276,16 @@ export async function registerRoutes(
       const [recentActs, recentEmails, recentSpend, recentMeetings] = await Promise.all([
         db.select().from(activityLogs)
           .where(eq(activityLogs.entityId, contactId))
-          .orderBy(desc(activityLogs.createdAt)).limit(6),
+          .orderBy(desc(activityLogs.createdAt)).limit(15),
         db.select().from(emailMessages)
           .where(eq(emailMessages.contactId, contactId))
-          .orderBy(desc(emailMessages.receivedAt)).limit(6),
+          .orderBy(desc(emailMessages.receivedAt)).limit(15),
         db.select().from(bdSpendEntries)
           .where(eq(bdSpendEntries.contactId, contactId))
-          .orderBy(desc(bdSpendEntries.createdAt)).limit(4),
+          .orderBy(desc(bdSpendEntries.createdAt)).limit(10),
         db.select().from(meetings)
           .where(sqlTag`${meetings.attendeeContactIds} @> ARRAY[${contactId}]::integer[]`)
-          .orderBy(desc(meetings.date)).limit(4),
+          .orderBy(desc(meetings.date)).limit(10),
       ]);
       const formatRelative = (d: Date | string | null) => {
         if (!d) return "";
