@@ -1264,6 +1264,9 @@ export default function ClientDetail() {
   const [onboardingChecklistOpen, setOnboardingChecklistOpen] = useState(true);
   const [orgSubTab, setOrgSubTab] = useState<"list" | "orgchart" | "map">("list");
   const [revenueSubTab, setRevenueSubTab] = useState<"leads" | "estimates" | "jobs" | "invoices" | "agreements">("leads");
+  const [expandedOfficeIds, setExpandedOfficeIds] = useState<Set<number>>(new Set());
+  const [officePeopleBuildings, setOfficePeopleBuildings] = useState<Record<number, "people" | "buildings">>({});
+  const [estimateStatusFilter, setEstimateStatusFilter] = useState<string>("all");
 
   // Queries
   const { data: client, isLoading: isLoadingClient } = useQuery<Client>({
@@ -1840,8 +1843,11 @@ export default function ClientDetail() {
     return tierMap[client.tier ?? ""] ?? 60;
   })();
 
-  const healthLabel = healthScore >= 75 ? "Healthy" : healthScore >= 50 ? "Watch" : "At Risk";
-  const healthColor = healthScore >= 75 ? "text-green-600" : healthScore >= 50 ? "text-amber-600" : "text-red-500";
+  const lastActivityDate = activityLogs && activityLogs.length > 0 ? new Date(activityLogs[0].createdAt) : null;
+  const daysSinceActivity = lastActivityDate ? Math.floor((Date.now() - lastActivityDate.getTime()) / (1000 * 60 * 60 * 24)) : null;
+  const isDormantClient = daysSinceActivity !== null && daysSinceActivity > 60;
+  const healthLabel = isDormantClient ? "Dormant" : healthScore >= 75 ? "Healthy" : healthScore >= 50 ? "Watch" : "At Risk";
+  const healthColor = isDormantClient ? "text-gray-500" : healthScore >= 75 ? "text-green-600" : healthScore >= 50 ? "text-amber-600" : "text-red-500";
 
   const fmtMoney = (n: number) => n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n / 1_000).toFixed(0)}K` : `$${n.toLocaleString()}`;
 
@@ -1879,7 +1885,7 @@ export default function ClientDetail() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="font-heading font-bold text-lg leading-tight" data-testid="text-client-name">{client.name}</h1>
               {client.tier && <TierBadge tier={client.tier} size="xs" />}
-              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${healthScore >= 75 ? "bg-green-100 text-green-700" : healthScore >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600"}`} data-testid="badge-health-chip">
+              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${isDormantClient ? "bg-gray-100 text-gray-500" : healthScore >= 75 ? "bg-green-100 text-green-700" : healthScore >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600"}`} data-testid="badge-health-chip">
                 <HeartPulse className="h-3 w-3" />
                 {healthLabel}
               </span>
@@ -2388,7 +2394,7 @@ export default function ClientDetail() {
                     <p className="text-xs text-muted-foreground italic">No contacts yet</p>
                   ) : (
                     (contacts ?? []).slice(0, 5).map((ct, ctIdx) => {
-                      const ctPhoto = (ct as any).profilePictureUrl;
+                      const ctPhoto = ct.profilePictureUrl;
                       const ctResolvedPhoto = ctPhoto?.startsWith("https://storage.googleapis.com/")
                         ? `/api/contacts/${ct.id}/photo-img`
                         : ctPhoto;
@@ -2406,7 +2412,7 @@ export default function ClientDetail() {
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <button onClick={() => setOpenContactPanelId(ct.id)} className="text-xs font-semibold hover:underline text-left leading-tight" data-testid={`overview-contact-link-${ct.id}`}>{ct.name}</button>
                               {ct.isPrimary && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-400 shrink-0" />}
-                              {(ct as any).tier && <TierBadge tier={(ct as any).tier} size="xs" />}
+                              {ct.tier && <TierBadge tier={ct.tier} size="xs" />}
                             </div>
                             {ct.title && <p className="text-[10px] text-muted-foreground truncate">{ct.title}</p>}
                           </div>
@@ -2752,9 +2758,19 @@ export default function ClientDetail() {
                               task: "Task", estimate: "Estimate",
                             };
                             const label = `${entityLabel[log.entityType] ?? log.entityType} — ${actionLabel[log.action] ?? log.action}`;
+                            const activityIconMap: Record<string, { icon: JSX.Element; bg: string }> = {
+                              lead: { icon: <TrendingUp className="h-3 w-3 text-emerald-600" />, bg: "bg-emerald-50 border border-emerald-200" },
+                              client: { icon: <Building2 className="h-3 w-3 text-primary" />, bg: "bg-primary/10 border border-primary/20" },
+                              contact: { icon: <Users className="h-3 w-3 text-blue-600" />, bg: "bg-blue-50 border border-blue-200" },
+                              estimate: { icon: <FileText className="h-3 w-3 text-amber-600" />, bg: "bg-amber-50 border border-amber-200" },
+                              task: { icon: <ClipboardList className="h-3 w-3 text-gray-500" />, bg: "bg-gray-100 border border-gray-200" },
+                            };
+                            const iconInfo = activityIconMap[log.entityType] ?? { icon: <Activity className="h-3 w-3 text-muted-foreground" />, bg: "bg-muted border border-border" };
                             return (
                               <div key={log.id} className="flex items-start gap-3 px-6 py-3" data-testid={`activity-preview-${log.id}`}>
-                                <div className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />
+                                <div className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${iconInfo.bg}`}>
+                                  {iconInfo.icon}
+                                </div>
                                 <div className="min-w-0 flex-1">
                                   <p className="text-sm text-foreground leading-snug">{label}</p>
                                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -2950,21 +2966,29 @@ export default function ClientDetail() {
                       onDrop={(e) => { e.preventDefault(); if (dragContactId !== null) moveContactToOfficeMutation.mutate({ contactId: dragContactId, officeId: office.id }); setDragContactId(null); setDragOverOfficeId(null); }}
                     >
                       {/* Team header */}
-                      <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border/30">
+                      <div
+                        className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border/30 cursor-pointer select-none hover:bg-muted/20 transition-colors"
+                        onClick={() => setExpandedOfficeIds(prev => {
+                          const next = new Set(prev);
+                          if (next.has(office.id)) next.delete(office.id);
+                          else next.add(office.id);
+                          return next;
+                        })}
+                      >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0 text-white text-sm font-bold" style={{ backgroundColor: teamColor }}>
                             {office.name.charAt(0).toUpperCase()}
                           </div>
-                          <div className="min-w-0">
-                            <h4 className="font-semibold text-sm truncate">{office.name}</h4>
-                            <div className="flex items-center gap-x-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
-                              <span>{officeContacts.length} contact{officeContacts.length !== 1 ? "s" : ""}</span>
-                              {officeBuildings.length > 0 && <span>{officeBuildings.length} building{officeBuildings.length !== 1 ? "s" : ""}</span>}
-                              {office.address && <AddressLink address={office.address} showIcon className="text-xs text-muted-foreground truncate max-w-[200px]" iconClassName="h-3 w-3" />}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-semibold text-sm truncate">{office.name}</h4>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{officeContacts.length} people</span>
+                              {officeBuildings.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{officeBuildings.length} buildings</span>}
                             </div>
+                            {office.address && <div className="mt-0.5"><AddressLink address={office.address} showIcon className="text-xs text-muted-foreground truncate max-w-[200px]" iconClassName="h-3 w-3" /></div>}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -3031,21 +3055,42 @@ export default function ClientDetail() {
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          <div className="text-muted-foreground pl-1">
+                            {expandedOfficeIds.has(office.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </div>
                         </div>
                       </div>
 
-                      {/* Contacts */}
-                      {officeContacts.length === 0 ? (
-                        <div className="py-6 text-center">
-                          <p className="text-sm text-muted-foreground">No contacts in this team yet.</p>
-                          <Button variant="ghost" size="sm" className="mt-2 h-8 text-xs" onClick={() => openAddContactForOffice(office.id)}>
-                            <Plus className="mr-1 h-3 w-3" />Add Contact
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="divide-y divide-border/30">
-                          {officeContacts.map(contact => {
-                            const photoSrc = (contact as any).profilePictureUrl;
+                      {/* Expanded content: People / Buildings sub-tabs */}
+                      {expandedOfficeIds.has(office.id) && (
+                        <div>
+                          {/* Sub-tab switcher */}
+                          <div className="flex border-b border-border/30 px-4">
+                            {(["people", "buildings"] as const).map(s => (
+                              <button
+                                key={s}
+                                onClick={() => setOfficePeopleBuildings(prev => ({ ...prev, [office.id]: s }))}
+                                className={`text-xs font-medium pb-2 pt-2 mr-5 border-b-2 transition-colors flex items-center gap-1 ${(officePeopleBuildings[office.id] ?? "people") === s ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+                              >
+                                {s === "people" ? <><Users className="h-3 w-3" />People ({officeContacts.length})</> : <><Building2 className="h-3 w-3" />Buildings ({officeBuildings.length})</>}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* People list */}
+                          {(officePeopleBuildings[office.id] ?? "people") === "people" && (
+                            <>
+                              {officeContacts.length === 0 ? (
+                                <div className="py-6 text-center">
+                                  <p className="text-sm text-muted-foreground">No contacts in this team yet.</p>
+                                  <Button variant="ghost" size="sm" className="mt-2 h-8 text-xs" onClick={() => openAddContactForOffice(office.id)}>
+                                    <Plus className="mr-1 h-3 w-3" />Add Contact
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="divide-y divide-border/30">
+                                  {officeContacts.map(contact => {
+                            const photoSrc = contact.profilePictureUrl;
                             const resolvedPhoto = photoSrc?.startsWith("https://storage.googleapis.com/")
                               ? `/api/contacts/${contact.id}/photo-img`
                               : photoSrc;
@@ -3084,7 +3129,7 @@ export default function ClientDetail() {
                                         {contact.name}
                                       </button>
                                       {contact.isPrimary && <Star className="h-3 w-3 text-amber-500 fill-amber-400 shrink-0" />}
-                                      {(contact as any).tier && <TierBadge tier={(contact as any).tier} size="xs" />}
+                                      {contact.tier && <TierBadge tier={contact.tier} size="xs" />}
                                     </div>
                                     {contact.title && <p className="text-xs text-muted-foreground mt-0.5">{contact.title}</p>}
                                     <div className="flex items-center gap-3 mt-1 flex-wrap">
@@ -3197,6 +3242,34 @@ export default function ClientDetail() {
                           })}
                         </div>
                       )}
+                          </>
+                        )}
+                        {/* Buildings sub-tab */}
+                        {(officePeopleBuildings[office.id] ?? "people") === "buildings" && (
+                          <div className="divide-y divide-border/30">
+                            {officeBuildings.length === 0 ? (
+                              <div className="py-6 text-center text-sm text-muted-foreground">
+                                No buildings linked to contacts in this team yet.
+                              </div>
+                            ) : (
+                              officeBuildings.map(b => (
+                                <div key={b.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors" data-testid={`building-row-office-${b.id}`}>
+                                  <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                                    <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <button onClick={() => setOpenBuildingPanelId(b.id)} className="text-sm font-medium hover:underline text-left leading-tight" data-testid={`button-open-building-panel-office-${b.id}`}>
+                                      {b.name ?? b.address ?? "Unnamed building"}
+                                    </button>
+                                    {b.address && b.name && <p className="text-xs text-muted-foreground mt-0.5 truncate">{b.address}</p>}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     </div>
                   );
                 })}
@@ -4031,17 +4104,21 @@ export default function ClientDetail() {
             {(() => {
               const fmt3 = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
               const allLeads = leads ?? [];
-              const openQuotesVal = allLeads.filter(l => ["proposal_sent", "qualifying", "new_lead"].includes(l.stage)).reduce((s, l) => s + (parseFloat(l.value ?? "0") || 0), 0);
+              const allEstimates = estimates ?? [];
               const wonLeads = allLeads.filter(l => l.stage === "won");
-              const closedLeads = allLeads.filter(l => l.stage === "won" || l.stage === "lost");
-              const winRate = closedLeads.length > 0 ? Math.round(wonLeads.length / closedLeads.length * 100) : null;
               const wonRevenue = wonLeads.reduce((s, l) => s + (parseFloat(l.value ?? "0") || 0), 0);
+              const openQuotes = allEstimates.filter(e => e.status === "sent");
+              const openQuotesVal = openQuotes.reduce((s, e) => s + (parseFloat(e.total ?? "0") || 0), 0);
+              const acceptedQuotes = allEstimates.filter(e => e.status === "accepted");
+              const rejectedQuotes = allEstimates.filter(e => e.status === "rejected");
+              const closedQuotes = acceptedQuotes.length + rejectedQuotes.length;
+              const quoteWinRate = closedQuotes > 0 ? Math.round(acceptedQuotes.length / closedQuotes * 100) : null;
               return (
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { label: "Won Revenue", value: wonRevenue > 0 ? fmt3(wonRevenue) : "—", sub: `${wonLeads.length} deal${wonLeads.length !== 1 ? "s" : ""} closed`, color: "text-emerald-600" },
-                    { label: "Open Pipeline", value: openQuotesVal > 0 ? fmt3(openQuotesVal) : "—", sub: `${allLeads.filter(l => !["won","lost"].includes(l.stage)).length} active deal${allLeads.filter(l => !["won","lost"].includes(l.stage)).length !== 1 ? "s" : ""}`, color: "text-blue-600" },
-                    { label: "Win Rate", value: winRate !== null ? `${winRate}%` : "—", sub: `${closedLeads.length} closed deal${closedLeads.length !== 1 ? "s" : ""}`, color: "text-foreground" },
+                    { label: "Open Quotes", value: openQuotesVal > 0 ? fmt3(openQuotesVal) : "—", sub: `${openQuotes.length} quote${openQuotes.length !== 1 ? "s" : ""} awaiting response`, color: "text-blue-600" },
+                    { label: "Quote Win Rate", value: quoteWinRate !== null ? `${quoteWinRate}%` : "—", sub: `${closedQuotes} quote${closedQuotes !== 1 ? "s" : ""} decided`, color: "text-foreground" },
                   ].map(s => (
                     <Card key={s.label} className="shadow-sm border-border/40 bg-card">
                       <CardContent className="px-4 py-3">
@@ -4126,12 +4203,24 @@ export default function ClientDetail() {
             )}
             {revenueSubTab === "estimates" && (
               <Card className="border-none shadow-sm bg-card">
-                <CardHeader className="flex flex-row items-center justify-between">
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
                   <div>
                     <CardTitle>Quotes &amp; Estimates</CardTitle>
                     <CardDescription>CRM estimates and BuildOps quotes for this client</CardDescription>
-                </div>
-              </CardHeader>
+                  </div>
+                  <div className="flex gap-1 flex-wrap">
+                    {(["all", "sent", "accepted", "draft", "rejected"] as const).map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setEstimateStatusFilter(s)}
+                        className={cn("px-2.5 py-1 text-xs font-medium rounded-full transition-colors capitalize border", estimateStatusFilter === s ? "bg-primary text-primary-foreground border-primary" : "bg-transparent text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground")}
+                        data-testid={`filter-estimate-${s}`}
+                      >
+                        {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </CardHeader>
               <CardContent>
                 {(() => {
                   const crmRows = (estimates ?? []).map(e => ({
@@ -4146,7 +4235,9 @@ export default function ClientDetail() {
                       value: parseFloat(l.value as string || "0"), date: l.createdAt,
                       source: "BuildOps" as const, onClick: () => setLocation(`/leads`),
                     }));
-                  const allRows = [...crmRows, ...boRows].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                  const allRows = [...crmRows, ...boRows]
+                    .filter(r => estimateStatusFilter === "all" || r.status === estimateStatusFilter)
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                   if (allRows.length === 0) return (
                     <div className="text-center py-12 bg-muted/20 rounded-lg">
                       <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
