@@ -101,6 +101,7 @@ export const contactBuildings = pgTable("contact_buildings", {
   name: varchar("name"),
   address: text("address"),
   propertyType: varchar("property_type"),
+  sqft: integer("sqft"),
   buildopsIsInactive: boolean("buildops_is_inactive").default(false),
   lat: decimal("lat", { precision: 10, scale: 7 }),
   lng: decimal("lng", { precision: 10, scale: 7 }),

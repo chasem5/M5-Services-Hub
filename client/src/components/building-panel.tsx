@@ -201,6 +201,11 @@ export function BuildingPanel({ buildingId, onClose, onOpenContact }: BuildingPa
                         {building.propertyType}
                       </span>
                     )}
+                    {building.sqft && (
+                      <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
+                        {building.sqft.toLocaleString()} sqft
+                      </span>
+                    )}
                     {!building.buildopsId && (
                       <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
                         No BuildOps link

@@ -1258,7 +1258,7 @@ export async function registerRoutes(
           .limit(5),
       ]);
       if (!contact) return res.status(404).json({ message: "Contact not found" });
-      let office: any = null;
+      let office: typeof clientOffices.$inferSelect | null = null;
       if (contact.officeId) {
         const [o] = await db.select().from(clientOffices).where(eq(clientOffices.id, contact.officeId)).limit(1);
         office = o ?? null;

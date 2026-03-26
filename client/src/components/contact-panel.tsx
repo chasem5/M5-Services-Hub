@@ -55,6 +55,7 @@ interface ContactPanelProps {
   contactId: number | null;
   onClose: () => void;
   onOpenBuilding?: (buildingId: number) => void;
+  onEdit?: (contact: ClientContact) => void;
 }
 
 function fmt(n: number | string | null | undefined) {
@@ -132,7 +133,7 @@ function PanelSkeleton() {
   );
 }
 
-export function ContactPanel({ contactId, onClose, onOpenBuilding }: ContactPanelProps) {
+export function ContactPanel({ contactId, onClose, onOpenBuilding, onEdit }: ContactPanelProps) {
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
@@ -329,9 +330,9 @@ export function ContactPanel({ contactId, onClose, onOpenBuilding }: ContactPane
                   <Calendar className="w-3 h-3" /> Log Meeting
                 </button>
                 <button
-                  onClick={() => { setNotesValue(contact.notes ?? ""); setEditingNotes(true); }}
+                  onClick={() => { if (onEdit) { onEdit(contact); onClose(); } }}
                   className="flex-1 text-xs py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1.5 transition-colors"
-                  data-testid="contact-panel-edit-notes"
+                  data-testid="contact-panel-edit"
                 >
                   <Edit2 className="w-3 h-3" /> Edit
                 </button>

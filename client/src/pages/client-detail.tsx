@@ -2557,6 +2557,9 @@ export default function ClientDetail() {
                     clientMeetings.slice(0, 3).forEach(m => {
                       if (m.date) combined.push({ type: "meeting", label: m.subject || "Meeting", detail: m.snippet ? m.snippet.slice(0, 80) : "", time: new Date(m.date) });
                     });
+                    (leads ?? []).filter(l => l.updatedAt).slice(0, 3).forEach(l => {
+                      combined.push({ type: "deal", label: l.title, detail: `Stage: ${l.stage ?? "unknown"}${l.value ? ` · $${parseFloat(l.value).toLocaleString("en-US", { maximumFractionDigits: 0 })}` : ""}`, time: new Date(l.updatedAt!) });
+                    });
                     combined.sort((a, b) => b.time.getTime() - a.time.getTime());
                     if (combined.length === 0) return <p className="text-xs text-muted-foreground italic">No recent activity</p>;
                     return combined.slice(0, 5).map((item, i) => {
@@ -3484,8 +3487,10 @@ export default function ClientDetail() {
                                         </div>
                                       )}
                                     </div>
-                                    {b.propertyType && (
-                                      <div className="text-xs text-muted-foreground hidden sm:block whitespace-nowrap capitalize">{b.propertyType}</div>
+                                    {(b.sqft || b.propertyType) && (
+                                      <div className="text-xs text-muted-foreground hidden sm:block whitespace-nowrap capitalize">
+                                        {b.sqft ? `${b.sqft.toLocaleString()} sqft` : b.propertyType}
+                                      </div>
                                     )}
                                     {bContact && (
                                       <div className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
@@ -5114,6 +5119,7 @@ export default function ClientDetail() {
         contactId={openContactPanelId}
         onClose={() => setOpenContactPanelId(null)}
         onOpenBuilding={(id) => { setOpenContactPanelId(null); setOpenBuildingPanelId(id); }}
+        onEdit={(contact) => { setOpenContactPanelId(null); openEditContact(contact); }}
       />
       <BuildingPanel
         buildingId={openBuildingPanelId}
