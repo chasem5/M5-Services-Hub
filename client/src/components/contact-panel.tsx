@@ -15,6 +15,15 @@ import type { ClientContact, ContactBuilding, Lead } from "@shared/schema";
 
 const RED = "#BE1916";
 
+const OFFICE_COLOR_MAP: Record<string, string> = {
+  gray: "#6B7280", blue: "#2563EB", green: "#059669",
+  amber: "#D97706", red: "#DC2626", purple: "#7C3AED",
+};
+function officeColorHex(color: string | null | undefined): string {
+  if (!color) return "#6B7280";
+  return OFFICE_COLOR_MAP[color] ?? "#6B7280";
+}
+
 interface Office {
   id: number;
   name: string;
@@ -35,8 +44,11 @@ interface PanelData {
   buildings: ContactBuilding[];
   deals: Lead[];
   office: Office | null;
+  clientName: string | null;
   reportsToName: string | null;
   recentActivity: ActivityItem[];
+  lastContact: string | null;
+  lastMeeting: string | null;
 }
 
 interface ContactPanelProps {
@@ -156,8 +168,11 @@ export function ContactPanel({ contactId, onClose, onOpenBuilding }: ContactPane
   const buildings = data?.buildings ?? [];
   const deals = data?.deals ?? [];
   const office = data?.office ?? null;
+  const clientName = data?.clientName ?? null;
   const reportsToName = data?.reportsToName ?? null;
   const recentActivity = data?.recentActivity ?? [];
+  const lastContact = data?.lastContact ?? null;
+  const lastMeeting = data?.lastMeeting ?? null;
 
   const tierColor = contact?.tier === "A" ? "bg-emerald-100 text-emerald-700"
     : contact?.tier === "B" ? "bg-blue-100 text-blue-700"
@@ -190,9 +205,17 @@ export function ContactPanel({ contactId, onClose, onOpenBuilding }: ContactPane
                   )}
                 </div>
                 {contact.title && <p className="text-sm text-gray-600 mt-0.5">{contact.title}</p>}
-                {office && (
-                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                    <span>{office.name}</span>
+                {(clientName || office) && (
+                  <div className="flex items-center gap-1.5 mt-1 text-xs text-gray-500">
+                    {office?.color && (
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: officeColorHex(office.color) }}
+                      />
+                    )}
+                    {clientName && <span className="font-medium text-gray-700">{clientName}</span>}
+                    {clientName && office && <span className="text-gray-300">·</span>}
+                    {office && <span>{office.name}</span>}
                   </div>
                 )}
                 {reportsToName && (
@@ -227,6 +250,24 @@ export function ContactPanel({ contactId, onClose, onOpenBuilding }: ContactPane
                 )}
                 {!contact.email && !contact.phone && !contact.linkedinUrl && (
                   <p className="text-xs text-gray-400 italic">No contact info on file</p>
+                )}
+                {(lastContact || lastMeeting) && (
+                  <div className="pt-1.5 border-t border-gray-100 space-y-1">
+                    {lastContact && (
+                      <div className="flex items-center gap-2.5 text-xs text-gray-500">
+                        <Mail className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        <span>Last email</span>
+                        <span className="ml-auto text-gray-400">{lastContact}</span>
+                      </div>
+                    )}
+                    {lastMeeting && (
+                      <div className="flex items-center gap-2.5 text-xs text-gray-500">
+                        <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        <span>Last meeting</span>
+                        <span className="ml-auto text-gray-400">{lastMeeting}</span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -286,6 +327,13 @@ export function ContactPanel({ contactId, onClose, onOpenBuilding }: ContactPane
                   data-testid="contact-panel-log-meeting"
                 >
                   <Calendar className="w-3 h-3" /> Log Meeting
+                </button>
+                <button
+                  onClick={() => { setNotesValue(contact.notes ?? ""); setEditingNotes(true); }}
+                  className="flex-1 text-xs py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1.5 transition-colors"
+                  data-testid="contact-panel-edit-notes"
+                >
+                  <Edit2 className="w-3 h-3" /> Edit
                 </button>
               </div>
 

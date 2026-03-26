@@ -1213,10 +1213,18 @@ export async function registerRoutes(
       const buildingId = parseInt(req.params.id as string);
       const { db } = await import("./db");
       const { eq, desc } = await import("drizzle-orm");
-      const { contactBuildings, buildopsJobs, leads } = await import("@shared/schema");
+      const { contactBuildings, buildopsJobs, leads, clientContacts, clientOffices } = await import("@shared/schema");
       const [building] = await db.select().from(contactBuildings).where(eq(contactBuildings.id, buildingId));
       if (!building) return res.status(404).json({ message: "Building not found" });
-      if (!building.buildopsId) return res.json({ building, jobs: [], quotes: [] });
+      let teamColor: string | null = null;
+      if (building.contactId) {
+        const [primaryContact] = await db.select({ officeId: clientContacts.officeId }).from(clientContacts).where(eq(clientContacts.id, building.contactId)).limit(1);
+        if (primaryContact?.officeId) {
+          const [office] = await db.select({ color: clientOffices.color }).from(clientOffices).where(eq(clientOffices.id, primaryContact.officeId)).limit(1);
+          teamColor = office?.color ?? null;
+        }
+      }
+      if (!building.buildopsId) return res.json({ building, jobs: [], quotes: [], teamColor });
       const [jobs, quotes] = await Promise.all([
         db.select().from(buildopsJobs)
           .where(eq(buildopsJobs.buildopsPropertyId, building.buildopsId))
@@ -1227,7 +1235,7 @@ export async function registerRoutes(
           .orderBy(desc(leads.updatedAt))
           .limit(10),
       ]);
-      res.json({ building, jobs, quotes });
+      res.json({ building, jobs, quotes, teamColor });
     } catch (err: any) {
       console.error("Building buildops-data error:", err);
       res.status(500).json({ message: err.message || "Failed to fetch building data" });
@@ -1239,8 +1247,8 @@ export async function registerRoutes(
     try {
       const contactId = parseInt(req.params.id as string);
       const { db } = await import("./db");
-      const { eq, desc } = await import("drizzle-orm");
-      const { clientContacts, clientOffices, leads, activityLogs, emailMessages, bdSpendEntries } = await import("@shared/schema");
+      const { eq, desc, sql: sqlTag } = await import("drizzle-orm");
+      const { clientContacts, clientOffices, clients, leads, activityLogs, emailMessages, bdSpendEntries, meetings } = await import("@shared/schema");
       const [[contact], buildings, deals] = await Promise.all([
         db.select().from(clientContacts).where(eq(clientContacts.id, contactId)).limit(1),
         storage.listContactBuildings(contactId),
@@ -1250,26 +1258,34 @@ export async function registerRoutes(
           .limit(5),
       ]);
       if (!contact) return res.status(404).json({ message: "Contact not found" });
-      let office = null;
+      let office: any = null;
       if (contact.officeId) {
         const [o] = await db.select().from(clientOffices).where(eq(clientOffices.id, contact.officeId)).limit(1);
         office = o ?? null;
+      }
+      let clientName: string | null = null;
+      if (contact.clientId) {
+        const [cl] = await db.select({ name: clients.name }).from(clients).where(eq(clients.id, contact.clientId)).limit(1);
+        clientName = cl?.name ?? null;
       }
       let reportsToName: string | null = null;
       if (contact.reportsTo) {
         const [rt] = await db.select({ name: clientContacts.name }).from(clientContacts).where(eq(clientContacts.id, contact.reportsTo)).limit(1);
         reportsToName = rt?.name ?? null;
       }
-      const [recentActs, recentEmails, recentSpend] = await Promise.all([
+      const [recentActs, recentEmails, recentSpend, recentMeetings] = await Promise.all([
         db.select().from(activityLogs)
           .where(eq(activityLogs.entityId, contactId))
-          .orderBy(desc(activityLogs.createdAt)).limit(5),
+          .orderBy(desc(activityLogs.createdAt)).limit(6),
         db.select().from(emailMessages)
           .where(eq(emailMessages.contactId, contactId))
-          .orderBy(desc(emailMessages.receivedAt)).limit(4),
+          .orderBy(desc(emailMessages.receivedAt)).limit(6),
         db.select().from(bdSpendEntries)
           .where(eq(bdSpendEntries.contactId, contactId))
-          .orderBy(desc(bdSpendEntries.createdAt)).limit(3),
+          .orderBy(desc(bdSpendEntries.createdAt)).limit(4),
+        db.select().from(meetings)
+          .where(sqlTag`${meetings.attendeeContactIds} @> ARRAY[${contactId}]::integer[]`)
+          .orderBy(desc(meetings.date)).limit(4),
       ]);
       const formatRelative = (d: Date | string | null) => {
         if (!d) return "";
@@ -1282,17 +1298,25 @@ export async function registerRoutes(
         if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
         return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       };
-      const recentActivity: { type: string; label: string; detail: string; time: string }[] = [];
+      type ActivityRaw = { type: string; label: string; detail: string; time: string; ts: number };
+      const rawActivity: ActivityRaw[] = [];
       for (const em of recentEmails) {
-        recentActivity.push({ type: "email", label: (em.direction === "inbound" ? "Email from " : "Email to ") + (em.fromName || em.fromEmail || "contact"), detail: em.subject || "(no subject)", time: formatRelative(em.receivedAt) });
+        rawActivity.push({ type: "email", label: (em.direction === "inbound" ? "Email from " : "Email to ") + (em.fromName || em.fromEmail || "contact"), detail: em.subject || "(no subject)", time: formatRelative(em.receivedAt), ts: em.receivedAt ? new Date(em.receivedAt).getTime() : 0 });
       }
       for (const s of recentSpend) {
-        recentActivity.push({ type: "spend", label: "BD spend logged", detail: `${s.description || ""} · $${parseFloat(s.amount).toFixed(0)}`, time: formatRelative(s.createdAt) });
+        rawActivity.push({ type: "spend", label: "BD spend logged", detail: `${s.description || ""} · $${parseFloat(s.amount as string).toFixed(0)}`, time: formatRelative(s.createdAt), ts: s.createdAt ? new Date(s.createdAt).getTime() : 0 });
       }
       for (const a of recentActs) {
-        recentActivity.push({ type: "note", label: a.action || "Activity", detail: a.description || "", time: formatRelative(a.createdAt) });
+        rawActivity.push({ type: "note", label: a.action || "Activity", detail: a.description || "", time: formatRelative(a.createdAt), ts: a.createdAt ? new Date(a.createdAt).getTime() : 0 });
       }
-      res.json({ contact, buildings, deals, office, reportsToName, recentActivity: recentActivity.slice(0, 8) });
+      for (const m of recentMeetings) {
+        rawActivity.push({ type: "meeting", label: m.title || "Meeting", detail: m.summary ? m.summary.slice(0, 80) : "", time: formatRelative(m.date), ts: m.date ? new Date(m.date).getTime() : 0 });
+      }
+      rawActivity.sort((a, b) => b.ts - a.ts);
+      const recentActivity = rawActivity.slice(0, 10).map(({ ts: _ts, ...rest }) => rest);
+      const lastContact = recentEmails[0]?.receivedAt ? formatRelative(recentEmails[0].receivedAt) : null;
+      const lastMeeting = recentMeetings[0]?.date ? formatRelative(recentMeetings[0].date) : null;
+      res.json({ contact, buildings, deals, office, clientName, reportsToName, recentActivity, lastContact, lastMeeting });
     } catch (err: any) {
       console.error("Contact panel-data error:", err);
       res.status(500).json({ message: err.message || "Failed to fetch contact data" });

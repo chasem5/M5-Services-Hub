@@ -17,6 +17,7 @@ interface BuildopsData {
   building: ContactBuilding;
   jobs: BuildopsJob[];
   quotes: Lead[];
+  teamColor: string | null;
 }
 
 interface BuildingPanelProps {
@@ -150,6 +151,13 @@ export function BuildingPanel({ buildingId, onClose, onOpenContact }: BuildingPa
   const jobs = data?.jobs ?? [];
   const quotes = data?.quotes ?? [];
   const contacts = contactsData ?? [];
+  const teamColor = data?.teamColor ?? null;
+
+  const OFFICE_COLOR_MAP: Record<string, string> = {
+    gray: "#6B7280", blue: "#2563EB", green: "#059669",
+    amber: "#D97706", red: "#DC2626", purple: "#7C3AED",
+  };
+  const teamColorHex = teamColor ? (OFFICE_COLOR_MAP[teamColor] ?? "#6B7280") : null;
 
   const openQuotesValue = quotes.filter(q => q.stage === "proposal_sent" || q.stage === "sent").reduce((s, q) => s + Number(q.value ?? 0), 0);
   const totalJobRevenue = jobs.reduce((s, j) => s + Number(j.totalAmount ?? 0), 0);
@@ -180,6 +188,14 @@ export function BuildingPanel({ buildingId, onClose, onOpenContact }: BuildingPa
                     </div>
                   )}
                   <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    {teamColorHex && (
+                      <span
+                        className="text-[10px] px-2 py-0.5 rounded-full font-medium text-white"
+                        style={{ backgroundColor: teamColorHex }}
+                      >
+                        {teamColor ? teamColor.charAt(0).toUpperCase() + teamColor.slice(1) : ""} Team
+                      </span>
+                    )}
                     {building.propertyType && (
                       <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
                         {building.propertyType}

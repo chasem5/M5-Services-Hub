@@ -2554,6 +2554,9 @@ export default function ClientDetail() {
                     (activityLogs ?? []).slice(0, 4).forEach(a => {
                       combined.push({ type: "note", label: a.action || "Activity", detail: a.description || "", time: new Date(a.createdAt) });
                     });
+                    clientMeetings.slice(0, 3).forEach(m => {
+                      if (m.date) combined.push({ type: "meeting", label: m.subject || "Meeting", detail: m.snippet ? m.snippet.slice(0, 80) : "", time: new Date(m.date) });
+                    });
                     combined.sort((a, b) => b.time.getTime() - a.time.getTime());
                     if (combined.length === 0) return <p className="text-xs text-muted-foreground italic">No recent activity</p>;
                     return combined.slice(0, 5).map((item, i) => {
