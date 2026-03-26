@@ -58,6 +58,8 @@ import {
   StickyNote,
   ArrowRightLeft,
   Clock,
+  Search,
+  Navigation,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as ReTooltip } from "recharts";
@@ -691,6 +693,7 @@ interface FeedEvent {
 
 function UnifiedHistoryFeed({ clientId, contacts = [] }: { clientId: number; contacts?: { id: number; name: string; profilePictureUrl?: string | null }[] }) {
   const [historySearch, setHistorySearch] = useState("");
+  const [historyKindFilter, setHistoryKindFilter] = useState<FeedEventKind | "all">("all");
   const { data: actLogs = [], isLoading: loadAct } = useQuery<ActivityLog[]>({
     queryKey: ["/api/activity-logs", "client", clientId],
     queryFn: async () => {
@@ -812,90 +815,126 @@ function UnifiedHistoryFeed({ clientId, contacts = [] }: { clientId: number; con
     );
   }
 
+  const kindFiltered = historyKindFilter === "all" ? events : events.filter(ev => ev.kind === historyKindFilter);
   const filteredEvents = historySearch.trim()
-    ? events.filter(ev =>
+    ? kindFiltered.filter(ev =>
         ev.title.toLowerCase().includes(historySearch.toLowerCase()) ||
         (ev.subtitle ?? "").toLowerCase().includes(historySearch.toLowerCase()) ||
         (ev.meta ?? "").toLowerCase().includes(historySearch.toLowerCase())
       )
-    : events;
+    : kindFiltered;
+
+  const filterPills: { key: FeedEventKind | "all"; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "email", label: "Emails" },
+    { key: "meeting", label: "Meetings" },
+    { key: "activity", label: "Activity" },
+    { key: "note", label: "Notes" },
+    { key: "deal", label: "Deals" },
+    { key: "spend", label: "BD Spend" },
+    { key: "file", label: "Files" },
+  ];
 
   return (
     <div data-testid="unified-history-feed">
-      {/* Search bar */}
-      <div className="flex items-center gap-2 mb-4">
-        <div className="relative flex-1">
+      {/* Filter pills + search */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex flex-wrap gap-1 flex-1">
+          {filterPills.map(p => (
+            <button
+              key={p.key}
+              onClick={() => setHistoryKindFilter(p.key)}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                historyKindFilter === p.key
+                  ? "bg-primary text-white"
+                  : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+              }`}
+              data-testid={`filter-history-${p.key}`}
+            >
+              {p.label}
+              {p.key !== "all" && (
+                <span className="ml-1 opacity-70">({events.filter(ev => ev.kind === p.key).length})</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="relative">
           <input
             type="text"
-            placeholder="Search history…"
+            placeholder="Search…"
             value={historySearch}
             onChange={e => setHistorySearch(e.target.value)}
-            className="w-full h-8 pl-8 pr-3 text-sm rounded-md border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="h-7 w-40 pl-7 pr-3 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
             data-testid="input-history-search"
           />
-          <History className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          {historySearch && (
+            <button onClick={() => setHistorySearch("")} className="absolute right-2 top-1.5 text-muted-foreground hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
-        {historySearch && (
-          <button onClick={() => setHistorySearch("")} className="text-[11px] text-muted-foreground hover:text-foreground shrink-0">Clear</button>
-        )}
       </div>
       {filteredEvents.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
           <History className="h-8 w-8 mb-2 opacity-30" />
-          <p className="text-sm">No results for "{historySearch}"</p>
+          <p className="text-sm font-medium">No activity found</p>
+          <p className="text-xs mt-1 opacity-60">
+            {historySearch ? `No results matching "${historySearch}"` : "Activity will appear here as you work with this company"}
+          </p>
         </div>
       )}
-      <div className="relative">
-        <div className="absolute left-[15px] top-0 bottom-0 w-px bg-border/60" />
-        <div className="space-y-0">
-          {filteredEvents.map(ev => {
-            const cfg = kindConfig(ev.kind);
-            const isMeeting = ev.kind === "meeting";
-            const meetingAttendees = isMeeting && ev.attendeeContactIds && ev.attendeeContactIds.length > 0
-              ? ev.attendeeContactIds.slice(0, 3).map(cid => contacts.find(c => c.id === cid)).filter(Boolean)
-              : [];
-            const extraAttendees = isMeeting && (ev.attendeeCount ?? 0) > 3 ? (ev.attendeeCount ?? 0) - 3 : 0;
-            return (
-              <div key={ev.id} className="flex gap-3 group hover:bg-muted/30 rounded-lg px-3 py-2.5 transition-colors" data-testid={`history-event-${ev.id}`}>
-                <div className="relative mt-0.5 shrink-0">
-                  <div className={`h-7 w-7 rounded-full border flex items-center justify-center shadow-sm ${cfg.bg}`}>
-                    {cfg.icon}
+      <div className="space-y-2.5">
+        {filteredEvents.map(ev => {
+          const cfg = kindConfig(ev.kind);
+          const isMeeting = ev.kind === "meeting";
+          const meetingAttendees = isMeeting && ev.attendeeContactIds && ev.attendeeContactIds.length > 0
+            ? ev.attendeeContactIds.slice(0, 4).map(cid => contacts.find(c => c.id === cid)).filter(Boolean)
+            : [];
+          const extraAttendees = isMeeting && (ev.attendeeCount ?? 0) > 4 ? (ev.attendeeCount ?? 0) - 4 : 0;
+          return (
+            <div
+              key={ev.id}
+              className="flex gap-3 bg-white border border-border/50 rounded-xl px-4 py-3 shadow-sm hover:shadow-md hover:border-border transition-all"
+              data-testid={`history-event-${ev.id}`}
+            >
+              <div className={`h-8 w-8 rounded-full border flex items-center justify-center shadow-sm shrink-0 mt-0.5 ${cfg.bg}`}>
+                {cfg.icon}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${cfg.bg}`}>{cfg.label}</span>
+                    <span className="font-medium text-sm text-foreground truncate">{ev.title}</span>
                   </div>
+                  <span className="text-[10px] text-muted-foreground/60 shrink-0 mt-0.5">{formatDistanceToNow(ev.date, { addSuffix: true })}</span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{cfg.label}</span>
-                    <span className="font-medium text-sm truncate">{ev.title}</span>
-                  </div>
-                  {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ev.subtitle}</p>}
-                  <div className="flex items-center gap-2 mt-1">
-                    {isMeeting && meetingAttendees.length > 0 && (
-                      <div className="flex items-center gap-1">
-                        <div className="flex -space-x-1.5">
-                          {meetingAttendees.map((c, i) => c && (
-                            <div key={c.id} className="h-5 w-5 rounded-full border-2 border-background bg-primary/20 flex items-center justify-center text-[8px] font-bold overflow-hidden" title={c.name} style={{ zIndex: 10 - i }}>
-                              {c.profilePictureUrl ? (
-                                <img src={c.profilePictureUrl.startsWith("https://storage.googleapis.com/") ? `/api/contacts/${c.id}/photo-img` : c.profilePictureUrl} className="w-full h-full object-cover" alt={c.name} />
-                              ) : (
-                                c.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
-                              )}
-                            </div>
-                          ))}
-                          {extraAttendees > 0 && (
-                            <div className="h-5 w-5 rounded-full border-2 border-background bg-muted flex items-center justify-center text-[8px] font-bold text-muted-foreground">+{extraAttendees}</div>
+                {ev.subtitle && <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">{ev.subtitle}</p>}
+                {(isMeeting && meetingAttendees.length > 0) ? (
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex -space-x-1.5">
+                      {meetingAttendees.map((c, i) => c && (
+                        <div key={c.id} className="h-5 w-5 rounded-full border-2 border-background bg-primary/20 flex items-center justify-center text-[7px] font-bold overflow-hidden" title={c.name} style={{ zIndex: 10 - i }}>
+                          {c.profilePictureUrl ? (
+                            <img src={c.profilePictureUrl.startsWith("https://storage.googleapis.com/") ? `/api/contacts/${c.id}/photo-img` : c.profilePictureUrl} className="w-full h-full object-cover" alt={c.name} />
+                          ) : (
+                            c.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
                           )}
                         </div>
-                        <span className="text-[11px] text-muted-foreground/70">{ev.meta}</span>
-                      </div>
-                    )}
-                    {(!isMeeting || meetingAttendees.length === 0) && ev.meta && <span className="text-[11px] text-muted-foreground/70">{ev.meta}</span>}
-                    <span className="text-[11px] text-muted-foreground/50 ml-auto">{formatDistanceToNow(ev.date, { addSuffix: true })}</span>
+                      ))}
+                      {extraAttendees > 0 && (
+                        <div className="h-5 w-5 rounded-full border-2 border-background bg-muted flex items-center justify-center text-[7px] font-bold text-muted-foreground">+{extraAttendees}</div>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">{ev.meta}</span>
                   </div>
-                </div>
+                ) : ev.meta ? (
+                  <p className="text-[10px] text-muted-foreground/70 mt-1">{ev.meta}</p>
+                ) : null}
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1283,6 +1322,8 @@ export default function ClientDetail() {
   const [isSubmittingSpend, setIsSubmittingSpend] = useState(false);
   const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
   const [isCardScannerOpen, setIsCardScannerOpen] = useState(false);
+  const [isLogNoteOpen, setIsLogNoteOpen] = useState(false);
+  const [logNoteText, setLogNoteText] = useState("");
   const [isEditContactDialogOpen, setIsEditContactDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<ClientContact | null>(null);
   const [orgChartEditId, setOrgChartEditId] = useState<number | null>(null);
@@ -1495,6 +1536,21 @@ export default function ClientDetail() {
   });
 
   // Mutations
+  const logNoteMutation = useMutation({
+    mutationFn: async (note: string) => {
+      const res = await apiRequest("POST", `/api/activity-logs`, { entityType: "client", entityId: clientId, action: note, metadata: { type: "note" } });
+      if (!res.ok) throw new Error("Failed to log note");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-logs", "client", clientId] });
+      setIsLogNoteOpen(false);
+      setLogNoteText("");
+      toast({ title: "Note logged" });
+    },
+    onError: () => toast({ title: "Failed to log note", variant: "destructive" }),
+  });
+
   const updateClientMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiRequest("PUT", `/api/clients/${clientId}`, data);
@@ -2480,10 +2536,60 @@ export default function ClientDetail() {
               );
             })()}
 
-            {/* ── Key Contacts (2-col photo grid) + Recent Activity ── */}
+            {/* ── Company Details + Key Contacts + Recent Activity ── */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+              {/* Company Details — left column */}
+              <Card className="lg:col-span-2 shadow-sm border-border/40 bg-card" data-testid="card-overview-company-details">
+                <CardHeader className="pb-3 flex flex-row items-center gap-2">
+                  <Building2 className="h-4 w-4 text-primary shrink-0" />
+                  <CardTitle className="text-sm font-semibold">Company Details</CardTitle>
+                  <button onClick={() => setIsEditCompanyOpen(true)} className="ml-auto text-[10px] text-primary hover:underline" data-testid="link-overview-edit-company">Edit →</button>
+                </CardHeader>
+                <CardContent className="pb-4 space-y-2.5">
+                  {client.phone && (
+                    <a href={`tel:${client.phone}`} className="flex items-center gap-2.5 text-sm text-foreground hover:text-primary group">
+                      <Phone className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
+                      <span>{client.phone}</span>
+                    </a>
+                  )}
+                  {client.website && (
+                    <a href={client.website.startsWith("http") ? client.website : `https://${client.website}`} target="_blank" rel="noreferrer" className="flex items-center gap-2.5 text-sm text-foreground hover:text-primary group">
+                      <Globe className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
+                      <span className="truncate">{client.website.replace(/^https?:\/\/(www\.)?/, "")}</span>
+                    </a>
+                  )}
+                  {client.address && (
+                    <a href={`https://maps.google.com/?q=${encodeURIComponent(client.address)}`} target="_blank" rel="noreferrer" className="flex items-center gap-2.5 text-sm text-foreground hover:text-primary group">
+                      <MapPin className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
+                      <span className="truncate">{client.address}</span>
+                    </a>
+                  )}
+                  {client.industry && (
+                    <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                      <Briefcase className="h-3.5 w-3.5 shrink-0" />
+                      <span>{client.industry}</span>
+                    </div>
+                  )}
+                  {!client.phone && !client.website && !client.address && !client.industry && (
+                    <p className="text-xs text-muted-foreground italic">No company details on file. Click Edit to add contact info.</p>
+                  )}
+                  {(client as any).serviceInterests && (
+                    <div className="pt-2 border-t border-border/30">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Service Interests</p>
+                      <div className="flex flex-wrap gap-1">
+                        {((client as any).serviceInterests as string[]).map((s: string) => (
+                          <span key={s} className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Right column: Key Contacts + Recent Activity stacked */}
+              <div className="lg:col-span-3 flex flex-col gap-4">
               {/* Key Contacts — 2 col photo grid */}
-              <Card className="lg:col-span-2 shadow-sm border-border/40 bg-card" data-testid="card-overview-top-contacts">
+              <Card className="shadow-sm border-border/40 bg-card" data-testid="card-overview-top-contacts">
                 <CardHeader className="pb-3 flex flex-row items-center gap-2">
                   <Users className="h-4 w-4 text-primary shrink-0" />
                   <CardTitle className="text-sm font-semibold">Key Contacts</CardTitle>
@@ -2542,7 +2648,7 @@ export default function ClientDetail() {
               </Card>
 
               {/* Recent Activity feed */}
-              <Card className="lg:col-span-3 shadow-sm border-border/40 bg-card" data-testid="card-overview-recent-activity">
+              <Card className="shadow-sm border-border/40 bg-card" data-testid="card-overview-recent-activity">
                 <CardHeader className="pb-3 flex flex-row items-center gap-2">
                   <Activity className="h-4 w-4 text-primary shrink-0" />
                   <CardTitle className="text-sm font-semibold">Recent Activity</CardTitle>
@@ -2595,6 +2701,7 @@ export default function ClientDetail() {
                   })()}
                 </CardContent>
               </Card>
+              </div>
             </div>
 
             {/* ── BuildOps Service Agreements ── */}
@@ -3064,20 +3171,11 @@ export default function ClientDetail() {
                 <Button
                   variant="outline"
                   className="h-9 px-2 sm:px-4"
-                  onClick={() => setIsNewPortfolioDialogOpen(true)}
-                  data-testid="button-new-portfolio"
-                >
-                  <Folders className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">New Portfolio</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-9 px-2 sm:px-4"
                   onClick={() => setIsOfficeDialogOpen(true)}
                   data-testid="button-add-office"
                 >
                   <Building2 className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Add Office</span>
+                  <span className="hidden sm:inline">Add Team</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -4606,50 +4704,40 @@ export default function ClientDetail() {
 
           {/* ─── History Tab: unified chronological feed ─── */}
           <TabsContent value="history" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
-              <CardHeader className="pb-0">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <History className="h-4 w-4 text-primary" />
-                      Full History
-                    </CardTitle>
-                    <CardDescription className="mt-1">All activity, emails, and files — sorted by date</CardDescription>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    onClick={() => {
-                      const el = document.getElementById(`history-files-panel-${clientId}`);
-                      el?.scrollIntoView({ behavior: "smooth" });
-                    }}
-                    data-testid="button-history-upload-file"
-                  >
-                    <Paperclip className="h-3.5 w-3.5 mr-1.5" />
-                    Upload File
-                  </Button>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-semibold flex items-center gap-2">
+                    <History className="h-4 w-4 text-primary" />
+                    Full History
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">All activity, emails, and files — sorted by date</p>
                 </div>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <UnifiedHistoryFeed clientId={clientId} contacts={contacts ?? []} />
-              </CardContent>
-            </Card>
+                <Button
+                  size="sm"
+                  className="text-xs gap-1.5"
+                  onClick={() => setIsLogNoteOpen(true)}
+                  data-testid="button-history-log-note"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Log Note
+                </Button>
+              </div>
+              <UnifiedHistoryFeed clientId={clientId} contacts={contacts ?? []} />
+            </div>
           </TabsContent>
 
           <TabsContent value="attachments" className="m-0">
-            <Card className="border-none shadow-sm bg-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-base font-semibold flex items-center gap-2">
                   <Paperclip className="h-4 w-4 text-primary" />
                   Files &amp; Photos
-                </CardTitle>
-                <CardDescription>Upload documents and site photos to this client record</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <AttachmentsPanel entityType="client" entityId={clientId} />
-              </CardContent>
-            </Card>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Upload documents and site photos to this client record</p>
+              </div>
+              <AttachmentsPanel entityType="client" entityId={clientId} />
+            </div>
           </TabsContent>
 
           <TabsContent value="intelligence" className="m-0">
@@ -5116,6 +5204,37 @@ export default function ClientDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Log Note Dialog */}
+      <Dialog open={isLogNoteOpen} onOpenChange={(open) => { setIsLogNoteOpen(open); if (!open) setLogNoteText(""); }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Log Note</DialogTitle>
+            <DialogDescription>Add an internal note to the activity history for {client?.name}.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <textarea
+              value={logNoteText}
+              onChange={e => setLogNoteText(e.target.value)}
+              rows={5}
+              placeholder="Type your note here…"
+              className="w-full rounded-lg border border-border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+              autoFocus
+              data-testid="input-log-note-text"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsLogNoteOpen(false)} data-testid="button-cancel-log-note">Cancel</Button>
+            <Button
+              disabled={!logNoteText.trim() || logNoteMutation.isPending}
+              onClick={() => logNoteMutation.mutate(logNoteText.trim())}
+              data-testid="button-save-log-note"
+            >
+              {logNoteMutation.isPending ? "Saving…" : "Save Note"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Slide-over panels */}
       <ContactPanel

@@ -333,7 +333,7 @@ export function ContactPanel({ contactId, onClose, onOpenBuilding, onEdit }: Con
                 </button>
                 <button
                   onClick={() => { if (onEdit) { onEdit(contact); onClose(); } }}
-                  className="flex-1 text-xs py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1.5 transition-colors"
+                  className="flex-1 text-xs py-2 rounded-lg border border-[#BE1916] text-[#BE1916] hover:bg-[#BE1916]/5 flex items-center justify-center gap-1.5 transition-colors font-medium"
                   data-testid="contact-panel-edit"
                 >
                   <Edit2 className="w-3 h-3" /> Edit
