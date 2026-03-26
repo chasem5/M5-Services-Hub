@@ -49,6 +49,7 @@ export const clientOffices = pgTable("client_offices", {
   phone: varchar("phone"),
   lat: decimal("lat", { precision: 10, scale: 7 }),
   lng: decimal("lng", { precision: 10, scale: 7 }),
+  notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

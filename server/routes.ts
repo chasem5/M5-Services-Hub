@@ -1240,7 +1240,7 @@ export async function registerRoutes(
       const contactId = parseInt(req.params.id as string);
       const { db } = await import("./db");
       const { eq, desc } = await import("drizzle-orm");
-      const { clientContacts, clientOffices, leads } = await import("@shared/schema");
+      const { clientContacts, clientOffices, leads, activityLogs, emailMessages, bdSpendEntries } = await import("@shared/schema");
       const [[contact], buildings, deals] = await Promise.all([
         db.select().from(clientContacts).where(eq(clientContacts.id, contactId)).limit(1),
         storage.listContactBuildings(contactId),
@@ -1255,7 +1255,44 @@ export async function registerRoutes(
         const [o] = await db.select().from(clientOffices).where(eq(clientOffices.id, contact.officeId)).limit(1);
         office = o ?? null;
       }
-      res.json({ contact, buildings, deals, office });
+      let reportsToName: string | null = null;
+      if (contact.reportsTo) {
+        const [rt] = await db.select({ name: clientContacts.name }).from(clientContacts).where(eq(clientContacts.id, contact.reportsTo)).limit(1);
+        reportsToName = rt?.name ?? null;
+      }
+      const [recentActs, recentEmails, recentSpend] = await Promise.all([
+        db.select().from(activityLogs)
+          .where(eq(activityLogs.entityId, contactId))
+          .orderBy(desc(activityLogs.createdAt)).limit(5),
+        db.select().from(emailMessages)
+          .where(eq(emailMessages.contactId, contactId))
+          .orderBy(desc(emailMessages.receivedAt)).limit(4),
+        db.select().from(bdSpendEntries)
+          .where(eq(bdSpendEntries.contactId, contactId))
+          .orderBy(desc(bdSpendEntries.createdAt)).limit(3),
+      ]);
+      const formatRelative = (d: Date | string | null) => {
+        if (!d) return "";
+        const ms = Date.now() - new Date(d).getTime();
+        const days = Math.floor(ms / 86400000);
+        if (days === 0) return "Today";
+        if (days === 1) return "Yesterday";
+        if (days < 7) return `${days} days ago`;
+        if (days < 14) return "1 week ago";
+        if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+        return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      };
+      const recentActivity: { type: string; label: string; detail: string; time: string }[] = [];
+      for (const em of recentEmails) {
+        recentActivity.push({ type: "email", label: (em.direction === "inbound" ? "Email from " : "Email to ") + (em.fromName || em.fromEmail || "contact"), detail: em.subject || "(no subject)", time: formatRelative(em.receivedAt) });
+      }
+      for (const s of recentSpend) {
+        recentActivity.push({ type: "spend", label: "BD spend logged", detail: `${s.description || ""} · $${parseFloat(s.amount).toFixed(0)}`, time: formatRelative(s.createdAt) });
+      }
+      for (const a of recentActs) {
+        recentActivity.push({ type: "note", label: a.action || "Activity", detail: a.description || "", time: formatRelative(a.createdAt) });
+      }
+      res.json({ contact, buildings, deals, office, reportsToName, recentActivity: recentActivity.slice(0, 8) });
     } catch (err: any) {
       console.error("Contact panel-data error:", err);
       res.status(500).json({ message: err.message || "Failed to fetch contact data" });
@@ -1294,6 +1331,21 @@ export async function registerRoutes(
 
       const [updated] = await db.select().from(contactBuildings).where(eq(contactBuildings.id, buildingId));
       res.json({ ok: true, geocoded: !!coords, building: updated });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/buildings/:id/notes", isAuthenticated, async (req, res) => {
+    try {
+      const buildingId = parseInt(req.params.id as string);
+      const { notes } = req.body;
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+      const { contactBuildings } = await import("@shared/schema");
+      await db.update(contactBuildings).set({ notes: notes ?? null }).where(eq(contactBuildings.id, buildingId));
+      const [updated] = await db.select().from(contactBuildings).where(eq(contactBuildings.id, buildingId));
+      res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

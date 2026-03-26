@@ -56,6 +56,7 @@ import {
   Tag,
   ClipboardCheck,
   StickyNote,
+  ArrowRightLeft,
 } from "lucide-react";
 import { SiLinkedin } from "react-icons/si";
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip as ReTooltip } from "recharts";
@@ -1314,6 +1315,10 @@ export default function ClientDetail() {
   const [dragOverOfficeId, setDragOverOfficeId] = useState<number | "unassigned" | null>(null);
   const [orgChartView, setOrgChartView] = useState<"people" | "portfolio">("people");
   const [onboardingChecklistOpen, setOnboardingChecklistOpen] = useState(true);
+  const [editingOverviewNotes, setEditingOverviewNotes] = useState(false);
+  const [overviewNotesValue, setOverviewNotesValue] = useState("");
+  const [editingOfficeNotes, setEditingOfficeNotes] = useState<number | null>(null);
+  const [officeNotesValues, setOfficeNotesValues] = useState<Record<number, string>>({});
   const [orgSubTab, setOrgSubTab] = useState<"list" | "orgchart" | "map">("list");
   const [revenueSubTab, setRevenueSubTab] = useState<"leads" | "estimates" | "jobs" | "invoices" | "agreements">("leads");
   const [expandedOfficeIds, setExpandedOfficeIds] = useState<Set<number>>(new Set());
@@ -2353,44 +2358,68 @@ export default function ClientDetail() {
             </DialogContent>
           </Dialog>
 
-          <TabsContent value="overview" className="m-0 space-y-6">
-            {/* ── Health + Quick Stats Row ── */}
+          <TabsContent value="overview" className="m-0 space-y-5">
+            {/* ── Company Notes (amber sticky-note) ── */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
+              <StickyNote className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              {editingOverviewNotes ? (
+                <div className="flex-1">
+                  <textarea
+                    value={overviewNotesValue}
+                    onChange={e => setOverviewNotesValue(e.target.value)}
+                    className="w-full text-xs text-amber-900 bg-transparent border-none outline-none resize-none leading-relaxed"
+                    rows={3}
+                    placeholder="Add company-level notes..."
+                    autoFocus
+                    data-testid="overview-notes-textarea"
+                  />
+                  <div className="flex gap-3 mt-1">
+                    <button
+                      onClick={() => { updateClientMutation.mutate({ notes: overviewNotesValue }); setEditingOverviewNotes(false); }}
+                      className="text-xs text-amber-700 font-medium"
+                      disabled={updateClientMutation.isPending}
+                      data-testid="overview-notes-save"
+                    >
+                      Save
+                    </button>
+                    <button onClick={() => setEditingOverviewNotes(false)} className="text-xs text-amber-500">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1">
+                  <p className="text-xs text-amber-900 leading-relaxed">
+                    {client.notes || <span className="text-amber-500 italic">No company notes yet.</span>}
+                  </p>
+                  <button
+                    onClick={() => { setOverviewNotesValue(client.notes ?? ""); setEditingOverviewNotes(true); }}
+                    className="text-[10px] text-amber-600 mt-1 hover:underline flex items-center gap-1"
+                    data-testid="overview-notes-edit"
+                  >
+                    <Edit className="w-3 h-3" /> Edit note
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ── 4-stat bar ── */}
             {(() => {
               const activeLeadsArr = leads?.filter(l => !["won", "lost"].includes(l.stage)) ?? [];
               const pipelineVal = activeLeadsArr.reduce((sum, l) => sum + (parseFloat(l.value ?? "0") || 0), 0);
               const totalBdSpend = spendEntries.reduce((s, e) => s + parseFloat(e.amount), 0);
-              const wonCount = leads?.filter(l => l.stage === "won").length ?? 0;
-              const fmt = (n: number) => n >= 1000000
+              const fmtS = (n: number) => n >= 1000000
                 ? `$${(n / 1000000).toFixed(1)}M`
                 : n >= 1000
                 ? `$${(n / 1000).toFixed(0)}K`
                 : `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
               return (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <Card className="shadow-sm border-border/40 bg-card" data-testid="panel-health-score">
-                    <CardContent className="px-4 py-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Health</p>
-                        <span className={`text-xs font-bold ${healthColor}`}>{healthLabel}</span>
-                      </div>
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${healthScore >= 75 ? "bg-green-500" : healthScore >= 50 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${healthScore}%` }} />
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-1">{healthScore}% score</p>
-                    </CardContent>
-                  </Card>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="overview-stat-bar">
                   <Card className="shadow-sm border-border/40 bg-card">
                     <CardContent className="px-4 py-3">
                       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{revenueLabel}</p>
                       {isProspect ? (
                         <div className="flex items-center gap-2 mt-1">
-                          <Select
-                            value={prospectTier ?? "__none__"}
-                            onValueChange={(val) => updateClientMutation.mutate({ prospectRevenueTier: val === "__none__" ? null : val })}
-                          >
-                            <SelectTrigger className="h-7 w-24 text-sm font-bold" data-testid="select-prospect-revenue-tier">
-                              <SelectValue placeholder="Set tier" />
-                            </SelectTrigger>
+                          <Select value={prospectTier ?? "__none__"} onValueChange={(val) => updateClientMutation.mutate({ prospectRevenueTier: val === "__none__" ? null : val })}>
+                            <SelectTrigger className="h-7 w-24 text-sm font-bold" data-testid="select-prospect-revenue-tier"><SelectValue placeholder="Set tier" /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="__none__">Not set</SelectItem>
                               <SelectItem value="$">$</SelectItem>
@@ -2401,100 +2430,133 @@ export default function ClientDetail() {
                           </Select>
                         </div>
                       ) : (
-                        <p className="text-xl font-heading font-bold mt-1" data-testid="stat-annual-revenue">{revenueDisplayValue > 0 ? fmt(revenueDisplayValue) : "—"}</p>
+                        <p className="text-xl font-heading font-bold mt-1 text-emerald-600" data-testid="stat-annual-revenue">{revenueDisplayValue > 0 ? fmtS(revenueDisplayValue) : "—"}</p>
                       )}
                     </CardContent>
                   </Card>
                   <Card className="shadow-sm border-border/40 bg-card">
                     <CardContent className="px-4 py-3">
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Active Deals</p>
-                      <p className="text-xl font-heading font-bold mt-1" data-testid="stat-active-deals">{activeLeadsArr.length}</p>
-                      <p className="text-[10px] text-muted-foreground">{pipelineVal > 0 ? `${fmt(pipelineVal)} pipeline` : "In pipeline"}</p>
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Open Pipeline</p>
+                      <p className="text-xl font-heading font-bold mt-1 text-blue-600" data-testid="stat-pipeline">{pipelineVal > 0 ? fmtS(pipelineVal) : "—"}</p>
+                      <p className="text-[10px] text-muted-foreground">{activeLeadsArr.length} active deal{activeLeadsArr.length !== 1 ? "s" : ""}</p>
                     </CardContent>
                   </Card>
                   <Card className="shadow-sm border-border/40 bg-card">
                     <CardContent className="px-4 py-3">
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Contacts</p>
-                      <p className="text-xl font-heading font-bold mt-1" data-testid="count-contacts">{contactCount}</p>
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">BD Spend YTD</p>
+                      <p className="text-xl font-heading font-bold mt-1" data-testid="stat-total-spend">{totalBdSpend > 0 ? fmtS(totalBdSpend) : "—"}</p>
                     </CardContent>
                   </Card>
-                  <Card className="shadow-sm border-border/40 bg-card">
+                  <Card className="shadow-sm border-border/40 bg-card" data-testid="panel-health-score">
                     <CardContent className="px-4 py-3">
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Buildings</p>
-                      <p className="text-xl font-heading font-bold mt-1" data-testid="count-buildings">{buildingCount}</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="shadow-sm border-border/40 bg-card">
-                    <CardContent className="px-4 py-3">
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">BD Spend</p>
-                      <p className="text-xl font-heading font-bold mt-1" data-testid="stat-total-spend">{totalBdSpend > 0 ? fmt(totalBdSpend) : "—"}</p>
+                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Health</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className={`text-xl font-heading font-bold ${healthColor}`}>{healthLabel}</p>
+                      </div>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-1">
+                        <div className={`h-full rounded-full transition-all ${healthScore >= 75 ? "bg-green-500" : healthScore >= 50 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${healthScore}%` }} />
+                      </div>
                     </CardContent>
                   </Card>
                 </div>
               );
             })()}
 
-            {/* ── Overview highlights: Top Contacts + Recent Emails ── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Top Contacts */}
-              <Card className="shadow-sm border-border/40 bg-card" data-testid="card-overview-top-contacts">
+            {/* ── Key Contacts (2-col photo grid) + Recent Activity ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+              {/* Key Contacts — 2 col photo grid */}
+              <Card className="lg:col-span-2 shadow-sm border-border/40 bg-card" data-testid="card-overview-top-contacts">
                 <CardHeader className="pb-3 flex flex-row items-center gap-2">
                   <Users className="h-4 w-4 text-primary shrink-0" />
                   <CardTitle className="text-sm font-semibold">Key Contacts</CardTitle>
-                  <button onClick={() => setActiveTab("organization")} className="ml-auto text-[10px] text-primary hover:underline" data-testid="link-overview-all-contacts">View all →</button>
+                  <button onClick={() => setActiveTab("organization")} className="ml-auto text-[10px] text-primary hover:underline" data-testid="link-overview-all-contacts">See all →</button>
                 </CardHeader>
-                <CardContent className="pb-4 space-y-2">
+                <CardContent className="pb-4">
                   {(contacts ?? []).length === 0 ? (
                     <p className="text-xs text-muted-foreground italic">No contacts yet</p>
                   ) : (
-                    (contacts ?? []).slice(0, 5).map((ct, ctIdx) => {
-                      const ctPhoto = ct.profilePictureUrl;
-                      const ctResolvedPhoto = ctPhoto?.startsWith("https://storage.googleapis.com/")
-                        ? `/api/contacts/${ct.id}/photo-img`
-                        : ctPhoto;
-                      const ctColor = TEAM_COLORS[ctIdx % TEAM_COLORS.length];
-                      return (
-                        <div key={ct.id} className="flex items-center gap-2.5 group" data-testid={`overview-contact-row-${ct.id}`}>
-                          <div className="h-8 w-8 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-[11px] font-bold" style={{ backgroundColor: ctColor }}>
-                            {ctResolvedPhoto ? (
-                              <img src={ctResolvedPhoto} alt={ct.name} className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                            ) : (
-                              ct.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <button onClick={() => setOpenContactPanelId(ct.id)} className="text-xs font-semibold hover:underline text-left leading-tight" data-testid={`overview-contact-link-${ct.id}`}>{ct.name}</button>
-                              {ct.isPrimary && <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-400 shrink-0" />}
-                              {ct.tier && <TierBadge tier={ct.tier} size="xs" />}
+                    <div className="grid grid-cols-2 gap-2">
+                      {(contacts ?? []).slice(0, 4).map((ct, ctIdx) => {
+                        const ctPhoto = ct.profilePictureUrl;
+                        const ctResolvedPhoto = ctPhoto?.startsWith("https://storage.googleapis.com/")
+                          ? `/api/contacts/${ct.id}/photo-img`
+                          : ctPhoto;
+                        const ctColor = TEAM_COLORS[ctIdx % TEAM_COLORS.length];
+                        return (
+                          <button
+                            key={ct.id}
+                            onClick={() => setOpenContactPanelId(ct.id)}
+                            className="flex items-center gap-2.5 p-2 rounded-lg border border-border/50 hover:border-primary/40 hover:bg-muted/30 text-left transition-colors"
+                            data-testid={`overview-contact-row-${ct.id}`}
+                          >
+                            <div className="h-9 w-9 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-[11px] font-bold" style={{ backgroundColor: ctColor }}>
+                              {ctResolvedPhoto ? (
+                                <img src={ctResolvedPhoto} alt={ct.name} className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                              ) : (
+                                ct.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+                              )}
                             </div>
-                            {ct.title && <p className="text-[10px] text-muted-foreground truncate">{ct.title}</p>}
-                          </div>
-                        </div>
-                      );
-                    })
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <span className="text-xs font-semibold truncate leading-tight" data-testid={`overview-contact-link-${ct.id}`}>{ct.name}</span>
+                                {ct.tier && <TierBadge tier={ct.tier} size="xs" />}
+                              </div>
+                              {ct.title && <p className="text-[10px] text-muted-foreground truncate">{ct.title}</p>}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                 </CardContent>
               </Card>
-              {/* Recent Emails */}
-              <Card className="shadow-sm border-border/40 bg-card" data-testid="card-overview-recent-emails">
+
+              {/* Recent Activity feed */}
+              <Card className="lg:col-span-3 shadow-sm border-border/40 bg-card" data-testid="card-overview-recent-activity">
                 <CardHeader className="pb-3 flex flex-row items-center gap-2">
-                  <Mail className="h-4 w-4 text-primary shrink-0" />
-                  <CardTitle className="text-sm font-semibold">Recent Emails</CardTitle>
-                  <button onClick={() => setActiveTab("history")} className="ml-auto text-[10px] text-primary hover:underline" data-testid="link-overview-all-emails">View all →</button>
+                  <Activity className="h-4 w-4 text-primary shrink-0" />
+                  <CardTitle className="text-sm font-semibold">Recent Activity</CardTitle>
+                  <button onClick={() => setActiveTab("history")} className="ml-auto text-[10px] text-primary hover:underline" data-testid="link-overview-full-history">Full history →</button>
                 </CardHeader>
-                <CardContent className="pb-4 space-y-2">
-                  {recentEmails.length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic">No emails yet</p>
-                  ) : (
-                    recentEmails.slice(0, 3).map(em => (
-                      <div key={em.id} className="space-y-0.5" data-testid={`overview-email-row-${em.id}`}>
-                        <p className="text-xs font-medium truncate">{em.subject || "(no subject)"}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">{em.fullBody ? em.fullBody.replace(/<[^>]+>/g, "").slice(0, 60) + (em.fullBody.length > 60 ? "…" : "") : ""}</p>
-                        <p className="text-[9px] text-muted-foreground">{em.receivedAt ? new Date(em.receivedAt).toLocaleDateString() : ""}</p>
-                      </div>
-                    ))
-                  )}
+                <CardContent className="pb-4 space-y-1">
+                  {(() => {
+                    const combined: { type: string; label: string; detail: string; time: Date }[] = [];
+                    recentEmails.slice(0, 3).forEach(em => {
+                      if (em.receivedAt) combined.push({ type: "email", label: (em.direction === "inbound" ? "Email from " : "Email to ") + (em.fromName || em.fromEmail || "contact"), detail: em.subject || "(no subject)", time: new Date(em.receivedAt) });
+                    });
+                    spendEntries.slice(0, 2).forEach(s => {
+                      combined.push({ type: "spend", label: "BD spend logged", detail: `${s.description || ""} · $${parseFloat(s.amount).toFixed(0)}`, time: new Date(s.createdAt) });
+                    });
+                    (activityLogs ?? []).slice(0, 4).forEach(a => {
+                      combined.push({ type: "note", label: a.action || "Activity", detail: a.description || "", time: new Date(a.createdAt) });
+                    });
+                    combined.sort((a, b) => b.time.getTime() - a.time.getTime());
+                    if (combined.length === 0) return <p className="text-xs text-muted-foreground italic">No recent activity</p>;
+                    return combined.slice(0, 5).map((item, i) => {
+                      const bgMap: Record<string, string> = { email: "bg-blue-50", deal: "bg-emerald-50", note: "bg-amber-50", meeting: "bg-purple-50", spend: "bg-rose-50" };
+                      const iconMap: Record<string, React.ReactNode> = {
+                        email: <Mail className="w-3.5 h-3.5 text-blue-500" />,
+                        deal: <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />,
+                        note: <StickyNote className="w-3.5 h-3.5 text-amber-500" />,
+                        meeting: <CalendarDays className="w-3.5 h-3.5 text-purple-500" />,
+                        spend: <DollarSign className="w-3.5 h-3.5 text-rose-500" />,
+                      };
+                      return (
+                        <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-muted/30 transition-colors" data-testid={`overview-activity-${i}`}>
+                          <div className={`w-7 h-7 rounded-full ${bgMap[item.type] ?? "bg-gray-50"} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                            {iconMap[item.type] ?? <Activity className="w-3.5 h-3.5 text-gray-400" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-foreground">{item.label}</span>
+                              <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">{formatDistanceToNow(item.time, { addSuffix: true })}</span>
+                            </div>
+                            {item.detail && <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5 line-clamp-1">{item.detail}</p>}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </CardContent>
               </Card>
             </div>
@@ -3123,8 +3185,41 @@ export default function ClientDetail() {
                       {/* Expanded content: People / Buildings sub-tabs */}
                       {expandedOfficeIds.has(office.id) && (
                         <div>
+                          {/* Amber team notes banner */}
+                          {(office.notes || editingOfficeNotes === office.id) && (
+                            <div className="bg-amber-50 border-b border-amber-100 px-4 py-2.5 flex gap-2.5 items-start">
+                              <StickyNote className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+                              {editingOfficeNotes === office.id ? (
+                                <div className="flex-1">
+                                  <textarea
+                                    value={officeNotesValues[office.id] ?? ""}
+                                    onChange={e => setOfficeNotesValues(prev => ({ ...prev, [office.id]: e.target.value }))}
+                                    className="w-full text-xs text-amber-900 bg-transparent border-none outline-none resize-none leading-relaxed"
+                                    rows={2}
+                                    autoFocus
+                                    data-testid={`office-notes-textarea-${office.id}`}
+                                  />
+                                  <div className="flex gap-3 mt-1">
+                                    <button onClick={() => { updateOfficeMutation.mutate({ id: office.id, notes: officeNotesValues[office.id] ?? "" }); setEditingOfficeNotes(null); }} className="text-xs text-amber-700 font-medium" data-testid={`office-notes-save-${office.id}`}>Save</button>
+                                    <button onClick={() => setEditingOfficeNotes(null)} className="text-xs text-amber-500">Cancel</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex-1">
+                                  <p className="text-xs text-amber-900 leading-relaxed">{office.notes}</p>
+                                  <button onClick={() => { setOfficeNotesValues(prev => ({ ...prev, [office.id]: office.notes ?? "" })); setEditingOfficeNotes(office.id); }} className="text-[10px] text-amber-600 mt-0.5 hover:underline flex items-center gap-1" data-testid={`office-notes-edit-${office.id}`}><Edit className="w-3 h-3" /> Edit</button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {!office.notes && editingOfficeNotes !== office.id && (
+                            <div className="px-4 pt-2">
+                              <button onClick={() => { setOfficeNotesValues(prev => ({ ...prev, [office.id]: "" })); setEditingOfficeNotes(office.id); }} className="text-[10px] text-amber-600/70 hover:text-amber-600 flex items-center gap-1" data-testid={`office-notes-add-${office.id}`}><StickyNote className="w-3 h-3" /> Add team note</button>
+                            </div>
+                          )}
+
                           {/* Sub-tab switcher */}
-                          <div className="flex border-b border-border/30 px-4">
+                          <div className="flex border-b border-border/30 px-4 mt-1">
                             {(["people", "buildings"] as const).map(s => (
                               <button
                                 key={s}
@@ -3292,6 +3387,17 @@ export default function ClientDetail() {
                                         >
                                           <Trash2 className="h-4 w-4 mr-2" />Delete Contact
                                         </DropdownMenuItem>
+                                        {(offices || []).filter(o => o.id !== office.id).length > 0 && (
+                                          <>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                              onClick={() => toast({ title: "Move to Team", description: "Coming soon — drag contact to the target team to reassign." })}
+                                              data-testid={`button-move-to-team-${contact.id}`}
+                                            >
+                                              <ArrowRightLeft className="h-4 w-4 mr-2" />Move to Team
+                                            </DropdownMenuItem>
+                                          </>
+                                        )}
                                       </DropdownMenuContent>
                                     </DropdownMenu>
                                   </div>
@@ -3311,20 +3417,35 @@ export default function ClientDetail() {
                                 No buildings linked to contacts in this team yet.
                               </div>
                             ) : (
-                              officeBuildings.map(b => (
-                                <div key={b.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors" data-testid={`building-row-office-${b.id}`}>
-                                  <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                                    <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                              officeBuildings.map(b => {
+                                const bContact = officeContacts.find(c => c.id === b.contactId);
+                                return (
+                                  <div key={b.id} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors group/brow" data-testid={`building-row-office-${b.id}`}>
+                                    <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                                      <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <button onClick={() => setOpenBuildingPanelId(b.id)} className="text-sm font-medium hover:underline text-left leading-tight" data-testid={`button-open-building-panel-office-${b.id}`}>
+                                          {b.name ?? b.address ?? "Unnamed building"}
+                                        </button>
+                                        {b.notes && (
+                                          <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">
+                                            <StickyNote className="w-2.5 h-2.5" /> note
+                                          </span>
+                                        )}
+                                      </div>
+                                      {b.address && b.name && <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 truncate"><MapPin className="h-3 w-3 flex-shrink-0" />{b.address}</p>}
+                                      {bContact && (
+                                        <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                                          <Users className="h-3 w-3" />
+                                          <button onClick={() => setOpenContactPanelId(bContact.id)} className="hover:underline">{bContact.name}</button>
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
-                                  <div className="flex-1 min-w-0">
-                                    <button onClick={() => setOpenBuildingPanelId(b.id)} className="text-sm font-medium hover:underline text-left leading-tight" data-testid={`button-open-building-panel-office-${b.id}`}>
-                                      {b.name ?? b.address ?? "Unnamed building"}
-                                    </button>
-                                    {b.address && b.name && <p className="text-xs text-muted-foreground mt-0.5 truncate">{b.address}</p>}
-                                    {b.propertyType && <p className="text-[11px] text-muted-foreground/60 mt-0.5 capitalize">{b.propertyType}</p>}
-                                  </div>
-                                </div>
-                              ))
+                                );
+                              })
                             )}
                           </div>
                         )}
