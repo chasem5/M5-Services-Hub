@@ -1274,9 +1274,11 @@ export async function registerRoutes(
         reportsToName = rt?.name ?? null;
       }
       const [recentActs, recentEmails, recentSpend, recentMeetings] = await Promise.all([
-        db.select().from(activityLogs)
-          .where(eq(activityLogs.entityId, contactId))
-          .orderBy(desc(activityLogs.createdAt)).limit(15),
+        contact.clientId
+          ? db.select().from(activityLogs)
+              .where(eq(activityLogs.entityId, contact.clientId))
+              .orderBy(desc(activityLogs.createdAt)).limit(15)
+          : Promise.resolve([]),
         db.select().from(emailMessages)
           .where(eq(emailMessages.contactId, contactId))
           .orderBy(desc(emailMessages.receivedAt)).limit(15),

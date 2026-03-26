@@ -79,13 +79,14 @@ const dealStatusColors: Record<string, string> = {
 };
 
 const activityTypeBg: Record<string, string> = {
-  email: "bg-blue-50", meeting: "bg-purple-50", spend: "bg-rose-50", note: "bg-amber-50",
+  email: "bg-blue-50", meeting: "bg-purple-50", spend: "bg-rose-50", note: "bg-amber-50", deal: "bg-emerald-50",
 };
 
 function ActivityIcon({ type }: { type: string }) {
   if (type === "email") return <Mail className="w-3.5 h-3.5 text-blue-500" />;
   if (type === "meeting") return <Calendar className="w-3.5 h-3.5 text-purple-500" />;
   if (type === "spend") return <DollarSign className="w-3.5 h-3.5 text-rose-500" />;
+  if (type === "deal") return <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />;
   return <StickyNote className="w-3.5 h-3.5 text-amber-500" />;
 }
 

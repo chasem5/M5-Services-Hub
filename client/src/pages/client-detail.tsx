@@ -3215,38 +3215,35 @@ export default function ClientDetail() {
                       {/* Expanded content: People / Buildings sub-tabs */}
                       {expandedOfficeIds.has(office.id) && (
                         <div>
-                          {/* Amber team notes banner */}
-                          {(office.notes || editingOfficeNotes === office.id) && (
-                            <div className="bg-amber-50 border-b border-amber-100 px-4 py-2.5 flex gap-2.5 items-start">
-                              <StickyNote className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
-                              {editingOfficeNotes === office.id ? (
-                                <div className="flex-1">
-                                  <textarea
-                                    value={officeNotesValues[office.id] ?? ""}
-                                    onChange={e => setOfficeNotesValues(prev => ({ ...prev, [office.id]: e.target.value }))}
-                                    className="w-full text-xs text-amber-900 bg-transparent border-none outline-none resize-none leading-relaxed"
-                                    rows={2}
-                                    autoFocus
-                                    data-testid={`office-notes-textarea-${office.id}`}
-                                  />
-                                  <div className="flex gap-3 mt-1">
-                                    <button onClick={() => { updateOfficeMutation.mutate({ id: office.id, notes: officeNotesValues[office.id] ?? "" }); setEditingOfficeNotes(null); }} className="text-xs text-amber-700 font-medium" data-testid={`office-notes-save-${office.id}`}>Save</button>
-                                    <button onClick={() => setEditingOfficeNotes(null)} className="text-xs text-amber-500">Cancel</button>
-                                  </div>
+                          {/* Amber team notes banner — always shown for expanded teams */}
+                          <div className="bg-amber-50 border-b border-amber-100 px-4 py-2.5 flex gap-2.5 items-start">
+                            <StickyNote className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+                            {editingOfficeNotes === office.id ? (
+                              <div className="flex-1">
+                                <textarea
+                                  value={officeNotesValues[office.id] ?? ""}
+                                  onChange={e => setOfficeNotesValues(prev => ({ ...prev, [office.id]: e.target.value }))}
+                                  className="w-full text-xs text-amber-900 bg-transparent border-none outline-none resize-none leading-relaxed"
+                                  rows={2}
+                                  autoFocus
+                                  data-testid={`office-notes-textarea-${office.id}`}
+                                />
+                                <div className="flex gap-3 mt-1">
+                                  <button onClick={() => { updateOfficeMutation.mutate({ id: office.id, notes: officeNotesValues[office.id] ?? "" }); setEditingOfficeNotes(null); }} className="text-xs text-amber-700 font-medium" data-testid={`office-notes-save-${office.id}`}>Save</button>
+                                  <button onClick={() => setEditingOfficeNotes(null)} className="text-xs text-amber-500">Cancel</button>
                                 </div>
-                              ) : (
-                                <div className="flex-1">
-                                  <p className="text-xs text-amber-900 leading-relaxed">{office.notes}</p>
-                                  <button onClick={() => { setOfficeNotesValues(prev => ({ ...prev, [office.id]: office.notes ?? "" })); setEditingOfficeNotes(office.id); }} className="text-[10px] text-amber-600 mt-0.5 hover:underline flex items-center gap-1" data-testid={`office-notes-edit-${office.id}`}><Edit className="w-3 h-3" /> Edit</button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {!office.notes && editingOfficeNotes !== office.id && (
-                            <div className="px-4 pt-2">
-                              <button onClick={() => { setOfficeNotesValues(prev => ({ ...prev, [office.id]: "" })); setEditingOfficeNotes(office.id); }} className="text-[10px] text-amber-600/70 hover:text-amber-600 flex items-center gap-1" data-testid={`office-notes-add-${office.id}`}><StickyNote className="w-3 h-3" /> Add team note</button>
-                            </div>
-                          )}
+                              </div>
+                            ) : office.notes ? (
+                              <div className="flex-1">
+                                <p className="text-xs text-amber-900 leading-relaxed">{office.notes}</p>
+                                <button onClick={() => { setOfficeNotesValues(prev => ({ ...prev, [office.id]: office.notes ?? "" })); setEditingOfficeNotes(office.id); }} className="text-[10px] text-amber-600 mt-0.5 hover:underline flex items-center gap-1" data-testid={`office-notes-edit-${office.id}`}><Edit className="w-3 h-3" /> Edit</button>
+                              </div>
+                            ) : (
+                              <div className="flex-1">
+                                <button onClick={() => { setOfficeNotesValues(prev => ({ ...prev, [office.id]: "" })); setEditingOfficeNotes(office.id); }} className="text-xs text-amber-600/60 italic hover:text-amber-700 hover:not-italic" data-testid={`office-notes-add-${office.id}`}>Add team note…</button>
+                              </div>
+                            )}
+                          </div>
 
                           {/* Sub-tab switcher */}
                           <div className="flex border-b border-border/30 px-4 mt-1">
