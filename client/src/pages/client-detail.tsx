@@ -1470,6 +1470,12 @@ export default function ClientDetail() {
     queryKey: ["/api/clients", clientId, "spend"],
   });
 
+  const { data: overviewMeetings = [] } = useQuery<CommItem[]>({
+    queryKey: ["/api/clients", clientId, "communications", "meetings"],
+    queryFn: () => fetch(`/api/clients/${clientId}/communications`, { credentials: "include" }).then(r => r.json()),
+    select: (items: CommItem[]) => items.filter(i => i.type === "meeting"),
+  });
+
   const { data: onboardingItems = [] } = useQuery<Array<{ id: number; clientId: number; itemKey: string; isCompleted: boolean; completedAt: string | null; updatedAt: string }>>({
     queryKey: ["/api/clients", clientId, "onboarding-checklist"],
   });
@@ -2554,7 +2560,7 @@ export default function ClientDetail() {
                     (activityLogs ?? []).slice(0, 4).forEach(a => {
                       combined.push({ type: "note", label: a.action || "Activity", detail: a.description || "", time: new Date(a.createdAt) });
                     });
-                    clientMeetings.slice(0, 3).forEach(m => {
+                    overviewMeetings.slice(0, 3).forEach(m => {
                       if (m.date) combined.push({ type: "meeting", label: m.subject || "Meeting", detail: m.snippet ? m.snippet.slice(0, 80) : "", time: new Date(m.date) });
                     });
                     (leads ?? []).filter(l => l.updatedAt).slice(0, 3).forEach(l => {
