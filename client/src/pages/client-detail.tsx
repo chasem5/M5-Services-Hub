@@ -2810,14 +2810,17 @@ export default function ClientDetail() {
                               task: "Task", estimate: "Estimate",
                             };
                             const label = `${entityLabel[log.entityType] ?? log.entityType} — ${actionLabel[log.action] ?? log.action}`;
+                            const actionIconOverride: Record<string, { icon: JSX.Element; bg: string }> = {
+                              note_added: { icon: <StickyNote className="h-3 w-3 text-amber-500" />, bg: "bg-amber-50 border border-amber-200" },
+                            };
                             const activityIconMap: Record<string, { icon: JSX.Element; bg: string }> = {
                               lead: { icon: <TrendingUp className="h-3 w-3 text-emerald-600" />, bg: "bg-emerald-50 border border-emerald-200" },
                               client: { icon: <Building2 className="h-3 w-3 text-primary" />, bg: "bg-primary/10 border border-primary/20" },
-                              contact: { icon: <Users className="h-3 w-3 text-blue-600" />, bg: "bg-blue-50 border border-blue-200" },
-                              estimate: { icon: <FileText className="h-3 w-3 text-amber-600" />, bg: "bg-amber-50 border border-amber-200" },
-                              task: { icon: <ClipboardList className="h-3 w-3 text-gray-500" />, bg: "bg-gray-100 border border-gray-200" },
+                              contact: { icon: <Mail className="h-3 w-3 text-blue-500" />, bg: "bg-blue-50 border border-blue-200" },
+                              estimate: { icon: <DollarSign className="h-3 w-3 text-rose-500" />, bg: "bg-rose-50 border border-rose-200" },
+                              task: { icon: <StickyNote className="h-3 w-3 text-amber-500" />, bg: "bg-amber-50 border border-amber-200" },
                             };
-                            const iconInfo = activityIconMap[log.entityType] ?? { icon: <Activity className="h-3 w-3 text-muted-foreground" />, bg: "bg-muted border border-border" };
+                            const iconInfo = actionIconOverride[log.action] ?? activityIconMap[log.entityType] ?? { icon: <Activity className="h-3 w-3 text-muted-foreground" />, bg: "bg-muted border border-border" };
                             return (
                               <div key={log.id} className="flex items-start gap-3 px-6 py-3" data-testid={`activity-preview-${log.id}`}>
                                 <div className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${iconInfo.bg}`}>
@@ -4195,29 +4198,31 @@ export default function ClientDetail() {
                 property_assessment: "Property Assessment",
               };
               const SERVICE_COLORS = ["#BE1916", "#2563EB", "#059669", "#D97706", "#0891B2"];
-              const counts = allLeads.reduce((acc: Record<string, number>, l) => {
+              const valueBySvc = allLeads.reduce((acc: Record<string, number>, l) => {
                 const st = (l as any).serviceType;
-                if (st) acc[st] = (acc[st] ?? 0) + 1;
+                const val = parseFloat((l.value as string) || "0");
+                if (st && val > 0) acc[st] = (acc[st] ?? 0) + val;
                 return acc;
               }, {});
-              const total = Object.values(counts).reduce((s, v) => s + v, 0);
+              const total = Object.values(valueBySvc).reduce((s, v) => s + v, 0);
               if (total === 0) return null;
-              const sorted = Object.entries(counts)
+              const sorted = Object.entries(valueBySvc)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 4)
-                .map(([key, count], i) => ({ key, label: SERVICE_LABELS[key] ?? key, count, pct: Math.round(count / total * 100), color: SERVICE_COLORS[i] }));
+                .map(([key, val], i) => ({ key, label: SERVICE_LABELS[key] ?? key, val, pct: Math.round(val / total * 100), color: SERVICE_COLORS[i] }));
+              const fmt = (n: number) => n >= 1000000 ? `$${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `$${(n / 1000).toFixed(0)}K` : `$${n.toFixed(0)}`;
               return (
                 <Card className="shadow-sm border-border/40 bg-card">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold">Service Breakdown</CardTitle>
-                    <CardDescription className="text-xs">By deal count across service types</CardDescription>
+                    <CardDescription className="text-xs">By quote value across service types</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3 pb-4">
                     {sorted.map(s => (
                       <div key={s.key} className="space-y-1">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-medium text-foreground">{s.label}</span>
-                          <span className="text-muted-foreground">{s.count} deal{s.count !== 1 ? "s" : ""} · {s.pct}%</span>
+                          <span className="text-muted-foreground">{fmt(s.val)} · {s.pct}%</span>
                         </div>
                         <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                           <div className="h-full rounded-full transition-all" style={{ width: `${s.pct}%`, backgroundColor: s.color }} />
@@ -4306,7 +4311,7 @@ export default function ClientDetail() {
                     <CardDescription>CRM estimates and BuildOps quotes for this client</CardDescription>
                   </div>
                   <div className="flex gap-1 flex-wrap">
-                    {(["all", "sent", "accepted", "draft", "rejected"] as const).map(s => (
+                    {(["all", "draft", "sent", "won", "lost"] as const).map(s => (
                       <button
                         key={s}
                         onClick={() => setEstimateStatusFilter(s)}
@@ -4320,15 +4325,26 @@ export default function ClientDetail() {
                 </CardHeader>
               <CardContent>
                 {(() => {
+                  const normCrmStatus = (s: string | null) => {
+                    if (s === "accepted") return "won";
+                    if (s === "rejected") return "lost";
+                    return s ?? "draft";
+                  };
+                  const normBoStatus = (stage: string) => {
+                    if (stage === "won") return "won";
+                    if (stage === "lost") return "lost";
+                    if (stage === "proposal_sent") return "sent";
+                    return "draft";
+                  };
                   const crmRows = (estimates ?? []).map(e => ({
-                    key: `crm-${e.id}`, title: e.title, status: e.status,
+                    key: `crm-${e.id}`, title: e.title, status: normCrmStatus(e.status),
                     value: parseFloat(e.total as string || "0"), date: e.createdAt,
                     source: "CRM" as const, onClick: () => setLocation(`/estimates/${e.id}`),
                   }));
                   const boRows = (leads ?? [])
                     .filter(l => l.buildopsQuoteId)
                     .map(l => ({
-                      key: `bo-${l.id}`, title: l.title, status: l.stage,
+                      key: `bo-${l.id}`, title: l.title, status: normBoStatus(l.stage),
                       value: parseFloat(l.value as string || "0"), date: l.createdAt,
                       source: "BuildOps" as const, onClick: () => setLocation(`/leads`),
                     }));
