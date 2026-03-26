@@ -1312,6 +1312,9 @@ export async function registerRoutes(
       for (const m of recentMeetings) {
         rawActivity.push({ type: "meeting", label: m.title || "Meeting", detail: m.summary ? m.summary.slice(0, 80) : "", time: formatRelative(m.date), ts: m.date ? new Date(m.date).getTime() : 0 });
       }
+      for (const d of deals) {
+        if (d.updatedAt) rawActivity.push({ type: "deal", label: d.title, detail: `Stage: ${d.stage ?? "unknown"}${d.value ? ` · $${parseFloat(d.value).toLocaleString("en-US", { maximumFractionDigits: 0 })}` : ""}`, time: formatRelative(d.updatedAt), ts: new Date(d.updatedAt).getTime() });
+      }
       rawActivity.sort((a, b) => b.ts - a.ts);
       const recentActivity = rawActivity.slice(0, 10).map(({ ts: _ts, ...rest }) => rest);
       const lastContact = recentEmails[0]?.receivedAt ? formatRelative(recentEmails[0].receivedAt) : null;

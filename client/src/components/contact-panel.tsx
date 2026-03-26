@@ -30,6 +30,7 @@ interface Office {
   address: string | null;
   phone: string | null;
   notes?: string | null;
+  color?: string | null;
 }
 
 interface ActivityItem {
