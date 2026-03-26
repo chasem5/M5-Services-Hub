@@ -707,10 +707,10 @@ function UnifiedHistoryFeed({ clientId, contacts = [] }: { clientId: number; con
     queryKey: ["/api/attachments", "client", clientId],
   });
 
-  const { data: clientMeetings = [] } = useQuery<{ id: number; title: string; date: string | null; summary?: string | null; attendeeContactIds?: number[]; attendeeCount?: number }[]>({
+  const { data: clientMeetings = [] } = useQuery<CommItem[]>({
     queryKey: ["/api/clients", clientId, "communications"],
     queryFn: () => fetch(`/api/clients/${clientId}/communications`, { credentials: "include" }).then(r => r.json()),
-    select: (items: any[]) => items.filter((i: any) => i.type === "meeting"),
+    select: (items: CommItem[]) => items.filter(i => i.type === "meeting"),
   });
 
   const { data: users = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/users"] });
@@ -758,13 +758,13 @@ function UnifiedHistoryFeed({ clientId, contacts = [] }: { clientId: number; con
     });
   });
 
-  clientMeetings.forEach((m: any) => {
+  clientMeetings.forEach((m: CommItem) => {
     if (!m.date) return;
     events.push({
-      id: `meeting-${m.id ?? m.meetingId}`,
+      id: `meeting-${m.meetingId ?? m.id}`,
       kind: "meeting",
       date: new Date(m.date),
-      title: m.subject ?? m.title ?? "Meeting",
+      title: m.subject ?? "Meeting",
       subtitle: m.snippet ?? undefined,
       meta: `${m.attendeeCount ?? 0} attendee${(m.attendeeCount ?? 0) !== 1 ? "s" : ""}`,
       attendeeContactIds: m.attendeeContactIds ?? [],
@@ -3010,7 +3010,10 @@ export default function ClientDetail() {
                 {(offices || []).map((office, officeIndex) => {
                   const teamColor = TEAM_COLORS[officeIndex % TEAM_COLORS.length];
                   const officeContacts = (contacts || []).filter(c => c.officeId === office.id);
-                  const officeBuildings = allBuildings.filter(b => officeContacts.some(c => c.id === b.contactId));
+                  const officeBuildings = allBuildings.filter(b =>
+                    (b.type === "building" && officeContacts.some(c => c.id === b.contactId)) ||
+                    (b.type === "office" && b.id === office.id)
+                  );
                   return (
                     <div
                       key={office.id}
@@ -4199,8 +4202,8 @@ export default function ClientDetail() {
               };
               const SERVICE_COLORS = ["#BE1916", "#2563EB", "#059669", "#D97706", "#0891B2"];
               const valueBySvc = allLeads.reduce((acc: Record<string, number>, l) => {
-                const st = (l as any).serviceType;
-                const val = parseFloat((l.value as string) || "0");
+                const st = l.serviceType;
+                const val = parseFloat(l.value || "0");
                 if (st && val > 0) acc[st] = (acc[st] ?? 0) + val;
                 return acc;
               }, {});
