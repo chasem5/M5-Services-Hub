@@ -3013,8 +3013,7 @@ export default function ClientDetail() {
                   const teamColor = TEAM_COLORS[officeIndex % TEAM_COLORS.length];
                   const officeContacts = (contacts || []).filter(c => c.officeId === office.id);
                   const officeBuildings = allBuildings.filter(b =>
-                    (b.type === "building" && officeContacts.some(c => c.id === b.contactId)) ||
-                    (b.type === "office" && b.id === office.id)
+                    b.type === "building" && officeContacts.some(c => c.id === b.contactId)
                   );
                   return (
                     <div
