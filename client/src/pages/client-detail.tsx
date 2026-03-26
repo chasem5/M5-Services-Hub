@@ -1895,11 +1895,13 @@ export default function ClientDetail() {
     return tierMap[client.tier ?? ""] ?? 60;
   })();
 
-  const lastActivityDate = activityLogs && activityLogs.length > 0 ? new Date(activityLogs[0].createdAt) : null;
+  const latestActivityLog = activityLogs && activityLogs.length > 0
+    ? [...activityLogs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+    : null;
+  const lastActivityDate = latestActivityLog ? new Date(latestActivityLog.createdAt) : null;
   const daysSinceActivity = lastActivityDate ? Math.floor((Date.now() - lastActivityDate.getTime()) / (1000 * 60 * 60 * 24)) : null;
-  const isDormantClient = daysSinceActivity !== null && daysSinceActivity > 60;
-  const healthLabel = isDormantClient ? "Dormant" : healthScore >= 75 ? "Healthy" : "At Risk";
-  const healthColor = isDormantClient ? "text-red-700" : healthScore >= 75 ? "text-green-600" : "text-amber-600";
+  const healthLabel = daysSinceActivity === null || daysSinceActivity > 60 ? "Dormant" : daysSinceActivity > 30 ? "At Risk" : "Healthy";
+  const healthColor = healthLabel === "Dormant" ? "text-red-700" : healthLabel === "Healthy" ? "text-green-600" : "text-amber-600";
 
   const fmtMoney = (n: number) => n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n / 1_000).toFixed(0)}K` : `$${n.toLocaleString()}`;
 
@@ -1937,7 +1939,7 @@ export default function ClientDetail() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="font-heading font-bold text-lg leading-tight" data-testid="text-client-name">{client.name}</h1>
               {client.tier && <TierBadge tier={client.tier} size="xs" />}
-              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${isDormantClient ? "bg-red-100 text-red-700" : healthScore >= 75 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`} data-testid="badge-health-chip">
+              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${healthLabel === "Dormant" ? "bg-red-100 text-red-700" : healthLabel === "Healthy" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`} data-testid="badge-health-chip">
                 <HeartPulse className="h-3 w-3" />
                 {healthLabel}
               </span>
@@ -4162,21 +4164,29 @@ export default function ClientDetail() {
             {/* ── Revenue summary stats ── */}
             {(() => {
               const fmt3 = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
-              const allLeads = leads ?? [];
-              const allEstimates = estimates ?? [];
-              const ltmRevenue = buildopsRevenue > 0 ? buildopsRevenue : allLeads.filter(l => l.stage === "won").reduce((s, l) => s + (parseFloat(l.value ?? "0") || 0), 0);
-              const ltmSub = buildopsRevenue > 0 ? "From BuildOps invoices" : `${allLeads.filter(l => l.stage === "won").length} CRM deals won`;
-              const openQuotes = allEstimates.filter(e => e.status === "sent");
-              const openQuotesVal = openQuotes.reduce((s, e) => s + (parseFloat(e.total ?? "0") || 0), 0);
-              const acceptedQuotes = allEstimates.filter(e => e.status === "accepted");
-              const rejectedQuotes = allEstimates.filter(e => e.status === "rejected");
-              const closedQuotes = acceptedQuotes.length + rejectedQuotes.length;
-              const quoteWinRate = closedQuotes > 0 ? Math.round(acceptedQuotes.length / closedQuotes * 100) : null;
+              const crmEstimates = estimates ?? [];
+              const boQuotes = (leads ?? []).filter(l => l.buildopsQuoteId);
+              const normCrmSt = (s: string | null) => s === "accepted" ? "won" : s === "rejected" ? "lost" : s ?? "draft";
+              const normBoSt = (stage: string) => stage === "won" ? "won" : stage === "lost" ? "lost" : stage === "proposal_sent" ? "sent" : "draft";
+              type QuoteRow = { normStatus: string; value: number };
+              const unifiedQuotes: QuoteRow[] = [
+                ...crmEstimates.map(e => ({ normStatus: normCrmSt(e.status), value: parseFloat(e.total ?? "0") || 0 })),
+                ...boQuotes.map(l => ({ normStatus: normBoSt(l.stage), value: parseFloat(l.value ?? "0") || 0 })),
+              ];
+              const wonRevenue = unifiedQuotes.filter(q => q.normStatus === "won").reduce((s, q) => s + q.value, 0);
+              const ltmRevenue = buildopsRevenue > 0 ? buildopsRevenue : wonRevenue;
+              const ltmSub = buildopsRevenue > 0 ? "From BuildOps invoices (LTM)" : `${unifiedQuotes.filter(q => q.normStatus === "won").length} won quote${unifiedQuotes.filter(q => q.normStatus === "won").length !== 1 ? "s" : ""}`;
+              const openQuoteRows = unifiedQuotes.filter(q => q.normStatus === "sent");
+              const openQuotesVal = openQuoteRows.reduce((s, q) => s + q.value, 0);
+              const wonQuotes = unifiedQuotes.filter(q => q.normStatus === "won").length;
+              const lostQuotes = unifiedQuotes.filter(q => q.normStatus === "lost").length;
+              const closedQuotes = wonQuotes + lostQuotes;
+              const quoteWinRate = closedQuotes > 0 ? Math.round(wonQuotes / closedQuotes * 100) : null;
               return (
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { label: "Revenue (LTM)", value: ltmRevenue > 0 ? fmt3(ltmRevenue) : "—", sub: ltmSub, color: "text-emerald-600" },
-                    { label: "Open Quotes", value: openQuotesVal > 0 ? fmt3(openQuotesVal) : "—", sub: `${openQuotes.length} quote${openQuotes.length !== 1 ? "s" : ""} awaiting response`, color: "text-blue-600" },
+                    { label: "Open Quotes", value: openQuotesVal > 0 ? fmt3(openQuotesVal) : "—", sub: `${openQuoteRows.length} quote${openQuoteRows.length !== 1 ? "s" : ""} awaiting response`, color: "text-blue-600" },
                     { label: "Quote Win Rate", value: quoteWinRate !== null ? `${quoteWinRate}%` : "—", sub: `${closedQuotes} quote${closedQuotes !== 1 ? "s" : ""} decided`, color: "text-foreground" },
                   ].map(s => (
                     <Card key={s.label} className="shadow-sm border-border/40 bg-card">
@@ -4192,7 +4202,7 @@ export default function ClientDetail() {
             })()}
             {/* ── Service type breakdown ── */}
             {(() => {
-              const allLeads = leads ?? [];
+              const quoteLeads = (leads ?? []).filter(l => l.buildopsQuoteId && l.serviceType);
               const SERVICE_LABELS: Record<string, string> = {
                 special_projects: "Special Projects",
                 janitorial: "Janitorial",
@@ -4201,8 +4211,8 @@ export default function ClientDetail() {
                 property_assessment: "Property Assessment",
               };
               const SERVICE_COLORS = ["#BE1916", "#2563EB", "#059669", "#D97706", "#0891B2"];
-              const valueBySvc = allLeads.reduce((acc: Record<string, number>, l) => {
-                const st = l.serviceType;
+              const valueBySvc = quoteLeads.reduce((acc: Record<string, number>, l) => {
+                const st = l.serviceType!;
                 const val = parseFloat(l.value || "0");
                 if (st && val > 0) acc[st] = (acc[st] ?? 0) + val;
                 return acc;
@@ -4218,7 +4228,7 @@ export default function ClientDetail() {
                 <Card className="shadow-sm border-border/40 bg-card">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold">Service Breakdown</CardTitle>
-                    <CardDescription className="text-xs">By quote value across service types</CardDescription>
+                    <CardDescription className="text-xs">BuildOps quote value by service type</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3 pb-4">
                     {sorted.map(s => (
