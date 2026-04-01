@@ -329,7 +329,12 @@ function MeetingMinutesPanel({
   onDecline: (id: number) => void;
 }) {
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
-  const minutes = meeting.minutesData;
+  const rawMinutes = meeting.minutesData;
+  const minutes = rawMinutes ? {
+    discussionPoints: Array.isArray(rawMinutes.discussionPoints) ? rawMinutes.discussionPoints : [],
+    decisions: Array.isArray(rawMinutes.decisions) ? rawMinutes.decisions : [],
+    nextSteps: Array.isArray(rawMinutes.nextSteps) ? rawMinutes.nextSteps : [],
+  } : null;
   const pendingActions = actions.filter(a => a.status === "pending");
 
   return (
