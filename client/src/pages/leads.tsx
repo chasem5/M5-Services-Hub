@@ -3351,28 +3351,23 @@ export default function Leads() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Client</FormLabel>
-                              <Select
-                                onValueChange={(val) => {
-                                  const id = parseInt(val);
-                                  field.onChange(id);
-                                  setSelectedClientIdForBuildingEdit(id);
-                                  setSelectedClientIdForContactEdit(id);
-                                  editLeadForm.setValue("buildingId", null);
-                                  editLeadForm.setValue("contactId", null);
-                                }}
-                                value={field.value?.toString()}
-                              >
-                                <FormControl>
-                                  <SelectTrigger data-testid="select-edit-deal-client">
-                                    <SelectValue placeholder="Select client" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {clients?.map((c) => (
-                                    <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <FormControl>
+                                <SearchableSelect
+                                  options={(clients ?? []).map(c => ({ value: c.id.toString(), label: c.name }))}
+                                  value={field.value?.toString() ?? ""}
+                                  onChange={(val) => {
+                                    const id = parseInt(val);
+                                    field.onChange(id);
+                                    setSelectedClientIdForBuildingEdit(id);
+                                    setSelectedClientIdForContactEdit(id);
+                                    editLeadForm.setValue("buildingId", null);
+                                    editLeadForm.setValue("contactId", null);
+                                  }}
+                                  placeholder="Select client"
+                                  searchPlaceholder="Search clients..."
+                                  data-testid="select-edit-deal-client"
+                                />
+                              </FormControl>
                               <FormMessage />
                             </FormItem>
                           )}
