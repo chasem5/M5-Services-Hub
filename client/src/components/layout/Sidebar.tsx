@@ -12,6 +12,7 @@ import {
   Building2,
   Sparkles,
   ScrollText,
+  Lock,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -154,6 +155,29 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {user?.role === "super_admin" && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Executive</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/ceo"}
+                    tooltip="CEO Command Center"
+                    className={location === "/ceo" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                  >
+                    <Link href="/ceo" data-testid="link-ceo-command-center" onClick={() => isMobile && setOpenMobile(false)}>
+                      <Lock className={`h-4 w-4 shrink-0 ${location === "/ceo" ? "text-primary" : ""}`} />
+                      <span className="group-data-[collapsible=icon]:hidden">Command Center</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         <SidebarGroup>
           <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Intelligence</SidebarGroupLabel>

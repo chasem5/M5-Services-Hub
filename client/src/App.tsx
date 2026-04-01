@@ -22,6 +22,7 @@ import EmailSync from "@/pages/email-sync";
 import Announcements from "@/pages/announcements";
 import CustomerReport from "@/pages/customer-report";
 import CompanyIntelligence from "@/pages/company-intelligence";
+import CEOCommandCenter from "@/pages/ceo-command-center";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function TabRedirect({ tab }: { tab: string }) {
@@ -55,6 +56,7 @@ function ProtectedRouter() {
           <Route path="/announcements" component={Announcements} />
           <Route path="/reports/customer-intelligence" component={CustomerReport} />
           <Route path="/company-intelligence" component={CompanyIntelligence} />
+          <Route path="/ceo" component={CEOCommandCenter} />
           <Route path="/reports/revenue-analytics">
             {() => <TabRedirect tab="revenue" />}
           </Route>
