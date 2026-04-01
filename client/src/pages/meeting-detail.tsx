@@ -1331,38 +1331,74 @@ export default function MeetingDetailPage() {
                 </div>
               </Tabs>
             ) : (
-              // Standard meeting: simplified sidebar with files only
-              <Tabs defaultValue="files" className="flex-1 flex flex-col overflow-hidden">
+              // Standard meeting: simplified sidebar — quick-approve actions queue + files
+              <Tabs defaultValue="actions" className="flex-1 flex flex-col overflow-hidden">
                 <div className="px-5 pt-4 border-b shrink-0">
-                  <TabsList className="w-full grid grid-cols-1 h-9 bg-muted/50 p-1 mb-3">
+                  <TabsList className="w-full grid grid-cols-2 h-9 bg-muted/50 p-1 mb-4">
+                    <TabsTrigger value="actions" className="text-[11px] font-bold uppercase tracking-wider">
+                      Actions
+                      {pending.length > 0 && (
+                        <Badge variant="secondary" className="ml-1.5 h-4 px-1.5 text-[10px] bg-primary text-primary-foreground">
+                          {pending.length}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
                     <TabsTrigger value="files" className="text-[11px] font-bold uppercase tracking-wider">
-                      Files &amp; Attachments
+                      Files
                     </TabsTrigger>
                   </TabsList>
-                  {!isComplete && pending.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mb-3 h-7 text-xs w-full border-green-300 text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
-                      onClick={handleApproveAll}
-                      data-testid="button-approve-all"
-                    >
-                      <Check className="h-3.5 w-3.5 mr-1" /> Approve All CRM Actions ({pending.length})
-                    </Button>
-                  )}
-                  {actions.length > 0 && (
-                    <div className="flex items-center justify-between pb-3">
-                      <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <Sparkles className="h-3.5 w-3.5 text-primary" />
-                        CRM Actions
-                      </span>
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {reviewed.length}/{actions.length} reviewed
-                      </span>
+
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      <p className="font-semibold text-sm">CRM Actions</p>
                     </div>
-                  )}
+                    <span className="text-xs text-muted-foreground">
+                      {reviewed.length}/{actions.length} reviewed
+                    </span>
+                  </div>
+
+                  <TabsContent value="actions" className="m-0">
+                    {!isComplete && pending.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mb-4 h-7 text-xs w-full border-green-300 text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                        onClick={handleApproveAll}
+                        data-testid="button-approve-all"
+                      >
+                        <Check className="h-3.5 w-3.5 mr-1" /> Approve All ({pending.length})
+                      </Button>
+                    )}
+                  </TabsContent>
                 </div>
+
                 <div className="flex-1 overflow-y-auto">
+                  <TabsContent value="actions" className="m-0 p-4 space-y-3">
+                    {actions.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                        <ClipboardList className="h-8 w-8 mb-2 opacity-20" />
+                        <p className="text-sm">No action items were identified.</p>
+                      </div>
+                    ) : (
+                      actions.map((action) => (
+                        <ActionCard
+                          key={action.id}
+                          action={action}
+                          isApproving={actioningIds[action.id] === "approve"}
+                          isDeclining={actioningIds[action.id] === "decline"}
+                          onApprove={() => {
+                            setActioningIds((prev) => ({ ...prev, [action.id]: "approve" }));
+                            approveMutation.mutate(action.id);
+                          }}
+                          onDecline={() => {
+                            setActioningIds((prev) => ({ ...prev, [action.id]: "decline" }));
+                            declineMutation.mutate(action.id);
+                          }}
+                        />
+                      ))
+                    )}
+                  </TabsContent>
                   <TabsContent value="files" className="m-0 p-4">
                     <AttachmentsPanel entityType="meeting" entityId={meetingId} />
                   </TabsContent>
