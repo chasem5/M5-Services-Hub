@@ -1149,6 +1149,15 @@ export default function Leads() {
   // Pipeline review report
   const [isPipelineReviewOpen, setIsPipelineReviewOpen] = useState(false);
   const [reviewRunning, setReviewRunning] = useState(false);
+  // Pipeline review scope filters
+  const [reviewFilterStages, setReviewFilterStages] = useState<string[]>([]);
+  const [reviewFilterRep, setReviewFilterRep] = useState<string>("all");
+  const [reviewFilterHealth, setReviewFilterHealth] = useState<string[]>([]);
+  const [reviewFilterUnanalyzedOnly, setReviewFilterUnanalyzedOnly] = useState(false);
+  // Snapshot of deal IDs being analyzed in the current run (stable during run)
+  const [reviewRunDealIds, setReviewRunDealIds] = useState<Set<number>>(new Set());
+  // IDs that completed (resolved or failed) in the current run
+  const [reviewRunCompletedIds, setReviewRunCompletedIds] = useState<Set<number>>(new Set());
   // For create form: contact dropdown
   const [selectedClientIdForContact, setSelectedClientIdForContact] = useState<number | null>(null);
   const [selectedClientIdForContactEdit, setSelectedClientIdForContactEdit] = useState<number | null>(null);
@@ -1672,17 +1681,21 @@ export default function Leads() {
     setDealTaskNewChecklistText("");
   }, [selectedDealTask?.id]);
 
-  // Run pipeline review: fetch AI for all active deals in batches of 3
-  const runPipelineReview = async () => {
-    const activeDeals = (leads ?? []).filter(l => l.stage !== "won" && l.stage !== "lost");
-    if (activeDeals.length === 0) return;
+  // Run pipeline review: fetch AI for filtered deals in batches of 3
+  const runPipelineReview = async (dealsToAnalyze: Lead[]) => {
+    if (dealsToAnalyze.length === 0) return;
+    setReviewRunDealIds(new Set(dealsToAnalyze.map(l => l.id)));
+    setReviewRunCompletedIds(new Set());
     setReviewRunning(true);
     const batches: Lead[][] = [];
-    for (let i = 0; i < activeDeals.length; i += 3) {
-      batches.push(activeDeals.slice(i, i + 3));
+    for (let i = 0; i < dealsToAnalyze.length; i += 3) {
+      batches.push(dealsToAnalyze.slice(i, i + 3));
     }
     for (const batch of batches) {
-      await Promise.all(batch.map(l => fetchAiSummary(l.id, true)));
+      await Promise.all(batch.map(async l => {
+        await fetchAiSummary(l.id, true);
+        setReviewRunCompletedIds(prev => new Set([...prev, l.id]));
+      }));
     }
     setReviewRunning(false);
   };
@@ -2025,7 +2038,7 @@ export default function Leads() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => { setIsPipelineReviewOpen(true); runPipelineReview(); }} data-testid="option-pipeline-review-mobile">
+                <DropdownMenuItem onClick={() => setIsPipelineReviewOpen(true)} data-testid="option-pipeline-review-mobile">
                   <ClipboardList className="h-4 w-4 mr-2" />
                   Pipeline Review
                 </DropdownMenuItem>
@@ -4619,7 +4632,18 @@ export default function Leads() {
       </Sheet>
 
       {/* Pipeline Review Dialog */}
-      <Dialog open={isPipelineReviewOpen} onOpenChange={(open) => { setIsPipelineReviewOpen(open); if (!open) setReviewRunning(false); }}>
+      <Dialog open={isPipelineReviewOpen} onOpenChange={(open) => {
+        setIsPipelineReviewOpen(open);
+        if (!open) {
+          setReviewRunning(false);
+          setReviewFilterStages([]);
+          setReviewFilterRep("all");
+          setReviewFilterHealth([]);
+          setReviewFilterUnanalyzedOnly(false);
+          setReviewRunDealIds(new Set());
+          setReviewRunCompletedIds(new Set());
+        }
+      }}>
         <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
             <div className="flex items-center justify-between">
@@ -4634,27 +4658,180 @@ export default function Leads() {
                   </p>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5"
-                onClick={runPipelineReview}
-                disabled={reviewRunning}
-                data-testid="button-run-review"
-              >
-                {reviewRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                {reviewRunning ? "Analyzing…" : "Refresh"}
-              </Button>
+              {(() => {
+                const allActiveDeals = (leads ?? []).filter(l => l.stage !== "won" && l.stage !== "lost");
+                const dealsWithHealth = allActiveDeals.map(lead => {
+                  const summary = activitySummary?.find(s => s.leadId === lead.id);
+                  const daysActivity = summary?.lastActivityAt ? differenceInDays(new Date(), new Date(summary.lastActivityAt)) : null;
+                  const sc = lead.confidenceScore ?? 50;
+                  const computedHealth: string =
+                    (daysActivity !== null && daysActivity > 30) || sc < 25 ? "At Risk" :
+                    (daysActivity !== null && daysActivity > 14) || sc < 40 ? "Stalled" :
+                    sc >= 70 && (daysActivity === null || daysActivity <= 7) ? "Strong" :
+                    "On Track";
+                  const aiData = aiSummaries[lead.id];
+                  const healthLabel = aiData?.healthLabel ?? computedHealth;
+                  return { lead, healthLabel };
+                });
+                const dealsToAnalyze = dealsWithHealth
+                  .filter(({ lead, healthLabel }) => {
+                    if (reviewFilterStages.length > 0 && !reviewFilterStages.includes(lead.stage)) return false;
+                    if (reviewFilterRep !== "all" && lead.assignedTo !== reviewFilterRep) return false;
+                    if (reviewFilterHealth.length > 0 && !reviewFilterHealth.includes(healthLabel)) return false;
+                    if (reviewFilterUnanalyzedOnly && aiSummaries[lead.id]) return false;
+                    return true;
+                  })
+                  .map(({ lead }) => lead);
+                return (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5"
+                    onClick={() => runPipelineReview(dealsToAnalyze)}
+                    disabled={reviewRunning || dealsToAnalyze.length === 0}
+                    data-testid="button-run-review"
+                  >
+                    {reviewRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    {reviewRunning ? "Analyzing…" : "Refresh"}
+                  </Button>
+                );
+              })()}
             </div>
-            {reviewRunning && (() => {
-              const activeDeals = (leads ?? []).filter(l => l.stage !== "won" && l.stage !== "lost");
-              const done = activeDeals.filter(l => aiSummaries[l.id] || (loadingAiSummary[l.id] === false)).length;
-              const pct = activeDeals.length > 0 ? Math.round((done / activeDeals.length) * 100) : 0;
+
+            {/* Scope filter bar */}
+            {(() => {
+              const allActiveDeals = (leads ?? []).filter(l => l.stage !== "won" && l.stage !== "lost");
+              const availableStages = Array.from(new Set(allActiveDeals.map(l => l.stage)));
+              const availableReps = Array.from(new Set(allActiveDeals.map(l => l.assignedTo).filter(Boolean) as string[]));
+              const healthOptions = ["At Risk", "Stalled", "On Track", "Strong"];
+
+              const dealsWithHealth = allActiveDeals.map(lead => {
+                const summary = activitySummary?.find(s => s.leadId === lead.id);
+                const daysActivity = summary?.lastActivityAt ? differenceInDays(new Date(), new Date(summary.lastActivityAt)) : null;
+                const sc = lead.confidenceScore ?? 50;
+                const computedHealth: string =
+                  (daysActivity !== null && daysActivity > 30) || sc < 25 ? "At Risk" :
+                  (daysActivity !== null && daysActivity > 14) || sc < 40 ? "Stalled" :
+                  sc >= 70 && (daysActivity === null || daysActivity <= 7) ? "Strong" :
+                  "On Track";
+                const aiData = aiSummaries[lead.id];
+                const healthLabel = aiData?.healthLabel ?? computedHealth;
+                return { lead, healthLabel };
+              });
+
+              const selectedCount = dealsWithHealth.filter(({ lead, healthLabel }) => {
+                if (reviewFilterStages.length > 0 && !reviewFilterStages.includes(lead.stage)) return false;
+                if (reviewFilterRep !== "all" && lead.assignedTo !== reviewFilterRep) return false;
+                if (reviewFilterHealth.length > 0 && !reviewFilterHealth.includes(healthLabel)) return false;
+                if (reviewFilterUnanalyzedOnly && aiSummaries[lead.id]) return false;
+                return true;
+              }).length;
+
               return (
-                <div className="mt-3">
+                <div className="mt-3 space-y-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Stage multi-select */}
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Stage</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {availableStages.map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            disabled={reviewRunning}
+                            data-testid={`filter-stage-${s}`}
+                            onClick={() => setReviewFilterStages(prev =>
+                              prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
+                            )}
+                            className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                              reviewFilterStages.includes(s)
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-muted/50 text-muted-foreground border-border hover:border-primary/50"
+                            }`}
+                          >
+                            {s.replace(/_/g, " ")}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Rep dropdown */}
+                    {availableReps.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Rep</span>
+                        <select
+                          value={reviewFilterRep}
+                          onChange={e => setReviewFilterRep(e.target.value)}
+                          disabled={reviewRunning}
+                          data-testid="filter-rep-select"
+                          className="text-xs rounded border border-border bg-background px-2 py-0.5 h-6 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <option value="all">All reps</option>
+                          {availableReps.map(repId => (
+                            <option key={repId} value={repId}>{getUserName(repId)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Health multi-select */}
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Health</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {healthOptions.map(h => (
+                          <button
+                            key={h}
+                            type="button"
+                            disabled={reviewRunning}
+                            data-testid={`filter-health-${h.replace(" ", "-").toLowerCase()}`}
+                            onClick={() => setReviewFilterHealth(prev =>
+                              prev.includes(h) ? prev.filter(x => x !== h) : [...prev, h]
+                            )}
+                            className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                              reviewFilterHealth.includes(h)
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-muted/50 text-muted-foreground border-border hover:border-primary/50"
+                            }`}
+                          >
+                            {h}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Unanalyzed only toggle */}
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Scope</span>
+                      <label className={`flex items-center gap-1.5 ${reviewRunning ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`} data-testid="filter-unanalyzed-only">
+                        <Checkbox
+                          checked={reviewFilterUnanalyzedOnly}
+                          onCheckedChange={v => { if (!reviewRunning) setReviewFilterUnanalyzedOnly(!!v); }}
+                          className="h-3.5 w-3.5"
+                          id="review-unanalyzed-only"
+                          disabled={reviewRunning}
+                        />
+                        <span className="text-xs text-muted-foreground select-none">Unanalyzed only</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Selected count summary */}
+                  <p className="text-[11px] text-muted-foreground" data-testid="text-filter-summary">
+                    <span className="font-semibold text-foreground">{selectedCount}</span> of {allActiveDeals.length} deal{allActiveDeals.length !== 1 ? "s" : ""} selected
+                  </p>
+                </div>
+              );
+            })()}
+
+            {reviewRunning && (() => {
+              const total = reviewRunDealIds.size;
+              const done = reviewRunCompletedIds.size;
+              const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+              return (
+                <div className="mt-2">
                   <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                     <span>Analyzing deals…</span>
-                    <span>{done} / {activeDeals.length}</span>
+                    <span>{done} / {total}</span>
                   </div>
                   <Progress value={pct} className="h-1.5" />
                 </div>
