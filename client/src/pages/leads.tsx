@@ -1816,7 +1816,12 @@ export default function Leads() {
   const dateFilterEnd = getDateFilterEnd(effectiveDateFilter);
 
   const filteredLeads = leads?.filter((lead) => {
-    const matchesSearch = lead.title.toLowerCase().includes(search.toLowerCase());
+    const searchLower = search.toLowerCase();
+    const clientName = lead.clientId ? (clients?.find((c) => c.id === lead.clientId)?.name ?? "") : "";
+    const buildingName = lead.buildingId ? (allBuildings.find(b => b.id === lead.buildingId)?.name ?? "") : "";
+    const matchesSearch = lead.title.toLowerCase().includes(searchLower)
+      || clientName.toLowerCase().includes(searchLower)
+      || buildingName.toLowerCase().includes(searchLower);
     const matchesStage = stageFilter === "all" || lead.stage === stageFilter;
     const matchesViewStage = !activeFilters?.stages?.length || activeFilters.stages.includes(lead.stage);
     const leadServiceTypes: string[] = ((lead as any).serviceTypes?.length > 0
