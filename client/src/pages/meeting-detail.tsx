@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import {
   Mic,
-  MicOff,
   Square,
   ChevronLeft,
   CheckSquare,
@@ -33,6 +32,11 @@ import {
   Pencil,
   AlertTriangle,
   Link2,
+  MessageSquare,
+  Gavel,
+  ArrowRight,
+  ListChecks,
+  ScrollText,
 } from "lucide-react";
 import {
   Popover,
@@ -64,6 +68,12 @@ type MeetingAction = {
   appliedAt: string | null;
 };
 
+type MinutesData = {
+  discussionPoints: string[];
+  decisions: string[];
+  nextSteps: string[];
+};
+
 type Meeting = {
   id: number;
   title: string;
@@ -72,6 +82,7 @@ type Meeting = {
   status: string;
   rawTranscript: string | null;
   summary: string | null;
+  minutesData: MinutesData | null;
   calendarEventId: string | null;
   calendarEventLink: string | null;
   leadId: number | null;
@@ -298,6 +309,176 @@ function PipelineDealSection({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function MeetingMinutesPanel({
+  meeting,
+  actions,
+  actioningIds,
+  isComplete,
+  onApprove,
+  onDecline,
+}: {
+  meeting: Meeting;
+  actions: MeetingAction[];
+  actioningIds: Record<number, "approve" | "decline">;
+  isComplete: boolean;
+  onApprove: (id: number) => void;
+  onDecline: (id: number) => void;
+}) {
+  const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const minutes = meeting.minutesData;
+  const pendingActions = actions.filter(a => a.status === "pending");
+
+  return (
+    <div className="flex-1 overflow-y-auto" data-testid="section-meeting-minutes">
+      {/* Document header */}
+      <div className="px-8 pt-7 pb-5 border-b border-border/60">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">
+            <ScrollText className="h-4 w-4 text-primary" />
+          </div>
+          <h2 className="font-heading font-bold text-base text-foreground">Meeting Minutes</h2>
+          <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider ml-1">
+            {isComplete ? "Complete" : "Review"}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1 ml-9">
+          {format(new Date(meeting.date), "MMMM d, yyyy")}
+          {meeting.title && ` · ${meeting.title}`}
+        </p>
+      </div>
+
+      <div className="px-8 py-6 space-y-7 max-w-3xl">
+        {/* Executive Summary */}
+        {meeting.summary && (
+          <section data-testid="section-minutes-summary">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare className="h-4 w-4 text-primary shrink-0" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Executive Summary</h3>
+            </div>
+            <p className="text-sm leading-relaxed text-foreground pl-6">{meeting.summary}</p>
+          </section>
+        )}
+
+        {/* Discussion Points */}
+        {minutes && minutes.discussionPoints.length > 0 && (
+          <section data-testid="section-minutes-discussion">
+            <div className="flex items-center gap-2 mb-3">
+              <ListChecks className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Discussion Points</h3>
+            </div>
+            <ol className="pl-6 space-y-2.5">
+              {minutes.discussionPoints.map((point, i) => (
+                <li key={i} className="flex gap-3" data-testid={`text-discussion-point-${i}`}>
+                  <span className="flex-shrink-0 h-5 w-5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-[11px] font-bold flex items-center justify-center mt-0.5">
+                    {i + 1}
+                  </span>
+                  <span className="text-sm leading-relaxed text-foreground">{point}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+
+        {/* Decisions Made */}
+        {minutes && minutes.decisions.length > 0 && (
+          <section data-testid="section-minutes-decisions">
+            <div className="flex items-center gap-2 mb-3">
+              <Gavel className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Decisions Made</h3>
+            </div>
+            <ul className="pl-6 space-y-2.5">
+              {minutes.decisions.map((decision, i) => (
+                <li key={i} className="flex gap-3" data-testid={`text-decision-${i}`}>
+                  <Check className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <span className="text-sm leading-relaxed text-foreground">{decision}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* Next Steps */}
+        {minutes && minutes.nextSteps.length > 0 && (
+          <section data-testid="section-minutes-nextsteps">
+            <div className="flex items-center gap-2 mb-3">
+              <ArrowRight className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Next Steps</h3>
+            </div>
+            <ul className="pl-6 space-y-2.5">
+              {minutes.nextSteps.map((step, i) => (
+                <li key={i} className="flex gap-3" data-testid={`text-next-step-${i}`}>
+                  <span className="flex-shrink-0 h-1.5 w-1.5 rounded-full bg-green-500 mt-2" />
+                  <span className="text-sm leading-relaxed text-foreground">{step}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* Action Items */}
+        {actions.length > 0 && (
+          <section data-testid="section-minutes-actions">
+            <div className="flex items-center gap-2 mb-4">
+              <ClipboardList className="h-4 w-4 text-primary shrink-0" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">CRM Action Items</h3>
+              {pendingActions.length > 0 && (
+                <Badge className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground">
+                  {pendingActions.length} pending
+                </Badge>
+              )}
+            </div>
+            <div className="pl-6 space-y-3">
+              {actions.map((action) => (
+                <ActionCard
+                  key={action.id}
+                  action={action}
+                  isApproving={actioningIds[action.id] === "approve"}
+                  isDeclining={actioningIds[action.id] === "decline"}
+                  onApprove={() => onApprove(action.id)}
+                  onDecline={() => onDecline(action.id)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!minutes && !meeting.summary && actions.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+            <ScrollText className="h-10 w-10 mb-3 opacity-20" />
+            <p className="text-sm">No minutes data available.</p>
+            <p className="text-xs mt-1">This meeting was analyzed before structured minutes were introduced.</p>
+          </div>
+        )}
+
+        {/* Collapsible Transcript */}
+        {meeting.rawTranscript && (
+          <section className="border-t border-border/60 pt-5" data-testid="section-minutes-transcript">
+            <button
+              className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setTranscriptExpanded(v => !v)}
+              data-testid="button-toggle-transcript"
+            >
+              <ScrollText className="h-3.5 w-3.5" />
+              View Transcript
+              {transcriptExpanded ? <ChevronUp className="h-3.5 w-3.5 ml-auto" /> : <ChevronDown className="h-3.5 w-3.5 ml-auto" />}
+            </button>
+            {transcriptExpanded && (
+              <div className="mt-4">
+                <p className="text-sm leading-relaxed whitespace-pre-wrap font-mono bg-muted/30 rounded-lg p-4 border border-border/40 text-muted-foreground">
+                  {meeting.rawTranscript}
+                </p>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Bottom padding */}
+        <div className="pb-6" />
+      </div>
     </div>
   );
 }
@@ -874,7 +1055,7 @@ export default function MeetingDetailPage() {
 
       {/* Main content */}
       <div className="flex-1 overflow-hidden flex">
-        {/* Left: Transcript + controls */}
+        {/* Left: Minutes document (post-review) OR Transcript + controls (pre-review) */}
         <div className={cn("flex flex-col overflow-hidden", showReview ? "flex-1 border-r border-border" : "flex-1")}>
           {/* Input tabs (only when in recording status) */}
           {!showReview && !isProcessing && (
@@ -976,166 +1157,218 @@ export default function MeetingDetailPage() {
             </div>
           )}
 
-          {/* Transcript display */}
-          <div className="flex-1 overflow-y-auto px-6 py-5 relative" ref={transcriptScrollRef} onScroll={handleTranscriptScroll}>
-            <div className="flex items-center gap-2 mb-3">
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Transcript</p>
-              {isProcessing && (
-                <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Analyzing with AI…
-                </span>
+          {/* Pre-review: Transcript display */}
+          {!showReview && !isProcessing && (
+            <div className="flex-1 overflow-y-auto px-6 py-5 relative" ref={transcriptScrollRef} onScroll={handleTranscriptScroll}>
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Transcript</p>
+              </div>
+              {transcript ? (
+                <div className="prose prose-sm max-w-none">
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap font-mono bg-muted/30 rounded-lg p-4 border border-border/40">
+                    {transcript}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+                  <Mic className="h-10 w-10 mb-3 opacity-20" />
+                  <p className="text-sm">No transcript yet.</p>
+                  <p className="text-xs mt-1">Start recording or paste a transcript above.</p>
+                </div>
+              )}
+              <div ref={transcriptEndRef} />
+
+              {/* Floating stop button — always visible while recording */}
+              {isRecording && (
+                <div className="sticky bottom-4 flex justify-center pointer-events-none">
+                  <Button
+                    onClick={stopRecording}
+                    variant="destructive"
+                    className="gap-2 shadow-lg pointer-events-auto"
+                    data-testid="button-stop-recording-floating"
+                  >
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                    Stop Recording
+                  </Button>
+                </div>
               )}
             </div>
-            {transcript ? (
-              <div className="prose prose-sm max-w-none">
+          )}
+
+          {/* Post-review: Meeting Minutes document */}
+          {showReview && meeting.meetingType !== "pipeline_review" && (
+            <MeetingMinutesPanel
+              meeting={meeting}
+              actions={actions}
+              actioningIds={actioningIds}
+              isComplete={isComplete}
+              onApprove={(actionId) => {
+                setActioningIds((prev) => ({ ...prev, [actionId]: "approve" }));
+                approveMutation.mutate(actionId);
+              }}
+              onDecline={(actionId) => {
+                setActioningIds((prev) => ({ ...prev, [actionId]: "decline" }));
+                declineMutation.mutate(actionId);
+              }}
+            />
+          )}
+
+          {/* Post-review: Pipeline Review — actions in sidebar */}
+          {showReview && meeting.meetingType === "pipeline_review" && (
+            <div className="flex-1 overflow-y-auto px-6 py-5 relative" ref={transcriptScrollRef} onScroll={handleTranscriptScroll}>
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Transcript</p>
+              </div>
+              {transcript ? (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap font-mono bg-muted/30 rounded-lg p-4 border border-border/40">
                   {transcript}
                 </p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
-                <Mic className="h-10 w-10 mb-3 opacity-20" />
-                <p className="text-sm">No transcript yet.</p>
-                <p className="text-xs mt-1">Start recording or paste a transcript above.</p>
-              </div>
-            )}
-            <div ref={transcriptEndRef} />
-
-            {/* Floating stop button — always visible while recording */}
-            {isRecording && (
-              <div className="sticky bottom-4 flex justify-center pointer-events-none">
-                <Button
-                  onClick={stopRecording}
-                  variant="destructive"
-                  className="gap-2 shadow-lg pointer-events-auto"
-                  data-testid="button-stop-recording-floating"
-                >
-                  <Square className="h-3.5 w-3.5 fill-current" />
-                  Stop Recording
-                </Button>
-              </div>
-            )}
-          </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+                  <Mic className="h-10 w-10 mb-3 opacity-20" />
+                  <p className="text-sm">No transcript.</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Right: AI Intelligence panel */}
+        {/* Right: simplified sidebar (post-review) */}
         {showReview && (
-          <div className="w-[420px] shrink-0 flex flex-col overflow-hidden border-l">
-            <Tabs defaultValue="actions" className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-5 pt-4 border-b shrink-0">
-                <TabsList className="w-full grid grid-cols-2 h-9 bg-muted/50 p-1 mb-4">
-                  <TabsTrigger value="actions" className="text-[11px] font-bold uppercase tracking-wider">
-                    Actions
-                    {pending.length > 0 && (
-                      <Badge variant="secondary" className="ml-1.5 h-4 px-1.5 text-[10px] bg-primary text-primary-foreground">
-                        {pending.length}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger value="files" className="text-[11px] font-bold uppercase tracking-wider">
-                    Files
-                  </TabsTrigger>
-                </TabsList>
+          <div className="w-[380px] shrink-0 flex flex-col overflow-hidden">
+            {meeting.meetingType === "pipeline_review" ? (
+              // Pipeline Review: full actions panel unchanged
+              <Tabs defaultValue="actions" className="flex-1 flex flex-col overflow-hidden">
+                <div className="px-5 pt-4 border-b shrink-0">
+                  <TabsList className="w-full grid grid-cols-2 h-9 bg-muted/50 p-1 mb-4">
+                    <TabsTrigger value="actions" className="text-[11px] font-bold uppercase tracking-wider">
+                      Actions
+                      {pending.length > 0 && (
+                        <Badge variant="secondary" className="ml-1.5 h-4 px-1.5 text-[10px] bg-primary text-primary-foreground">
+                          {pending.length}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="files" className="text-[11px] font-bold uppercase tracking-wider">
+                      Files
+                    </TabsTrigger>
+                  </TabsList>
 
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-primary" />
-                    <p className="font-semibold text-sm">AI Suggestions</p>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      <p className="font-semibold text-sm">AI Suggestions</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {reviewed.length}/{actions.length} reviewed
+                    </span>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {reviewed.length}/{actions.length} reviewed
-                  </span>
+
+                  <TabsContent value="actions" className="m-0">
+                    {meeting.summary && (
+                      <div className="bg-muted/60 border border-border/50 rounded-lg p-3 text-xs leading-relaxed text-muted-foreground mb-4">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 mb-1.5">Pipeline Review Summary</p>
+                        {meeting.summary}
+                      </div>
+                    )}
+                    {!isComplete && pending.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mb-4 h-7 text-xs w-full border-green-300 text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                        onClick={handleApproveAll}
+                        data-testid="button-approve-all"
+                      >
+                        <Check className="h-3.5 w-3.5 mr-1" /> Approve All ({pending.length})
+                      </Button>
+                    )}
+                  </TabsContent>
                 </div>
 
-                <TabsContent value="actions" className="m-0">
+                <div className="flex-1 overflow-y-auto">
+                  <TabsContent value="actions" className="m-0 p-4 space-y-3">
+                    {actions.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                        <ClipboardList className="h-8 w-8 mb-2 opacity-20" />
+                        <p className="text-sm">No action items were identified.</p>
+                      </div>
+                    ) : (
+                      (() => {
+                        const dealMap = new Map<string, { dealSummary: string; matchedLeadId: number | null; actions: MeetingAction[] }>();
+                        for (const action of actions) {
+                          const dealName = (action.payload as Record<string, any>).dealName || "Unknown Deal";
+                          const dealSummary = (action.payload as Record<string, any>).dealSummary || "";
+                          const matchedLeadId = (action.payload as Record<string, any>).matchedLeadId ?? null;
+                          if (!dealMap.has(dealName)) {
+                            dealMap.set(dealName, { dealSummary, matchedLeadId, actions: [] });
+                          }
+                          dealMap.get(dealName)!.actions.push(action);
+                        }
+                        return Array.from(dealMap.entries()).map(([dealName, group]) => (
+                          <PipelineDealSection
+                            key={dealName}
+                            dealName={dealName}
+                            dealSummary={group.dealSummary}
+                            matchedLeadId={group.matchedLeadId}
+                            actions={group.actions}
+                            actioningIds={actioningIds}
+                            onApprove={(actionId) => {
+                              setActioningIds((prev) => ({ ...prev, [actionId]: "approve" }));
+                              approveMutation.mutate(actionId);
+                            }}
+                            onDecline={(actionId) => {
+                              setActioningIds((prev) => ({ ...prev, [actionId]: "decline" }));
+                              declineMutation.mutate(actionId);
+                            }}
+                          />
+                        ));
+                      })()
+                    )}
+                  </TabsContent>
+                  <TabsContent value="files" className="m-0 p-4">
+                    <AttachmentsPanel entityType="meeting" entityId={meetingId} />
+                  </TabsContent>
+                </div>
+              </Tabs>
+            ) : (
+              // Standard meeting: simplified sidebar with files only
+              <Tabs defaultValue="files" className="flex-1 flex flex-col overflow-hidden">
+                <div className="px-5 pt-4 border-b shrink-0">
+                  <TabsList className="w-full grid grid-cols-1 h-9 bg-muted/50 p-1 mb-3">
+                    <TabsTrigger value="files" className="text-[11px] font-bold uppercase tracking-wider">
+                      Files &amp; Attachments
+                    </TabsTrigger>
+                  </TabsList>
                   {!isComplete && pending.length > 0 && (
                     <Button
                       size="sm"
                       variant="outline"
-                      className="mb-4 h-7 text-xs w-full border-green-300 text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                      className="mb-3 h-7 text-xs w-full border-green-300 text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
                       onClick={handleApproveAll}
                       data-testid="button-approve-all"
                     >
-                      <Check className="h-3.5 w-3.5 mr-1" /> Approve All ({pending.length})
+                      <Check className="h-3.5 w-3.5 mr-1" /> Approve All CRM Actions ({pending.length})
                     </Button>
                   )}
-                </TabsContent>
-              </div>
-
-              <div className="flex-1 overflow-y-auto">
-                <TabsContent value="actions" className="m-0 p-4 space-y-3">
-                  {/* Summary */}
-                  {meeting.summary && (
-                    <div className="bg-muted/60 border border-border/50 rounded-lg p-3 text-xs leading-relaxed text-muted-foreground mb-4">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 mb-1.5">
-                        {meeting.meetingType === "pipeline_review" ? "Pipeline Review Summary" : "Meeting Summary"}
-                      </p>
-                      {meeting.summary}
+                  {actions.length > 0 && (
+                    <div className="flex items-center justify-between pb-3">
+                      <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-primary" />
+                        CRM Actions
+                      </span>
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {reviewed.length}/{actions.length} reviewed
+                      </span>
                     </div>
                   )}
-
-                  {actions.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                      <ClipboardList className="h-8 w-8 mb-2 opacity-20" />
-                      <p className="text-sm">No action items were identified.</p>
-                    </div>
-                  ) : meeting.meetingType === "pipeline_review" ? (
-                    // Pipeline Review: group actions by dealName
-                    (() => {
-                      const dealMap = new Map<string, { dealSummary: string; matchedLeadId: number | null; actions: MeetingAction[] }>();
-                      for (const action of actions) {
-                        const dealName = (action.payload as Record<string, any>).dealName || "Unknown Deal";
-                        const dealSummary = (action.payload as Record<string, any>).dealSummary || "";
-                        const matchedLeadId = (action.payload as Record<string, any>).matchedLeadId ?? null;
-                        if (!dealMap.has(dealName)) {
-                          dealMap.set(dealName, { dealSummary, matchedLeadId, actions: [] });
-                        }
-                        dealMap.get(dealName)!.actions.push(action);
-                      }
-                      return Array.from(dealMap.entries()).map(([dealName, group]) => (
-                        <PipelineDealSection
-                          key={dealName}
-                          dealName={dealName}
-                          dealSummary={group.dealSummary}
-                          matchedLeadId={group.matchedLeadId}
-                          actions={group.actions}
-                          actioningIds={actioningIds}
-                          onApprove={(actionId) => {
-                            setActioningIds((prev) => ({ ...prev, [actionId]: "approve" }));
-                            approveMutation.mutate(actionId);
-                          }}
-                          onDecline={(actionId) => {
-                            setActioningIds((prev) => ({ ...prev, [actionId]: "decline" }));
-                            declineMutation.mutate(actionId);
-                          }}
-                        />
-                      ));
-                    })()
-                  ) : (
-                    actions.map((action) => (
-                      <ActionCard
-                        key={action.id}
-                        action={action}
-                        isApproving={actioningIds[action.id] === "approve"}
-                        isDeclining={actioningIds[action.id] === "decline"}
-                        onApprove={() => {
-                          setActioningIds((prev) => ({ ...prev, [action.id]: "approve" }));
-                          approveMutation.mutate(action.id);
-                        }}
-                        onDecline={() => {
-                          setActioningIds((prev) => ({ ...prev, [action.id]: "decline" }));
-                          declineMutation.mutate(action.id);
-                        }}
-                      />
-                    ))
-                  )}
-                </TabsContent>
-
-                <TabsContent value="files" className="m-0 p-4">
-                  <AttachmentsPanel entityType="meeting" entityId={meetingId} />
-                </TabsContent>
-              </div>
-            </Tabs>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  <TabsContent value="files" className="m-0 p-4">
+                    <AttachmentsPanel entityType="meeting" entityId={meetingId} />
+                  </TabsContent>
+                </div>
+              </Tabs>
+            )}
           </div>
         )}
 
@@ -1143,8 +1376,8 @@ export default function MeetingDetailPage() {
         {isProcessing && !showReview && (
           <div className="w-[380px] shrink-0 flex flex-col items-center justify-center border-l border-border/60 text-center p-8">
             <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-            <p className="font-semibold text-sm">Analyzing transcript…</p>
-            <p className="text-xs text-muted-foreground mt-1">GPT-4o is extracting action items. This usually takes 10–20 seconds.</p>
+            <p className="font-semibold text-sm">Generating meeting minutes…</p>
+            <p className="text-xs text-muted-foreground mt-1">GPT-4o is building your structured minutes. This usually takes 10–20 seconds.</p>
           </div>
         )}
       </div>

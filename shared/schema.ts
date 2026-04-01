@@ -298,6 +298,7 @@ export const meetings = pgTable("meetings", {
   status: varchar("status").default("recording").notNull(),
   rawTranscript: text("raw_transcript").default(""),
   summary: text("summary"),
+  minutesData: jsonb("minutes_data"),
   createdBy: varchar("created_by").references(() => users.id),
   calendarEventId: varchar("calendar_event_id"),
   calendarEventLink: varchar("calendar_event_link"),

@@ -3479,13 +3479,16 @@ Return only valid JSON, no markdown.`;
         const actions = await storage.listMeetingActions(id);
         res.json({ summary: overallSummary, actions });
       } else {
-        // Standard single-deal mode
+        // Standard single-deal mode — returns full structured meeting minutes
         const systemPrompt = `You are an AI assistant for M5 Services, a facility maintenance company.
-Analyze the following meeting transcript and extract actionable items to create or update in their CRM.
+Analyze the following meeting transcript and produce complete meeting minutes plus CRM action items.
 
-Return a JSON object with two keys:
-- "summary": A concise 2-4 sentence summary of the meeting.
-- "actions": An array of action objects. Each object must have:
+Return a JSON object with these keys:
+- "summary": A 2-4 sentence executive summary of the meeting.
+- "discussionPoints": An array of strings, each describing a key topic or subject discussed (3-8 items).
+- "decisions": An array of strings, each describing a concrete decision made during the meeting (0-5 items). Only include actual decisions, not general discussion.
+- "nextSteps": An array of strings, each describing a next step or commitment mentioned (0-6 items). These are narrative next steps, not CRM tasks.
+- "actions": An array of CRM action objects. Each object must have:
   - "type": one of "create_task", "update_lead", "update_client", "create_contact", "note"
   - "description": A clear, human-readable description of what will happen (1 sentence).
   - "payload": An object with relevant fields:
@@ -3496,7 +3499,7 @@ Return a JSON object with two keys:
     For create_contact: { "name": string, "clientName": string (fuzzy match for parent company), "title": string (optional), "email": string (optional), "phone": string (optional) }
     For note: { "text": string }
 
-Only include items that are clearly mentioned or implied in the transcript. Do not invent items.
+Only include items clearly mentioned or implied in the transcript. Do not invent items.
 Return only valid JSON, no markdown.`;
 
         const completion = await openai.chat.completions.create({
@@ -3506,12 +3509,15 @@ Return only valid JSON, no markdown.`;
             { role: "user", content: `Meeting transcript:\n\n${meeting.rawTranscript}` },
           ],
           response_format: { type: "json_object" },
-          max_completion_tokens: 2000,
+          max_completion_tokens: 3000,
         });
 
         const raw = completion.choices[0].message.content || "{}";
         const parsed = JSON.parse(raw);
         const summary: string = parsed.summary || "";
+        const discussionPoints: string[] = Array.isArray(parsed.discussionPoints) ? parsed.discussionPoints : [];
+        const decisions: string[] = Array.isArray(parsed.decisions) ? parsed.decisions : [];
+        const nextSteps: string[] = Array.isArray(parsed.nextSteps) ? parsed.nextSteps : [];
         const actionItems: any[] = Array.isArray(parsed.actions) ? parsed.actions : [];
 
         // Save actions
@@ -3525,10 +3531,11 @@ Return only valid JSON, no markdown.`;
           });
         }
 
-        await storage.updateMeeting(id, { status: "review", summary });
+        const minutesData = { discussionPoints, decisions, nextSteps };
+        await storage.updateMeeting(id, { status: "review", summary, minutesData });
 
         const actions = await storage.listMeetingActions(id);
-        res.json({ summary, actions });
+        res.json({ summary, minutesData, actions });
       }
     } catch (err: any) {
       console.error("Analysis error:", err);
