@@ -8850,27 +8850,38 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         return res.status(400).json({ message: "File does not appear to be a BuildOps timesheet export. Expected columns: Work Date, Employee Name, Visit Id, Total Duration Mins, Cost per Hour, Total Cost." });
       }
 
-      // Map column names to indices for robustness
-      const col = (name: string) => header.indexOf(name.toLowerCase());
-      const iWorkDate = col("work date");
-      const iEmployee = col("employee name");
-      const iApproval = col("approval status");
-      const iSaNumber = col("service agreement number");
-      const iJobNumber = col("job number");
-      const iVisitNumber = col("visit number");
-      const iEventStatus = col("event status");
-      const iSchedDuration = col("event scheduled duration mins");
-      const iLaborRateGroup = col("labor rate group name");
-      const iLaborType = col("labor type name");
-      const iDeptName = col("department name");
-      const iPropertyName = col("property name");
-      const iBillingCust = col("billing customer name");
-      const iCustName = col("customer name");
+      // Map column names to indices; accepts multiple alias spellings (first match wins)
+      const col = (...names: string[]) => {
+        for (const name of names) {
+          const idx = header.indexOf(name.toLowerCase().replace(/_/g, " "));
+          if (idx !== -1) return idx;
+        }
+        // also try underscore variants
+        for (const name of names) {
+          const idx = header.indexOf(name.toLowerCase());
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+      const iWorkDate = col("work date", "work_date");
+      const iEmployee = col("employee name", "employee_name");
+      const iApproval = col("approval status", "approval_status");
+      const iSaNumber = col("service agreement number", "service_agreement_number");
+      const iJobNumber = col("job number", "job_number");
+      const iVisitNumber = col("visit number", "visit_number");
+      const iEventStatus = col("event status", "event_status");
+      const iSchedDuration = col("event scheduled duration mins", "event_scheduled_duration_mins", "scheduled duration mins");
+      const iLaborRateGroup = col("labor rate group name", "labor rate group", "labor_rate_group_name", "labor_rate_group");
+      const iLaborType = col("labor type name", "labor type", "labor_type_name", "labor_type");
+      const iDeptName = col("department name", "department_name");
+      const iPropertyName = col("property name", "property_name");
+      const iBillingCust = col("billing customer name", "billing_customer_name");
+      const iCustName = col("customer name", "customer_name");
       const iBillable = col("billable");
-      const iVisitId = col("visit id");
-      const iTotalDuration = col("total duration mins");
-      const iCostPerHour = col("cost per hour");
-      const iTotalCost = col("total cost");
+      const iVisitId = col("visit id", "visit_id");
+      const iTotalDuration = col("total duration mins", "total_duration_mins");
+      const iCostPerHour = col("cost per hour", "cost_per_hour");
+      const iTotalCost = col("total cost", "total_cost");
 
       let processed = 0, inserted = 0, updated = 0, skipped = 0;
 

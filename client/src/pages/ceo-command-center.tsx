@@ -323,7 +323,9 @@ function CEOCommandCenterInner() {
   };
 
   const summary = SUMMARIES[period];
-  const revenueData = rev?.monthly ?? FALLBACK_SPARK;
+  const revenueMonthly = rev?.monthly ?? [];
+  const revenueHasData = revenueMonthly.length > 0 && revenueMonthly.some(d => d.v > 0);
+  const revenueData = revenueHasData ? revenueMonthly : FALLBACK_SPARK;
 
   function handlePeriodChange(p: Period) {
     setPeriod(p);
@@ -637,7 +639,14 @@ function CEOCommandCenterInner() {
             </div>
             <span className="text-xs text-gray-400 capitalize">{period} view</span>
           </div>
-          <div className="h-48">
+          <div className="h-48 relative">
+            {!revenueHasData && !metricsLoading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-white/80 rounded-lg">
+                <BarChart2 className="w-6 h-6 text-gray-300 mb-1.5" />
+                <p className="text-xs font-semibold text-gray-400">No invoice data for this period</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Sync BuildOps invoices to populate the revenue chart</p>
+              </div>
+            )}
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={revenueData} margin={{ top: 4, right: 4, left: 8, bottom: 0 }}>
                 <defs>
@@ -651,7 +660,7 @@ function CEOCommandCenterInner() {
                 <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false}
                   tickFormatter={v => v >= 1000000 ? `$${(v / 1000000).toFixed(1)}M` : `$${(v / 1000).toFixed(0)}K`} />
                 <Tooltip content={<CustomTooltip format="dollar" />} />
-                <Area type="monotone" dataKey="v" stroke={PRIMARY} strokeWidth={2.5} fill="url(#rev-grad)" dot={false} activeDot={{ r: 4, fill: PRIMARY }} />
+                <Area type="monotone" dataKey="v" stroke={revenueHasData ? PRIMARY : "#e5e7eb"} strokeWidth={2.5} fill="url(#rev-grad)" dot={false} activeDot={{ r: 4, fill: PRIMARY }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -668,7 +677,10 @@ function CEOCommandCenterInner() {
               {liveKpi.pipeline.value}
               <span className="text-xs font-semibold ml-1.5 text-emerald-600">{liveKpi.pipeline.change}</span>
             </p>
-            <div className="h-28 mt-2">
+            <div className="h-28 mt-2 relative">
+              {(!pipe?.monthly || pipe.monthly.length === 0) && !metricsLoading && (
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No pipeline data for period</div>
+              )}
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={(pipe?.monthly ?? FALLBACK_SPARK).slice(-6)} margin={{ top: 2, right: 0, left: 0, bottom: 0 }} barSize={14}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
@@ -689,7 +701,10 @@ function CEOCommandCenterInner() {
               {liveKpi.quoteConversionRate.value}
               <span className={`text-xs font-semibold ml-1.5 ${liveKpi.quoteConversionRate.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.quoteConversionRate.change}</span>
             </p>
-            <div className="h-28 mt-2">
+            <div className="h-28 mt-2 relative">
+              {(!qcr?.monthly || qcr.monthly.length === 0) && !metricsLoading && (
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No conversion data for period</div>
+              )}
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={(qcr?.monthly ?? FALLBACK_SPARK).slice(-6)} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
@@ -712,7 +727,10 @@ function CEOCommandCenterInner() {
               {liveKpi.collectionsOutstanding.value}
               <span className={`text-xs font-semibold ml-1.5 ${liveKpi.collectionsOutstanding.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.collectionsOutstanding.change}</span>
             </p>
-            <div className="h-28 mt-2">
+            <div className="h-28 mt-2 relative">
+              {(!ar?.monthly || ar.monthly.every(d => d.v === 0)) && !metricsLoading && (
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No AR data — invoices not synced</div>
+              )}
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={(ar?.monthly ?? FALLBACK_SPARK).slice(-6)} margin={{ top: 2, right: 0, left: 4, bottom: 0 }}>
                   <defs>
@@ -742,7 +760,10 @@ function CEOCommandCenterInner() {
               {liveKpi.saContractRevenue.value}
               <span className={`text-xs font-semibold ml-1.5 ${liveKpi.saContractRevenue.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.saContractRevenue.change}</span>
             </p>
-            <div className="h-28 mt-2">
+            <div className="h-28 mt-2 relative">
+              {(!sa?.monthly || sa.monthly.every(d => d.v === 0)) && !metricsLoading && (
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No SA revenue data — sync agreements</div>
+              )}
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={(sa?.monthly ?? FALLBACK_SPARK)} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
