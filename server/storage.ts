@@ -261,6 +261,7 @@ export interface IStorage {
   migrateEmailNotificationPreferences(): Promise<void>;
   migrateBuildopsClientColumns(): Promise<void>;
   migrateBuildopsPropertyColumns(): Promise<void>;
+  migrateBuildopsVisitsAndExtendedFields(): Promise<void>;
   migrateTaskBoards(): Promise<void>;
 
   // Industry Options
@@ -1568,6 +1569,69 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS buildops_quote_total decimal(12,2)`);
     } catch (e) {
       console.error("migrateBuildopsClientColumns error:", e);
+    }
+  }
+
+  async migrateBuildopsVisitsAndExtendedFields(): Promise<void> {
+    // New job fields (Task #99)
+    try {
+      await db.execute(sql`ALTER TABLE buildops_jobs ADD COLUMN IF NOT EXISTS account_manager varchar`);
+      await db.execute(sql`ALTER TABLE buildops_jobs ADD COLUMN IF NOT EXISTS project_manager varchar`);
+      await db.execute(sql`ALTER TABLE buildops_jobs ADD COLUMN IF NOT EXISTS sold_by varchar`);
+      await db.execute(sql`ALTER TABLE buildops_jobs ADD COLUMN IF NOT EXISTS review_status varchar`);
+      await db.execute(sql`ALTER TABLE buildops_jobs ADD COLUMN IF NOT EXISTS procurement_status varchar`);
+      await db.execute(sql`ALTER TABLE buildops_jobs ADD COLUMN IF NOT EXISTS total_budgeted_hours decimal(10,2)`);
+      await db.execute(sql`ALTER TABLE buildops_jobs ADD COLUMN IF NOT EXISTS department varchar`);
+    } catch (e) {
+      console.error("migrateBuildopsVisitsAndExtendedFields: job columns error:", e);
+    }
+    // New invoice fields (Task #99)
+    try {
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS department_name varchar`);
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS days_past_due integer`);
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS payment_term_name varchar`);
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS service_agreement_number varchar`);
+    } catch (e) {
+      console.error("migrateBuildopsVisitsAndExtendedFields: invoice columns error:", e);
+    }
+    // buildops_visits table (Task #99)
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS buildops_visits (
+          id serial PRIMARY KEY,
+          buildops_id varchar NOT NULL UNIQUE,
+          client_id integer REFERENCES clients(id),
+          visit_number integer,
+          job_number varchar,
+          buildops_job_id varchar,
+          job_type varchar,
+          status varchar,
+          review_status varchar,
+          primary_tech_name varchar,
+          submitted_by varchar,
+          minimum_duration_mins integer,
+          actual_duration_mins integer,
+          scheduled_for timestamp,
+          start_time timestamp,
+          end_time timestamp,
+          submitted_time timestamp,
+          on_hold boolean DEFAULT false,
+          on_hold_reason text,
+          department_name varchar,
+          billing_customer_name varchar,
+          customer_name varchar,
+          property_name varchar,
+          address_line1 varchar,
+          city varchar,
+          state varchar,
+          zipcode varchar,
+          description text,
+          buildops_customer_id varchar,
+          synced_at timestamp DEFAULT now() NOT NULL
+        )
+      `);
+    } catch (e) {
+      console.error("migrateBuildopsVisitsAndExtendedFields: buildops_visits table error:", e);
     }
   }
 

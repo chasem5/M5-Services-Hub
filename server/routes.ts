@@ -160,6 +160,7 @@ export async function registerRoutes(
   await storage.migrateEmailNotificationPreferences();
   await storage.migrateBuildopsClientColumns();
   await storage.migrateBuildopsPropertyColumns();
+  await storage.migrateBuildopsVisitsAndExtendedFields();
   await storage.migrateParentClientColumn();
   await storage.migrateClientOnboardingChecklist();
   await storage.migrateLeadLossColumns();
@@ -6465,7 +6466,7 @@ Respond with this JSON:
   });
 
   // ── Sync Visits ────────────────────────────────────────────────────────────
-  app.post("/api/buildops/sync-visits", isAuthenticated, async (req, res) => {
+  app.post("/api/buildops/sync-visits", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
     try {
       const { buildopsClientId: credClientId, buildopsClientSecret, buildopsTenantId } = await getSystemSettings();
       if (!credClientId || !buildopsClientSecret || !buildopsTenantId) {
@@ -6474,6 +6475,7 @@ Respond with this JSON:
       const { getVisits } = await import("./buildops");
       const { buildopsVisits } = await import("@shared/schema");
       const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
 
       console.log("[sync-visits] Fetching visits from BuildOps...");
       const visits = await getVisits(credClientId, buildopsClientSecret, buildopsTenantId);
