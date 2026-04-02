@@ -1681,29 +1681,54 @@ Do not include any other text, just the JSON.`,
   });
 
   // Invoice payment status for leads — joins lead → job (via quote_id) → invoices
+  // Fallback: also try quote_number → job_number when quote_id match is absent
   app.get("/api/leads/invoice-status", isAuthenticated, async (_req, res) => {
     try {
       const { db } = await import("./db");
       const rows = await db.execute(sql`
+        WITH matched_invoices AS (
+          -- Primary join: via buildops_quote_id
+          SELECT
+            l.id AS lead_id,
+            i.id AS invoice_id,
+            CAST(i.total_amount AS numeric) AS total_amount,
+            i.outstanding_balance,
+            i.total_amount_paid
+          FROM leads l
+          JOIN buildops_jobs j ON j.buildops_quote_id = l.buildops_quote_id
+          JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
+          WHERE l.buildops_quote_id IS NOT NULL
+
+          UNION
+
+          -- Fallback join: via quote_number → job_number (quote converted to job)
+          SELECT
+            l.id AS lead_id,
+            i.id AS invoice_id,
+            CAST(i.total_amount AS numeric) AS total_amount,
+            i.outstanding_balance,
+            i.total_amount_paid
+          FROM leads l
+          JOIN buildops_jobs j ON j.job_number = l.buildops_quote_number
+          JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
+          WHERE l.buildops_quote_number IS NOT NULL
+            AND (l.buildops_quote_id IS NULL OR j.buildops_quote_id IS DISTINCT FROM l.buildops_quote_id)
+        )
         SELECT
-          l.id AS lead_id,
-          l.buildops_quote_id,
-          COALESCE(SUM(CAST(i.total_amount AS numeric)), 0) AS invoiced_total,
-          COALESCE(SUM(i.outstanding_balance), 0) AS outstanding_total,
-          COALESCE(SUM(i.total_amount_paid), 0) AS paid_total,
-          COUNT(i.id) AS invoice_count,
+          lead_id,
+          COALESCE(SUM(total_amount), 0) AS invoiced_total,
+          COALESCE(SUM(outstanding_balance), 0) AS outstanding_total,
+          COALESCE(SUM(total_amount_paid), 0) AS paid_total,
+          COUNT(invoice_id) AS invoice_count,
           CASE
-            WHEN COUNT(i.id) = 0 THEN 'none'
-            WHEN SUM(i.outstanding_balance) IS NULL THEN 'unknown'
-            WHEN SUM(i.outstanding_balance) <= 0 THEN 'paid'
-            WHEN SUM(i.total_amount_paid) > 0 THEN 'partial'
+            WHEN COUNT(invoice_id) = 0 THEN 'none'
+            WHEN SUM(outstanding_balance) IS NULL THEN 'unknown'
+            WHEN SUM(outstanding_balance) <= 0 THEN 'paid'
+            WHEN SUM(total_amount_paid) > 0 THEN 'partial'
             ELSE 'pending'
           END AS payment_status
-        FROM leads l
-        JOIN buildops_jobs j ON j.buildops_quote_id = l.buildops_quote_id
-        JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
-        WHERE l.buildops_quote_id IS NOT NULL
-        GROUP BY l.id, l.buildops_quote_id
+        FROM matched_invoices
+        GROUP BY lead_id
       `);
       const byLeadId: Record<number, any> = {};
       for (const r of rows.rows as any[]) {
@@ -6358,7 +6383,15 @@ Respond with this JSON:
 
         const [existing] = await db.select().from(buildopsJobs).where(eq(buildopsJobs.buildopsId, job.id));
         if (existing) {
-          await db.update(buildopsJobs).set({ ...payload, lastApiSync: new Date() }).where(eq(buildopsJobs.buildopsId, job.id));
+          // Preserve CSV-enriched fields — never let an API re-sync wipe them when API returns null
+          const updatePayload: any = { ...payload, lastApiSync: new Date() };
+          if (payload.department === null && existing.department !== null) updatePayload.department = existing.department;
+          if (payload.accountManager === null && (existing as any).accountManager !== null) updatePayload.accountManager = (existing as any).accountManager;
+          if (payload.projectManager === null && (existing as any).projectManager !== null) updatePayload.projectManager = (existing as any).projectManager;
+          if (payload.soldBy === null && (existing as any).soldBy !== null) updatePayload.soldBy = (existing as any).soldBy;
+          // Always preserve lastCsvSync — API sync must not overwrite it
+          if ((existing as any).lastCsvSync !== null) updatePayload.lastCsvSync = (existing as any).lastCsvSync;
+          await db.update(buildopsJobs).set(updatePayload).where(eq(buildopsJobs.buildopsId, job.id));
           updated++;
         } else {
           await db.insert(buildopsJobs).values({ ...payload, lastApiSync: new Date() });
@@ -6484,7 +6517,13 @@ Respond with this JSON:
       `);
       // Job stats
       const jobStats = await db.execute(sql`
-        SELECT COUNT(*) AS total, MAX(last_api_sync) AS last_api_sync FROM buildops_jobs
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE last_api_sync IS NOT NULL) AS from_api,
+          COUNT(*) FILTER (WHERE last_csv_sync IS NOT NULL) AS from_csv,
+          MAX(last_api_sync) AS last_api_sync,
+          MAX(last_csv_sync) AS last_csv_sync
+        FROM buildops_jobs
       `);
       // Pending conflicts
       const conflicts = await db.execute(sql`
@@ -6513,7 +6552,10 @@ Respond with this JSON:
         },
         jobs: {
           total: parseInt(job.total) || 0,
+          fromApi: parseInt(job.from_api) || 0,
+          fromCsv: parseInt(job.from_csv) || 0,
           lastApiSync: job.last_api_sync ?? null,
+          lastCsvSync: job.last_csv_sync ?? null,
         },
         conflicts: conflicts.rows,
         importLog: importLog.rows,
@@ -9554,6 +9596,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 completed_date = COALESCE(${completedDate}, completed_date),
                 scheduled_date = COALESCE(${earliestVisit}, scheduled_date),
                 is_service_agreement_job = ${isServiceAgreementJob},
+                last_csv_sync = NOW(),
                 synced_at = NOW()
               WHERE job_number = ${jobNumber}
             `);
@@ -9567,7 +9610,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 customer_name, customer_property_name, department,
                 issue_description, amount_quoted, cost_amount, total_budgeted_hours,
                 buildops_service_agreement_id, is_service_agreement_job,
-                completed_date, scheduled_date, synced_at
+                completed_date, scheduled_date, last_csv_sync, synced_at
               ) VALUES (
                 ${jobNumber}, ${jobNumber}, ${jobStatus}, ${jobType}, ${reviewStatus},
                 ${billingStatus}, ${procurementStatus}, ${priority},
@@ -9575,7 +9618,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 ${customerName}, ${propertyName}, ${departmentName},
                 ${description}, ${amountQuoted}, ${estimatedCost}, ${totalBudgetedHours},
                 ${saNumber}, ${isServiceAgreementJob},
-                ${completedDate}, ${earliestVisit}, NOW()
+                ${completedDate}, ${earliestVisit}, NOW(), NOW()
               ) ON CONFLICT (buildops_id) DO UPDATE SET
                 status = EXCLUDED.status,
                 job_type_name = EXCLUDED.job_type_name,
@@ -9583,6 +9626,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 customer_name = EXCLUDED.customer_name,
                 amount_quoted = EXCLUDED.amount_quoted,
                 completed_date = EXCLUDED.completed_date,
+                last_csv_sync = NOW(),
                 synced_at = NOW()
             `);
             inserted++;

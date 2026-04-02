@@ -1910,8 +1910,12 @@ function DataSourcesPanel() {
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Jobs</p>
             <div className="space-y-1 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Total records</span><span className="font-medium">{jobs.total?.toLocaleString() ?? 0}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">From API sync</span><span className="font-medium">{jobs.total?.toLocaleString() ?? 0}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">From API sync</span><span className="font-medium">{jobs.fromApi?.toLocaleString() ?? 0}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">CSV enriched</span>
+                <span className="font-medium text-emerald-700">{jobs.fromCsv?.toLocaleString() ?? 0} ({jobs.total ? Math.round(((jobs.fromCsv ?? 0) / jobs.total) * 100) : 0}%)</span>
+              </div>
               <div className="flex justify-between pt-1 border-t"><span className="text-muted-foreground">Last API sync</span><span className="font-medium text-xs">{fmt(jobs.lastApiSync)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Last CSV upload</span><span className="font-medium text-xs">{fmt(jobs.lastCsvSync)}</span></div>
             </div>
           </div>
         </div>
