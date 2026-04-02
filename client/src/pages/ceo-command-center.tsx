@@ -892,28 +892,31 @@ function CEOCommandCenterInner() {
           const utilPct = schedUtilPct ?? tsUtilPct ?? 0;
           const utilSource = schedUtilPct != null ? 'scheduling' : tsUtilPct != null ? 'timesheets' : null;
 
-          // When using timesheet data: detect if scheduled hours significantly exceed actual hours
-          // (scheduled > actual means the crew is falling behind — queue is growing)
+          // Booked-load framing: how much scheduled work relative to available capacity (actual hrs completed)
+          // bookedLoadPct > 90% (scheduledHrs > actualHrs * 0.90) → At Capacity (amber)
+          // bookedLoadPct > 115% (scheduledHrs > actualHrs * 1.15) → Fully Booked (amber, more urgent)
           const actualHrs = metrics?.labor?.actualHrs4wk ?? 0;
           const scheduledHrs = metrics?.labor?.scheduledHrs4wk ?? 0;
-          const queueGrowing = utilSource === 'timesheets' && scheduledHrs > 0 && scheduledHrs > actualHrs * 1.15;
-          const queueSevere = utilSource === 'timesheets' && scheduledHrs > 0 && scheduledHrs > actualHrs * 1.30;
+          const bookedLoadPct = actualHrs > 0 ? Math.round((scheduledHrs / actualHrs) * 100) : 0;
+          const atCapacity = utilSource === 'timesheets' && scheduledHrs > 0 && bookedLoadPct > 90 && bookedLoadPct <= 115;
+          const fullyBooked = utilSource === 'timesheets' && scheduledHrs > 0 && bookedLoadPct > 115;
 
-          // Effective hire signal: scheduling-based if available, else timesheet-derived
+          // Signal derived from booked load (both alert states are amber, not red)
           let signal: 'ok' | 'watch' | 'hire' = staffing?.hireSignal ?? 'ok';
           if (utilSource === 'timesheets') {
-            signal = queueSevere ? 'hire' : queueGrowing ? 'watch' : 'ok';
+            signal = fullyBooked ? 'hire' : atCapacity ? 'watch' : 'ok';
           }
 
-          const signalColor = signal === 'hire' ? '#BE1916' : signal === 'watch' ? '#f59e0b' : '#10b981';
-          const signalBg = signal === 'hire' ? 'bg-red-50 border-red-200 text-red-700' : signal === 'watch' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700';
-          const signalLabel = signal === 'hire' ? '⚡ Behind Schedule' : signal === 'watch' ? '⚠ Queue Growing' : '✓ On Track';
+          // Both alert states use amber styling — this is a capacity warning, not an error
+          const signalColor = (signal === 'hire' || signal === 'watch') ? '#f59e0b' : '#10b981';
+          const signalBg = (signal === 'hire' || signal === 'watch') ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700';
+          const signalLabel = signal === 'hire' ? '⚠ Fully Booked' : signal === 'watch' ? '⚠ At Capacity' : '✓ On Track';
           const signalTip = signal === 'hire'
-            ? `Crew completed ${actualHrs}h but ${scheduledHrs}h was scheduled (4wk). Work is accumulating faster than it's being completed — consider adding capacity.`
+            ? `${scheduledHrs}h booked vs ${actualHrs}h available capacity (4wk) — ${bookedLoadPct}% booked. Scheduled hours significantly exceed crew capacity. Consider adding headcount.`
             : signal === 'watch'
-            ? `Crew completed ${actualHrs}h vs ${scheduledHrs}h scheduled (4wk). Scheduled work is outpacing completions — monitor closely.`
+            ? `${scheduledHrs}h booked vs ${actualHrs}h available capacity (4wk) — ${bookedLoadPct}% booked. Crew is near full capacity — monitor closely.`
             : utilSource === 'timesheets'
-            ? `Crew completed ${actualHrs}h of ${scheduledHrs}h scheduled (4wk). Completion rate is healthy.`
+            ? `${scheduledHrs}h booked vs ${actualHrs}h available capacity (4wk) — ${bookedLoadPct}% booked. Crew has headroom.`
             : 'Crew has capacity headroom. No immediate hiring pressure.';
 
           const trendData = staffing?.weeklyTrend ?? [];
@@ -951,21 +954,21 @@ function CEOCommandCenterInner() {
                         strokeWidth="16"
                         strokeLinecap="round"
                       />
-                      {/* Fill — animate via strokeDasharray */}
-                      {utilPct > 0 && (
+                      {/* Fill — animate via strokeDasharray; booked-load pct for timesheets, utilPct for scheduling */}
+                      {(utilSource === 'timesheets' ? bookedLoadPct : utilPct) > 0 && (
                         <path
                           d="M 20 100 A 80 80 0 0 1 180 100"
                           fill="none"
                           stroke={signalColor}
                           strokeWidth="16"
                           strokeLinecap="round"
-                          strokeDasharray={`${Math.PI * 80 * Math.min(utilPct / 100, 1)} ${Math.PI * 80}`}
+                          strokeDasharray={`${Math.PI * 80 * Math.min((utilSource === 'timesheets' ? bookedLoadPct : utilPct) / 100, 1)} ${Math.PI * 80}`}
                           style={{ transition: 'stroke-dasharray 0.6s ease' }}
                         />
                       )}
                       {/* Center text */}
                       <text x="100" y="90" textAnchor="middle" fontSize="28" fontWeight="900" fill={staffingLoading ? '#d1d5db' : signalColor} fontFamily="'Archivo Black', sans-serif">
-                        {staffingLoading ? '—' : `${utilPct}%`}
+                        {staffingLoading ? '—' : `${utilSource === 'timesheets' ? bookedLoadPct : utilPct}%`}
                       </text>
                     </svg>
                     {/* Tick labels */}
@@ -975,11 +978,11 @@ function CEOCommandCenterInner() {
                     </div>
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-1">
-                    {utilSource === 'timesheets' ? 'Schedule Completion Rate (4wk)' : utilSource === 'scheduling' ? '4-Wk Avg Utilization' : '4-Wk Avg Utilization'}
+                    {utilSource === 'timesheets' ? 'Crew Booked Load (4wk)' : utilSource === 'scheduling' ? '4-Wk Avg Utilization' : '4-Wk Avg Utilization'}
                   </p>
                   {utilSource === 'timesheets' && (
-                    <p className={`text-[9px] mt-0.5 font-semibold ${queueGrowing ? 'text-amber-500' : 'text-gray-400'}`}>
-                      {actualHrs}h completed ÷ {scheduledHrs}h scheduled
+                    <p className={`text-[9px] mt-0.5 font-semibold ${(atCapacity || fullyBooked) ? 'text-amber-500' : 'text-gray-400'}`}>
+                      {scheduledHrs}h booked · {actualHrs}h available
                     </p>
                   )}
                   <p className="text-[10px] text-gray-400 mt-0.5 text-center max-w-[160px]">{signalTip}</p>
