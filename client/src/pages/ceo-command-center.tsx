@@ -402,7 +402,7 @@ function CEOCommandCenterInner() {
             message: `${label}: ${result.inserted} new + ${result.updated} updated (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} ${rowLabel}.`,
           });
           setUploadedFiles(prev => [...prev, {
-            name: `${file.name} (${label.toLowerCase()} import)`,
+            name: `${file.name} (${label} Import)`,
             size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
             uploadedAt: now,
           }]);
@@ -1497,7 +1497,7 @@ function CEOCommandCenterInner() {
                 <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
                   <FileSpreadsheet className="w-4 h-4" style={{ color: PRIMARY }} />
                   <span className="text-sm font-bold text-gray-800">Data Upload</span>
-                  <span className="ml-auto text-[10px] text-gray-400 font-medium">SA & Timesheets imported to DB · others added to AI context</span>
+                  <span className="ml-auto text-[10px] text-gray-400 font-medium">Jobs, Visits, SA, Invoices, Timesheets, Job Margin all persisted · unrecognized CSVs logged</span>
                 </div>
                 <div className="px-5 py-4 flex-1 space-y-4">
                   <div
