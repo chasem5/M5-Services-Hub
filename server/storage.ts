@@ -262,6 +262,7 @@ export interface IStorage {
   migrateBuildopsClientColumns(): Promise<void>;
   migrateBuildopsPropertyColumns(): Promise<void>;
   migrateBuildopsVisitsAndExtendedFields(): Promise<void>;
+  migrateBuildopsTimesheets(): Promise<void>;
   migrateTaskBoards(): Promise<void>;
 
   // Industry Options
@@ -1632,6 +1633,39 @@ export class DatabaseStorage implements IStorage {
       `);
     } catch (e) {
       console.error("migrateBuildopsVisitsAndExtendedFields: buildops_visits table error:", e);
+    }
+  }
+
+  async migrateBuildopsTimesheets(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS buildops_timesheets (
+          id serial PRIMARY KEY,
+          work_date timestamp,
+          employee_name varchar NOT NULL,
+          visit_id varchar,
+          job_number varchar,
+          visit_number integer,
+          event_status varchar,
+          scheduled_duration_mins decimal(10,2),
+          labor_rate_group varchar,
+          labor_type_name varchar,
+          department_name varchar,
+          customer_name varchar,
+          billing_customer_name varchar,
+          property_name varchar,
+          approval_status varchar,
+          billable boolean DEFAULT true,
+          service_agreement_number varchar,
+          total_duration_mins decimal(10,2),
+          cost_per_hour decimal(10,4),
+          total_cost decimal(12,4),
+          imported_at timestamp DEFAULT now() NOT NULL,
+          UNIQUE (visit_id, employee_name, labor_rate_group)
+        )
+      `);
+    } catch (e) {
+      console.error("migrateBuildopsTimesheets error:", e);
     }
   }
 

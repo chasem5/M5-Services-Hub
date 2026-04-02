@@ -19,8 +19,23 @@ const PRIMARY = "#BE1916";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface SparkPoint { label: string; v: number; }
+interface LaborAnalytics {
+  hasData: boolean;
+  totalRows: number;
+  overtimeRatePct?: number;
+  actualHrs4wk?: number;
+  scheduledHrs4wk?: number;
+  hrsUtilizationPct?: number | null;
+  laborCostCurrentMonth?: number;
+  laborCostPriorMonth?: number;
+  laborCostChangePct?: number;
+  totalLaborCost?: number;
+  laborCostSpark?: SparkPoint[];
+  error?: string;
+}
 interface CeoMetrics {
   lastUpdated: string;
+  period?: string;
   revenue: { current: number; prevMonth: number; changePct: number; up: boolean; monthly: SparkPoint[] };
   saContractRevenue: { current: number; prevMonth: number; changePct: number; up: boolean; activeCount: number; monthly: SparkPoint[] };
   pipeline: { value: number; dealCount: number; monthly: SparkPoint[] };
@@ -37,6 +52,7 @@ interface CeoMetrics {
   topCustomers: { name: string; revenue: number; invoiceCount: number }[];
   activeJobs: { total: number; byStatus: { status: string; count: number }[] };
   visitsSync: { totalVisits: number; completedVisits: number };
+  labor?: LaborAnalytics | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -258,7 +274,8 @@ function CEOCommandCenterInner() {
   const detailRef = useRef<HTMLDivElement>(null);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<CeoMetrics>({
-    queryKey: ["/api/ceo/metrics"],
+    queryKey: ["/api/ceo/metrics", period],
+    queryFn: () => fetch(`/api/ceo/metrics?period=${period}`).then(r => r.json()),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -340,17 +357,61 @@ function CEOCommandCenterInner() {
     }, 1400);
   }
 
-  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  const [timesheetImportStatus, setTimesheetImportStatus] = useState<{ status: 'idle' | 'uploading' | 'success' | 'error'; message?: string }>({ status: 'idle' });
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
     const now = new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
-    setUploadedFiles(prev => [
-      ...prev,
-      ...files.map(f => ({
-        name: f.name,
-        size: f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(f.size / 1024)} KB`,
-        uploadedAt: now,
-      })),
-    ]);
+
+    for (const file of files) {
+      const isTimesheetCsv = file.name.toLowerCase().endsWith(".csv");
+      if (isTimesheetCsv) {
+        // Peek at the first line to validate it's a timesheet CSV
+        const text = await file.text();
+        const firstLine = text.split(/\r?\n/)[0].toLowerCase();
+        if (firstLine.includes("visit id") || firstLine.includes("total duration mins") || firstLine.includes("labor rate group")) {
+          setTimesheetImportStatus({ status: 'uploading' });
+          const formData = new FormData();
+          formData.append("file", file);
+          try {
+            const resp = await fetch("/api/buildops/import-timesheets", {
+              method: "POST",
+              body: formData,
+            });
+            const result = await resp.json();
+            if (!resp.ok) {
+              setTimesheetImportStatus({ status: 'error', message: result.message || 'Import failed' });
+            } else {
+              setTimesheetImportStatus({
+                status: 'success',
+                message: `Imported ${result.inserted} new + ${result.updated} updated rows (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} timesheet records.`,
+              });
+              setUploadedFiles(prev => [
+                ...prev,
+                {
+                  name: `${file.name} (timesheet import)`,
+                  size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+                  uploadedAt: now,
+                },
+              ]);
+            }
+          } catch (err: any) {
+            setTimesheetImportStatus({ status: 'error', message: err.message || 'Network error' });
+          }
+          continue;
+        }
+      }
+      // Generic file (non-timesheet): just add to local list for AI context
+      setUploadedFiles(prev => [
+        ...prev,
+        {
+          name: file.name,
+          size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+          uploadedAt: now,
+        },
+      ]);
+    }
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -799,7 +860,7 @@ function CEOCommandCenterInner() {
                 </div>
 
                 {/* ── Stats ── */}
-                <div className="flex flex-col justify-center gap-4 border-x border-gray-100 px-5">
+                <div className="flex flex-col justify-center gap-3 border-x border-gray-100 px-5">
                   {[
                     {
                       label: 'Active Techs',
@@ -837,58 +898,132 @@ function CEOCommandCenterInner() {
                       </div>
                     );
                   })}
+                  {/* ── Labor stats from timesheets ── */}
+                  {metrics?.labor?.hasData ? (
+                    <>
+                      <div className="border-t border-gray-100 pt-3 flex flex-col gap-2">
+                        <div className="flex items-center gap-2" data-testid="labor-stat-ot-rate">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#f5910015' }}>
+                            <Zap className="w-4 h-4" style={{ color: '#f59100' }} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-gray-800 leading-none">{metrics.labor.overtimeRatePct ?? 0}%</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">OT Rate (30d)</p>
+                            <p className="text-[10px] text-gray-300">overtime / total hours</p>
+                          </div>
+                          {(metrics.labor.overtimeRatePct ?? 0) >= 15 && (
+                            <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700">High</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2" data-testid="labor-stat-actual-vs-sched">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#10b98115' }}>
+                            <Activity className="w-4 h-4" style={{ color: '#10b981' }} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-gray-800 leading-none">
+                              {metrics.labor.actualHrs4wk ?? 0}h <span className="text-gray-400 font-normal">/ {metrics.labor.scheduledHrs4wk ?? 0}h sched</span>
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">Actual vs Scheduled (4wk)</p>
+                            <p className="text-[10px] text-gray-300">from timesheet import</p>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="border-t border-gray-100 pt-3">
+                      <p className="text-[10px] text-gray-300 italic">Upload a BuildOps timesheet CSV to see labor analytics</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* ── Weekly trend chart ── */}
-                <div className="flex flex-col">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Weekly Utilization</p>
-                  <p className="text-[9px] text-gray-300 mb-2">
-                    <span className="inline-block w-2 h-2 rounded-sm bg-indigo-400 mr-1 align-middle" />past
-                    <span className="inline-block w-2 h-2 rounded-sm bg-indigo-200 ml-2 mr-1 align-middle" />upcoming
-                    <span className="inline-block w-2 h-2 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />watch
-                    <span className="inline-block w-2 h-2 rounded-sm bg-red-400 ml-2 mr-1 align-middle" />hire
-                  </p>
-                  <div className="flex-1" style={{ minHeight: 120 }}>
-                    {staffingLoading ? (
-                      <div className="h-full bg-gray-50 rounded animate-pulse" />
-                    ) : trendData.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-[11px] text-gray-400">Sync visits to populate</div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height={130}>
-                        <BarChart data={trendData} margin={{ top: 2, right: 0, left: -20, bottom: 0 }} barSize={10}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
-                          <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} interval={1} />
-                          <YAxis tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={v => `${v}%`} />
-                          <ReferenceLine y={85} stroke="#BE1916" strokeDasharray="4 2" strokeWidth={1} />
-                          <ReferenceLine y={70} stroke="#f59e0b" strokeDasharray="4 2" strokeWidth={1} />
-                          <Tooltip
-                            content={({ active, payload, label }) => {
-                              if (!active || !payload?.length) return null;
-                              const d = payload[0]?.payload as StaffingWeek;
-                              return (
-                                <div className="bg-gray-900 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl space-y-1">
-                                  <p className="font-bold">{label} {d?.isFuture ? '(upcoming)' : '(past)'}</p>
-                                  <p>Utilization: <span className="font-semibold">{d?.utilPct ?? 0}%</span></p>
-                                  <p>Sched hrs: <span className="font-semibold">{d?.scheduledHrs}h</span></p>
-                                  <p>Active techs: <span className="font-semibold">{d?.techCount}</span></p>
-                                </div>
-                              );
-                            }}
-                          />
-                          <Bar dataKey="utilPct" radius={[3, 3, 0, 0]}>
-                            {trendData.map((entry, index) => {
-                              const fillColor = entry.isFuture
-                                ? '#c7d2fe'
-                                : entry.utilPct >= 85 ? '#BE1916'
-                                : entry.utilPct >= 70 ? '#f59e0b'
-                                : '#818cf8';
-                              return <Cell key={`cell-${index}`} fill={fillColor} />;
-                            })}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
+                <div className="flex flex-col gap-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Weekly Utilization</p>
+                    <p className="text-[9px] text-gray-300 mb-2">
+                      <span className="inline-block w-2 h-2 rounded-sm bg-indigo-400 mr-1 align-middle" />past
+                      <span className="inline-block w-2 h-2 rounded-sm bg-indigo-200 ml-2 mr-1 align-middle" />upcoming
+                      <span className="inline-block w-2 h-2 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />watch
+                      <span className="inline-block w-2 h-2 rounded-sm bg-red-400 ml-2 mr-1 align-middle" />hire
+                    </p>
+                    <div style={{ minHeight: 100 }}>
+                      {staffingLoading ? (
+                        <div className="h-24 bg-gray-50 rounded animate-pulse" />
+                      ) : trendData.length === 0 ? (
+                        <div className="h-24 flex flex-col items-center justify-center gap-1">
+                          <p className="text-[11px] text-gray-400">Sync visits to populate</p>
+                          <p className="text-[10px] text-gray-300">No BuildOps visits synced yet</p>
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height={110}>
+                          <BarChart data={trendData} margin={{ top: 2, right: 0, left: -20, bottom: 0 }} barSize={10}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
+                            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} interval={1} />
+                            <YAxis tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                            <ReferenceLine y={85} stroke="#BE1916" strokeDasharray="4 2" strokeWidth={1} />
+                            <ReferenceLine y={70} stroke="#f59e0b" strokeDasharray="4 2" strokeWidth={1} />
+                            <Tooltip
+                              content={({ active, payload, label }) => {
+                                if (!active || !payload?.length) return null;
+                                const d = payload[0]?.payload as StaffingWeek;
+                                return (
+                                  <div className="bg-gray-900 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl space-y-1">
+                                    <p className="font-bold">{label} {d?.isFuture ? '(upcoming)' : '(past)'}</p>
+                                    <p>Utilization: <span className="font-semibold">{d?.utilPct ?? 0}%</span></p>
+                                    <p>Sched hrs: <span className="font-semibold">{d?.scheduledHrs}h</span></p>
+                                    <p>Active techs: <span className="font-semibold">{d?.techCount}</span></p>
+                                  </div>
+                                );
+                              }}
+                            />
+                            <Bar dataKey="utilPct" radius={[3, 3, 0, 0]}>
+                              {trendData.map((entry, index) => {
+                                const fillColor = entry.isFuture
+                                  ? '#c7d2fe'
+                                  : entry.utilPct >= 85 ? '#BE1916'
+                                  : entry.utilPct >= 70 ? '#f59e0b'
+                                  : '#818cf8';
+                                return <Cell key={`cell-${index}`} fill={fillColor} />;
+                              })}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
                   </div>
+
+                  {/* ── Labor Cost Spark (from timesheets) ── */}
+                  {metrics?.labor?.hasData && (metrics.labor.laborCostSpark?.length ?? 0) > 0 ? (
+                    <div className="border-t border-gray-100 pt-2">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                        Labor Cost (6mo)
+                        <span className="ml-2 font-normal normal-case text-gray-300">from timesheet import</span>
+                      </p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-bold text-gray-800">{fmtDollar(metrics.labor.laborCostCurrentMonth ?? 0)}</span>
+                        <span className={`text-[10px] font-semibold ${(metrics.labor.laborCostChangePct ?? 0) >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {(metrics.labor.laborCostChangePct ?? 0) >= 0 ? '+' : ''}{metrics.labor.laborCostChangePct?.toFixed(1)}% vs prior
+                        </span>
+                      </div>
+                      <ResponsiveContainer width="100%" height={55}>
+                        <AreaChart data={metrics.labor.laborCostSpark} margin={{ top: 0, right: 0, left: -35, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="laborCostGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <XAxis dataKey="label" tick={{ fontSize: 8, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                          <YAxis hide />
+                          <Area type="monotone" dataKey="v" stroke="#f59e0b" strokeWidth={1.5} fill="url(#laborCostGrad)" dot={false} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="border-t border-gray-100 pt-2">
+                      <p className="text-[10px] text-gray-300">Upload a timesheet CSV to see labor cost trend</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1133,22 +1268,59 @@ function CEOCommandCenterInner() {
                 <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
                   <FileSpreadsheet className="w-4 h-4" style={{ color: PRIMARY }} />
                   <span className="text-sm font-bold text-gray-800">Data Upload</span>
-                  <span className="ml-auto text-[10px] text-gray-400 font-medium">Added to AI context</span>
+                  <span className="ml-auto text-[10px] text-gray-400 font-medium">Timesheets imported to DB · others added to AI context</span>
                 </div>
                 <div className="px-5 py-4 flex-1 space-y-4">
                   <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-gray-200 rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-all"
+                    onClick={() => timesheetImportStatus.status !== 'uploading' && fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${timesheetImportStatus.status === 'uploading' ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
                     data-testid="dropzone-file-upload"
                   >
-                    <Upload className="w-6 h-6 text-gray-300" />
-                    <p className="text-sm font-semibold text-gray-500">Drop Excel or CSV here</p>
-                    <p className="text-xs text-gray-400">.xlsx, .csv — max 25 MB</p>
-                    <button data-testid="button-browse-files" className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-100 transition-all">
-                      Browse files
-                    </button>
+                    {timesheetImportStatus.status === 'uploading' ? (
+                      <>
+                        <RefreshCw className="w-6 h-6 text-blue-400 animate-spin" />
+                        <p className="text-sm font-semibold text-blue-600">Importing timesheet…</p>
+                        <p className="text-xs text-blue-400">Parsing and upserting rows to database</p>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-6 h-6 text-gray-300" />
+                        <p className="text-sm font-semibold text-gray-500">Drop Excel or CSV here</p>
+                        <p className="text-xs text-gray-400">.xlsx, .csv — max 25 MB · BuildOps timesheets auto-detected</p>
+                        <button data-testid="button-browse-files" className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-100 transition-all">
+                          Browse files
+                        </button>
+                      </>
+                    )}
                     <input ref={fileInputRef} type="file" accept=".xlsx,.csv" multiple onChange={handleFileUpload} className="hidden" data-testid="input-file-upload" />
                   </div>
+
+                  {/* Timesheet import status banner */}
+                  {timesheetImportStatus.status === 'success' && (
+                    <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3.5 py-2.5" data-testid="banner-import-success">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-[11px] font-bold text-emerald-700">Timesheet import successful</p>
+                        <p className="text-[11px] text-emerald-600 leading-relaxed">{timesheetImportStatus.message}</p>
+                      </div>
+                      <button onClick={() => setTimesheetImportStatus({ status: 'idle' })} className="text-emerald-300 hover:text-emerald-500 flex-shrink-0">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  {timesheetImportStatus.status === 'error' && (
+                    <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3.5 py-2.5" data-testid="banner-import-error">
+                      <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-[11px] font-bold text-red-700">Import failed</p>
+                        <p className="text-[11px] text-red-600 leading-relaxed">{timesheetImportStatus.message}</p>
+                      </div>
+                      <button onClick={() => setTimesheetImportStatus({ status: 'idle' })} className="text-red-300 hover:text-red-500 flex-shrink-0">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Uploaded ({uploadedFiles.length})</p>
                     <div className="space-y-2">
@@ -1169,7 +1341,7 @@ function CEOCommandCenterInner() {
                   </div>
                   <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
                     <p className="text-[11px] text-blue-600 leading-relaxed">
-                      <span className="font-bold">Context tip:</span> Uploaded files are included in AI summary generation and chat for the current session. They are not stored permanently.
+                      <span className="font-bold">Context tip:</span> BuildOps timesheet CSVs are automatically detected and imported to the database (persisted). Other files are added to AI context for the current session only.
                     </p>
                   </div>
                 </div>

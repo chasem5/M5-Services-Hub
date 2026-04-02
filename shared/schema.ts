@@ -880,6 +880,35 @@ export const ONBOARDING_ITEM_LABELS: Record<OnboardingItemKey, string> = {
   primary_contact_confirmed: "Primary contact confirmed",
 };
 
+// BuildOps Timesheets (imported from CSV export)
+export const buildopsTimesheets = pgTable("buildops_timesheets", {
+  id: serial("id").primaryKey(),
+  workDate: timestamp("work_date"),
+  employeeName: varchar("employee_name").notNull(),
+  visitId: varchar("visit_id"),
+  jobNumber: varchar("job_number"),
+  visitNumber: integer("visit_number"),
+  eventStatus: varchar("event_status"),
+  scheduledDurationMins: decimal("scheduled_duration_mins", { precision: 10, scale: 2 }),
+  laborRateGroup: varchar("labor_rate_group"),
+  laborTypeName: varchar("labor_type_name"),
+  departmentName: varchar("department_name"),
+  customerName: varchar("customer_name"),
+  billingCustomerName: varchar("billing_customer_name"),
+  propertyName: varchar("property_name"),
+  approvalStatus: varchar("approval_status"),
+  billable: boolean("billable").default(true),
+  serviceAgreementNumber: varchar("service_agreement_number"),
+  totalDurationMins: decimal("total_duration_mins", { precision: 10, scale: 2 }),
+  costPerHour: decimal("cost_per_hour", { precision: 10, scale: 4 }),
+  totalCost: decimal("total_cost", { precision: 12, scale: 4 }),
+  importedAt: timestamp("imported_at").defaultNow().notNull(),
+}, (t) => ({ unq: unique().on(t.visitId, t.employeeName, t.laborRateGroup) }));
+
+export const insertBuildopsTimesheetSchema = createInsertSchema(buildopsTimesheets).omit({ id: true, importedAt: true });
+export type BuildopsTimesheet = typeof buildopsTimesheets.$inferSelect;
+export type InsertBuildopsTimesheet = z.infer<typeof insertBuildopsTimesheetSchema>;
+
 // BuildOps Sync Log
 export const buildopsSyncLog = pgTable("buildops_sync_log", {
   id: serial("id").primaryKey(),

@@ -161,6 +161,7 @@ export async function registerRoutes(
   await storage.migrateBuildopsClientColumns();
   await storage.migrateBuildopsPropertyColumns();
   await storage.migrateBuildopsVisitsAndExtendedFields();
+  await storage.migrateBuildopsTimesheets();
   await storage.migrateParentClientColumn();
   await storage.migrateClientOnboardingChecklist();
   await storage.migrateLeadLossColumns();
@@ -8832,27 +8833,218 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
   });
 
   // ── CEO Command Center Metrics ────────────────────────────────────────────
-  app.get("/api/ceo/metrics", isAuthenticated, requireRole(["super_admin"]), async (_req, res) => {
+  // ── Timesheet CSV Import ───────────────────────────────────────────────────
+  app.post("/api/buildops/import-timesheets", isAuthenticated, requireRole(["super_admin", "admin"]), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const csvText = req.file.buffer.toString("utf-8");
+      const lines = csvText.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return res.status(400).json({ message: "CSV has no data rows" });
+
+      // Parse header to validate it's a timesheet CSV
+      const header = lines[0].split(",").map(h => h.trim().toLowerCase());
+      if (!header.includes("visit id") && !header.includes("visit_id") && !header.includes("total duration mins")) {
+        return res.status(400).json({ message: "File does not appear to be a BuildOps timesheet export. Expected columns: Work Date, Employee Name, Visit Id, Total Duration Mins, Cost per Hour, Total Cost." });
+      }
+
+      // Map column names to indices for robustness
+      const col = (name: string) => header.indexOf(name.toLowerCase());
+      const iWorkDate = col("work date");
+      const iEmployee = col("employee name");
+      const iApproval = col("approval status");
+      const iSaNumber = col("service agreement number");
+      const iJobNumber = col("job number");
+      const iVisitNumber = col("visit number");
+      const iEventStatus = col("event status");
+      const iSchedDuration = col("event scheduled duration mins");
+      const iLaborRateGroup = col("labor rate group name");
+      const iLaborType = col("labor type name");
+      const iDeptName = col("department name");
+      const iPropertyName = col("property name");
+      const iBillingCust = col("billing customer name");
+      const iCustName = col("customer name");
+      const iBillable = col("billable");
+      const iVisitId = col("visit id");
+      const iTotalDuration = col("total duration mins");
+      const iCostPerHour = col("cost per hour");
+      const iTotalCost = col("total cost");
+
+      let processed = 0, inserted = 0, updated = 0, skipped = 0;
+
+      function parseCSVLine(line: string): string[] {
+        const result: string[] = [];
+        let inQuote = false;
+        let current = "";
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            inQuote = !inQuote;
+          } else if (ch === "," && !inQuote) {
+            result.push(current.trim());
+            current = "";
+          } else {
+            current += ch;
+          }
+        }
+        result.push(current.trim());
+        return result;
+      }
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line.trim()) continue;
+        processed++;
+        const cols = parseCSVLine(line);
+        const employeeName = cols[iEmployee]?.trim();
+        if (!employeeName) { skipped++; continue; }
+
+        const visitId = cols[iVisitId]?.trim() || null;
+        const laborRateGroup = cols[iLaborRateGroup]?.trim() || null;
+        const totalDurationMins = parseFloat(cols[iTotalDuration]) || 0;
+        // Skip zero-duration rows with no cost (they're rate rows, not actual time entries)
+        const totalCost = parseFloat(cols[iTotalCost]) || 0;
+        if (totalDurationMins === 0 && totalCost === 0) { skipped++; continue; }
+
+        const workDateStr = cols[iWorkDate]?.trim();
+        const workDate = workDateStr ? new Date(workDateStr) : null;
+        const visitNumber = parseInt(cols[iVisitNumber]) || null;
+        const scheduledDuration = parseFloat(cols[iSchedDuration]) || null;
+        const costPerHour = parseFloat(cols[iCostPerHour]) || null;
+        const billableStr = cols[iBillable]?.trim().toLowerCase();
+        const billable = billableStr === "true" || billableStr === "yes" || billableStr === "1";
+
+        try {
+          if (visitId && laborRateGroup) {
+            // Upsert on composite key (visit_id, employee_name, labor_rate_group)
+            const existing = await db.execute(sql`
+              SELECT id FROM buildops_timesheets
+              WHERE visit_id = ${visitId} AND employee_name = ${employeeName} AND labor_rate_group = ${laborRateGroup}
+            `);
+            if (existing.rows.length > 0) {
+              await db.execute(sql`
+                UPDATE buildops_timesheets SET
+                  work_date = ${workDate},
+                  job_number = ${cols[iJobNumber]?.trim() || null},
+                  visit_number = ${visitNumber},
+                  event_status = ${cols[iEventStatus]?.trim() || null},
+                  scheduled_duration_mins = ${scheduledDuration},
+                  labor_type_name = ${cols[iLaborType]?.trim() || null},
+                  department_name = ${cols[iDeptName]?.trim() || null},
+                  customer_name = ${cols[iCustName]?.trim() || null},
+                  billing_customer_name = ${cols[iBillingCust]?.trim() || null},
+                  property_name = ${cols[iPropertyName]?.trim() || null},
+                  approval_status = ${cols[iApproval]?.trim() || null},
+                  billable = ${billable},
+                  service_agreement_number = ${cols[iSaNumber]?.trim() || null},
+                  total_duration_mins = ${totalDurationMins},
+                  cost_per_hour = ${costPerHour},
+                  total_cost = ${totalCost},
+                  imported_at = NOW()
+                WHERE id = ${(existing.rows[0] as any).id}
+              `);
+              updated++;
+            } else {
+              await db.execute(sql`
+                INSERT INTO buildops_timesheets (
+                  work_date, employee_name, visit_id, job_number, visit_number,
+                  event_status, scheduled_duration_mins, labor_rate_group, labor_type_name,
+                  department_name, customer_name, billing_customer_name, property_name,
+                  approval_status, billable, service_agreement_number,
+                  total_duration_mins, cost_per_hour, total_cost
+                ) VALUES (
+                  ${workDate}, ${employeeName}, ${visitId}, ${cols[iJobNumber]?.trim() || null}, ${visitNumber},
+                  ${cols[iEventStatus]?.trim() || null}, ${scheduledDuration}, ${laborRateGroup}, ${cols[iLaborType]?.trim() || null},
+                  ${cols[iDeptName]?.trim() || null}, ${cols[iCustName]?.trim() || null}, ${cols[iBillingCust]?.trim() || null}, ${cols[iPropertyName]?.trim() || null},
+                  ${cols[iApproval]?.trim() || null}, ${billable}, ${cols[iSaNumber]?.trim() || null},
+                  ${totalDurationMins}, ${costPerHour}, ${totalCost}
+                )
+              `);
+              inserted++;
+            }
+          } else {
+            // No unique key — insert without upsert protection
+            await db.execute(sql`
+              INSERT INTO buildops_timesheets (
+                work_date, employee_name, visit_id, job_number, visit_number,
+                event_status, scheduled_duration_mins, labor_rate_group, labor_type_name,
+                department_name, customer_name, billing_customer_name, property_name,
+                approval_status, billable, service_agreement_number,
+                total_duration_mins, cost_per_hour, total_cost
+              ) VALUES (
+                ${workDate}, ${employeeName}, ${visitId}, ${cols[iJobNumber]?.trim() || null}, ${visitNumber},
+                ${cols[iEventStatus]?.trim() || null}, ${scheduledDuration}, ${laborRateGroup || null}, ${cols[iLaborType]?.trim() || null},
+                ${cols[iDeptName]?.trim() || null}, ${cols[iCustName]?.trim() || null}, ${cols[iBillingCust]?.trim() || null}, ${cols[iPropertyName]?.trim() || null},
+                ${cols[iApproval]?.trim() || null}, ${billable}, ${cols[iSaNumber]?.trim() || null},
+                ${totalDurationMins}, ${costPerHour}, ${totalCost}
+              )
+            `);
+            inserted++;
+          }
+        } catch (rowErr: any) {
+          console.error(`[timesheet import] row ${i} error:`, rowErr.message);
+          skipped++;
+        }
+      }
+
+      // Get total row count after import
+      const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_timesheets`);
+      const totalRows = parseInt((countRow.rows[0] as any)?.cnt) || 0;
+
+      return res.json({ processed, inserted, updated, skipped, totalRows });
+    } catch (err: any) {
+      console.error("[import-timesheets]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/ceo/metrics", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     try {
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
 
+      const period = (req.query.period as string) || "monthly";
       const now = new Date();
       const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 12, 1);
 
-      // ── Revenue: monthly invoiced amounts (last 12 months) ──────────────────
-      const revenueRows = await db.execute(sql`
+      // ── Period-aware SQL expressions ────────────────────────────────────────
+      // Build dynamic SQL for period-bucketed queries
+      let invoiceSinceExpr: string;
+      let leadsSinceExpr: string;
+      let dateTruncExpr: string;
+      let labelExpr: string;
+      if (period === "daily") {
+        invoiceSinceExpr = `issued_date >= NOW() - INTERVAL '30 days'`;
+        leadsSinceExpr = `created_at >= NOW() - INTERVAL '30 days'`;
+        dateTruncExpr = `DATE_TRUNC('day', issued_date)`;
+        labelExpr = `TO_CHAR(DATE_TRUNC('day', issued_date), 'Mon DD')`;
+      } else if (period === "weekly") {
+        invoiceSinceExpr = `issued_date >= NOW() - INTERVAL '12 weeks'`;
+        leadsSinceExpr = `created_at >= NOW() - INTERVAL '12 weeks'`;
+        dateTruncExpr = `DATE_TRUNC('week', issued_date)`;
+        labelExpr = `TO_CHAR(DATE_TRUNC('week', issued_date), 'Mon DD')`;
+      } else {
+        invoiceSinceExpr = `issued_date >= '${twelveMonthsAgo.toISOString()}'`;
+        leadsSinceExpr = `created_at >= '${twelveMonthsAgo.toISOString()}'`;
+        dateTruncExpr = `DATE_TRUNC('month', issued_date)`;
+        labelExpr = `TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY')`;
+      }
+
+      // ── Revenue: invoiced amounts bucketed by period ─────────────────────────
+      const revenueRows = await db.execute(sql.raw(`
         SELECT
-          TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY') AS label,
-          DATE_TRUNC('month', issued_date) AS month_start,
+          ${labelExpr} AS label,
+          ${dateTruncExpr} AS bucket_start,
           SUM(CAST(total_amount AS DECIMAL)) AS total
         FROM buildops_invoices
-        WHERE issued_date >= ${twelveMonthsAgo}
+        WHERE ${invoiceSinceExpr}
           AND total_amount IS NOT NULL
           AND issued_date IS NOT NULL
-        GROUP BY DATE_TRUNC('month', issued_date)
-        ORDER BY DATE_TRUNC('month', issued_date)
-      `);
+        GROUP BY ${dateTruncExpr}
+        ORDER BY ${dateTruncExpr}
+      `));
       const revenueMonthly: { label: string; v: number }[] = (revenueRows.rows as any[]).map(r => ({
         label: r.label,
         v: Math.round(parseFloat(r.total) || 0),
@@ -8870,21 +9062,21 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const saTotal = Math.round(parseFloat((agRows.rows[0] as any)?.total) || 0);
       const saCount = parseInt((agRows.rows[0] as any)?.cnt) || 0;
 
-      // SA monthly trend: SA-tagged invoice revenue by month (invoices with service_agreement_number)
-      const saTrendRows = await db.execute(sql`
+      // SA monthly trend: SA-tagged invoice revenue bucketed by period
+      const saTrendRows = await db.execute(sql.raw(`
         SELECT
-          TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY') AS label,
-          DATE_TRUNC('month', issued_date) AS month_start,
+          ${labelExpr} AS label,
+          ${dateTruncExpr} AS bucket_start,
           SUM(CAST(total_amount AS DECIMAL)) AS total
         FROM buildops_invoices
-        WHERE issued_date >= ${twelveMonthsAgo}
+        WHERE ${invoiceSinceExpr}
           AND service_agreement_number IS NOT NULL
           AND service_agreement_number != ''
           AND total_amount IS NOT NULL
           AND CAST(total_amount AS DECIMAL) > 0
-        GROUP BY DATE_TRUNC('month', issued_date)
-        ORDER BY DATE_TRUNC('month', issued_date)
-      `);
+        GROUP BY ${dateTruncExpr}
+        ORDER BY ${dateTruncExpr}
+      `));
       const saMonthly = (saTrendRows.rows as any[]).map(r => ({
         label: r.label,
         v: Math.round(parseFloat(r.total) || 0),
@@ -8910,19 +9102,31 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const pipeTotal = Math.round(parseFloat((pipeRows.rows[0] as any)?.total) || 0);
       const pipeCount = parseInt((pipeRows.rows[0] as any)?.cnt) || 0;
 
-      // Pipeline monthly trend: compute by created_at grouping
-      const pipeTrendRows = await db.execute(sql`
+      // Pipeline trend: bucketed by period using created_at
+      let pipesTruncExpr: string;
+      let pipeLabelExpr: string;
+      if (period === "daily") {
+        pipesTruncExpr = `DATE_TRUNC('day', created_at)`;
+        pipeLabelExpr = `TO_CHAR(DATE_TRUNC('day', created_at), 'Mon DD')`;
+      } else if (period === "weekly") {
+        pipesTruncExpr = `DATE_TRUNC('week', created_at)`;
+        pipeLabelExpr = `TO_CHAR(DATE_TRUNC('week', created_at), 'Mon DD')`;
+      } else {
+        pipesTruncExpr = `DATE_TRUNC('month', created_at)`;
+        pipeLabelExpr = `TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YY')`;
+      }
+      const pipeTrendRows = await db.execute(sql.raw(`
         SELECT
-          TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YY') AS label,
-          DATE_TRUNC('month', created_at) AS month_start,
+          ${pipeLabelExpr} AS label,
+          ${pipesTruncExpr} AS bucket_start,
           SUM(CAST(value AS DECIMAL)) AS total
         FROM leads
-        WHERE created_at >= ${twelveMonthsAgo}
+        WHERE ${leadsSinceExpr}
           AND stage NOT IN ('won', 'lost')
           AND value IS NOT NULL
-        GROUP BY DATE_TRUNC('month', created_at)
-        ORDER BY DATE_TRUNC('month', created_at)
-      `);
+        GROUP BY ${pipesTruncExpr}
+        ORDER BY ${pipesTruncExpr}
+      `));
       const pipeMonthly = (pipeTrendRows.rows as any[]).map(r => ({
         label: r.label,
         v: Math.round(parseFloat(r.total) || 0),
@@ -8954,19 +9158,31 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const lostPrev = parseInt(r0?.lost_prev30) || 0;
       const qcrPrev = (wonPrev + lostPrev) > 0 ? Math.round((wonPrev / (wonPrev + lostPrev)) * 100) : 0;
 
-      // QCR monthly trend: actual won/(won+lost) per month from lead close dates
-      const qcrTrendRows = await db.execute(sql`
+      // QCR trend: bucketed by period using updated_at close dates
+      let qcrTruncExpr: string;
+      let qcrLabelExpr: string;
+      if (period === "daily") {
+        qcrTruncExpr = `DATE_TRUNC('day', updated_at)`;
+        qcrLabelExpr = `TO_CHAR(DATE_TRUNC('day', updated_at), 'Mon DD')`;
+      } else if (period === "weekly") {
+        qcrTruncExpr = `DATE_TRUNC('week', updated_at)`;
+        qcrLabelExpr = `TO_CHAR(DATE_TRUNC('week', updated_at), 'Mon DD')`;
+      } else {
+        qcrTruncExpr = `DATE_TRUNC('month', updated_at)`;
+        qcrLabelExpr = `TO_CHAR(DATE_TRUNC('month', updated_at), 'Mon YY')`;
+      }
+      const qcrTrendRows = await db.execute(sql.raw(`
         SELECT
-          TO_CHAR(DATE_TRUNC('month', updated_at), 'Mon YY') AS label,
-          DATE_TRUNC('month', updated_at) AS month_start,
+          ${qcrLabelExpr} AS label,
+          ${qcrTruncExpr} AS bucket_start,
           SUM(CASE WHEN stage = 'won' THEN 1 ELSE 0 END) AS won_count,
           SUM(CASE WHEN stage = 'lost' THEN 1 ELSE 0 END) AS lost_count
         FROM leads
-        WHERE updated_at >= ${twelveMonthsAgo}
+        WHERE ${leadsSinceExpr.replace('created_at', 'updated_at')}
           AND stage IN ('won', 'lost')
-        GROUP BY DATE_TRUNC('month', updated_at)
-        ORDER BY DATE_TRUNC('month', updated_at)
-      `);
+        GROUP BY ${qcrTruncExpr}
+        ORDER BY ${qcrTruncExpr}
+      `));
       const qcrMonthly = (qcrTrendRows.rows as any[]).map(r => {
         const w = parseInt(r.won_count) || 0;
         const l = parseInt(r.lost_count) || 0;
@@ -8999,19 +9215,19 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }
       const arTotal = bucket030 + bucket3060 + bucket6090 + bucket90plus;
 
-      // Collections monthly trend: invoice amounts by issued month (open/unpaid)
-      const arTrendRows = await db.execute(sql`
+      // Collections trend: bucketed by period
+      const arTrendRows = await db.execute(sql.raw(`
         SELECT
-          TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY') AS label,
-          DATE_TRUNC('month', issued_date) AS month_start,
+          ${labelExpr} AS label,
+          ${dateTruncExpr} AS bucket_start,
           SUM(CAST(total_amount AS DECIMAL)) AS total
         FROM buildops_invoices
-        WHERE issued_date >= ${twelveMonthsAgo}
+        WHERE ${invoiceSinceExpr}
           AND total_amount IS NOT NULL
           AND CAST(total_amount AS DECIMAL) > 0
-        GROUP BY DATE_TRUNC('month', issued_date)
-        ORDER BY DATE_TRUNC('month', issued_date)
-      `);
+        GROUP BY ${dateTruncExpr}
+        ORDER BY ${dateTruncExpr}
+      `));
       const arMonthly = (arTrendRows.rows as any[]).map(r => ({
         label: r.label,
         v: Math.round(parseFloat(r.total) || 0),
@@ -9128,9 +9344,98 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }));
       const totalActiveJobs = activeJobsByStatus.reduce((sum, r) => sum + r.count, 0);
 
+      // ── Labor analytics from timesheets (best-effort; null if no data imported) ─
+      let laborAnalytics: any = null;
+      try {
+        const tsCountRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_timesheets`);
+        const tsCount = parseInt((tsCountRow.rows[0] as any)?.cnt) || 0;
+        if (tsCount > 0) {
+          // Overtime rate %: OT hours / total hours in last 30 days (exclude Bay Area, Sacramento)
+          const otRows = await db.execute(sql`
+            SELECT
+              SUM(CASE WHEN UPPER(labor_rate_group) LIKE '%OT%' OR UPPER(labor_rate_group) LIKE '%OVERTIME%' THEN CAST(total_duration_mins AS DECIMAL) ELSE 0 END) AS ot_mins,
+              SUM(CAST(total_duration_mins AS DECIMAL)) AS total_mins
+            FROM buildops_timesheets
+            WHERE work_date >= NOW() - INTERVAL '30 days'
+              AND total_duration_mins > 0
+              AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
+          `);
+          const otRow = otRows.rows[0] as any;
+          const otMins = parseFloat(otRow?.ot_mins) || 0;
+          const totalMins = parseFloat(otRow?.total_mins) || 0;
+          const overtimeRatePct = totalMins > 0 ? Math.round((otMins / totalMins) * 1000) / 10 : 0;
+
+          // Actual hours from timesheets vs scheduled hours from visits (last 4 weeks)
+          const actualHrsRow = await db.execute(sql`
+            SELECT
+              SUM(CAST(total_duration_mins AS DECIMAL)) / 60 AS actual_hrs,
+              SUM(CAST(scheduled_duration_mins AS DECIMAL)) / 60 AS scheduled_hrs
+            FROM buildops_timesheets
+            WHERE work_date >= NOW() - INTERVAL '28 days'
+              AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
+          `);
+          const ahRow = actualHrsRow.rows[0] as any;
+          const actualHrs = Math.round((parseFloat(ahRow?.actual_hrs) || 0) * 10) / 10;
+          const scheduledHrs = Math.round((parseFloat(ahRow?.scheduled_hrs) || 0) * 10) / 10;
+          const hrsUtilPct = scheduledHrs > 0 ? Math.round((actualHrs / scheduledHrs) * 100) : null;
+
+          // Monthly labor cost spark (last 6 months, department-filtered)
+          const laborCostRows = await db.execute(sql`
+            SELECT
+              TO_CHAR(DATE_TRUNC('month', work_date), 'Mon YY') AS label,
+              DATE_TRUNC('month', work_date) AS month_start,
+              SUM(CAST(total_cost AS DECIMAL)) AS total
+            FROM buildops_timesheets
+            WHERE work_date >= NOW() - INTERVAL '6 months'
+              AND total_cost IS NOT NULL
+              AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
+            GROUP BY DATE_TRUNC('month', work_date)
+            ORDER BY DATE_TRUNC('month', work_date)
+          `);
+          const laborCostSpark = (laborCostRows.rows as any[]).map(r => ({
+            label: r.label,
+            v: Math.round(parseFloat(r.total) || 0),
+          }));
+
+          // Current vs prior month labor cost
+          const laborCostCurrentMonth = laborCostSpark.at(-1)?.v ?? 0;
+          const laborCostPriorMonth = laborCostSpark.at(-2)?.v ?? 0;
+          const laborCostChangePct = laborCostPriorMonth > 0
+            ? Math.round(((laborCostCurrentMonth - laborCostPriorMonth) / laborCostPriorMonth) * 1000) / 10
+            : 0;
+
+          // Total labor cost all-time
+          const totalLaborCostRow = await db.execute(sql`
+            SELECT SUM(CAST(total_cost AS DECIMAL)) AS total FROM buildops_timesheets
+            WHERE (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
+          `);
+          const totalLaborCost = Math.round(parseFloat((totalLaborCostRow.rows[0] as any)?.total) || 0);
+
+          laborAnalytics = {
+            hasData: true,
+            totalRows: tsCount,
+            overtimeRatePct,
+            actualHrs4wk: actualHrs,
+            scheduledHrs4wk: scheduledHrs,
+            hrsUtilizationPct: hrsUtilPct,
+            laborCostCurrentMonth,
+            laborCostPriorMonth,
+            laborCostChangePct,
+            totalLaborCost,
+            laborCostSpark,
+          };
+        } else {
+          laborAnalytics = { hasData: false, totalRows: 0 };
+        }
+      } catch (laborErr: any) {
+        console.warn("[CEO metrics] labor analytics error:", laborErr.message);
+        laborAnalytics = { hasData: false, totalRows: 0, error: laborErr.message };
+      }
+
       // ── Assemble response ─────────────────────────────────────────────────────
       res.json({
         lastUpdated: now.toISOString(),
+        period,
         revenue: {
           current: revCurrent,
           prevMonth: revPrev,
@@ -9184,6 +9489,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           totalVisits,
           completedVisits,
         },
+        labor: laborAnalytics,
       });
     } catch (err: any) {
       console.error("[CEO metrics]", err.message);

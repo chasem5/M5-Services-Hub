@@ -7,8 +7,8 @@ export const modules: ModuleMap = {
   "./components/mockups/company-tabs/OrganizationTab.tsx": () => import("../components/mockups/company-tabs/OrganizationTab.tsx"),
   "./components/mockups/company-tabs/OverviewTab.tsx": () => import("../components/mockups/company-tabs/OverviewTab.tsx"),
   "./components/mockups/company-tabs/RevenueTab.tsx": () => import("../components/mockups/company-tabs/RevenueTab.tsx"),
-  "./components/mockups/slide-overs/BuildingPanel.tsx": () => import("../components/mockups/slide-overs/BuildingPanel.tsx"),
-  "./components/mockups/slide-overs/ContactPanel.tsx": () => import("../components/mockups/slide-overs/ContactPanel.tsx"),
   "./components/mockups/org-structure/SimpleTenant.tsx": () => import("../components/mockups/org-structure/SimpleTenant.tsx"),
-  "./components/mockups/org-structure/TeamsLargeCorp.tsx": () => import("../components/mockups/org-structure/TeamsLargeCorp.tsx")
+  "./components/mockups/org-structure/TeamsLargeCorp.tsx": () => import("../components/mockups/org-structure/TeamsLargeCorp.tsx"),
+  "./components/mockups/slide-overs/BuildingPanel.tsx": () => import("../components/mockups/slide-overs/BuildingPanel.tsx"),
+  "./components/mockups/slide-overs/ContactPanel.tsx": () => import("../components/mockups/slide-overs/ContactPanel.tsx")
 };
