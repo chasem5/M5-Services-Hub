@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, Zap, Database, GitMerge, CheckCircle2, RefreshCw, Building2, MapPin, Users, Briefcase, Receipt, FileSignature, Search, AlertCircle, UserCheck } from "lucide-react";
+import { ChevronDown, Zap, Database, GitMerge, CheckCircle2, RefreshCw, Building2, MapPin, Users, Briefcase, Receipt, FileSignature, Search, AlertCircle, UserCheck, Clock } from "lucide-react";
 
 function SectionHeader({ icon: Icon, title, description, open, onToggle, badge }: {
   icon: any; title: string; description: string; open: boolean; onToggle: () => void; badge?: string;
@@ -66,9 +66,59 @@ function CoverageBar({ label, api, csv, total }: { label: string; api: number; c
   );
 }
 
+const EMPLOYEES = [
+  { id: 1, name: "Marco Delgado",    title: "Lead Technician",     type: "full_time" },
+  { id: 2, name: "Rita Nguyen",      title: "Service Technician",  type: "full_time" },
+  { id: 3, name: "James Park",       title: "HVAC Specialist",     type: "full_time" },
+  { id: 4, name: "Ana Vásquez",      title: "Plumbing Tech",       type: "part_time" },
+  { id: 5, name: "Derek Owens",      title: "Electrical Tech",     type: "part_time" },
+  { id: 6, name: "Camille Fortier",  title: "Office Coordinator",  type: "exclude"   },
+] as { id: number; name: string; title: string; type: "full_time" | "part_time" | "exclude" }[];
+
+const TYPE_LABELS: Record<string, string> = { full_time: "Full-time", part_time: "Part-time", exclude: "Exclude" };
+const TYPE_COLORS: Record<string, string> = {
+  full_time: "bg-blue-50 text-blue-700 border-blue-200",
+  part_time: "bg-amber-50 text-amber-700 border-amber-200",
+  exclude:   "bg-gray-100 text-gray-400 border-gray-200",
+};
+
+function CapacityTypeRow({ emp, empTypes, setEmpTypes }: {
+  emp: typeof EMPLOYEES[0];
+  empTypes: Record<number, string>;
+  setEmpTypes: (fn: (p: Record<number, string>) => Record<number, string>) => void;
+}) {
+  const type = empTypes[emp.id] ?? emp.type;
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+      <div>
+        <p className="text-xs font-medium text-gray-800">{emp.name}</p>
+        <p className="text-[10px] text-gray-400">{emp.title}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium ${TYPE_COLORS[type]}`}>
+          {TYPE_LABELS[type]}
+        </span>
+        <div className="relative">
+          <select
+            value={type}
+            onChange={e => setEmpTypes(p => ({ ...p, [emp.id]: e.target.value }))}
+            className="appearance-none text-[10px] border border-gray-200 rounded px-2 py-1 pr-5 bg-white text-gray-600 cursor-pointer hover:bg-gray-50 focus:outline-none"
+          >
+            <option value="full_time">Full-time</option>
+            <option value="part_time">Part-time</option>
+            <option value="exclude">Exclude</option>
+          </select>
+          <ChevronDown className="h-2.5 w-2.5 text-gray-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BuildOpsAdminRedesign() {
-  const [open, setOpen] = useState({ connection: true, health: true, mappings: false });
+  const [open, setOpen] = useState({ connection: true, health: false, mappings: false });
   const toggle = (k: keyof typeof open) => setOpen(p => ({ ...p, [k]: !p[k] }));
+  const [empTypes, setEmpTypes] = useState<Record<number, string>>({});
 
   return (
     <div className="min-h-screen bg-gray-50/60 p-6">
@@ -145,6 +195,33 @@ export function BuildOpsAdminRedesign() {
                   <SyncButton icon={Receipt} label="Sync Invoices" description="Invoice amounts & status" />
                   <SyncButton icon={FileSignature} label="Sync Agreements" description="Service agreements & dates" />
                   <SyncButton icon={Search} label="Run Diagnostics" description="Probe employee endpoints" />
+                </div>
+              </div>
+
+              {/* Capacity Type */}
+              <div className="px-6 py-4 border-b">
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5 text-gray-500" /> Capacity Type
+                  </h4>
+                  <div className="flex items-center gap-3 text-[10px] text-gray-400">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> {EMPLOYEES.filter(e => (empTypes[e.id] ?? e.type) === "full_time").length} full-time</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> {EMPLOYEES.filter(e => (empTypes[e.id] ?? e.type) === "part_time").length} part-time</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-300 inline-block" /> {EMPLOYEES.filter(e => (empTypes[e.id] ?? e.type) === "exclude").length} excluded</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400 mb-3">
+                  <strong className="text-gray-600">Full-time</strong> — counts toward 40h/week capacity &nbsp;·&nbsp;
+                  <strong className="text-gray-600">Part-time</strong> — shown in drill-downs but excluded from capacity math &nbsp;·&nbsp;
+                  <strong className="text-gray-600">Exclude</strong> — hidden from all staffing metrics
+                </p>
+                <div className="border rounded-lg divide-y divide-gray-50 overflow-hidden bg-white">
+                  {EMPLOYEES.map(emp => (
+                    <CapacityTypeRow key={emp.id} emp={emp} empTypes={empTypes} setEmpTypes={setEmpTypes} />
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center gap-1.5 text-[10px] text-gray-400">
+                  <Clock className="h-3 w-3" /> Changes apply immediately to CEO dashboard capacity calculations.
                 </div>
               </div>
 
