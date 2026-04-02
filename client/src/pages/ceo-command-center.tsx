@@ -906,7 +906,7 @@ function CEOCommandCenterInner() {
             </div>
             {pipelineInvoiceSummary && pipelineInvoiceSummary.dealsInvoiced > 0 && (
               <div className="mt-2 pt-2 border-t border-gray-100" data-testid="pipeline-invoice-coverage">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">From Pipeline Deals</p>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">Invoice Coverage — From Pipeline Deals</p>
                 <div className="flex items-center gap-2 text-[10px]">
                   <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">{pipelineInvoiceSummary.dealsInvoiced} deals invoiced</span>
                   <span className="text-gray-500">${Math.round(pipelineInvoiceSummary.invoicedTotal / 1000)}K billed</span>

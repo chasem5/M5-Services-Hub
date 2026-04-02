@@ -62,7 +62,6 @@ import {
   MapPin,
   Database,
   GitMerge,
-  LayoutDashboard,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -2930,7 +2929,7 @@ export default function AdminPage() {
         </TabsContent>
 
         <TabsContent value="buildops" className="pt-4">
-          <Accordion type="multiple" defaultValue={["connection", "data-health", "mappings"]} className="space-y-3">
+          <Accordion type="multiple" defaultValue={["connection"]} className="space-y-3">
 
             {/* ── Group 1: Connection & Sync ──────────────────────────────── */}
             <AccordionItem value="connection" className="border rounded-xl overflow-hidden shadow-sm bg-card">
