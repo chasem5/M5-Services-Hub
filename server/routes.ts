@@ -9136,16 +9136,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         GROUP BY ${dateTruncExpr}
         ORDER BY ${dateTruncExpr}
       `));
-      const saMonthly = (saTrendRows.rows as any[]).map(r => ({
+      const saRaw: { label: string; v: number }[] = (saTrendRows.rows as any[]).map(r => ({
         label: r.label,
         v: Math.round(parseFloat(r.total) || 0),
       }));
-      // If no SA invoices found (field not populated yet), fall back to agreement total as single point
-      if (saMonthly.length === 0 && saTotal > 0) {
-        saMonthly.push({ label: "Now", v: saTotal });
-      } else if (saMonthly.length === 0) {
-        saMonthly.push({ label: "Now", v: 0 });
-      }
+      const saMonthly = fillBuckets(saRaw, allBuckets);
       const saCurrent = saMonthly.at(-1)?.v ?? saTotal;
       const saPrev = saMonthly.at(-2)?.v ?? 0;
       const saChangePct = saPrev > 0 ? ((saCurrent - saPrev) / saPrev) * 100 : 0;
