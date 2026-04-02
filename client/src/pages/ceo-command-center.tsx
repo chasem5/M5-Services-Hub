@@ -250,8 +250,6 @@ const STATUS_CONFIG: Record<ActivityStatus, { label: string; dot: string; badge:
 export default function CEOCommandCenter() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
-  const queryClient = useQueryClient();
-
   useEffect(() => {
     if (user && user.role !== "super_admin") navigate("/");
   }, [user, navigate]);
@@ -262,6 +260,7 @@ export default function CEOCommandCenter() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 function CEOCommandCenterInner() {
+  const queryClient = useQueryClient();
   const [period, setPeriod] = useState<Period>("monthly");
   const [viewPrior, setViewPrior] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -517,7 +516,7 @@ function CEOCommandCenterInner() {
           </div>
           <div className="flex items-center gap-2">
             {/* MTD / Prior toggle — only shown when viewing an incomplete current period */}
-            {metrics?.isPeriodIncomplete && !metricsLoading && (
+            {(metrics?.isPeriodIncomplete || viewPrior) && !metricsLoading && (
               <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1" data-testid="toggle-view-prior">
                 <button
                   data-testid="button-view-mtd"
@@ -598,7 +597,7 @@ function CEOCommandCenterInner() {
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Health</p>
             <span className="text-[10px] text-gray-300">— metrics that drive margin in service businesses</span>
           </div>
-          <div className="grid grid-cols-6 gap-3">
+          <div className="grid grid-cols-5 gap-3">
             {[
               {
                 label: "Utilization Rate",
@@ -637,12 +636,12 @@ function CEOCommandCenterInner() {
                 label: "Active Job Backlog",
                 value: opsKpis ? (
                   opsKpis.backlog.jobCount > 0
-                    ? `${opsKpis.backlog.jobCount} jobs`
+                    ? `${opsKpis.backlog.jobCount} jobs · ${fmtDollar(opsKpis.backlog.value)}`
                     : "—"
                 ) : "—",
                 target: "Minimize",
                 change: opsKpis?.backlog.jobCount > 0
-                  ? fmtDollar(opsKpis.backlog.value)
+                  ? "unstarted approved jobs"
                   : metrics?.activeJobs?.total === 0 ? "import jobs CSV" : "no unstarted jobs",
                 up: (opsKpis?.backlog.jobCount ?? 0) === 0,
                 icon: BarChart2, color: "#06b6d4",
