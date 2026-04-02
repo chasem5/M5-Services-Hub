@@ -10446,9 +10446,14 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         const tsCount = parseInt((tsCountRow.rows[0] as any)?.cnt) || 0;
         if (tsCount > 0) {
           // Overtime rate %: OT hours / total hours in last 30 days (exclude Bay Area, Sacramento)
+          // Uses overtime_mins column (populated by new CSV import) with fallback to labor_rate_group LIKE filter (old format)
           const otRows = await db.execute(sql`
             SELECT
-              SUM(CASE WHEN UPPER(labor_rate_group) LIKE '%OT%' OR UPPER(labor_rate_group) LIKE '%OVERTIME%' THEN CAST(total_duration_mins AS DECIMAL) ELSE 0 END) AS ot_mins,
+              SUM(CASE
+                WHEN overtime_mins IS NOT NULL THEN overtime_mins
+                WHEN UPPER(labor_rate_group) LIKE '%OT%' OR UPPER(labor_rate_group) LIKE '%OVERTIME%' THEN CAST(total_duration_mins AS DECIMAL)
+                ELSE 0
+              END) AS ot_mins,
               SUM(CAST(total_duration_mins AS DECIMAL)) AS total_mins
             FROM buildops_timesheets
             WHERE work_date >= NOW() - INTERVAL '30 days'
@@ -10808,16 +10813,51 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         GROUP BY v.primary_tech_name
         ORDER BY scheduled_mins DESC
       `);
-      const techs = (weekRows.rows as any[]).map(r => ({
-        techName: r.tech_name as string,
-        visitCount: parseInt(r.visit_count) || 0,
-        scheduledMins: parseFloat(r.scheduled_mins) || 0,
-        scheduledHrs: parseFloat(r.scheduled_hrs) || 0,
-        completed: parseInt(r.completed) || 0,
-        upcoming: parseInt(r.upcoming) || 0,
-        departments: r.departments ?? [],
-        isPartTime: parseInt(r.is_part_time) === 1,
-      }));
+      // Query actual hours from timesheets for the same week range
+      const tsRows = await db.execute(sql`
+        SELECT
+          LOWER(TRIM(employee_name)) AS name_key,
+          SUM(COALESCE(regular_mins, 0)) AS reg_mins,
+          SUM(COALESCE(overtime_mins, 0)) AS ot_mins,
+          SUM(CAST(total_duration_mins AS DECIMAL)) AS total_mins
+        FROM buildops_timesheets
+        WHERE work_date >= date_trunc('week', NOW()) + (${weekOffset} * INTERVAL '1 week')
+          AND work_date < date_trunc('week', NOW()) + ((${weekOffset} + 1) * INTERVAL '1 week')
+          AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
+        GROUP BY LOWER(TRIM(employee_name))
+      `);
+      const tsMap = new Map<string, { regMins: number; otMins: number; totalMins: number }>();
+      for (const row of tsRows.rows as any[]) {
+        tsMap.set(row.name_key, {
+          regMins: parseFloat(row.reg_mins) || 0,
+          otMins: parseFloat(row.ot_mins) || 0,
+          totalMins: parseFloat(row.total_mins) || 0,
+        });
+      }
+
+      const techs = (weekRows.rows as any[]).map(r => {
+        const nameKey = (r.tech_name as string).toLowerCase().trim();
+        const ts = tsMap.get(nameKey);
+        return {
+          techName: r.tech_name as string,
+          visitCount: parseInt(r.visit_count) || 0,
+          scheduledMins: parseFloat(r.scheduled_mins) || 0,
+          scheduledHrs: parseFloat(r.scheduled_hrs) || 0,
+          completed: parseInt(r.completed) || 0,
+          upcoming: parseInt(r.upcoming) || 0,
+          departments: r.departments ?? [],
+          isPartTime: parseInt(r.is_part_time) === 1,
+          hasTimesheetData: !!ts,
+          regHrs: ts ? Math.round((ts.regMins / 60) * 10) / 10 : 0,
+          otHrs: ts ? Math.round((ts.otMins / 60) * 10) / 10 : 0,
+          actualHrs: ts ? Math.round((ts.totalMins / 60) * 10) / 10 : 0,
+        };
+      });
+      // Sort by actual hours when available, otherwise fall back to scheduled
+      const hasAnyTimesheetData = techs.some(t => t.hasTimesheetData);
+      if (hasAnyTimesheetData) {
+        techs.sort((a, b) => (b.actualHrs || b.scheduledHrs) - (a.actualHrs || a.scheduledHrs));
+      }
       res.json({ techs, weekOffset });
     } catch (err: any) {
       console.error("[crew-by-tech]", err.message);

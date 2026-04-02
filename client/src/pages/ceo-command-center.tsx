@@ -88,6 +88,10 @@ interface CrewTech {
   completed: number;
   upcoming: number;
   departments: string[];
+  hasTimesheetData: boolean;
+  regHrs: number;
+  otHrs: number;
+  actualHrs: number;
 }
 
 // ── Fallback spark data (shown while loading) ─────────────────────────────────
@@ -1224,8 +1228,9 @@ function CEOCommandCenterInner() {
                         ) : (
                           <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                             {crewByTech.techs.map(t => {
-                              const maxHrs = Math.max(...crewByTech.techs.map(x => x.scheduledHrs), 1);
-                              const barPct = Math.min((t.scheduledHrs / maxHrs) * 100, 100);
+                              const displayHrs = t.hasTimesheetData ? t.actualHrs : t.scheduledHrs;
+                              const maxHrs = Math.max(...crewByTech.techs.map(x => x.hasTimesheetData ? x.actualHrs : x.scheduledHrs), 1);
+                              const barPct = Math.min((displayHrs / maxHrs) * 100, 100);
                               return (
                                 <div key={t.techName} className="flex items-center gap-2" data-testid={`crew-tech-${t.techName}`}>
                                   <div className="w-20 flex-shrink-0">
@@ -1235,7 +1240,16 @@ function CEOCommandCenterInner() {
                                   <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
                                     <div className={`h-2 rounded-full ${t.isPartTime ? 'bg-amber-300' : 'bg-indigo-400'}`} style={{ width: `${barPct}%` }} />
                                   </div>
-                                  <div className="text-[10px] text-gray-500 w-10 text-right flex-shrink-0">{t.scheduledHrs}h</div>
+                                  <div className="text-[10px] text-gray-500 text-right flex-shrink-0 min-w-[2.5rem]">
+                                    {t.hasTimesheetData ? (
+                                      <span>
+                                        {t.actualHrs}h
+                                        {t.otHrs > 0 && <span className="text-amber-500 ml-0.5">+{t.otHrs}OT</span>}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-400">{t.scheduledHrs}h</span>
+                                    )}
+                                  </div>
                                   <div className="text-[10px] text-gray-400 w-6 text-right flex-shrink-0">{t.visitCount}v</div>
                                 </div>
                               );
