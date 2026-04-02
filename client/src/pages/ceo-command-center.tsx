@@ -1570,7 +1570,7 @@ function CEOCommandCenterInner() {
                   </div>
                   <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
                     <p className="text-[11px] text-blue-600 leading-relaxed">
-                      <span className="font-bold">Context tip:</span> BuildOps timesheet CSVs are automatically detected and imported to the database (persisted). Other files are added to AI context for the current session only.
+                      <span className="font-bold">Context tip:</span> BuildOps CSVs are automatically detected by column headers and imported to the database — Timesheets, Invoices, Jobs, Visits, Service Agreements, and Job Margin / Cost reports are all persisted. Unrecognized CSVs have their filename and column headers stored for future use.
                     </p>
                   </div>
                 </div>
