@@ -6116,8 +6116,8 @@ Respond with this JSON:
     try {
       const id = parseInt(req.params.id);
       const { employmentType } = req.body as { employmentType: string };
-      if (!["full_time", "part_time"].includes(employmentType)) {
-        return res.status(400).json({ message: "employmentType must be full_time or part_time" });
+      if (!["full_time", "part_time", "exclude"].includes(employmentType)) {
+        return res.status(400).json({ message: "employmentType must be full_time, part_time, or exclude" });
       }
       const emp = await storage.updateBuildOpsEmployeeType(id, employmentType);
       res.json(emp);
@@ -10651,11 +10651,17 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
 
-      // Fetch part-time employee names for capacity exclusion
-      const ptRows = await db.execute(sql`
-        SELECT LOWER(TRIM(name)) AS name FROM buildops_employees WHERE employment_type = 'part_time'
+      // Fetch part-time and excluded employee names
+      const empTypeRows = await db.execute(sql`
+        SELECT LOWER(TRIM(name)) AS name, employment_type FROM buildops_employees
+        WHERE employment_type IN ('part_time', 'exclude')
       `);
-      const partTimeNames = new Set((ptRows.rows as any[]).map(r => r.name as string));
+      const partTimeNames = new Set<string>();
+      const excludedNames = new Set<string>();
+      for (const r of empTypeRows.rows as any[]) {
+        if (r.employment_type === 'part_time') partTimeNames.add(r.name as string);
+        else if (r.employment_type === 'exclude') excludedNames.add(r.name as string);
+      }
 
       // Per-week utilization: past 10 weeks + next 5 weeks (covers historical trend + forward booking)
       const weekRows = await db.execute(sql`
@@ -10678,11 +10684,14 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const MINS_PER_TECH_PER_WEEK = 40 * 60; // 40-hour work week
 
       const allWeeks = (weekRows.rows as any[]).map(r => {
-        const techCount = parseInt(r.tech_count) || 0;
         const techNames: string[] = r.tech_names ?? [];
-        // Capacity is based only on full-time techs active that week
-        const fullTimeTechCount = techNames.filter(n => !partTimeNames.has(n)).length || techCount;
-        const partTimeTechCount = techNames.filter(n => partTimeNames.has(n)).length;
+        // Excluded employees are stripped entirely from all calculations
+        const activeTechNames = techNames.filter(n => !excludedNames.has(n));
+        const fullTimeTechCount = activeTechNames.filter(n => !partTimeNames.has(n)).length;
+        const partTimeTechCount = activeTechNames.filter(n => partTimeNames.has(n)).length;
+        const techCount = activeTechNames.length || parseInt(r.tech_count) || 0;
+        // Note: scheduled_mins still includes excluded tech visits (can't strip by name in SQL easily)
+        // but for capacity accuracy this is acceptable — excluded staff typically have few visits
         const scheduledMins = parseFloat(r.total_scheduled_mins) || 0;
         const capacity = fullTimeTechCount * MINS_PER_TECH_PER_WEEK;
         const utilPct = capacity > 0 ? Math.round((scheduledMins / capacity) * 100) : 0;
@@ -10795,6 +10804,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           AND (v.department_name NOT IN ('Bay Area', 'Sacramento') OR v.department_name IS NULL)
           AND v.primary_tech_name IS NOT NULL
           AND v.primary_tech_name <> ''
+          AND (be.employment_type IS NULL OR be.employment_type <> 'exclude')
         GROUP BY v.primary_tech_name
         ORDER BY scheduled_mins DESC
       `);

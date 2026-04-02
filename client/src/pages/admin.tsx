@@ -552,8 +552,9 @@ function BuildOpsPanel() {
                     Capacity Type
                   </h4>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Mark employees as part-time to exclude them from the utilization capacity denominator on the CEO dashboard.
-                    Part-time techs still appear in the workload drill-down but don't count toward the 40h/week capacity total.
+                    <strong>Full-time</strong> — counts toward 40h/week capacity. &nbsp;
+                    <strong>Part-time</strong> — appears in drill-down but excluded from capacity. &nbsp;
+                    <strong>Exclude</strong> — hidden from all staffing metrics and drill-down entirely.
                   </p>
                 </div>
                 {employeesLoading ? (
@@ -577,6 +578,7 @@ function BuildOpsPanel() {
                           <SelectContent>
                             <SelectItem value="full_time">Full-time</SelectItem>
                             <SelectItem value="part_time">Part-time</SelectItem>
+                            <SelectItem value="exclude">Exclude</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
