@@ -9253,8 +9253,10 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       function fNum(row: string[], ...names: string[]): number | null {
         const v = f(row, ...names);
         if (!v) return null;
-        const n = parseFloat(v);
-        return isNaN(n) ? null : n;
+        const isNeg = /^\(.*\)$/.test(v.trim());
+        const cleaned = v.replace(/[%,$\s]/g, "").replace(/,/g, "").replace(/[()]/g, "");
+        const n = parseFloat(cleaned);
+        return isNaN(n) ? null : (isNeg ? -Math.abs(n) : n);
       }
       function fDate(row: string[], ...names: string[]): Date | null {
         const v = f(row, ...names);
@@ -9883,7 +9885,18 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         GROUP BY DATE_TRUNC('month', completed_date)
         ORDER BY DATE_TRUNC('month', completed_date)
       `);
-      const monthly = (sparkRows.rows as any[]).map(r => ({ label: r.label, v: parseFloat(r.v) || 0 }));
+      // Zero-fill to always produce 6 monthly buckets
+      const dataByMonth: Record<string, number> = {};
+      for (const r of sparkRows.rows as any[]) {
+        dataByMonth[r.label] = parseFloat(r.v) || 0;
+      }
+      const monthly: { label: string; v: number }[] = [];
+      const now2 = new Date();
+      for (let m = 5; m >= 0; m--) {
+        const d = new Date(now2.getFullYear(), now2.getMonth() - m, 1);
+        const label = d.toLocaleString("en-US", { month: "short" }).slice(0, 3) + " " + String(d.getFullYear()).slice(2);
+        monthly.push({ label, v: dataByMonth[label] ?? 0 });
+      }
 
       return res.json({ hasData: true, avgMarginPct, totalGrossProfit, totalRevenue, jobCount, totalRows, monthly });
     } catch (err: any) {
