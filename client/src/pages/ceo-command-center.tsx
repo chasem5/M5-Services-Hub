@@ -5,6 +5,7 @@ import {
   Send, Upload, FileSpreadsheet, X, Lock, Bot,
   BarChart2, Repeat2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   Clock, Wrench, Zap, Users, Activity, PhoneCall, Mail, Calendar, Info,
+  type LucideIcon,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, Cell,
@@ -92,6 +93,21 @@ interface CrewTech {
   regHrs: number;
   otHrs: number;
   actualHrs: number;
+}
+
+interface OpsKpiCard {
+  label: string;
+  sub?: string;
+  value: string;
+  target: string;
+  change: string;
+  up: boolean;
+  icon: LucideIcon;
+  color: string;
+  tip: string;
+  progress: number;
+  targetPct: number;
+  invertProgress?: boolean;
 }
 
 // ── Fallback spark data (shown while loading) ─────────────────────────────────
@@ -674,7 +690,7 @@ function CEOCommandCenterInner() {
             <span className="text-[10px] text-gray-300">— metrics that drive margin in service businesses</span>
           </div>
           <div className="grid grid-cols-5 gap-3">
-            {[
+            {([
               {
                 label: "Job Efficiency",
                 sub: "actual vs. expected visit time",
@@ -739,7 +755,7 @@ function CEOCommandCenterInner() {
                 progress: opsKpis?.recurringRevPct.value ?? 0,
                 targetPct: opsKpis?.recurringRevPct.target ?? 40,
               },
-            ].map((k) => {
+            ] as OpsKpiCard[]).map((k) => {
               const Icon = k.icon;
               const pct = Math.min((k.progress / k.targetPct) * 100, 100);
               const isHovered = hoveredKpi === k.label;
@@ -758,7 +774,7 @@ function CEOCommandCenterInner() {
                     <span className={`text-[10px] font-semibold ${k.up ? "text-emerald-600" : "text-red-500"}`}>{k.change}</span>
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5 leading-tight">{k.label}</p>
-                  {(k as any).sub && <p className="text-[9px] text-gray-300 mb-1 leading-tight">{(k as any).sub}</p>}
+                  {k.sub && <p className="text-[9px] text-gray-300 mb-1 leading-tight">{k.sub}</p>}
                   <p className="text-lg font-black text-gray-900 leading-none mb-1" style={{ fontFamily: "'Archivo Black', sans-serif" }}>{k.value}</p>
                   <p className="text-[10px] text-gray-400 mb-2">Target: {k.target}</p>
                   {/* Progress bar */}
