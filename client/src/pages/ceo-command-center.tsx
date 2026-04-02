@@ -4,6 +4,7 @@ import {
   RefreshCw, AlertTriangle, AlertCircle, CheckCircle2,
   Send, Upload, FileSpreadsheet, X, Lock, Bot,
   BarChart2, Repeat2, ChevronRight, ChevronDown, ChevronUp,
+  Clock, Wrench, Zap, Users, Activity, PhoneCall, Mail, Calendar,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
@@ -17,92 +18,46 @@ const PRIMARY = "#BE1916";
 
 // ── Time-series data ──────────────────────────────────────────────────────────
 const REVENUE_MONTHLY = [
-  { label: "May", v: 890000 },
-  { label: "Jun", v: 940000 },
-  { label: "Jul", v: 870000 },
-  { label: "Aug", v: 1010000 },
-  { label: "Sep", v: 1080000 },
-  { label: "Oct", v: 1150000 },
-  { label: "Nov", v: 1020000 },
-  { label: "Dec", v: 1090000 },
-  { label: "Jan", v: 980000 },
-  { label: "Feb", v: 1060000 },
-  { label: "Mar", v: 1040000 },
-  { label: "Apr", v: 1240000 },
+  { label: "May", v: 890000 }, { label: "Jun", v: 940000 }, { label: "Jul", v: 870000 },
+  { label: "Aug", v: 1010000 }, { label: "Sep", v: 1080000 }, { label: "Oct", v: 1150000 },
+  { label: "Nov", v: 1020000 }, { label: "Dec", v: 1090000 }, { label: "Jan", v: 980000 },
+  { label: "Feb", v: 1060000 }, { label: "Mar", v: 1040000 }, { label: "Apr", v: 1240000 },
 ];
-
 const REVENUE_WEEKLY = [
-  { label: "W1", v: 241000 },
-  { label: "W2", v: 258000 },
-  { label: "W3", v: 280700 },
-  { label: "W4", v: 312750 },
+  { label: "W1", v: 241000 }, { label: "W2", v: 258000 }, { label: "W3", v: 280700 }, { label: "W4", v: 312750 },
 ];
-
 const REVENUE_DAILY = [
-  { label: "Mon", v: 41200 },
-  { label: "Tue", v: 38800 },
-  { label: "Wed", v: 45500 },
-  { label: "Thu", v: 48320 },
+  { label: "Mon", v: 41200 }, { label: "Tue", v: 38800 }, { label: "Wed", v: 45500 }, { label: "Thu", v: 48320 },
 ];
-
 const MRR_MONTHLY = [
-  { label: "May", v: 148000 },
-  { label: "Jun", v: 153000 },
-  { label: "Jul", v: 155000 },
-  { label: "Aug", v: 159000 },
-  { label: "Sep", v: 162000 },
-  { label: "Oct", v: 166000 },
-  { label: "Nov", v: 169000 },
-  { label: "Dec", v: 172000 },
-  { label: "Jan", v: 175000 },
-  { label: "Feb", v: 180000 },
-  { label: "Mar", v: 184000 },
-  { label: "Apr", v: 187400 },
+  { label: "May", v: 148000 }, { label: "Jun", v: 153000 }, { label: "Jul", v: 155000 },
+  { label: "Aug", v: 159000 }, { label: "Sep", v: 162000 }, { label: "Oct", v: 166000 },
+  { label: "Nov", v: 169000 }, { label: "Dec", v: 172000 }, { label: "Jan", v: 175000 },
+  { label: "Feb", v: 180000 }, { label: "Mar", v: 184000 }, { label: "Apr", v: 187400 },
 ];
-
 const WIN_RATE_MONTHLY = [
-  { label: "May", v: 54 },
-  { label: "Jun", v: 57 },
-  { label: "Jul", v: 55 },
-  { label: "Aug", v: 59 },
-  { label: "Sep", v: 56 },
-  { label: "Oct", v: 60 },
-  { label: "Nov", v: 58 },
-  { label: "Dec", v: 61 },
-  { label: "Jan", v: 57 },
-  { label: "Feb", v: 59 },
-  { label: "Mar", v: 58 },
-  { label: "Apr", v: 61 },
+  { label: "May", v: 54 }, { label: "Jun", v: 57 }, { label: "Jul", v: 55 },
+  { label: "Aug", v: 59 }, { label: "Sep", v: 56 }, { label: "Oct", v: 60 },
+  { label: "Nov", v: 58 }, { label: "Dec", v: 61 }, { label: "Jan", v: 57 },
+  { label: "Feb", v: 59 }, { label: "Mar", v: 58 }, { label: "Apr", v: 61 },
 ];
-
 const PIPELINE_MONTHLY = [
-  { label: "May", v: 1.4 },
-  { label: "Jun", v: 1.6 },
-  { label: "Jul", v: 1.5 },
-  { label: "Aug", v: 1.7 },
-  { label: "Sep", v: 1.9 },
-  { label: "Oct", v: 1.8 },
-  { label: "Nov", v: 1.7 },
-  { label: "Dec", v: 1.9 },
-  { label: "Jan", v: 1.8 },
-  { label: "Feb", v: 1.9 },
-  { label: "Mar", v: 2.0 },
-  { label: "Apr", v: 2.1 },
+  { label: "May", v: 1.4 }, { label: "Jun", v: 1.6 }, { label: "Jul", v: 1.5 },
+  { label: "Aug", v: 1.7 }, { label: "Sep", v: 1.9 }, { label: "Oct", v: 1.8 },
+  { label: "Nov", v: 1.7 }, { label: "Dec", v: 1.9 }, { label: "Jan", v: 1.8 },
+  { label: "Feb", v: 1.9 }, { label: "Mar", v: 2.0 }, { label: "Apr", v: 2.1 },
 ];
-
 const MARGIN_MONTHLY = [
-  { label: "May", v: 36.2 },
-  { label: "Jun", v: 35.8 },
-  { label: "Jul", v: 34.9 },
-  { label: "Aug", v: 36.1 },
-  { label: "Sep", v: 35.6 },
-  { label: "Oct", v: 36.4 },
-  { label: "Nov", v: 35.2 },
-  { label: "Dec", v: 35.8 },
-  { label: "Jan", v: 34.9 },
-  { label: "Feb", v: 35.4 },
-  { label: "Mar", v: 35.3 },
-  { label: "Apr", v: 35.1 },
+  { label: "May", v: 36.2 }, { label: "Jun", v: 35.8 }, { label: "Jul", v: 34.9 },
+  { label: "Aug", v: 36.1 }, { label: "Sep", v: 35.6 }, { label: "Oct", v: 36.4 },
+  { label: "Nov", v: 35.2 }, { label: "Dec", v: 35.8 }, { label: "Jan", v: 34.9 },
+  { label: "Feb", v: 35.4 }, { label: "Mar", v: 35.3 }, { label: "Apr", v: 35.1 },
+];
+const UTIL_MONTHLY = [
+  { label: "May", v: 71 }, { label: "Jun", v: 74 }, { label: "Jul", v: 68 },
+  { label: "Aug", v: 76 }, { label: "Sep", v: 79 }, { label: "Oct", v: 81 },
+  { label: "Nov", v: 77 }, { label: "Dec", v: 73 }, { label: "Jan", v: 75 },
+  { label: "Feb", v: 78 }, { label: "Mar", v: 80 }, { label: "Apr", v: 82 },
 ];
 
 // ── KPI data ──────────────────────────────────────────────────────────────────
@@ -129,6 +84,202 @@ const KPI_DATA = {
     margin: { value: "35.1%", change: "-0.2pp", up: false },
   },
 };
+
+// ── Operational KPIs ──────────────────────────────────────────────────────────
+const OPS_KPIS = [
+  {
+    label: "Utilization Rate",
+    value: "82%",
+    target: "85%",
+    change: "+2pp",
+    up: true,
+    icon: Activity,
+    color: "#3b82f6",
+    tip: "Billable hours ÷ available capacity. Target: 85%+",
+    progress: 82,
+    targetPct: 85,
+  },
+  {
+    label: "Days to Collect (DSO)",
+    value: "38 days",
+    target: "< 30d",
+    change: "-4d",
+    up: true,
+    icon: Clock,
+    color: "#f59e0b",
+    tip: "Average days from invoice to payment. Lower is better.",
+    progress: 62,
+    targetPct: 100,
+    invertProgress: true,
+  },
+  {
+    label: "First-Time Fix Rate",
+    value: "88%",
+    target: "90%",
+    change: "+3pp",
+    up: true,
+    icon: Wrench,
+    color: "#10b981",
+    tip: "% of jobs resolved without a return visit. Industry benchmark: 90%+",
+    progress: 88,
+    targetPct: 90,
+  },
+  {
+    label: "Quote Turnaround",
+    value: "2.4 days",
+    target: "< 2d",
+    change: "-0.6d",
+    up: true,
+    icon: Zap,
+    color: "#8b5cf6",
+    tip: "Average days from inquiry to proposal sent. Faster = higher conversion.",
+    progress: 60,
+    targetPct: 100,
+    invertProgress: true,
+  },
+  {
+    label: "Backlog Value",
+    value: "$890K",
+    target: "$1M+",
+    change: "+14%",
+    up: true,
+    icon: BarChart2,
+    color: "#06b6d4",
+    tip: "Total value of scheduled but not yet started work.",
+    progress: 89,
+    targetPct: 100,
+  },
+  {
+    label: "Recurring Rev %",
+    value: "34%",
+    target: "40%",
+    change: "+2pp",
+    up: true,
+    icon: Repeat2,
+    color: "#ec4899",
+    tip: "% of revenue from service agreements vs. one-off jobs. Higher = more predictable.",
+    progress: 34,
+    targetPct: 40,
+  },
+];
+
+// ── Team performance data ─────────────────────────────────────────────────────
+type ActivityStatus = "active" | "at_risk" | "inactive";
+interface TeamMember {
+  name: string;
+  initials: string;
+  role: "Account Manager" | "Field Lead" | "Senior AM";
+  status: ActivityStatus;
+  lastActive: string;
+  revenueTarget: number;
+  revenueClosed: number;
+  pipeline: string;
+  winRate: number;
+  winRateChange: number;
+  calls: number;
+  meetings: number;
+  proposals: number;
+  color: string;
+}
+
+const TEAM: TeamMember[] = [
+  {
+    name: "Sarah Chen",
+    initials: "SC",
+    role: "Senior AM",
+    status: "active",
+    lastActive: "Today, 2:14 PM",
+    revenueTarget: 400000,
+    revenueClosed: 387000,
+    pipeline: "$610K",
+    winRate: 68,
+    winRateChange: 3,
+    calls: 24,
+    meetings: 11,
+    proposals: 9,
+    color: "#3b82f6",
+  },
+  {
+    name: "Marcus Rodriguez",
+    initials: "MR",
+    role: "Account Manager",
+    status: "active",
+    lastActive: "Today, 11:40 AM",
+    revenueTarget: 300000,
+    revenueClosed: 294000,
+    pipeline: "$480K",
+    winRate: 61,
+    winRateChange: 1,
+    calls: 18,
+    meetings: 8,
+    proposals: 7,
+    color: "#8b5cf6",
+  },
+  {
+    name: "David Park",
+    initials: "DP",
+    role: "Account Manager",
+    status: "at_risk",
+    lastActive: "5 days ago",
+    revenueTarget: 300000,
+    revenueClosed: 201000,
+    pipeline: "$310K",
+    winRate: 52,
+    winRateChange: -4,
+    calls: 6,
+    meetings: 2,
+    proposals: 3,
+    color: "#f59e0b",
+  },
+  {
+    name: "Lisa Torres",
+    initials: "LT",
+    role: "Account Manager",
+    status: "active",
+    lastActive: "Today, 9:55 AM",
+    revenueTarget: 300000,
+    revenueClosed: 218000,
+    pipeline: "$390K",
+    winRate: 58,
+    winRateChange: 0,
+    calls: 20,
+    meetings: 9,
+    proposals: 6,
+    color: "#10b981",
+  },
+  {
+    name: "James Wu",
+    initials: "JW",
+    role: "Field Lead",
+    status: "active",
+    lastActive: "Today, 3:00 PM",
+    revenueTarget: 250000,
+    revenueClosed: 243000,
+    pipeline: "$120K",
+    winRate: 74,
+    winRateChange: 2,
+    calls: 31,
+    meetings: 6,
+    proposals: 4,
+    color: "#06b6d4",
+  },
+  {
+    name: "Tony Reeves",
+    initials: "TR",
+    role: "Account Manager",
+    status: "inactive",
+    lastActive: "8 days ago",
+    revenueTarget: 280000,
+    revenueClosed: 118000,
+    pipeline: "$190K",
+    winRate: 41,
+    winRateChange: -7,
+    calls: 3,
+    meetings: 1,
+    proposals: 1,
+    color: "#ef4444",
+  },
+];
 
 const SUMMARIES: Record<string, string> = {
   daily: `**Revenue vs. Prior Day**\nToday is tracking at $48,320 — up 6.2% from yesterday's $45,500. HVAC preventive maintenance jobs are the primary driver; three large TI completions invoiced this morning.\n\n**Pipeline Health**\nActive pipeline sits at $2.1M across 34 open opportunities. Two deals moved backward from Proposal to Scoping today — both tied to budget approval delays at Cushman & Wakefield East Bay. Eight new leads entered the top of funnel from inbound referrals.\n\n**Win/Loss Trends**\nToday's win rate is 62%. Three estimates converted; two were lost to competitor on price. Average discount on won deals: 4.1% — within acceptable range.\n\n**Top Clients**\nCushman & Wakefield (YTD: $387K) and Prologis (YTD: $294K) remain the top two contributors. Prologis health score improved to 88 after a successful site walk this week.\n\n**Margin & Budget Concerns**\nJob #4471 (HVAC Retrofit — Embarcadero Tower 3) is running 11% over labor estimate. Field lead cites scope creep on ductwork. Needs change order review today.\n\n**Opportunities**\nBrookfield Property Group inquiry came in at $140K estimated value — first contact scheduled tomorrow. Potential to be the 4th Tier-A account this year.`,
@@ -159,12 +310,8 @@ type Period = "daily" | "weekly" | "monthly";
 type UploadedFile = { name: string; size: string; uploadedAt: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function fmt(v: number, type: "dollar" | "pct" | "m" = "dollar") {
-  if (type === "m") return `$${v.toFixed(1)}M`;
-  if (type === "pct") return `${v}%`;
-  return v >= 1000000
-    ? `$${(v / 1000000).toFixed(2)}M`
-    : `$${(v / 1000).toFixed(0)}K`;
+function fmtDollar(v: number) {
+  return v >= 1000000 ? `$${(v / 1000000).toFixed(2)}M` : `$${(v / 1000).toFixed(0)}K`;
 }
 
 const CustomTooltip = ({ active, payload, label, format }: any) => {
@@ -174,10 +321,16 @@ const CustomTooltip = ({ active, payload, label, format }: any) => {
     <div className="bg-white border border-gray-100 shadow-lg rounded-lg px-3 py-2 text-xs">
       <p className="text-gray-400 mb-0.5">{label}</p>
       <p className="font-bold text-gray-900">
-        {format === "pct" ? `${v}%` : format === "m" ? `$${v}M` : fmt(v)}
+        {format === "pct" ? `${v}%` : format === "m" ? `$${v}M` : fmtDollar(v)}
       </p>
     </div>
   );
+};
+
+const STATUS_CONFIG: Record<ActivityStatus, { label: string; dot: string; badge: string; text: string }> = {
+  active: { label: "Active", dot: "bg-emerald-500", badge: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
+  at_risk: { label: "At Risk", dot: "bg-amber-400", badge: "bg-amber-50 border-amber-200", text: "text-amber-700" },
+  inactive: { label: "Inactive", dot: "bg-red-500", badge: "bg-red-50 border-red-200", text: "text-red-700" },
 };
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
@@ -201,6 +354,7 @@ function CEOCommandCenterInner() {
   const [chatInput, setChatInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
+  const [hoveredKpi, setHoveredKpi] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([
     { name: "BuildOps_JobCostReport_Q1.xlsx", size: "284 KB", uploadedAt: "Apr 1, 2026 — 9:14 AM" },
   ]);
@@ -210,7 +364,6 @@ function CEOCommandCenterInner() {
 
   const kpi = KPI_DATA[period];
   const summary = SUMMARIES[period];
-
   const revenueData = period === "monthly" ? REVENUE_MONTHLY : period === "weekly" ? REVENUE_WEEKLY : REVENUE_DAILY;
 
   function handlePeriodChange(p: Period) {
@@ -237,7 +390,7 @@ function CEOCommandCenterInner() {
         "The most recent figures show that this metric has moved " +
         (Math.random() > 0.5 ? "positively" : "negatively") +
         " relative to the prior period. " +
-        "I recommend reviewing the underlying job-level detail in the estimates vs. actuals report for a complete picture. " +
+        "I recommend reviewing the underlying job-level detail in the estimates vs. actuals report. " +
         "Would you like me to highlight the top 3 contributing factors?";
       setChatMessages([...newMessages, { role: "ai", text: aiReply }]);
       setIsSending(false);
@@ -283,9 +436,11 @@ function CEOCommandCenterInner() {
   const amberCount = ALERTS.filter(a => a.level === "amber").length;
   const greenCount = ALERTS.filter(a => a.level === "green").length;
 
+  const atRisk = TEAM.filter(m => m.status === "at_risk" || m.status === "inactive");
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      {/* ── Header ───────────────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: PRIMARY }}>
@@ -300,29 +455,18 @@ function CEOCommandCenterInner() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Alert pills */}
           <div className="hidden sm:flex items-center gap-2">
             {redCount > 0 && (
               <span className="flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-full px-2.5 py-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
-                {redCount} danger
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />{redCount} danger
               </span>
             )}
-            {amberCount > 0 && (
+            {atRisk.length > 0 && (
               <span className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
-                {amberCount} watch
-              </span>
-            )}
-            {greenCount > 0 && (
-              <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                {greenCount} positive
+                <Users className="w-3 h-3" />{atRisk.length} team alerts
               </span>
             )}
           </div>
-
-          {/* Period selector */}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             {(["daily", "weekly", "monthly"] as Period[]).map(p => (
               <button
@@ -340,15 +484,15 @@ function CEOCommandCenterInner() {
 
       <div className="px-6 py-5 max-w-screen-xl mx-auto space-y-5">
 
-        {/* ── KPI strip with sparklines ─────────────────────────────────────── */}
+        {/* ── KPI Strip with sparklines ─────────────────────────────────────── */}
         <div className="grid grid-cols-5 gap-3" data-testid="section-kpi-strip">
           {[
-            { label: "Revenue", icon: DollarSign, ...kpi.revenue, sparkData: revenueData, fmt: "dollar" as const },
-            { label: "Pipeline", icon: BarChart2, ...kpi.pipeline, sparkData: PIPELINE_MONTHLY, fmt: "m" as const },
-            { label: "Win Rate", icon: Target, ...kpi.winRate, sparkData: WIN_RATE_MONTHLY, fmt: "pct" as const },
-            { label: "MRR", icon: Repeat2, ...kpi.mrr, sparkData: MRR_MONTHLY, fmt: "dollar" as const },
-            { label: "Margin %", icon: Percent, ...kpi.margin, sparkData: MARGIN_MONTHLY, fmt: "pct" as const },
-          ].map(({ label, icon: Icon, value, change, up, sparkData, fmt: fmtType }) => (
+            { label: "Revenue", icon: DollarSign, ...kpi.revenue, sparkData: revenueData, fmt: "dollar" },
+            { label: "Pipeline", icon: BarChart2, ...kpi.pipeline, sparkData: PIPELINE_MONTHLY, fmt: "m" },
+            { label: "Win Rate", icon: Target, ...kpi.winRate, sparkData: WIN_RATE_MONTHLY, fmt: "pct" },
+            { label: "MRR", icon: Repeat2, ...kpi.mrr, sparkData: MRR_MONTHLY, fmt: "dollar" },
+            { label: "Margin %", icon: Percent, ...kpi.margin, sparkData: MARGIN_MONTHLY, fmt: "pct" },
+          ].map(({ label, icon: Icon, value, change, up, sparkData, fmt }) => (
             <div key={label} className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 pt-3.5 pb-0 overflow-hidden" data-testid={`kpi-${label.toLowerCase().replace(/\s+/g, '-')}`}>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{label}</span>
@@ -359,7 +503,6 @@ function CEOCommandCenterInner() {
                 {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                 {change}
               </div>
-              {/* Sparkline */}
               <div className="h-12 -mx-4">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={sparkData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
@@ -369,14 +512,7 @@ function CEOCommandCenterInner() {
                         <stop offset="95%" stopColor={up ? "#10b981" : PRIMARY} stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <Area
-                      type="monotone"
-                      dataKey="v"
-                      stroke={up ? "#10b981" : PRIMARY}
-                      strokeWidth={1.5}
-                      fill={`url(#grad-${label})`}
-                      dot={false}
-                    />
+                    <Area type="monotone" dataKey="v" stroke={up ? "#10b981" : PRIMARY} strokeWidth={1.5} fill={`url(#grad-${label})`} dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -384,16 +520,65 @@ function CEOCommandCenterInner() {
           ))}
         </div>
 
-        {/* ── Hero chart: Revenue trend ──────────────────────────────────────── */}
+        {/* ── Operational KPIs ─────────────────────────────────────────────── */}
+        <div data-testid="section-ops-kpis">
+          <div className="flex items-center gap-2 mb-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Health</p>
+            <span className="text-[10px] text-gray-300">— metrics that drive margin in service businesses</span>
+          </div>
+          <div className="grid grid-cols-6 gap-3">
+            {OPS_KPIS.map((k) => {
+              const Icon = k.icon;
+              const pct = Math.min((k.progress / k.targetPct) * 100, 100);
+              const isHovered = hoveredKpi === k.label;
+              return (
+                <div
+                  key={k.label}
+                  className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3.5 cursor-default transition-shadow hover:shadow-md relative"
+                  data-testid={`ops-kpi-${k.label.toLowerCase().replace(/\s+/g, '-')}`}
+                  onMouseEnter={() => setHoveredKpi(k.label)}
+                  onMouseLeave={() => setHoveredKpi(null)}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: `${k.color}18` }}>
+                      <Icon className="w-3.5 h-3.5" style={{ color: k.color }} />
+                    </div>
+                    <span className={`text-[10px] font-semibold ${k.up ? "text-emerald-600" : "text-red-500"}`}>{k.change}</span>
+                  </div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1 leading-tight">{k.label}</p>
+                  <p className="text-lg font-black text-gray-900 leading-none mb-1" style={{ fontFamily: "'Archivo Black', sans-serif" }}>{k.value}</p>
+                  <p className="text-[10px] text-gray-400 mb-2">Target: {k.target}</p>
+                  {/* Progress bar */}
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${pct}%`,
+                        backgroundColor: pct >= 90 ? "#10b981" : pct >= 70 ? k.color : "#f59e0b",
+                      }}
+                    />
+                  </div>
+                  {/* Tooltip on hover */}
+                  {isHovered && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-20 w-52 bg-gray-900 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl leading-relaxed pointer-events-none">
+                      {k.tip}
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45 -mt-1" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Hero chart: Revenue trend ─────────────────────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5" data-testid="section-revenue-chart">
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">Revenue Trend</p>
               <p className="text-2xl font-black text-gray-900" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
                 {kpi.revenue.value}
-                <span className={`text-sm font-semibold ml-2 ${kpi.revenue.up ? "text-emerald-600" : "text-red-500"}`}>
-                  {kpi.revenue.change}
-                </span>
+                <span className={`text-sm font-semibold ml-2 ${kpi.revenue.up ? "text-emerald-600" : "text-red-500"}`}>{kpi.revenue.change}</span>
               </p>
             </div>
             <span className="text-xs text-gray-400 capitalize">{period} view</span>
@@ -409,12 +594,8 @@ function CEOCommandCenterInner() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "#9ca3af" }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={v => v >= 1000000 ? `$${(v / 1000000).toFixed(1)}M` : `$${(v / 1000).toFixed(0)}K`}
-                />
+                <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false}
+                  tickFormatter={v => v >= 1000000 ? `$${(v / 1000000).toFixed(1)}M` : `$${(v / 1000).toFixed(0)}K`} />
                 <Tooltip content={<CustomTooltip format="dollar" />} />
                 <Area type="monotone" dataKey="v" stroke={PRIMARY} strokeWidth={2.5} fill="url(#rev-grad)" dot={false} activeDot={{ r: 4, fill: PRIMARY }} />
               </AreaChart>
@@ -422,9 +603,8 @@ function CEOCommandCenterInner() {
           </div>
         </div>
 
-        {/* ── Secondary charts row ───────────────────────────────────────────── */}
+        {/* ── Secondary charts ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-4">
-          {/* Pipeline */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-pipeline-chart">
             <div className="flex items-center justify-between mb-1">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Pipeline Value</p>
@@ -446,7 +626,6 @@ function CEOCommandCenterInner() {
             </div>
           </div>
 
-          {/* Win Rate */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-winrate-chart">
             <div className="flex items-center justify-between mb-1">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Win Rate</p>
@@ -470,39 +649,38 @@ function CEOCommandCenterInner() {
             </div>
           </div>
 
-          {/* MRR */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-mrr-chart">
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-util-chart">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">MRR Growth</p>
-              <Repeat2 className="w-3.5 h-3.5 text-gray-300" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Utilization Rate</p>
+              <Activity className="w-3.5 h-3.5 text-gray-300" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
-              {kpi.mrr.value}
-              <span className={`text-xs font-semibold ml-1.5 ${kpi.mrr.up ? "text-emerald-600" : "text-red-500"}`}>{kpi.mrr.change}</span>
+              82%
+              <span className="text-xs font-semibold ml-1.5 text-emerald-600">+2pp</span>
             </p>
             <div className="h-28 mt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={MRR_MONTHLY.slice(-6)} margin={{ top: 2, right: 0, left: 4, bottom: 0 }}>
+                <AreaChart data={UTIL_MONTHLY.slice(-6)} margin={{ top: 2, right: 0, left: 4, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="mrr-grad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    <linearGradient id="util-grad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip content={<CustomTooltip format="dollar" />} />
-                  <Area type="monotone" dataKey="v" stroke="#10b981" strokeWidth={2} fill="url(#mrr-grad)" dot={false} activeDot={{ r: 4, fill: "#10b981" }} />
+                  <YAxis domain={[60, 90]} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+                  <Tooltip content={<CustomTooltip format="pct" />} />
+                  <ReferenceLine y={85} stroke="#e5e7eb" strokeDasharray="4 4" label={{ value: "Target 85%", fontSize: 9, fill: "#9ca3af" }} />
+                  <Area type="monotone" dataKey="v" stroke="#3b82f6" strokeWidth={2} fill="url(#util-grad)" dot={false} activeDot={{ r: 4, fill: "#3b82f6" }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
         </div>
 
-        {/* ── Margin trend + alert count row ────────────────────────────────── */}
+        {/* ── Margin + signal summary ───────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-4">
-          {/* Margin chart */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 col-span-2" data-testid="section-margin-chart">
             <div className="flex items-center justify-between mb-1">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Gross Margin %</p>
@@ -526,52 +704,155 @@ function CEOCommandCenterInner() {
             </div>
           </div>
 
-          {/* Alert summary card */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col justify-between" data-testid="section-alert-summary">
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col justify-between" data-testid="section-signal-summary">
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Signal Summary</p>
             <div className="space-y-3 flex-1">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center">
-                    <AlertCircle className="w-4 h-4 text-red-500" />
+              {[
+                { icon: AlertCircle, label: "Danger", count: redCount, color: "text-red-500", bg: "bg-red-50" },
+                { icon: AlertTriangle, label: "Watch", count: amberCount, color: "text-amber-500", bg: "bg-amber-50" },
+                { icon: CheckCircle2, label: "Positive", count: greenCount, color: "text-emerald-500", bg: "bg-emerald-50" },
+              ].map(({ icon: Icon, label, count, color, bg }) => (
+                <div key={label} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-8 h-8 rounded-full ${bg} flex items-center justify-center`}>
+                      <Icon className={`w-4 h-4 ${color}`} />
+                    </div>
+                    <span className="text-sm font-semibold text-gray-700">{label}</span>
                   </div>
-                  <span className="text-sm font-semibold text-gray-700">Danger</span>
+                  <span className={`text-2xl font-black ${color}`} style={{ fontFamily: "'Archivo Black', sans-serif" }}>{count}</span>
                 </div>
-                <span className="text-2xl font-black text-red-500" style={{ fontFamily: "'Archivo Black', sans-serif" }}>{redCount}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                  </div>
-                  <span className="text-sm font-semibold text-gray-700">Watch</span>
-                </div>
-                <span className="text-2xl font-black text-amber-500" style={{ fontFamily: "'Archivo Black', sans-serif" }}>{amberCount}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  </div>
-                  <span className="text-sm font-semibold text-gray-700">Positive</span>
-                </div>
-                <span className="text-2xl font-black text-emerald-500" style={{ fontFamily: "'Archivo Black', sans-serif" }}>{greenCount}</span>
-              </div>
+              ))}
             </div>
             <button
               onClick={() => { setShowDetail(v => !v); setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth" }), 50); }}
               className="mt-4 w-full flex items-center justify-center gap-1.5 text-xs font-semibold border border-gray-200 rounded-lg py-2 text-gray-600 hover:bg-gray-50 transition-all"
               data-testid="button-show-detail"
             >
-              {showDetail ? <><ChevronUp className="w-3.5 h-3.5" /> Hide detail</> : <><ChevronDown className="w-3.5 h-3.5" /> View detail</>}
+              {showDetail ? <><ChevronUp className="w-3.5 h-3.5" />Hide detail</> : <><ChevronDown className="w-3.5 h-3.5" />View detail</>}
             </button>
+          </div>
+        </div>
+
+        {/* ── Team Performance ──────────────────────────────────────────────── */}
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm" data-testid="section-team-performance">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4" style={{ color: PRIMARY }} />
+              <span className="text-sm font-bold text-gray-800">Team Performance</span>
+              <span className="ml-1 text-[10px] text-gray-400">— revenue vs. target · activity · pipeline</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {TEAM.filter(m => m.status === "inactive").length > 0 && (
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
+                  {TEAM.filter(m => m.status === "inactive").length} inactive
+                </span>
+              )}
+              {TEAM.filter(m => m.status === "at_risk").length > 0 && (
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                  {TEAM.filter(m => m.status === "at_risk").length} at risk
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-50">
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">Member</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Status</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Revenue vs. Target</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Pipeline</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Win Rate</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Activity (MTD)</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Last Active</th>
+                </tr>
+              </thead>
+              <tbody>
+                {TEAM.map((member, i) => {
+                  const sc = STATUS_CONFIG[member.status];
+                  const revPct = Math.min((member.revenueClosed / member.revenueTarget) * 100, 100);
+                  const isLow = revPct < 70;
+                  const isMid = revPct >= 70 && revPct < 90;
+                  const barColor = isLow ? "#ef4444" : isMid ? "#f59e0b" : "#10b981";
+                  return (
+                    <tr key={member.name} className={`border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors ${member.status === "inactive" ? "opacity-80" : ""}`} data-testid={`team-row-${i}`}>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ backgroundColor: member.color }}>
+                            {member.initials}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">{member.name}</p>
+                            <p className="text-[10px] text-gray-400">{member.role}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className={`flex items-center gap-1.5 text-[11px] font-semibold border rounded-full px-2.5 py-1 w-fit ${sc.badge} ${sc.text}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full inline-block flex-shrink-0 ${sc.dot}`} />
+                          {sc.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 min-w-[160px]">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-semibold text-gray-700">{fmtDollar(member.revenueClosed)}</span>
+                              <span className="text-[10px] text-gray-400">{Math.round(revPct)}%</span>
+                            </div>
+                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${revPct}%`, backgroundColor: barColor }} />
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-0.5">of {fmtDollar(member.revenueTarget)} target</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="text-sm font-semibold text-gray-700">{member.pipeline}</span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-semibold text-gray-700">{member.winRate}%</span>
+                          <span className={`text-[10px] font-semibold ${member.winRateChange > 0 ? "text-emerald-600" : member.winRateChange < 0 ? "text-red-500" : "text-gray-400"}`}>
+                            {member.winRateChange > 0 ? `+${member.winRateChange}pp` : member.winRateChange < 0 ? `${member.winRateChange}pp` : "—"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                            <PhoneCall className="w-3 h-3 text-gray-300" />
+                            <span className="font-semibold text-gray-700">{member.calls}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                            <Calendar className="w-3 h-3 text-gray-300" />
+                            <span className="font-semibold text-gray-700">{member.meetings}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                            <Mail className="w-3 h-3 text-gray-300" />
+                            <span className="font-semibold text-gray-700">{member.proposals}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className={`text-xs ${member.status === "inactive" ? "text-red-500 font-semibold" : member.status === "at_risk" ? "text-amber-600 font-semibold" : "text-gray-400"}`}>
+                          {member.lastActive}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
 
         {/* ── Drill-down detail (toggleable) ───────────────────────────────── */}
         {showDetail && (
           <div ref={detailRef} className="space-y-5 animate-in fade-in slide-in-from-top-2 duration-200">
-            {/* Proactive Alerts */}
             <div data-testid="section-alerts">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Proactive Alerts</p>
               <div className="space-y-2">
@@ -592,7 +873,6 @@ function CEOCommandCenterInner() {
               </div>
             </div>
 
-            {/* AI Executive Summary */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm" data-testid="section-ai-summary">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-2">
@@ -622,9 +902,7 @@ function CEOCommandCenterInner() {
               </div>
             </div>
 
-            {/* AI Chat + Upload */}
             <div className="grid grid-cols-2 gap-4">
-              {/* AI Chat */}
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col" style={{ minHeight: 400 }} data-testid="section-ai-chat">
                 <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
                   <Bot className="w-4 h-4" style={{ color: PRIMARY }} />
@@ -689,7 +967,6 @@ function CEOCommandCenterInner() {
                 </div>
               </div>
 
-              {/* Data Upload */}
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col" data-testid="section-file-upload">
                 <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
                   <FileSpreadsheet className="w-4 h-4" style={{ color: PRIMARY }} />
@@ -711,7 +988,7 @@ function CEOCommandCenterInner() {
                     <input ref={fileInputRef} type="file" accept=".xlsx,.csv" multiple onChange={handleFileUpload} className="hidden" data-testid="input-file-upload" />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Uploaded files ({uploadedFiles.length})</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Uploaded ({uploadedFiles.length})</p>
                     <div className="space-y-2">
                       {uploadedFiles.length === 0 && <p className="text-xs text-gray-400 text-center py-4">No files uploaded yet</p>}
                       {uploadedFiles.map((file, i) => (
