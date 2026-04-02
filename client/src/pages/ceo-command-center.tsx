@@ -329,6 +329,16 @@ function CEOCommandCenterInner() {
     refetchOnWindowFocus: false,
   });
 
+  const { data: pipelineInvoiceSummary } = useQuery<{
+    dealsInvoiced: number; invoiceCount: number; invoicedTotal: number;
+    outstandingTotal: number; paidTotal: number;
+    paidCount: number; partialCount: number; pendingCount: number;
+  }>({
+    queryKey: ["/api/ceo/pipeline-invoice-summary"],
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
   // ── Compute live KPI card values from API data ─────────────────────────────
   const rev = metrics?.revenue;
   const sa = metrics?.saContractRevenue;
@@ -835,6 +845,21 @@ function CEOCommandCenterInner() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            {pipelineInvoiceSummary && pipelineInvoiceSummary.dealsInvoiced > 0 && (
+              <div className="mt-2 pt-2 border-t border-gray-100" data-testid="pipeline-invoice-coverage">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">Invoice Coverage</p>
+                <div className="flex items-center gap-2 text-[10px]">
+                  <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">{pipelineInvoiceSummary.dealsInvoiced} deals</span>
+                  <span className="text-gray-500">${Math.round(pipelineInvoiceSummary.invoicedTotal / 1000)}K invoiced</span>
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-[10px]">
+                  {pipelineInvoiceSummary.paidCount > 0 && <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold">{pipelineInvoiceSummary.paidCount} paid</span>}
+                  {pipelineInvoiceSummary.partialCount > 0 && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold">{pipelineInvoiceSummary.partialCount} partial</span>}
+                  {pipelineInvoiceSummary.pendingCount > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-semibold">{pipelineInvoiceSummary.pendingCount} due</span>}
+                  {pipelineInvoiceSummary.outstandingTotal > 0 && <span className="text-orange-600 font-bold ml-auto">${Math.round(pipelineInvoiceSummary.outstandingTotal / 1000)}K out</span>}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-winrate-chart">

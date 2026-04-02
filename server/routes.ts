@@ -1682,9 +1682,14 @@ Do not include any other text, just the JSON.`,
 
   // Invoice payment status for leads — joins lead → job (via quote_id) → invoices
   // Fallback: also try quote_number → job_number when quote_id match is absent
-  app.get("/api/leads/invoice-status", isAuthenticated, async (_req, res) => {
+  // Applies same lead-scoping as /api/leads (own_only users only see their leads)
+  app.get("/api/leads/invoice-status", isAuthenticated, async (req, res) => {
     try {
+      const scopedUserId = await getScopedUserId(req, "leads");
       const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      // Build a parameterized scope filter fragment
+      const scopeFilter = scopedUserId ? sql` AND l.assigned_to = ${scopedUserId}` : sql``;
       const rows = await db.execute(sql`
         WITH matched_invoices AS (
           -- Primary join: via buildops_quote_id
@@ -1697,7 +1702,7 @@ Do not include any other text, just the JSON.`,
           FROM leads l
           JOIN buildops_jobs j ON j.buildops_quote_id = l.buildops_quote_id
           JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
-          WHERE l.buildops_quote_id IS NOT NULL
+          WHERE l.buildops_quote_id IS NOT NULL ${scopeFilter}
 
           UNION
 
@@ -1712,7 +1717,7 @@ Do not include any other text, just the JSON.`,
           JOIN buildops_jobs j ON j.job_number = l.buildops_quote_number
           JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
           WHERE l.buildops_quote_number IS NOT NULL
-            AND (l.buildops_quote_id IS NULL OR j.buildops_quote_id IS DISTINCT FROM l.buildops_quote_id)
+            AND (l.buildops_quote_id IS NULL OR j.buildops_quote_id IS DISTINCT FROM l.buildops_quote_id) ${scopeFilter}
         )
         SELECT
           lead_id,
@@ -10227,6 +10232,80 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       return res.json({ hasData: true, avgMarginPct, totalGrossProfit, totalRevenue, jobCount, totalRows, monthly });
     } catch (err: any) {
       console.error("[ceo/job-margin]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // CEO pipeline invoice coverage summary — for the CEO dashboard pipeline section
+  app.get("/api/ceo/pipeline-invoice-summary", isAuthenticated, requireRole(["super_admin"]), async (_req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(sql`
+        WITH active_leads AS (
+          SELECT id, buildops_quote_id, buildops_quote_number
+          FROM leads
+          WHERE stage NOT IN ('won', 'lost', 'canceled')
+        ),
+        matched_invoices AS (
+          SELECT
+            al.id AS lead_id,
+            i.id AS invoice_id,
+            CAST(i.total_amount AS numeric) AS total_amount,
+            i.outstanding_balance,
+            i.total_amount_paid,
+            CASE
+              WHEN i.outstanding_balance <= 0 THEN 'paid'
+              WHEN i.total_amount_paid > 0 THEN 'partial'
+              ELSE 'pending'
+            END AS pay_status
+          FROM active_leads al
+          JOIN buildops_jobs j ON j.buildops_quote_id = al.buildops_quote_id
+          JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
+          WHERE al.buildops_quote_id IS NOT NULL
+
+          UNION
+
+          SELECT
+            al.id AS lead_id,
+            i.id AS invoice_id,
+            CAST(i.total_amount AS numeric) AS total_amount,
+            i.outstanding_balance,
+            i.total_amount_paid,
+            CASE
+              WHEN i.outstanding_balance <= 0 THEN 'paid'
+              WHEN i.total_amount_paid > 0 THEN 'partial'
+              ELSE 'pending'
+            END AS pay_status
+          FROM active_leads al
+          JOIN buildops_jobs j ON j.job_number = al.buildops_quote_number
+          JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
+          WHERE al.buildops_quote_number IS NOT NULL
+            AND (al.buildops_quote_id IS NULL OR j.buildops_quote_id IS DISTINCT FROM al.buildops_quote_id)
+        )
+        SELECT
+          COUNT(DISTINCT lead_id) AS deals_invoiced,
+          COUNT(DISTINCT invoice_id) AS invoice_count,
+          COALESCE(SUM(total_amount), 0) AS invoiced_total,
+          COALESCE(SUM(outstanding_balance), 0) AS outstanding_total,
+          COALESCE(SUM(total_amount_paid), 0) AS paid_total,
+          COUNT(*) FILTER (WHERE pay_status = 'paid') AS paid_count,
+          COUNT(*) FILTER (WHERE pay_status = 'partial') AS partial_count,
+          COUNT(*) FILTER (WHERE pay_status = 'pending') AS pending_count
+        FROM matched_invoices
+      `);
+      const r = (rows.rows[0] as any) ?? {};
+      res.json({
+        dealsInvoiced: parseInt(r.deals_invoiced) || 0,
+        invoiceCount: parseInt(r.invoice_count) || 0,
+        invoicedTotal: parseFloat(r.invoiced_total) || 0,
+        outstandingTotal: parseFloat(r.outstanding_total) || 0,
+        paidTotal: parseFloat(r.paid_total) || 0,
+        paidCount: parseInt(r.paid_count) || 0,
+        partialCount: parseInt(r.partial_count) || 0,
+        pendingCount: parseInt(r.pending_count) || 0,
+      });
+    } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
