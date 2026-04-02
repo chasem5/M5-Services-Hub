@@ -359,7 +359,7 @@ function CEOCommandCenterInner() {
     }, 1400);
   }
 
-  const [timesheetImportStatus, setTimesheetImportStatus] = useState<{ status: 'idle' | 'uploading' | 'success' | 'error'; message?: string }>({ status: 'idle' });
+  const [importStatus, setImportStatus] = useState<{ status: 'idle' | 'uploading' | 'success' | 'error'; message?: string }>({ status: 'idle' });
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -367,52 +367,70 @@ function CEOCommandCenterInner() {
     const now = new Date().toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 
     for (const file of files) {
-      const isTimesheetCsv = file.name.toLowerCase().endsWith(".csv");
-      if (isTimesheetCsv) {
-        // Peek at the first line to validate it's a timesheet CSV
+      if (file.name.toLowerCase().endsWith(".csv")) {
         const text = await file.text();
         const firstLine = text.split(/\r?\n/)[0].toLowerCase();
-        if (firstLine.includes("visit id") || firstLine.includes("total duration mins") || firstLine.includes("labor rate group")) {
-          setTimesheetImportStatus({ status: 'uploading' });
+
+        // Detect Service Agreement CSV
+        if (firstLine.includes("agreement number") && firstLine.includes("annual contract value")) {
+          setImportStatus({ status: 'uploading' });
           const formData = new FormData();
           formData.append("file", file);
           try {
-            const resp = await fetch("/api/buildops/import-timesheets", {
-              method: "POST",
-              body: formData,
-            });
+            const resp = await fetch("/api/buildops/import-agreements", { method: "POST", body: formData });
             const result = await resp.json();
             if (!resp.ok) {
-              setTimesheetImportStatus({ status: 'error', message: result.message || 'Import failed' });
+              setImportStatus({ status: 'error', message: result.message || 'Import failed' });
             } else {
-              setTimesheetImportStatus({
+              setImportStatus({
                 status: 'success',
-                message: `Imported ${result.inserted} new + ${result.updated} updated rows (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} timesheet records.`,
+                message: `Service Agreements: ${result.inserted} new + ${result.updated} updated (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} agreements.`,
               });
-              setUploadedFiles(prev => [
-                ...prev,
-                {
-                  name: `${file.name} (timesheet import)`,
-                  size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
-                  uploadedAt: now,
-                },
-              ]);
+              setUploadedFiles(prev => [...prev, {
+                name: `${file.name} (SA import)`,
+                size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+                uploadedAt: now,
+              }]);
             }
           } catch (err: any) {
-            setTimesheetImportStatus({ status: 'error', message: err.message || 'Network error' });
+            setImportStatus({ status: 'error', message: err.message || 'Network error' });
+          }
+          continue;
+        }
+
+        // Detect Timesheet CSV
+        if (firstLine.includes("visit id") || firstLine.includes("total duration mins") || firstLine.includes("labor rate group")) {
+          setImportStatus({ status: 'uploading' });
+          const formData = new FormData();
+          formData.append("file", file);
+          try {
+            const resp = await fetch("/api/buildops/import-timesheets", { method: "POST", body: formData });
+            const result = await resp.json();
+            if (!resp.ok) {
+              setImportStatus({ status: 'error', message: result.message || 'Import failed' });
+            } else {
+              setImportStatus({
+                status: 'success',
+                message: `Timesheets: ${result.inserted} new + ${result.updated} updated (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} records.`,
+              });
+              setUploadedFiles(prev => [...prev, {
+                name: `${file.name} (timesheet import)`,
+                size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+                uploadedAt: now,
+              }]);
+            }
+          } catch (err: any) {
+            setImportStatus({ status: 'error', message: err.message || 'Network error' });
           }
           continue;
         }
       }
-      // Generic file (non-timesheet): just add to local list for AI context
-      setUploadedFiles(prev => [
-        ...prev,
-        {
-          name: file.name,
-          size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
-          uploadedAt: now,
-        },
-      ]);
+      // Generic file: add to local list for AI context
+      setUploadedFiles(prev => [...prev, {
+        name: file.name,
+        size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+        uploadedAt: now,
+      }]);
     }
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
@@ -1289,25 +1307,25 @@ function CEOCommandCenterInner() {
                 <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
                   <FileSpreadsheet className="w-4 h-4" style={{ color: PRIMARY }} />
                   <span className="text-sm font-bold text-gray-800">Data Upload</span>
-                  <span className="ml-auto text-[10px] text-gray-400 font-medium">Timesheets imported to DB · others added to AI context</span>
+                  <span className="ml-auto text-[10px] text-gray-400 font-medium">SA & Timesheets imported to DB · others added to AI context</span>
                 </div>
                 <div className="px-5 py-4 flex-1 space-y-4">
                   <div
-                    onClick={() => timesheetImportStatus.status !== 'uploading' && fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${timesheetImportStatus.status === 'uploading' ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
+                    onClick={() => importStatus.status !== 'uploading' && fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${importStatus.status === 'uploading' ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
                     data-testid="dropzone-file-upload"
                   >
-                    {timesheetImportStatus.status === 'uploading' ? (
+                    {importStatus.status === 'uploading' ? (
                       <>
                         <RefreshCw className="w-6 h-6 text-blue-400 animate-spin" />
-                        <p className="text-sm font-semibold text-blue-600">Importing timesheet…</p>
+                        <p className="text-sm font-semibold text-blue-600">Importing…</p>
                         <p className="text-xs text-blue-400">Parsing and upserting rows to database</p>
                       </>
                     ) : (
                       <>
                         <Upload className="w-6 h-6 text-gray-300" />
                         <p className="text-sm font-semibold text-gray-500">Drop Excel or CSV here</p>
-                        <p className="text-xs text-gray-400">.xlsx, .csv — max 25 MB · BuildOps timesheets auto-detected</p>
+                        <p className="text-xs text-gray-400">.xlsx, .csv — max 25 MB · Service Agreements & Timesheets auto-detected</p>
                         <button data-testid="button-browse-files" className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-100 transition-all">
                           Browse files
                         </button>
@@ -1316,27 +1334,27 @@ function CEOCommandCenterInner() {
                     <input ref={fileInputRef} type="file" accept=".xlsx,.csv" multiple onChange={handleFileUpload} className="hidden" data-testid="input-file-upload" />
                   </div>
 
-                  {/* Timesheet import status banner */}
-                  {timesheetImportStatus.status === 'success' && (
+                  {/* Import status banner */}
+                  {importStatus.status === 'success' && (
                     <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3.5 py-2.5" data-testid="banner-import-success">
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
                       <div className="flex-1">
-                        <p className="text-[11px] font-bold text-emerald-700">Timesheet import successful</p>
-                        <p className="text-[11px] text-emerald-600 leading-relaxed">{timesheetImportStatus.message}</p>
+                        <p className="text-[11px] font-bold text-emerald-700">Import successful</p>
+                        <p className="text-[11px] text-emerald-600 leading-relaxed">{importStatus.message}</p>
                       </div>
-                      <button onClick={() => setTimesheetImportStatus({ status: 'idle' })} className="text-emerald-300 hover:text-emerald-500 flex-shrink-0">
+                      <button onClick={() => setImportStatus({ status: 'idle' })} className="text-emerald-300 hover:text-emerald-500 flex-shrink-0">
                         <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   )}
-                  {timesheetImportStatus.status === 'error' && (
+                  {importStatus.status === 'error' && (
                     <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3.5 py-2.5" data-testid="banner-import-error">
                       <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                       <div className="flex-1">
                         <p className="text-[11px] font-bold text-red-700">Import failed</p>
-                        <p className="text-[11px] text-red-600 leading-relaxed">{timesheetImportStatus.message}</p>
+                        <p className="text-[11px] text-red-600 leading-relaxed">{importStatus.message}</p>
                       </div>
-                      <button onClick={() => setTimesheetImportStatus({ status: 'idle' })} className="text-red-300 hover:text-red-500 flex-shrink-0">
+                      <button onClick={() => setImportStatus({ status: 'idle' })} className="text-red-300 hover:text-red-500 flex-shrink-0">
                         <X className="w-3.5 h-3.5" />
                       </button>
                     </div>

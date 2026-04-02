@@ -263,6 +263,7 @@ export interface IStorage {
   migrateBuildopsPropertyColumns(): Promise<void>;
   migrateBuildopsVisitsAndExtendedFields(): Promise<void>;
   migrateBuildopsTimesheets(): Promise<void>;
+  migrateAgreementCsvColumns(): Promise<void>;
   migrateTaskBoards(): Promise<void>;
 
   // Industry Options
@@ -1666,6 +1667,44 @@ export class DatabaseStorage implements IStorage {
       `);
     } catch (e) {
       console.error("migrateBuildopsTimesheets error:", e);
+    }
+  }
+
+  async migrateAgreementCsvColumns(): Promise<void> {
+    try {
+      const cols: [string, string][] = [
+        ["billing_customer_name", "varchar"],
+        ["department_name", "varchar"],
+        ["first_bill_date", "timestamp"],
+        ["next_bill_date", "timestamp"],
+        ["billing_type", "varchar"],
+        ["annual_contract_value", "decimal(12,2)"],
+        ["renewal_date", "timestamp"],
+        ["sold_by", "varchar"],
+        ["created_timestamp", "timestamp"],
+        ["created_by", "varchar"],
+        ["service_agreement_type", "varchar"],
+        ["project_manager", "varchar"],
+        ["account_manager", "varchar"],
+        ["total_amount", "decimal(14,4)"],
+        ["adjustment_amount", "decimal(14,4)"],
+        ["total_cost", "decimal(14,4)"],
+        ["material_cost", "decimal(14,4)"],
+        ["labour_cost", "decimal(14,4)"],
+        ["labour_hours", "decimal(10,2)"],
+        ["total_budgeted_hours", "decimal(10,2)"],
+        ["total_budgeted_amount", "decimal(14,4)"],
+        ["number_of_maintenances", "integer"],
+        ["number_of_maintenances_completed", "integer"],
+        ["number_of_jobs", "integer"],
+        ["number_of_jobs_completed", "integer"],
+        ["csv_imported_at", "timestamp"],
+      ];
+      for (const [col, type] of cols) {
+        await db.execute(sql.raw(`ALTER TABLE buildops_agreements ADD COLUMN IF NOT EXISTS ${col} ${type}`));
+      }
+    } catch (e) {
+      console.error("migrateAgreementCsvColumns error:", e);
     }
   }
 

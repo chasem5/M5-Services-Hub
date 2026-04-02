@@ -162,6 +162,7 @@ export async function registerRoutes(
   await storage.migrateBuildopsPropertyColumns();
   await storage.migrateBuildopsVisitsAndExtendedFields();
   await storage.migrateBuildopsTimesheets();
+  await storage.migrateAgreementCsvColumns();
   await storage.migrateParentClientColumn();
   await storage.migrateClientOnboardingChecklist();
   await storage.migrateLeadLossColumns();
@@ -9007,6 +9008,167 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       return res.json({ processed, inserted, updated, skipped, totalRows });
     } catch (err: any) {
       console.error("[import-timesheets]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Import Service Agreements CSV ───────────────────────────────────────────
+  app.post("/api/buildops/import-agreements", isAuthenticated, requireRole(["super_admin", "admin"]), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const text = req.file.buffer.toString("utf-8");
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return res.status(400).json({ message: "CSV has no data rows" });
+
+      // Parse header
+      function parseCsvLine(line: string): string[] {
+        const result: string[] = [];
+        let cur = "";
+        let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"' && !inQ) { inQ = true; continue; }
+          if (c === '"' && inQ) {
+            if (line[i + 1] === '"') { cur += '"'; i++; } else { inQ = false; }
+            continue;
+          }
+          if (c === ',' && !inQ) { result.push(cur.trim()); cur = ""; continue; }
+          cur += c;
+        }
+        result.push(cur.trim());
+        return result;
+      }
+
+      const headerRaw = parseCsvLine(lines[0]);
+      const header = headerRaw.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, " ").trim());
+
+      function col(...names: string[]): number {
+        for (const n of names) {
+          const idx = header.indexOf(n.toLowerCase().replace(/[^a-z0-9]/g, " ").trim());
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      }
+
+      // Detect SA CSV
+      const hasAgreementNumber = col("agreement number") >= 0;
+      const hasStatus = col("status") >= 0;
+      const hasContractValue = col("annual contract value", "total contract value") >= 0;
+      if (!hasAgreementNumber || !hasStatus || !hasContractValue) {
+        return res.status(400).json({ message: "Not a Service Agreement CSV — expected 'Agreement Number', 'Status', and contract value columns" });
+      }
+
+      function f(row: string[], ...names: string[]): string | null {
+        const idx = col(...names);
+        if (idx < 0 || idx >= row.length) return null;
+        const v = row[idx].replace(/^"(.*)"$/, "$1").trim();
+        return v || null;
+      }
+
+      function fNum(row: string[], ...names: string[]): number | null {
+        const v = f(row, ...names);
+        if (!v) return null;
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+      }
+
+      function fDate(row: string[], ...names: string[]): Date | null {
+        const v = f(row, ...names);
+        if (!v) return null;
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+      }
+
+      let inserted = 0, updated = 0, skipped = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const row = parseCsvLine(lines[i]);
+        if (row.length < 3) { skipped++; continue; }
+
+        const agreementNumber = f(row, "agreement number");
+        if (!agreementNumber) { skipped++; continue; }
+
+        const fields: Record<string, any> = {
+          agreement_name: f(row, "agreement name"),
+          customer_name: f(row, "customer name"),
+          billing_customer_name: f(row, "billing customer name"),
+          department_name: f(row, "department name"),
+          status: f(row, "status"),
+          billing_type: f(row, "billing type"),
+          service_agreement_type: f(row, "service agreement type"),
+          project_manager: f(row, "project manager"),
+          account_manager: f(row, "account manager"),
+          sold_by: f(row, "sold by"),
+          created_by: f(row, "created by"),
+          start_date: fDate(row, "start date local"),
+          end_date: fDate(row, "end date local"),
+          first_bill_date: fDate(row, "first bill date local"),
+          next_bill_date: fDate(row, "next bill date local"),
+          renewal_date: fDate(row, "renewal date local"),
+          created_timestamp: fDate(row, "created time local"),
+          contract_value: fNum(row, "total contract value"),
+          annual_contract_value: fNum(row, "annual contract value"),
+          total_amount: fNum(row, "total amount"),
+          adjustment_amount: fNum(row, "adjustment amount"),
+          total_cost: fNum(row, "total cost"),
+          material_cost: fNum(row, "material cost"),
+          labour_cost: fNum(row, "labour cost"),
+          labour_hours: fNum(row, "labour hours"),
+          total_budgeted_hours: fNum(row, "total budgeted hours"),
+          total_budgeted_amount: fNum(row, "total budgeted amount"),
+          number_of_maintenances: fNum(row, "number of maintenances"),
+          number_of_maintenances_completed: fNum(row, "number of maintenances completed"),
+          number_of_jobs: fNum(row, "number of jobs"),
+          number_of_jobs_completed: fNum(row, "number of jobs completed"),
+          csv_imported_at: new Date(),
+        };
+
+        // Remove null fields
+        const setFields = Object.entries(fields).filter(([, v]) => v !== null && v !== undefined);
+
+        // Check existing record by agreement_number
+        const existing = await db.execute(sql.raw(
+          `SELECT id FROM buildops_agreements WHERE agreement_number = $1 LIMIT 1`,
+          [agreementNumber]
+        ));
+
+        if ((existing.rows as any[]).length > 0) {
+          // UPDATE
+          const setClause = setFields.map(([k], idx) => `${k} = $${idx + 2}`).join(", ");
+          const vals = setFields.map(([, v]) => v);
+          await db.execute(sql.raw(
+            `UPDATE buildops_agreements SET ${setClause} WHERE agreement_number = $1`,
+            [agreementNumber, ...vals]
+          ));
+          updated++;
+        } else {
+          // INSERT — generate a synthetic buildops_id from agreement_number since it's unique
+          const syntheticId = `csv-${agreementNumber}`;
+          const allFields: Record<string, any> = {
+            buildops_id: syntheticId,
+            agreement_number: agreementNumber,
+            ...Object.fromEntries(setFields),
+          };
+          const keys = Object.keys(allFields);
+          const placeholders = keys.map((_, idx) => `$${idx + 1}`).join(", ");
+          const vals = Object.values(allFields);
+          await db.execute(sql.raw(
+            `INSERT INTO buildops_agreements (${keys.join(", ")}) VALUES (${placeholders}) ON CONFLICT (buildops_id) DO NOTHING`,
+            vals
+          ));
+          inserted++;
+        }
+      }
+
+      const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_agreements`);
+      const totalRows = parseInt((countRow.rows[0] as any)?.cnt) || 0;
+
+      return res.json({ processed: lines.length - 1, inserted, updated, skipped, totalRows });
+    } catch (err: any) {
+      console.error("[import-agreements]", err.message);
       res.status(500).json({ message: err.message });
     }
   });
