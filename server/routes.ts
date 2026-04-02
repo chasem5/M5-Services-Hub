@@ -9852,7 +9852,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         return res.json({ hasData: false, avgMarginPct: null, totalRows: 0, monthly: [] });
       }
 
-      // Overall avg margin (excluding zero-revenue jobs)
+      // Overall avg margin across all imported rows with a margin value
       const avgRow = await db.execute(sql`
         SELECT
           ROUND(AVG(CAST(margin_pct AS DECIMAL))::numeric, 1) AS avg_margin,
@@ -9861,7 +9861,6 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           COUNT(*) AS job_count
         FROM buildops_job_margin
         WHERE margin_pct IS NOT NULL
-          AND department NOT IN ('Bay Area', 'Sacramento')
       `);
       const avgMarginPct = parseFloat((avgRow.rows[0] as any)?.avg_margin) || 0;
       const totalGrossProfit = parseFloat((avgRow.rows[0] as any)?.total_gross_profit) || 0;
@@ -9877,7 +9876,6 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         WHERE completed_date IS NOT NULL
           AND margin_pct IS NOT NULL
           AND completed_date >= NOW() - INTERVAL '6 months'
-          AND department NOT IN ('Bay Area', 'Sacramento')
         GROUP BY DATE_TRUNC('month', completed_date)
         ORDER BY DATE_TRUNC('month', completed_date)
       `);

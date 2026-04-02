@@ -472,6 +472,7 @@ function CEOCommandCenterInner() {
             formData.append("file", file);
             const resp = await fetch("/api/buildops/import-generic-csv", { method: "POST", body: formData });
             const result = await resp.json();
+            if (!resp.ok) throw new Error(result.message || `Server error ${resp.status}`);
             const rowCount = result.rowCount ?? 0;
             setImportStatus({
               status: 'success',
