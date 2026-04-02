@@ -1133,8 +1133,7 @@ function CEOCommandCenterInner() {
                       <div data-testid="staffing-stat-schedule-horizon">
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <Calendar className="w-3.5 h-3.5 text-violet-400" />
-                          <p className="text-[10px] font-semibold text-gray-500">Schedule Horizon</p>
-                          <span className="text-[9px] text-gray-300">next 5 weeks</span>
+                          <p className="text-[10px] font-semibold text-gray-500">Schedule Horizon (next 5 wks)</p>
                         </div>
                         {staffingLoading ? (
                           <div className="flex gap-1">{[0,1,2,3,4].map(i => <div key={i} className="w-9 h-10 rounded bg-gray-100 animate-pulse" />)}</div>
@@ -1165,6 +1164,12 @@ function CEOCommandCenterInner() {
                           </div>
                         )}
                         {summaryNote && <p className="text-[9px] text-gray-300 mt-1">{summaryNote}</p>}
+                        <p className="text-[8px] text-gray-200 mt-0.5">
+                          <span className="inline-block w-1.5 h-1.5 rounded-sm bg-gray-200 mr-1 align-middle" />gap
+                          <span className="inline-block w-1.5 h-1.5 rounded-sm bg-emerald-400 ml-2 mr-1 align-middle" />&lt;70%
+                          <span className="inline-block w-1.5 h-1.5 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />70–89%
+                          <span className="inline-block w-1.5 h-1.5 rounded-sm bg-red-400 ml-2 mr-1 align-middle" />≥90%
+                        </p>
                       </div>
                     );
                   })()}
