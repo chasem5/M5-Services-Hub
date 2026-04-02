@@ -6455,6 +6455,12 @@ Respond with this JSON:
         const paymentTermVal = inv.paymentTermName ?? rawInv.payment_term_name ?? rawInv.paymentTerm?.name ?? rawInv.paymentTermName ?? null;
         const saNumber = inv.serviceAgreementNumber ?? rawInv.service_agreement_number ?? rawInv.serviceAgreementNumber ?? rawInv.serviceAgreement?.agreementNumber ?? rawInv.serviceAgreement?.number ?? null;
 
+        // Probe API response for payment fields (not always present)
+        const apiTotalAmountPaid = rawInv.totalAmountPaid ?? rawInv.paidAmount ?? rawInv.amountPaid ?? null;
+        const apiOutstandingBalance = rawInv.outstandingBalance ?? rawInv.balance ?? rawInv.amountDue ?? null;
+        const apiAdjustmentAmount = rawInv.adjustmentAmount ?? rawInv.adjustment ?? null;
+        const apiLastPaymentDate = parseDate(rawInv.lastPaymentDate ?? rawInv.lastPaidDate ?? null);
+
         const payload = {
           buildopsId: inv.id,
           clientId: matchedClient?.id ?? null,
@@ -6475,17 +6481,25 @@ Respond with this JSON:
           daysPastDue: daysPastDueVal != null ? Number(daysPastDueVal) : null,
           paymentTermName: paymentTermVal,
           serviceAgreementNumber: saNumber != null ? String(saNumber) : null,
+          totalAmountPaid: apiTotalAmountPaid != null ? String(apiTotalAmountPaid) : null,
+          outstandingBalance: apiOutstandingBalance != null ? String(apiOutstandingBalance) : null,
+          adjustmentAmount: apiAdjustmentAmount != null ? String(apiAdjustmentAmount) : null,
+          lastPaymentDate: apiLastPaymentDate,
           syncedAt: new Date(),
         };
 
         const [existing] = await db.select().from(buildopsInvoices).where(eq(buildopsInvoices.buildopsId, inv.id));
         if (existing) {
-          // Preserve CSV-enriched payment fields — never let an API re-sync wipe them
-          const updatePayload: any = { ...payload, lastApiSync: new Date() };
-          if (existing.outstandingBalance !== null) updatePayload.outstandingBalance = existing.outstandingBalance;
-          if (existing.totalAmountPaid !== null) updatePayload.totalAmountPaid = existing.totalAmountPaid;
-          if (existing.adjustmentAmount !== null) updatePayload.adjustmentAmount = existing.adjustmentAmount;
-          if (existing.lastPaymentDate !== null) updatePayload.lastPaymentDate = existing.lastPaymentDate;
+          // Null-safe merge: prefer incoming API value when available, fall back to existing CSV value
+          // This lets API updates win when the API has data, but preserves CSV enrichment when API sends null
+          const updatePayload: any = {
+            ...payload,
+            lastApiSync: new Date(),
+            totalAmountPaid: payload.totalAmountPaid ?? existing.totalAmountPaid,
+            outstandingBalance: payload.outstandingBalance ?? existing.outstandingBalance,
+            adjustmentAmount: payload.adjustmentAmount ?? existing.adjustmentAmount,
+            lastPaymentDate: payload.lastPaymentDate ?? existing.lastPaymentDate,
+          };
           await db.update(buildopsInvoices).set(updatePayload).where(eq(buildopsInvoices.buildopsId, inv.id));
           updated++;
         } else {
@@ -6573,9 +6587,14 @@ Respond with this JSON:
   // Resolve / ignore a merge conflict
   app.patch("/api/admin/merge-conflicts/:id", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
     try {
-      const { db } = await import("./db");
-      const { status } = req.body as { status: "resolved" | "ignored" };
+      const { status } = req.body as { status: string };
+      const ALLOWED_STATUSES = ["resolved", "ignored"];
+      if (!status || !ALLOWED_STATUSES.includes(status)) {
+        return res.status(400).json({ message: `status must be one of: ${ALLOWED_STATUSES.join(", ")}` });
+      }
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid conflict id" });
+      const { db } = await import("./db");
       await db.execute(sql`
         UPDATE merge_conflicts SET status = ${status}, resolved_at = NOW() WHERE id = ${id}
       `);
