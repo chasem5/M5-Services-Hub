@@ -10272,8 +10272,10 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       });
       const qcrMonthly = fillBuckets(qcrRaw, allBuckets);
 
-      // ── Collections Outstanding: unpaid invoices aged by days past due ───────
-      // BuildOps statuses: exported, posted, draft; exclude void and closed (has closed_date)
+      // ── AR Outstanding: unpaid invoices aged by days past due ─────────────────
+      // Status-based: exported/posted = outstanding balance. Not filtered by closed_date
+      // because BuildOps doesn't populate closed_date when invoices are paid (payment
+      // data lives in QuickBooks). Status alone is the reliable indicator.
       const arRows = await db.execute(sql`
         SELECT
           total_amount,
@@ -10281,8 +10283,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           due_date,
           EXTRACT(EPOCH FROM (NOW() - COALESCE(due_date, issued_date + INTERVAL '30 days'))) / 86400 AS days_past_due
         FROM buildops_invoices
-        WHERE LOWER(status) NOT IN ('void', 'paid', 'closed', 'cancelled', 'canceled', 'credit memo')
-          AND closed_date IS NULL
+        WHERE LOWER(status) IN ('exported', 'posted')
           AND total_amount IS NOT NULL
           AND CAST(total_amount AS DECIMAL) > 0
       `);
@@ -10298,36 +10299,37 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }
       const arTotal = bucket030 + bucket3060 + bucket6090 + bucket90plus;
 
-      // Collections trend: amounts COLLECTED (closed invoices) per period — distinct from billed revenue
-      // Uses closed_date so the sparkline shows payments received, not new billings
-      let arClosedSinceExpr: string;
-      let arClosedTruncExpr: string;
-      let arClosedLabelExpr: string;
+      // AR billing trend: invoices ISSUED per period (exported/posted) — shows billed amounts over time
+      // Uses issued_date (always populated) instead of closed_date (never populated by BuildOps)
+      let arIssuedSinceExpr: string;
+      let arIssuedTruncExpr: string;
+      let arIssuedLabelExpr: string;
       if (period === "daily") {
-        arClosedSinceExpr = `closed_date >= NOW() - INTERVAL '30 days'`;
-        arClosedTruncExpr = `DATE_TRUNC('day', closed_date)`;
-        arClosedLabelExpr = `TO_CHAR(DATE_TRUNC('day', closed_date), 'Mon DD')`;
+        arIssuedSinceExpr = `issued_date >= NOW() - INTERVAL '30 days'`;
+        arIssuedTruncExpr = `DATE_TRUNC('day', issued_date)`;
+        arIssuedLabelExpr = `TO_CHAR(DATE_TRUNC('day', issued_date), 'Mon DD')`;
       } else if (period === "weekly") {
-        arClosedSinceExpr = `closed_date >= NOW() - INTERVAL '12 weeks'`;
-        arClosedTruncExpr = `DATE_TRUNC('week', closed_date)`;
-        arClosedLabelExpr = `TO_CHAR(DATE_TRUNC('week', closed_date), 'Mon DD')`;
+        arIssuedSinceExpr = `issued_date >= NOW() - INTERVAL '12 weeks'`;
+        arIssuedTruncExpr = `DATE_TRUNC('week', issued_date)`;
+        arIssuedLabelExpr = `TO_CHAR(DATE_TRUNC('week', issued_date), 'Mon DD')`;
       } else {
-        arClosedSinceExpr = `closed_date >= '${twelveMonthsAgo.toISOString()}'`;
-        arClosedTruncExpr = `DATE_TRUNC('month', closed_date)`;
-        arClosedLabelExpr = `TO_CHAR(DATE_TRUNC('month', closed_date), 'Mon YY')`;
+        arIssuedSinceExpr = `issued_date >= '${twelveMonthsAgo.toISOString()}'`;
+        arIssuedTruncExpr = `DATE_TRUNC('month', issued_date)`;
+        arIssuedLabelExpr = `TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY')`;
       }
       const arTrendRows = await db.execute(sql.raw(`
         SELECT
-          ${arClosedLabelExpr} AS label,
-          ${arClosedTruncExpr} AS bucket_start,
+          ${arIssuedLabelExpr} AS label,
+          ${arIssuedTruncExpr} AS bucket_start,
           SUM(CAST(total_amount AS DECIMAL)) AS total
         FROM buildops_invoices
-        WHERE closed_date IS NOT NULL
-          AND ${arClosedSinceExpr}
+        WHERE LOWER(status) IN ('exported', 'posted')
+          AND issued_date IS NOT NULL
+          AND ${arIssuedSinceExpr}
           AND total_amount IS NOT NULL
           AND CAST(total_amount AS DECIMAL) > 0
-        GROUP BY ${arClosedTruncExpr}
-        ORDER BY ${arClosedTruncExpr}
+        GROUP BY ${arIssuedTruncExpr}
+        ORDER BY ${arIssuedTruncExpr}
       `));
       const arRaw: { label: string; v: number }[] = (arTrendRows.rows as any[]).map(r => ({
         label: r.label,

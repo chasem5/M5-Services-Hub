@@ -625,7 +625,7 @@ function CEOCommandCenterInner() {
             { label: "Pipeline", icon: BarChart2, ...liveKpi.pipeline, sparkData: pipe?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: "new leads by created date" },
             { label: "Quote Conv.", icon: Target, ...liveKpi.quoteConversionRate, sparkData: qcr?.monthly ?? FALLBACK_SPARK, fmt: "pct", sparkNote: "won/lost by close date" },
             { label: "SA Contract Rev", icon: Repeat2, ...liveKpi.saContractRevenue, sparkData: sa?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: "SA-tagged invoice revenue" },
-            { label: "Collections", icon: Percent, ...liveKpi.collectionsOutstanding, sparkData: ar?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: undefined },
+            { label: "AR Outstanding", icon: Percent, ...liveKpi.collectionsOutstanding, sparkData: ar?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: undefined },
           ].map(({ label, icon: Icon, value, change, up, sparkData, fmt, sparkNote }: any) => (
             <div key={label} className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 pt-3.5 pb-0 overflow-hidden" data-testid={`kpi-${label.toLowerCase().replace(/\s+/g, '-')}`}>
               <div className="flex items-center justify-between mb-1">
@@ -866,8 +866,8 @@ function CEOCommandCenterInner() {
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-util-chart">
             <div className="flex items-center justify-between mb-1">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Collections Outstanding</p>
-                <p className="text-[9px] text-gray-400 normal-case">Sparkline = cash collected per period (by payment date)</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">AR Outstanding</p>
+                <p className="text-[9px] text-gray-400 normal-case">Sparkline = invoices billed per period (by issue date)</p>
               </div>
               <Activity className="w-3.5 h-3.5 text-gray-300" />
             </div>
