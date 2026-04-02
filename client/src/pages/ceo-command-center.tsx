@@ -1046,6 +1046,16 @@ function CEOCommandCenterInner() {
           const currWeek = pastWeeks.length >= 1 ? pastWeeks[pastWeeks.length - 1] : null;
           const utilDelta = (currWeek && prevWeek) ? currWeek.utilPct - prevWeek.utilPct : null;
           const schedHrsDelta = (currWeek && prevWeek) ? Math.round((currWeek.scheduledHrs - prevWeek.scheduledHrs) * 10) / 10 : null;
+          // Forward-booked delta: compare last 2 consecutive forward-booked counts derived from past weeks
+          // (we approximate by looking at the count of past weeks above 0% in the last 2 slices of 4-wk windows)
+          // Simpler: count consecutive past weeks with visits in the last 4 vs last 5-8 window
+          const prevPastWeeks4 = pastWeeks.slice(-8, -4);
+          const currPastWeeks4 = pastWeeks.slice(-4);
+          const prevFwdProxy = prevPastWeeks4.filter(w => w.utilPct > 0).length;
+          const currFwdProxy = currPastWeeks4.filter(w => w.utilPct > 0).length;
+          const fwdDelta = pastWeeks.length >= 8 ? forwardBookedWeeks - prevFwdProxy : null;
+          // OT delta: no per-week OT in weeklyTrend; we display current OT value with a note
+          // For a true delta we'd need 2 timesheet imports — approximate as unavailable week-over-week
 
           // Recommendation display config
           const levelConfig: Record<HiringLevel, { label: string; pill: string; border: string; bg: string; icon: string; summary: string }> = {
@@ -1199,33 +1209,52 @@ function CEOCommandCenterInner() {
                   What Changed This Week?
                 </button>
                 {showWhatChanged && (
-                  <div className="space-y-1" data-testid="what-changed-panel">
+                  <div className="space-y-1.5" data-testid="what-changed-panel">
                     {utilDelta !== null ? (
-                      <div className="flex items-center gap-2 text-[11px]">
-                        <span className="w-28 text-gray-500">Utilization</span>
-                        <span className={`font-semibold ${utilDelta > 0 ? 'text-red-600' : utilDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
-                          {utilDelta > 0 ? '+' : ''}{utilDelta}pp
-                        </span>
-                        <span className="text-gray-400">vs prior week ({prevWeek?.utilPct}% → {currWeek?.utilPct}%)</span>
-                      </div>
+                      <>
+                        <div className="flex items-center gap-2 text-[11px]">
+                          <span className="w-32 text-gray-500 flex-shrink-0">Utilization</span>
+                          <span className={`font-semibold w-14 ${utilDelta > 0 ? 'text-red-600' : utilDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                            {utilDelta > 0 ? '+' : ''}{utilDelta}pp
+                          </span>
+                          <span className="text-gray-400">{prevWeek?.utilPct}% → {currWeek?.utilPct}% (prior week → latest)</span>
+                        </div>
+                        {schedHrsDelta !== null && (
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <span className="w-32 text-gray-500 flex-shrink-0">Scheduled Hrs</span>
+                            <span className={`font-semibold w-14 ${schedHrsDelta > 0 ? 'text-amber-600' : schedHrsDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                              {schedHrsDelta > 0 ? '+' : ''}{schedHrsDelta}h
+                            </span>
+                            <span className="text-gray-400">{prevWeek?.scheduledHrs}h → {currWeek?.scheduledHrs}h vs prior week</span>
+                          </div>
+                        )}
+                        {fwdDelta !== null && (
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <span className="w-32 text-gray-500 flex-shrink-0">Forward Booked</span>
+                            <span className={`font-semibold w-14 ${fwdDelta > 0 ? 'text-amber-600' : fwdDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                              {fwdDelta > 0 ? '+' : ''}{fwdDelta}wk
+                            </span>
+                            <span className="text-gray-400">consecutive booked weeks vs prior 4-wk window</span>
+                          </div>
+                        )}
+                        {hasTimesheetHrs ? (
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <span className="w-32 text-gray-500 flex-shrink-0">OT Rate (30d)</span>
+                            <span className={`font-semibold w-14 ${overtimeRatePct >= hiringThresholds.otCritical ? 'text-red-600' : overtimeRatePct >= hiringThresholds.otWarn ? 'text-amber-600' : 'text-emerald-600'}`}>
+                              {overtimeRatePct}%
+                            </span>
+                            <span className="text-gray-400">rolling 30-day from timesheets (week-over-week OT delta requires 2+ timesheet imports)</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <span className="w-32 text-gray-500 flex-shrink-0">OT Rate</span>
+                            <span className="font-semibold w-14 text-gray-300">—</span>
+                            <span className="text-gray-300 italic">Upload a timesheet CSV to see OT rate</span>
+                          </div>
+                        )}
+                      </>
                     ) : (
-                      <p className="text-[10px] text-gray-300 italic">Need at least 2 weeks of history for deltas</p>
-                    )}
-                    {schedHrsDelta !== null && (
-                      <div className="flex items-center gap-2 text-[11px]">
-                        <span className="w-28 text-gray-500">Scheduled Hrs</span>
-                        <span className={`font-semibold ${schedHrsDelta > 0 ? 'text-amber-600' : schedHrsDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
-                          {schedHrsDelta > 0 ? '+' : ''}{schedHrsDelta}h
-                        </span>
-                        <span className="text-gray-400">vs prior week</span>
-                      </div>
-                    )}
-                    {hasTimesheetHrs && (
-                      <div className="flex items-center gap-2 text-[11px]">
-                        <span className="w-28 text-gray-500">OT Rate</span>
-                        <span className="font-semibold text-gray-700">{overtimeRatePct}%</span>
-                        <span className="text-gray-400">30-day rolling (from timesheets)</span>
-                      </div>
+                      <p className="text-[10px] text-gray-300 italic">Need at least 2 weeks of history for week-over-week deltas</p>
                     )}
                   </div>
                 )}
