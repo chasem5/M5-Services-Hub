@@ -9829,7 +9829,10 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const text = req.file.buffer.toString("utf-8");
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       const rowCount = Math.max(0, lines.length - 1);
-      const detectedHeaders = lines[0] ?? "";
+      const rawHeaderLine = lines[0] ?? "";
+      // Parse header into structured array for easier future column matching
+      const parsedHeaders = rawHeaderLine.split(",").map(h => h.replace(/^"|"$/g, "").trim()).filter(Boolean);
+      const detectedHeaders = JSON.stringify(parsedHeaders);
       const filename = req.file.originalname;
 
       await db.execute(sql`
@@ -9837,7 +9840,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         VALUES (${filename}, ${detectedHeaders}, ${rowCount}, NOW())
       `);
 
-      console.log(`[import-generic-csv] stored "${filename}" — ${rowCount} rows, headers: ${detectedHeaders.slice(0, 200)}`);
+      console.log(`[import-generic-csv] stored "${filename}" — ${rowCount} rows, ${parsedHeaders.length} columns: ${parsedHeaders.slice(0, 8).join(", ")}`);
       return res.json({ stored: true, rowCount, filename, message: `Stored ${rowCount} rows — column headers logged for future use.` });
     } catch (err: any) {
       console.error("[import-generic-csv]", err.message);
