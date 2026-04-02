@@ -6,6 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -60,6 +61,8 @@ import {
   Search,
   MapPin,
   Database,
+  GitMerge,
+  LayoutDashboard,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -2926,20 +2929,86 @@ export default function AdminPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="buildops" className="pt-4 space-y-6">
-          <BuildOpsPanel />
-          <DataSourcesPanel />
-          {isBuildopsVerifiedForPanel ? (
-            <>
-              <BuildOpsAuditPanel />
-              <BuildOpsMatchingPanel />
-              <AccountManagerMappingPanel />
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground px-1">
-              Verify your BuildOps connection above to manage customer matching and view field mappings.
-            </p>
-          )}
+        <TabsContent value="buildops" className="pt-4">
+          <Accordion type="multiple" defaultValue={["connection", "data-health", "mappings"]} className="space-y-3">
+
+            {/* ── Group 1: Connection & Sync ──────────────────────────────── */}
+            <AccordionItem value="connection" className="border rounded-xl overflow-hidden shadow-sm bg-card">
+              <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/30 transition-colors [&[data-state=open]>svg]:rotate-180">
+                <div className="flex items-center gap-3 text-left">
+                  <div className="bg-primary/10 p-2 rounded-full shrink-0">
+                    <Zap className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Connection &amp; Sync</p>
+                    <p className="text-xs text-muted-foreground font-normal">API credentials, sync triggers, and sync history</p>
+                  </div>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-0 pb-0">
+                <div className="border-t pt-4 space-y-4">
+                  <BuildOpsPanel />
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* ── Group 2: Data Health ─────────────────────────────────────── */}
+            <AccordionItem value="data-health" className="border rounded-xl overflow-hidden shadow-sm bg-card">
+              <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/30 transition-colors [&[data-state=open]>svg]:rotate-180">
+                <div className="flex items-center gap-3 text-left">
+                  <div className="bg-primary/10 p-2 rounded-full shrink-0">
+                    <Database className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Data Health</p>
+                    <p className="text-xs text-muted-foreground font-normal">API vs CSV coverage, merge conflicts, import log, and field audit</p>
+                  </div>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-0 pb-0">
+                <div className="border-t pt-4 space-y-4">
+                  <DataSourcesPanel />
+                  {isBuildopsVerifiedForPanel ? (
+                    <BuildOpsAuditPanel />
+                  ) : (
+                    <p className="text-sm text-muted-foreground px-6 pb-4">
+                      Verify your BuildOps connection to view the data field audit.
+                    </p>
+                  )}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* ── Group 3: Mappings ────────────────────────────────────────── */}
+            <AccordionItem value="mappings" className="border rounded-xl overflow-hidden shadow-sm bg-card">
+              <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/30 transition-colors [&[data-state=open]>svg]:rotate-180">
+                <div className="flex items-center gap-3 text-left">
+                  <div className="bg-primary/10 p-2 rounded-full shrink-0">
+                    <GitMerge className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Mappings</p>
+                    <p className="text-xs text-muted-foreground font-normal">BuildOps customer matching and account manager linking</p>
+                  </div>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-0 pb-0">
+                <div className="border-t pt-4 space-y-4">
+                  {isBuildopsVerifiedForPanel ? (
+                    <>
+                      <BuildOpsMatchingPanel />
+                      <AccountManagerMappingPanel />
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground px-6 pb-4">
+                      Verify your BuildOps connection to manage customer matching and account manager mapping.
+                    </p>
+                  )}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
+          </Accordion>
         </TabsContent>
       </Tabs>
 
