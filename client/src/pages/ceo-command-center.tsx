@@ -289,6 +289,20 @@ function CEOCommandCenterInner() {
     refetchOnWindowFocus: false,
   });
 
+  const { data: jobMargin, isLoading: jobMarginLoading } = useQuery<{
+    hasData: boolean;
+    avgMarginPct: number | null;
+    totalGrossProfit: number | null;
+    totalRevenue: number | null;
+    jobCount: number | null;
+    totalRows: number;
+    monthly: { label: string; v: number }[];
+  }>({
+    queryKey: ["/api/ceo/job-margin"],
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
   // ── Compute live KPI card values from API data ─────────────────────────────
   const rev = metrics?.revenue;
   const sa = metrics?.saContractRevenue;
@@ -432,18 +446,39 @@ function CEOCommandCenterInner() {
             continue;
           }
 
-          // 6. Jobs CSV — job number + job status (no visit number, no invoice number, no is maintenance)
+          // 6. Job Margin / Cost Report CSV — job number + gross profit OR margin
+          const isJobMarginCsv = firstLine.includes("job number") && (firstLine.includes("gross profit") || firstLine.includes("margin"));
+          if (isJobMarginCsv) {
+            await uploadCsv("/api/buildops/import-job-margin", "Job Margin", "jobs");
+            queryClient.invalidateQueries({ queryKey: ['/api/ceo/job-margin'] });
+            continue;
+          }
+
+          // 7. Jobs CSV — job number + job status (no visit number, no invoice number, no is maintenance)
           const isJobCsv = firstLine.includes("job number") && firstLine.includes("job status") && !firstLine.includes("visit number") && !firstLine.includes("invoice number");
           if (isJobCsv) {
             await uploadCsv("/api/buildops/import-jobs", "Jobs", "jobs");
             continue;
           }
 
-          // Not recognized
-          setImportStatus({
-            status: 'error',
-            message: `CSV not recognized: "${file.name}". Supported exports from BuildOps: Timesheets, Invoices, Jobs, Visits, Service Agreements (contract list), and SA-linked jobs.`,
-          });
+          // Unrecognized — store metadata silently (no error)
+          {
+            setImportStatus({ status: 'uploading' });
+            const formData = new FormData();
+            formData.append("file", file);
+            const resp = await fetch("/api/buildops/import-generic-csv", { method: "POST", body: formData });
+            const result = await resp.json();
+            const rowCount = result.rowCount ?? 0;
+            setImportStatus({
+              status: 'success',
+              message: `Stored ${rowCount} rows — column headers logged for future use.`,
+            });
+            setUploadedFiles(prev => [...prev, {
+              name: `${file.name} (Generic CSV)`,
+              size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+              uploadedAt: now,
+            }]);
+          }
         } catch (err: any) {
           setImportStatus({ status: 'error', message: err.message || 'Network error' });
         }
@@ -1159,6 +1194,65 @@ function CEOCommandCenterInner() {
             </div>
           );
         })()}
+
+        {/* ── Job Margin ────────────────────────────────────────────────────── */}
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5" data-testid="section-job-margin">
+          <div className="flex items-center gap-2 mb-4">
+            <Percent className="w-4 h-4" style={{ color: PRIMARY }} />
+            <span className="text-sm font-bold text-gray-800">Job Margin</span>
+            <span className="ml-1 text-[10px] text-gray-400">— avg gross margin % · 6-month trend</span>
+          </div>
+          {jobMarginLoading ? (
+            <div className="h-28 bg-gray-50 rounded animate-pulse" />
+          ) : !jobMargin?.hasData ? (
+            <div className="h-28 flex flex-col items-center justify-center gap-1">
+              <p className="text-[11px] text-gray-400">No job margin data yet</p>
+              <p className="text-[10px] text-gray-300">Upload a BuildOps Job Cost / Margin CSV to populate</p>
+            </div>
+          ) : (
+            <div className="flex gap-6">
+              {/* Stats */}
+              <div className="flex flex-col gap-3 min-w-[130px]">
+                <div data-testid="job-margin-avg-pct">
+                  <p className="text-2xl font-bold text-gray-900">{jobMargin.avgMarginPct?.toFixed(1)}%</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Avg Gross Margin</p>
+                  <p className="text-[10px] text-gray-300">{jobMargin.jobCount?.toLocaleString()} jobs analysed</p>
+                </div>
+                {jobMargin.totalGrossProfit != null && (
+                  <div data-testid="job-margin-gross-profit">
+                    <p className="text-sm font-bold text-emerald-700">{fmtDollar(jobMargin.totalGrossProfit)}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Total Gross Profit</p>
+                  </div>
+                )}
+                {jobMargin.totalRevenue != null && (
+                  <div data-testid="job-margin-total-revenue">
+                    <p className="text-xs font-semibold text-gray-600">{fmtDollar(jobMargin.totalRevenue)}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Total Revenue</p>
+                  </div>
+                )}
+              </div>
+              {/* Sparkline */}
+              {(jobMargin.monthly?.length ?? 0) > 0 && (
+                <div className="flex-1 flex flex-col gap-1">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Margin % (6mo)</p>
+                  <ResponsiveContainer width="100%" height={90}>
+                    <AreaChart data={jobMargin.monthly} margin={{ top: 4, right: 0, left: -35, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="marginGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="label" tick={{ fontSize: 8, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Area type="monotone" dataKey="v" stroke="#10b981" strokeWidth={1.5} fill="url(#marginGrad)" dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ── Team Performance ──────────────────────────────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm" data-testid="section-team-performance">

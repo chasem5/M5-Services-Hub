@@ -862,6 +862,37 @@ export const buildopsVisits = pgTable("buildops_visits", {
 });
 export type BuildopsVisit = typeof buildopsVisits.$inferSelect;
 
+// BuildOps Job Margin (imported from BuildOps Job Margin/Cost report CSV)
+export const buildopsJobMargin = pgTable("buildops_job_margin", {
+  id: serial("id").primaryKey(),
+  jobNumber: varchar("job_number").notNull().unique(),
+  jobTitle: varchar("job_title"),
+  customerName: varchar("customer_name"),
+  department: varchar("department"),
+  jobType: varchar("job_type"),
+  status: varchar("status"),
+  totalRevenue: decimal("total_revenue", { precision: 14, scale: 2 }),
+  totalCost: decimal("total_cost", { precision: 14, scale: 2 }),
+  grossProfit: decimal("gross_profit", { precision: 14, scale: 2 }),
+  marginPct: decimal("margin_pct", { precision: 7, scale: 2 }),
+  laborRevenue: decimal("labor_revenue", { precision: 14, scale: 2 }),
+  laborCost: decimal("labor_cost", { precision: 14, scale: 2 }),
+  materialRevenue: decimal("material_revenue", { precision: 14, scale: 2 }),
+  materialCost: decimal("material_cost", { precision: 14, scale: 2 }),
+  completedDate: timestamp("completed_date"),
+  csvImportedAt: timestamp("csv_imported_at").defaultNow(),
+});
+export type BuildopsJobMargin = typeof buildopsJobMargin.$inferSelect;
+
+// Generic CSV upload log (for unrecognized BuildOps CSVs)
+export const buildopsCsvUploads = pgTable("buildops_csv_uploads", {
+  id: serial("id").primaryKey(),
+  filename: varchar("filename").notNull(),
+  detectedHeaders: text("detected_headers"),
+  rowCount: integer("row_count"),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+});
+
 // BuildOps Employees (M5's own staff synced from BuildOps)
 export const buildopsEmployees = pgTable("buildops_employees", {
   id: serial("id").primaryKey(),

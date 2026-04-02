@@ -163,6 +163,7 @@ export async function registerRoutes(
   await storage.migrateBuildopsVisitsAndExtendedFields();
   await storage.migrateBuildopsTimesheets();
   await storage.migrateAgreementCsvColumns();
+  await storage.migrateJobMarginAndGenericCsvTables();
   await storage.migrateParentClientColumn();
   await storage.migrateClientOnboardingChecklist();
   await storage.migrateLeadLossColumns();
@@ -9685,6 +9686,206 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       return res.json({ processed: lines.length - 1, inserted, updated, skipped, totalRows, type: 'invoices' });
     } catch (err: any) {
       console.error("[import-invoices]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Import Job Margin CSV ────────────────────────────────────────────────────
+  app.post("/api/buildops/import-job-margin", isAuthenticated, requireRole(["super_admin", "admin"]), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const text = req.file.buffer.toString("utf-8");
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return res.status(400).json({ message: "CSV has no data rows" });
+
+      function parseCsvLine(line: string): string[] {
+        const result: string[] = []; let cur = "", inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"' && !inQ) { inQ = true; continue; }
+          if (c === '"' && inQ) { if (line[i+1] === '"') { cur += '"'; i++; } else { inQ = false; } continue; }
+          if (c === ',' && !inQ) { result.push(cur.trim()); cur = ""; continue; }
+          cur += c;
+        }
+        result.push(cur.trim()); return result;
+      }
+      const headerRaw = parseCsvLine(lines[0]);
+      const header = headerRaw.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, " ").trim());
+      function col(...names: string[]): number {
+        for (const n of names) { const idx = header.indexOf(n.toLowerCase().replace(/[^a-z0-9]/g, " ").trim()); if (idx >= 0) return idx; }
+        return -1;
+      }
+      function f(row: string[], ...names: string[]): string | null {
+        const idx = col(...names); if (idx < 0 || idx >= row.length) return null;
+        return row[idx].replace(/^"(.*)"$/, "$1").trim() || null;
+      }
+      function fNum(row: string[], ...names: string[]): number | null {
+        const v = f(row, ...names); if (!v) return null;
+        const n = parseFloat(v.replace(/[%,$]/g, "")); return isNaN(n) ? null : n;
+      }
+      function fDate(row: string[], ...names: string[]): Date | null {
+        const v = f(row, ...names); if (!v) return null;
+        const d = new Date(v); return isNaN(d.getTime()) ? null : d;
+      }
+
+      if (col("job number") < 0 || (col("gross profit") < 0 && col("margin") < 0)) {
+        return res.status(400).json({ message: "Not a Job Margin CSV — expected 'Job Number' and 'Gross Profit' or 'Margin %' columns." });
+      }
+
+      let inserted = 0, updated = 0, skipped = 0;
+      for (let i = 1; i < lines.length; i++) {
+        try {
+          const row = parseCsvLine(lines[i]);
+          if (row.length < 3) { skipped++; continue; }
+          const jobNumber = f(row, "job number");
+          if (!jobNumber) { skipped++; continue; }
+          const jobTitle = f(row, "job title", "title");
+          const customerName = f(row, "customer name");
+          const department = f(row, "department name", "department");
+          const jobType = f(row, "job type");
+          const status = f(row, "status");
+          const totalRevenue = fNum(row, "total revenue", "revenue");
+          const totalCost = fNum(row, "total cost", "cost");
+          const grossProfit = fNum(row, "gross profit");
+          const marginPct = fNum(row, "margin %", "margin percent", "margin");
+          const laborRevenue = fNum(row, "labor revenue");
+          const laborCost = fNum(row, "labor cost");
+          const materialRevenue = fNum(row, "material revenue");
+          const materialCost = fNum(row, "material cost");
+          const completedDate = fDate(row, "completed date local", "completed date");
+
+          const existing = await db.execute(sql`SELECT id FROM buildops_job_margin WHERE job_number = ${jobNumber} LIMIT 1`);
+          if ((existing.rows as any[]).length > 0) {
+            await db.execute(sql`
+              UPDATE buildops_job_margin SET
+                job_title = COALESCE(${jobTitle}, job_title),
+                customer_name = COALESCE(${customerName}, customer_name),
+                department = COALESCE(${department}, department),
+                job_type = COALESCE(${jobType}, job_type),
+                status = COALESCE(${status}, status),
+                total_revenue = COALESCE(${totalRevenue}, total_revenue),
+                total_cost = COALESCE(${totalCost}, total_cost),
+                gross_profit = COALESCE(${grossProfit}, gross_profit),
+                margin_pct = COALESCE(${marginPct}, margin_pct),
+                labor_revenue = COALESCE(${laborRevenue}, labor_revenue),
+                labor_cost = COALESCE(${laborCost}, labor_cost),
+                material_revenue = COALESCE(${materialRevenue}, material_revenue),
+                material_cost = COALESCE(${materialCost}, material_cost),
+                completed_date = COALESCE(${completedDate}, completed_date),
+                csv_imported_at = NOW()
+              WHERE job_number = ${jobNumber}
+            `);
+            updated++;
+          } else {
+            await db.execute(sql`
+              INSERT INTO buildops_job_margin (
+                job_number, job_title, customer_name, department, job_type, status,
+                total_revenue, total_cost, gross_profit, margin_pct,
+                labor_revenue, labor_cost, material_revenue, material_cost,
+                completed_date, csv_imported_at
+              ) VALUES (
+                ${jobNumber}, ${jobTitle}, ${customerName}, ${department}, ${jobType}, ${status},
+                ${totalRevenue}, ${totalCost}, ${grossProfit}, ${marginPct},
+                ${laborRevenue}, ${laborCost}, ${materialRevenue}, ${materialCost},
+                ${completedDate}, NOW()
+              ) ON CONFLICT (job_number) DO UPDATE SET
+                gross_profit = EXCLUDED.gross_profit,
+                margin_pct = EXCLUDED.margin_pct,
+                total_revenue = EXCLUDED.total_revenue,
+                csv_imported_at = NOW()
+            `);
+            inserted++;
+          }
+        } catch (rowErr: any) {
+          console.error(`[import-job-margin] row ${i}:`, rowErr.message);
+          skipped++;
+        }
+      }
+      const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_job_margin`);
+      const totalRows = parseInt((countRow.rows[0] as any)?.cnt) || 0;
+      return res.json({ processed: lines.length - 1, inserted, updated, skipped, totalRows, type: 'job-margin' });
+    } catch (err: any) {
+      console.error("[import-job-margin]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Generic CSV upload (unrecognized format — log headers + row count) ────────
+  app.post("/api/buildops/import-generic-csv", isAuthenticated, requireRole(["super_admin", "admin"]), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const text = req.file.buffer.toString("utf-8");
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      const rowCount = Math.max(0, lines.length - 1);
+      const detectedHeaders = lines[0] ?? "";
+      const filename = req.file.originalname;
+
+      await db.execute(sql`
+        INSERT INTO buildops_csv_uploads (filename, detected_headers, row_count, uploaded_at)
+        VALUES (${filename}, ${detectedHeaders}, ${rowCount}, NOW())
+      `);
+
+      console.log(`[import-generic-csv] stored "${filename}" — ${rowCount} rows, headers: ${detectedHeaders.slice(0, 200)}`);
+      return res.json({ stored: true, rowCount, filename, message: `Stored ${rowCount} rows — column headers logged for future use.` });
+    } catch (err: any) {
+      console.error("[import-generic-csv]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Job Margin KPI endpoint ──────────────────────────────────────────────────
+  app.get("/api/ceo/job-margin", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_job_margin`);
+      const totalRows = parseInt((countRow.rows[0] as any)?.cnt) || 0;
+
+      if (totalRows === 0) {
+        return res.json({ hasData: false, avgMarginPct: null, totalRows: 0, monthly: [] });
+      }
+
+      // Overall avg margin (excluding zero-revenue jobs)
+      const avgRow = await db.execute(sql`
+        SELECT
+          ROUND(AVG(CAST(margin_pct AS DECIMAL))::numeric, 1) AS avg_margin,
+          ROUND(SUM(CAST(gross_profit AS DECIMAL))::numeric, 0) AS total_gross_profit,
+          ROUND(SUM(CAST(total_revenue AS DECIMAL))::numeric, 0) AS total_revenue,
+          COUNT(*) AS job_count
+        FROM buildops_job_margin
+        WHERE margin_pct IS NOT NULL
+          AND department NOT IN ('Bay Area', 'Sacramento')
+      `);
+      const avgMarginPct = parseFloat((avgRow.rows[0] as any)?.avg_margin) || 0;
+      const totalGrossProfit = parseFloat((avgRow.rows[0] as any)?.total_gross_profit) || 0;
+      const totalRevenue = parseFloat((avgRow.rows[0] as any)?.total_revenue) || 0;
+      const jobCount = parseInt((avgRow.rows[0] as any)?.job_count) || 0;
+
+      // 6-month trend sparkline (avg margin per month)
+      const sparkRows = await db.execute(sql`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', completed_date), 'Mon YY') AS label,
+          ROUND(AVG(CAST(margin_pct AS DECIMAL))::numeric, 1) AS v
+        FROM buildops_job_margin
+        WHERE completed_date IS NOT NULL
+          AND margin_pct IS NOT NULL
+          AND completed_date >= NOW() - INTERVAL '6 months'
+          AND department NOT IN ('Bay Area', 'Sacramento')
+        GROUP BY DATE_TRUNC('month', completed_date)
+        ORDER BY DATE_TRUNC('month', completed_date)
+      `);
+      const monthly = (sparkRows.rows as any[]).map(r => ({ label: r.label, v: parseFloat(r.v) || 0 }));
+
+      return res.json({ hasData: true, avgMarginPct, totalGrossProfit, totalRevenue, jobCount, totalRows, monthly });
+    } catch (err: any) {
+      console.error("[ceo/job-margin]", err.message);
       res.status(500).json({ message: err.message });
     }
   });

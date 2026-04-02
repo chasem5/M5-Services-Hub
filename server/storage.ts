@@ -264,6 +264,7 @@ export interface IStorage {
   migrateBuildopsVisitsAndExtendedFields(): Promise<void>;
   migrateBuildopsTimesheets(): Promise<void>;
   migrateAgreementCsvColumns(): Promise<void>;
+  migrateJobMarginAndGenericCsvTables(): Promise<void>;
   migrateTaskBoards(): Promise<void>;
 
   // Industry Options
@@ -1705,6 +1706,43 @@ export class DatabaseStorage implements IStorage {
       }
     } catch (e) {
       console.error("migrateAgreementCsvColumns error:", e);
+    }
+  }
+
+  async migrateJobMarginAndGenericCsvTables(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS buildops_job_margin (
+          id serial PRIMARY KEY,
+          job_number varchar NOT NULL UNIQUE,
+          job_title varchar,
+          customer_name varchar,
+          department varchar,
+          job_type varchar,
+          status varchar,
+          total_revenue decimal(14,2),
+          total_cost decimal(14,2),
+          gross_profit decimal(14,2),
+          margin_pct decimal(7,2),
+          labor_revenue decimal(14,2),
+          labor_cost decimal(14,2),
+          material_revenue decimal(14,2),
+          material_cost decimal(14,2),
+          completed_date timestamp,
+          csv_imported_at timestamp DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS buildops_csv_uploads (
+          id serial PRIMARY KEY,
+          filename varchar NOT NULL,
+          detected_headers text,
+          row_count integer,
+          uploaded_at timestamp DEFAULT now()
+        )
+      `);
+    } catch (e) {
+      console.error("migrateJobMarginAndGenericCsvTables error:", e);
     }
   }
 
