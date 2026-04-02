@@ -547,47 +547,86 @@ function BuildOpsPanel() {
               </Button>
             </div>
             {/* ── Employee Capacity Type Management ── */}
-            {buildopsEmployeeList && buildopsEmployeeList.length > 0 && (
+            {(employeesLoading || (buildopsEmployeeList && buildopsEmployeeList.length > 0)) && (
               <div className="border rounded-lg p-4 space-y-3">
-                <div>
-                  <h4 className="text-sm font-medium flex items-center gap-2">
-                    <Users className="h-4 w-4 text-primary" />
-                    Capacity Type
-                  </h4>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    <strong>Full-time</strong> — counts toward 40h/week capacity. &nbsp;
-                    <strong>Part-time</strong> — appears in drill-down but excluded from capacity. &nbsp;
-                    <strong>Exclude</strong> — hidden from all staffing metrics and drill-down entirely.
-                  </p>
+                {/* Header row */}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-medium flex items-center gap-2">
+                      <Users className="h-4 w-4 text-primary" />
+                      Capacity Type
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                      <strong>Full-time</strong> — counts toward 40h/week capacity.{" "}
+                      <strong>Part-time</strong> — shown in drill-downs, excluded from capacity math.{" "}
+                      <strong>Exclude</strong> — hidden from all staffing metrics entirely.
+                    </p>
+                  </div>
+                  {/* Live summary pills */}
+                  {!employeesLoading && buildopsEmployeeList && (
+                    <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-100">
+                        {buildopsEmployeeList.filter((e: any) => (e.employmentType ?? "full_time") === "full_time").length} full-time
+                      </Badge>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-100">
+                        {buildopsEmployeeList.filter((e: any) => e.employmentType === "part_time").length} part-time
+                      </Badge>
+                      {buildopsEmployeeList.some((e: any) => e.employmentType === "exclude") && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
+                          {buildopsEmployeeList.filter((e: any) => e.employmentType === "exclude").length} excluded
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
+
+                {/* Employee rows */}
                 {employeesLoading ? (
-                  <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+                  <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-9 w-full" />)}</div>
                 ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {buildopsEmployeeList.map((emp: any) => (
-                      <div key={emp.id} className="flex items-center justify-between gap-3 py-1.5 border-b border-muted last:border-0">
-                        <div>
-                          <p className="text-sm font-medium">{emp.name}</p>
-                          {emp.title && <p className="text-xs text-muted-foreground">{emp.title}</p>}
+                  <div className="border rounded-md divide-y divide-muted overflow-hidden max-h-64 overflow-y-auto">
+                    {buildopsEmployeeList!.map((emp: any) => {
+                      const type: string = emp.employmentType ?? "full_time";
+                      const badgeCls =
+                        type === "full_time" ? "bg-blue-50 text-blue-700 border-blue-100" :
+                        type === "part_time" ? "bg-amber-50 text-amber-700 border-amber-100" :
+                                               "bg-muted text-muted-foreground border-border";
+                      return (
+                        <div key={emp.id} className="flex items-center justify-between gap-3 px-3 py-2 bg-card">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{emp.name}</p>
+                              {emp.title && <p className="text-xs text-muted-foreground truncate">{emp.title}</p>}
+                            </div>
+                            <Badge variant="outline" className={`text-[9px] px-1.5 py-0 shrink-0 ${badgeCls}`}>
+                              {type === "full_time" ? "Full-time" : type === "part_time" ? "Part-time" : "Excluded"}
+                            </Badge>
+                          </div>
+                          <Select
+                            value={type}
+                            onValueChange={(val) => updateEmployeeTypeMutation.mutate({ id: emp.id, employmentType: val })}
+                            disabled={updateEmployeeTypeMutation.isPending}
+                          >
+                            <SelectTrigger className="w-28 h-7 text-xs shrink-0" data-testid={`select-emp-type-${emp.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="full_time">Full-time</SelectItem>
+                              <SelectItem value="part_time">Part-time</SelectItem>
+                              <SelectItem value="exclude">Exclude</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
-                        <Select
-                          value={emp.employmentType ?? "full_time"}
-                          onValueChange={(val) => updateEmployeeTypeMutation.mutate({ id: emp.id, employmentType: val })}
-                          disabled={updateEmployeeTypeMutation.isPending}
-                        >
-                          <SelectTrigger className="w-32 h-7 text-xs" data-testid={`select-emp-type-${emp.id}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="full_time">Full-time</SelectItem>
-                            <SelectItem value="part_time">Part-time</SelectItem>
-                            <SelectItem value="exclude">Exclude</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
+
+                {/* Footer note */}
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <Clock className="h-3 w-3 shrink-0" />
+                  Changes apply immediately to CEO dashboard capacity calculations.
+                </p>
               </div>
             )}
 
