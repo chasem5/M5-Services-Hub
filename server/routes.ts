@@ -11064,6 +11064,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         utilPct: w.utilPct,
         scheduledHrs: w.scheduledHrs,
         techCount: w.techCount,
+        visitCount: w.visitCount,
         isFuture: w.isFuture,
       }));
 

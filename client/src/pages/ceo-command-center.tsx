@@ -66,7 +66,7 @@ function fmtChange(pct: number, unit = "%") {
   return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}${unit}`;
 }
 
-interface StaffingWeek { label: string; utilPct: number; scheduledHrs: number; techCount: number; isFuture: boolean; }
+interface StaffingWeek { label: string; utilPct: number; scheduledHrs: number; techCount: number; visitCount?: number; isFuture: boolean; }
 interface StaffingMetrics {
   techCount: number;
   partTimeTechCount: number;
@@ -1103,15 +1103,6 @@ function CEOCommandCenterInner() {
                       icon: Clock,
                       color: '#0ea5e9',
                     },
-                    {
-                      label: 'Forward Booked',
-                      value: staffingLoading ? '—' : staffing?.forwardBookedWeeks != null ? `${staffing.forwardBookedWeeks} wk${staffing.forwardBookedWeeks !== 1 ? 's' : ''}` : '—',
-                      sub: staffing?.totalFutureWeeksWithVisits != null && staffing.totalFutureWeeksWithVisits !== staffing.forwardBookedWeeks
-                        ? `consecutive · ${staffing.totalFutureWeeksWithVisits} total weeks w/ visits`
-                        : 'consecutive weeks from next week',
-                      icon: Calendar,
-                      color: '#8b5cf6',
-                    },
                   ].map(s => {
                     const Icon = s.icon;
                     return (
@@ -1128,6 +1119,55 @@ function CEOCommandCenterInner() {
                       </div>
                     );
                   })}
+
+                  {/* ── Schedule Horizon (replaces Forward Booked) ── */}
+                  {(() => {
+                    const nextFive = trendData.filter(w => w.isFuture).slice(0, 5);
+                    if (!nextFive.length && !staffingLoading) return null;
+                    const aboveThreshold = nextFive.filter(w => w.utilPct >= 70).length;
+                    const gapWeeks = nextFive.filter(w => (w.visitCount ?? 0) === 0 && w.utilPct === 0).length;
+                    const summaryNote = staffingLoading ? null
+                      : nextFive.length === 0 ? 'No visits scheduled ahead'
+                      : `${aboveThreshold} of ${nextFive.length} weeks above 70%${gapWeeks > 0 ? ` · ${gapWeeks} gap week${gapWeeks > 1 ? 's' : ''}` : ''}`;
+                    return (
+                      <div data-testid="staffing-stat-schedule-horizon">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-violet-400" />
+                          <p className="text-[10px] font-semibold text-gray-500">Schedule Horizon</p>
+                          <span className="text-[9px] text-gray-300">next 5 weeks</span>
+                        </div>
+                        {staffingLoading ? (
+                          <div className="flex gap-1">{[0,1,2,3,4].map(i => <div key={i} className="w-9 h-10 rounded bg-gray-100 animate-pulse" />)}</div>
+                        ) : nextFive.length === 0 ? (
+                          <p className="text-[10px] text-gray-300 italic">No upcoming visits synced</p>
+                        ) : (
+                          <div className="flex gap-1">
+                            {nextFive.map((w, i) => {
+                              const hasVisits = (w.visitCount ?? 0) > 0 || w.utilPct > 0;
+                              const barColor = !hasVisits ? '#e5e7eb'
+                                : w.utilPct >= 90 ? '#ef4444'
+                                : w.utilPct >= 70 ? '#f59e0b'
+                                : '#10b981';
+                              const textColor = !hasVisits ? 'text-gray-300'
+                                : w.utilPct >= 90 ? 'text-red-600'
+                                : w.utilPct >= 70 ? 'text-amber-600'
+                                : 'text-emerald-600';
+                              return (
+                                <div key={i} className="flex flex-col items-center gap-0.5 w-9" data-testid={`horizon-week-${i}`} title={`${w.label}: ${w.utilPct}% utilization · ${w.scheduledHrs}h scheduled`}>
+                                  <div className="w-full rounded-t-sm" style={{ height: 28, backgroundColor: '#f3f4f6', position: 'relative' }}>
+                                    <div className="absolute bottom-0 left-0 right-0 rounded-t-sm transition-all" style={{ height: `${Math.min(w.utilPct, 100)}%`, backgroundColor: barColor, minHeight: hasVisits ? 3 : 0 }} />
+                                  </div>
+                                  <p className={`text-[9px] font-bold leading-none ${textColor}`}>{hasVisits ? `${w.utilPct}%` : '—'}</p>
+                                  <p className="text-[8px] text-gray-300 leading-none">{w.label}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {summaryNote && <p className="text-[9px] text-gray-300 mt-1">{summaryNote}</p>}
+                      </div>
+                    );
+                  })()}
                   {/* ── Labor stats from timesheets ── */}
                   {metrics?.labor?.hasData ? (
                     <>
@@ -1172,10 +1212,11 @@ function CEOCommandCenterInner() {
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Weekly Utilization</p>
                     <p className="text-[9px] text-gray-300 mb-2">
                       <span className="inline-block w-2 h-2 rounded-sm bg-indigo-400 mr-1 align-middle" />past
-                      <span className="inline-block w-2 h-2 rounded-sm bg-indigo-200 ml-2 mr-1 align-middle" />upcoming
-                      <span className="inline-block w-2 h-2 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />watch
-                      <span className="inline-block w-2 h-2 rounded-sm bg-red-400 ml-2 mr-1 align-middle" />hire
+                      <span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 ml-2 mr-1 align-middle" />on track
+                      <span className="inline-block w-2 h-2 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />watch (≥70%)
+                      <span className="inline-block w-2 h-2 rounded-sm bg-red-400 ml-2 mr-1 align-middle" />hire (≥85%)
                     </p>
+                    <p className="text-[8px] text-gray-200 mb-2">future weeks show scheduled visits only · subject to change</p>
                     <div style={{ minHeight: 100 }}>
                       {staffingLoading ? (
                         <div className="h-24 bg-gray-50 rounded animate-pulse" />
@@ -1202,6 +1243,7 @@ function CEOCommandCenterInner() {
                                     <p>Utilization: <span className="font-semibold">{d?.utilPct ?? 0}%</span></p>
                                     <p>Sched hrs: <span className="font-semibold">{d?.scheduledHrs}h</span></p>
                                     <p>Active techs: <span className="font-semibold">{d?.techCount}</span></p>
+                                    {d?.visitCount != null && <p>Visits: <span className="font-semibold">{d.visitCount}</span></p>}
                                   </div>
                                 );
                               }}
@@ -1209,7 +1251,10 @@ function CEOCommandCenterInner() {
                             <Bar dataKey="utilPct" radius={[3, 3, 0, 0]}>
                               {trendData.map((entry, index) => {
                                 const fillColor = entry.isFuture
-                                  ? '#c7d2fe'
+                                  ? entry.utilPct >= 85 ? '#fca5a5'
+                                  : entry.utilPct >= 70 ? '#fcd34d'
+                                  : (entry.visitCount ?? 0) === 0 && entry.utilPct === 0 ? '#e5e7eb'
+                                  : '#6ee7b7'
                                   : entry.utilPct >= 85 ? '#BE1916'
                                   : entry.utilPct >= 70 ? '#f59e0b'
                                   : '#818cf8';
