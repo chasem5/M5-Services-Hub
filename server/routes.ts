@@ -10290,23 +10290,19 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const qcrMonthly = fillBuckets(qcrRaw, allBuckets);
 
       // ── AR Outstanding: unpaid invoices aged by days past due ─────────────────
-      // Primary: use outstanding_balance > 0 when available (populated from BuildOps
-      // invoice export CSV which includes payment data). This is the accurate measure.
-      // Fallback: for invoices without payment data (outstanding_balance IS NULL),
-      // fall back to status-based filter (exported/posted = likely outstanding).
+      // Uses outstanding_balance column populated from BuildOps invoice export CSV.
+      // Only invoices with outstanding_balance > 0 are counted — fully paid invoices
+      // (outstanding_balance = 0) and API-synced rows without payment data (NULL) are
+      // excluded. This yields the accurate true outstanding balance.
       const arRows = await db.execute(sql`
         SELECT
-          COALESCE(outstanding_balance, total_amount) AS amt,
+          outstanding_balance AS amt,
           issued_date,
           due_date,
           EXTRACT(EPOCH FROM (NOW() - COALESCE(due_date, issued_date + INTERVAL '30 days'))) / 86400 AS days_past_due
         FROM buildops_invoices
-        WHERE (
-          (outstanding_balance IS NOT NULL AND CAST(outstanding_balance AS DECIMAL) > 0)
-          OR
-          (outstanding_balance IS NULL AND LOWER(status) IN ('exported', 'posted')
-            AND total_amount IS NOT NULL AND CAST(total_amount AS DECIMAL) > 0)
-        )
+        WHERE outstanding_balance IS NOT NULL
+          AND CAST(outstanding_balance AS DECIMAL) > 0
       `);
       let bucket030 = 0, bucket3060 = 0, bucket6090 = 0, bucket90plus = 0;
       for (const r of arRows.rows as any[]) {
