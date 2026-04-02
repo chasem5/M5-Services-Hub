@@ -9724,7 +9724,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }
       function fNum(row: string[], ...names: string[]): number | null {
         const v = f(row, ...names); if (!v) return null;
-        const n = parseFloat(v.replace(/[%,$]/g, "")); return isNaN(n) ? null : n;
+        // Handle accounting parentheses notation e.g. (1,234.56) → -1234.56
+        const isNeg = /^\(.*\)$/.test(v.trim());
+        const cleaned = v.replace(/[%,$\s]/g, "").replace(/,/g, "").replace(/[()]/g, "");
+        const n = parseFloat(cleaned);
+        return isNaN(n) ? null : (isNeg ? -Math.abs(n) : n);
       }
       function fDate(row: string[], ...names: string[]): Date | null {
         const v = f(row, ...names); if (!v) return null;
