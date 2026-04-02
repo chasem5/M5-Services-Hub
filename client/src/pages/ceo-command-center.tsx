@@ -36,6 +36,7 @@ interface LaborAnalytics {
 interface CeoMetrics {
   lastUpdated: string;
   period?: string;
+  viewPrior?: boolean;
   isPeriodIncomplete?: boolean;
   dayOfMonth?: number;
   revenue: { current: number; prevMonth: number; changePct: number; up: boolean; monthly: SparkPoint[] };
@@ -45,10 +46,9 @@ interface CeoMetrics {
   collectionsOutstanding: { total: number; bucket030: number; bucket3060: number; bucket6090: number; bucket90plus: number; monthly: SparkPoint[] };
   operationalKpis: {
     dso: { value: number; target: number };
-    backlog: { value: number; target: number };
+    backlog: { value: number; jobCount: number; target: number };
     recurringRevPct: { value: number; target: number; saMonthlyRecurring?: number };
     utilizationRate: { value: number | null; target: number; source?: string | null };
-    firstTimeFixRate: { value: number | null; target: number };
     quoteConversionRate: { value: number; target: number };
   };
   topCustomers: { name: string; revenue: number; invoiceCount: number }[];
@@ -262,6 +262,7 @@ export default function CEOCommandCenter() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 function CEOCommandCenterInner() {
   const [period, setPeriod] = useState<Period>("monthly");
+  const [viewPrior, setViewPrior] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(SAMPLE_CONVERSATION);
   const [chatInput, setChatInput] = useState("");
@@ -276,8 +277,8 @@ function CEOCommandCenterInner() {
   const detailRef = useRef<HTMLDivElement>(null);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<CeoMetrics>({
-    queryKey: ["/api/ceo/metrics", period],
-    queryFn: () => fetch(`/api/ceo/metrics?period=${period}`).then(r => r.json()),
+    queryKey: ["/api/ceo/metrics", period, viewPrior],
+    queryFn: () => fetch(`/api/ceo/metrics?period=${period}&viewPrior=${viewPrior}`).then(r => r.json()),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -331,6 +332,7 @@ function CEOCommandCenterInner() {
 
   function handlePeriodChange(p: Period) {
     setPeriod(p);
+    setViewPrior(false);
     setIsRegenerating(true);
     setTimeout(() => setIsRegenerating(false), 1200);
   }
@@ -373,9 +375,12 @@ function CEOCommandCenterInner() {
         const text = await file.text();
         const firstLine = text.split(/\r?\n/)[0].toLowerCase();
 
-        // Detect Service Agreement CSV — accept if header contains agreement number
-        // (with or without annual contract value column — backend handles both)
-        const isSaCsv = firstLine.includes("agreement number") || firstLine.includes("agreement name") && firstLine.includes("status");
+        // Detect Service Agreement CSV — accept if header contains any agreement number variant
+        // BuildOps exports use "Agreement #" not "Agreement Number"
+        const isSaCsv = firstLine.includes("agreement number")
+          || firstLine.includes("agreement #")
+          || firstLine.includes("agreement no")
+          || (firstLine.includes("agreement name") && firstLine.includes("status"));
         if (isSaCsv) {
           setImportStatus({ status: 'uploading' });
           const formData = new FormData();
@@ -501,46 +506,43 @@ function CEOCommandCenterInner() {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            {(["daily", "weekly", "monthly"] as Period[]).map(p => (
-              <button
-                key={p}
-                data-testid={`button-period-${p}`}
-                onClick={() => handlePeriodChange(p)}
-                className={`px-4 py-1.5 rounded-md text-sm font-semibold capitalize transition-all ${period === p ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
-              >
-                {p}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            {/* MTD / Prior toggle — only shown when viewing an incomplete current period */}
+            {metrics?.isPeriodIncomplete && !metricsLoading && (
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1" data-testid="toggle-view-prior">
+                <button
+                  data-testid="button-view-mtd"
+                  onClick={() => setViewPrior(false)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${!viewPrior ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+                >
+                  {period === 'monthly' ? 'MTD' : period === 'weekly' ? 'WTD' : 'DTD'}
+                </button>
+                <button
+                  data-testid="button-view-prior"
+                  onClick={() => setViewPrior(true)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${viewPrior ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+                >
+                  Prior
+                </button>
+              </div>
+            )}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              {(["daily", "weekly", "monthly"] as Period[]).map(p => (
+                <button
+                  key={p}
+                  data-testid={`button-period-${p}`}
+                  onClick={() => handlePeriodChange(p)}
+                  className={`px-4 py-1.5 rounded-md text-sm font-semibold capitalize transition-all ${period === p ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
       <div className="px-6 py-5 max-w-screen-xl mx-auto space-y-5">
-
-        {/* ── MTD / Period-in-progress banner ──────────────────────────────── */}
-        {metrics?.isPeriodIncomplete && (
-          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200" data-testid="banner-mtd-context">
-            <div className="w-5 h-5 rounded-full bg-amber-400 flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-[10px] font-black">!</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <span className="text-xs font-bold text-amber-800">
-                {period === 'monthly'
-                  ? `Month-to-date · ${metrics.dayOfMonth ?? '?'} day${(metrics.dayOfMonth ?? 0) !== 1 ? 's' : ''} into the period`
-                  : period === 'weekly'
-                  ? `Week-to-date · current week is in progress`
-                  : `Day-to-date · today is still in progress`}
-              </span>
-              <span className="ml-2 text-[11px] text-amber-600">
-                The current {period === 'monthly' ? 'month' : period === 'weekly' ? 'week' : 'day'} bucket will grow as more invoices are issued and closed.
-              </span>
-            </div>
-            <span className="flex-shrink-0 text-[10px] font-bold text-amber-500 uppercase tracking-widest">
-              {period === 'monthly' ? 'MTD' : period === 'weekly' ? 'WTD' : 'DTD'}
-            </span>
-          </div>
-        )}
 
         {/* ── KPI Strip with sparklines ─────────────────────────────────────── */}
         <div className="grid grid-cols-5 gap-3" data-testid="section-kpi-strip">
@@ -614,14 +616,6 @@ function CEOCommandCenterInner() {
                 targetPct: 100, invertProgress: true,
               },
               {
-                label: "First-Time Fix Rate",
-                value: opsKpis?.firstTimeFixRate.value != null ? `${opsKpis.firstTimeFixRate.value}%` : "—",
-                target: "90%", change: "+3pp", up: true, icon: Wrench, color: "#10b981",
-                tip: "% of jobs resolved with a single visit. Target: 90%+ (requires visits sync)",
-                progress: opsKpis?.firstTimeFixRate.value ?? 0,
-                targetPct: opsKpis?.firstTimeFixRate.target ?? 90,
-              },
-              {
                 label: "Quote Conv. Rate",
                 value: opsKpis ? `${opsKpis.quoteConversionRate.value}%` : "—",
                 target: "70%", change: qcr ? `${qcr.changePt >= 0 ? "+" : ""}${qcr.changePt}pp` : "—",
@@ -631,14 +625,20 @@ function CEOCommandCenterInner() {
                 targetPct: opsKpis?.quoteConversionRate.target ?? 70,
               },
               {
-                label: "Backlog Value",
-                value: opsKpis ? fmtDollar(opsKpis.backlog.value) : "—",
-                target: "$1M+",
-                change: opsKpis?.backlog.value === 0 ? "needs job sync" : "+14%",
-                up: (opsKpis?.backlog.value ?? 0) > 0,
+                label: "Active Job Backlog",
+                value: opsKpis ? (
+                  opsKpis.backlog.jobCount > 0
+                    ? `${opsKpis.backlog.jobCount} jobs`
+                    : "—"
+                ) : "—",
+                target: "Minimize",
+                change: opsKpis?.backlog.jobCount > 0
+                  ? fmtDollar(opsKpis.backlog.value)
+                  : metrics?.activeJobs?.total === 0 ? "import jobs CSV" : "no unstarted jobs",
+                up: (opsKpis?.backlog.jobCount ?? 0) === 0,
                 icon: BarChart2, color: "#06b6d4",
-                tip: "Quoted value of accepted jobs not yet completed. Requires BuildOps job sync to populate — sync your jobs in BuildOps settings.",
-                progress: opsKpis ? Math.min(opsKpis.backlog.value / opsKpis.backlog.target * 100, 100) : 0,
+                tip: "Won/approved jobs that have not yet had a completed field visit. These are queued jobs waiting to be started. Import a BuildOps Jobs CSV to populate.",
+                progress: opsKpis?.backlog.jobCount > 0 ? 50 : 100,
                 targetPct: 100,
               },
               {
@@ -878,20 +878,35 @@ function CEOCommandCenterInner() {
 
         {/* ── Crew Capacity & Hire Signal ──────────────────────────────────── */}
         {(() => {
-          const signal = staffing?.hireSignal ?? 'ok';
           // Use scheduling-based utilization when available; fall back to timesheet-derived rate
           const schedUtilPct = staffing?.rollingAvgUtilization ?? staffing?.currentWeekUtilization ?? null;
           const tsUtilPct = metrics?.labor?.hrsUtilizationPct ?? null;
           const utilPct = schedUtilPct ?? tsUtilPct ?? 0;
           const utilSource = schedUtilPct != null ? 'scheduling' : tsUtilPct != null ? 'timesheets' : null;
-          const signalColor = signal === 'hire' ? '#BE1916' : signal === 'watch' ? '#f59e0b' : utilPct >= 85 ? '#f59e0b' : '#10b981';
+
+          // When using timesheet data: detect if scheduled hours significantly exceed actual hours
+          // (scheduled > actual means the crew is falling behind — queue is growing)
+          const actualHrs = metrics?.labor?.actualHrs4wk ?? 0;
+          const scheduledHrs = metrics?.labor?.scheduledHrs4wk ?? 0;
+          const queueGrowing = utilSource === 'timesheets' && scheduledHrs > 0 && scheduledHrs > actualHrs * 1.15;
+          const queueSevere = utilSource === 'timesheets' && scheduledHrs > 0 && scheduledHrs > actualHrs * 1.30;
+
+          // Effective hire signal: scheduling-based if available, else timesheet-derived
+          let signal: 'ok' | 'watch' | 'hire' = staffing?.hireSignal ?? 'ok';
+          if (utilSource === 'timesheets') {
+            signal = queueSevere ? 'hire' : queueGrowing ? 'watch' : 'ok';
+          }
+
+          const signalColor = signal === 'hire' ? '#BE1916' : signal === 'watch' ? '#f59e0b' : '#10b981';
           const signalBg = signal === 'hire' ? 'bg-red-50 border-red-200 text-red-700' : signal === 'watch' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700';
-          const signalLabel = signal === 'hire' ? '⚡ Consider Hiring' : signal === 'watch' ? '👀 Watch Capacity' : '✓ Capacity OK';
+          const signalLabel = signal === 'hire' ? '⚡ Behind Schedule' : signal === 'watch' ? '⚠ Queue Growing' : '✓ On Track';
           const signalTip = signal === 'hire'
-            ? 'Crew is at or above 85% booked capacity. Adding a tech would protect quality and growth.'
+            ? `Crew completed ${actualHrs}h but ${scheduledHrs}h was scheduled (4wk). Work is accumulating faster than it's being completed — consider adding capacity.`
             : signal === 'watch'
-            ? 'Crew is between 70–85% booked. Monitor closely — new contracts may push you over.'
-            : 'Crew has capacity headroom below 70%. No immediate hiring pressure.';
+            ? `Crew completed ${actualHrs}h vs ${scheduledHrs}h scheduled (4wk). Scheduled work is outpacing completions — monitor closely.`
+            : utilSource === 'timesheets'
+            ? `Crew completed ${actualHrs}h of ${scheduledHrs}h scheduled (4wk). Completion rate is healthy.`
+            : 'Crew has capacity headroom. No immediate hiring pressure.';
 
           const trendData = staffing?.weeklyTrend ?? [];
 
@@ -952,12 +967,14 @@ function CEOCommandCenterInner() {
                     </div>
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-1">
-                    {utilSource === 'timesheets' ? 'Timesheet Utilization (4wk)' : utilSource === 'scheduling' ? '4-Wk Avg Utilization' : '4-Wk Avg Utilization'}
+                    {utilSource === 'timesheets' ? 'Schedule Completion Rate (4wk)' : utilSource === 'scheduling' ? '4-Wk Avg Utilization' : '4-Wk Avg Utilization'}
                   </p>
                   {utilSource === 'timesheets' && (
-                    <p className="text-[9px] text-amber-500 mt-0.5">actual ÷ scheduled hrs · from import</p>
+                    <p className={`text-[9px] mt-0.5 font-semibold ${queueGrowing ? 'text-amber-500' : 'text-gray-400'}`}>
+                      {actualHrs}h completed ÷ {scheduledHrs}h scheduled
+                    </p>
                   )}
-                  <p className="text-[10px] text-gray-400 mt-0.5">{signalTip}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5 text-center max-w-[160px]">{signalTip}</p>
                 </div>
 
                 {/* ── Stats ── */}

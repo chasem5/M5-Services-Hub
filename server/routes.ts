@@ -9053,10 +9053,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         return -1;
       }
 
-      // Validate SA CSV — only require the agreement number to identify it
-      const hasAgreementNumber = col("agreement number") >= 0;
+      // Validate SA CSV — accept any variant of the agreement number column
+      // BuildOps exports use "Agreement #" not "Agreement Number"
+      const hasAgreementNumber = col("agreement number", "agreement #", "agreement no", "agreement no.", "sa number") >= 0;
       if (!hasAgreementNumber) {
-        return res.status(400).json({ message: "Not a Service Agreement CSV — expected an 'Agreement Number' column. Check that you are uploading the BuildOps Service Agreement export file." });
+        return res.status(400).json({ message: "Not a Service Agreement CSV — expected an 'Agreement Number' or 'Agreement #' column. Check that you are uploading the BuildOps Service Agreement export file." });
       }
 
       function f(row: string[], ...names: string[]): string | null {
@@ -9086,7 +9087,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         const row = parseCsvLine(lines[i]);
         if (row.length < 3) { skipped++; continue; }
 
-        const agreementNumber = f(row, "agreement number");
+        const agreementNumber = f(row, "agreement number", "agreement #", "agreement no", "agreement no.", "sa number");
         if (!agreementNumber) { skipped++; continue; }
 
         const fields: Record<string, any> = {
@@ -9177,6 +9178,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const { sql } = await import("drizzle-orm");
 
       const period = (req.query.period as string) || "monthly";
+      const viewPrior = req.query.viewPrior === 'true';
       const now = new Date();
       const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 12, 1);
 
@@ -9468,21 +9470,28 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       `);
       const dso = Math.round(parseFloat((dsoRows.rows[0] as any)?.avg_days) || 38);
 
-      // ── Backlog: open quoted jobs ─────────────────────────────────────────────
+      // ── Active Job Backlog: won/approved/active jobs with no completed visits ──
+      // Counts jobs that have been accepted (won) but haven't had their first
+      // completed visit yet — i.e., they are queued but not yet in progress.
       const backlogRows = await db.execute(sql`
         SELECT
-          SUM(CAST(amount_quoted AS DECIMAL)) AS quoted_backlog,
-          SUM(CAST(labor_cost AS DECIMAL) + CAST(COALESCE(material_cost, '0') AS DECIMAL)) AS wip_value,
-          COUNT(*) AS job_count
-        FROM buildops_jobs
-        WHERE status IN ('Quoted', 'Pending', 'Approved', 'In Progress', 'Scheduled', 'Active')
-          AND department NOT IN ('Bay Area', 'Sacramento')
-          AND (amount_quoted IS NOT NULL OR labor_cost IS NOT NULL)
+          COUNT(*) AS job_count,
+          SUM(COALESCE(
+            NULLIF(CAST(amount_quoted AS DECIMAL), 0),
+            CAST(total_amount AS DECIMAL)
+          )) AS backlog_value
+        FROM buildops_jobs j
+        WHERE j.status IN ('Approved', 'In Progress', 'Scheduled', 'Active', 'Open')
+          AND j.department NOT IN ('Bay Area', 'Sacramento')
+          AND NOT EXISTS (
+            SELECT 1 FROM buildops_visits v
+            WHERE v.buildops_job_id = j.buildops_id
+              AND v.status IN ('Submitted', 'Completed', 'Approved')
+          )
       `);
       const bRow = backlogRows.rows[0] as any;
-      const backlogQuoted = parseFloat(bRow?.quoted_backlog) || 0;
-      const backlogWip = parseFloat(bRow?.wip_value) || 0;
-      const backlogTotal = Math.round(backlogQuoted + backlogWip);
+      const backlogJobCount = parseInt(bRow?.job_count) || 0;
+      const backlogTotal = Math.round(parseFloat(bRow?.backlog_value) || 0);
 
       // ── Recurring Rev %: monthly SA contract value vs last full month revenue ──
       // Uses annual_contract_value from active SAs (from CSV import) since
@@ -9518,25 +9527,6 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       // Utilization: actual / minimum duration ratio
       const rawUtil = parseFloat(vRow?.util_ratio);
       const utilizationRate = rawUtil > 0 ? Math.round(rawUtil * 100) : null;
-
-      // First-time fix rate: jobs with exactly 1 visit / total jobs with visits
-      const ftfRows = await db.execute(sql`
-        SELECT
-          COUNT(CASE WHEN vc = 1 THEN 1 END) AS single_visit_jobs,
-          COUNT(*) AS total_jobs_with_visits
-        FROM (
-          SELECT buildops_job_id, COUNT(*) AS vc
-          FROM buildops_visits
-          WHERE buildops_job_id IS NOT NULL
-          GROUP BY buildops_job_id
-        ) t
-      `);
-      const ftfRow = ftfRows.rows[0] as any;
-      const singleVisitJobs = parseInt(ftfRow?.single_visit_jobs) || 0;
-      const totalJobsWithVisits = parseInt(ftfRow?.total_jobs_with_visits) || 0;
-      const firstTimeFixRate = totalJobsWithVisits > 0
-        ? Math.round((singleVisitJobs / totalJobsWithVisits) * 100)
-        : null;
 
       // ── Top customers (from invoices) ─────────────────────────────────────────
       const topCustRows = await db.execute(sql`
@@ -9681,30 +9671,61 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const effectiveUtilization = utilizationRate ?? (laborAnalytics?.hrsUtilizationPct ?? null);
       const utilizationSource = utilizationRate != null ? 'visits' : (laborAnalytics?.hrsUtilizationPct != null ? 'timesheets' : null);
 
+      // ── viewPrior: when current period is incomplete and user toggled Prior ──
+      // Slice the last (incomplete) bucket off all sparklines and shift current/prev.
+      let finalRevMonthly = revenueMonthly;
+      let finalSaMonthly = saMonthly;
+      let finalPipeMonthly = pipeMonthly;
+      let finalQcrMonthly = qcrMonthly;
+      let finalArMonthly = arMonthly;
+      let finalRevCurrent = revCurrent;
+      let finalRevPrev = revPrev;
+      let finalRevChangePct = revChangePct;
+      let finalSaCurrent = saCurrent;
+      let finalSaPrev = saPrev;
+      let finalSaChangePct = saChangePct;
+      let finalIsPeriodIncomplete = isPeriodIncomplete;
+
+      if (viewPrior && isPeriodIncomplete) {
+        finalRevMonthly = revenueMonthly.slice(0, -1);
+        finalSaMonthly = saMonthly.slice(0, -1);
+        finalPipeMonthly = pipeMonthly.slice(0, -1);
+        finalQcrMonthly = qcrMonthly.slice(0, -1);
+        finalArMonthly = arMonthly.slice(0, -1);
+        finalRevCurrent = revenueMonthly.at(-2)?.v ?? 0;
+        finalRevPrev = revenueMonthly.at(-3)?.v ?? 0;
+        finalRevChangePct = finalRevPrev > 0 ? ((finalRevCurrent - finalRevPrev) / finalRevPrev) * 100 : 0;
+        finalSaCurrent = saMonthly.at(-2)?.v ?? 0;
+        finalSaPrev = saMonthly.at(-3)?.v ?? 0;
+        finalSaChangePct = finalSaPrev > 0 ? ((finalSaCurrent - finalSaPrev) / finalSaPrev) * 100 : 0;
+        finalIsPeriodIncomplete = false;
+      }
+
       res.json({
         lastUpdated: now.toISOString(),
         period,
-        isPeriodIncomplete,
+        viewPrior,
+        isPeriodIncomplete: finalIsPeriodIncomplete,
         dayOfMonth,
         revenue: {
-          current: revCurrent,
-          prevMonth: revPrev,
-          changePct: Math.round(revChangePct * 10) / 10,
-          up: revChangePct >= 0,
-          monthly: revenueMonthly,
+          current: finalRevCurrent,
+          prevMonth: finalRevPrev,
+          changePct: Math.round(finalRevChangePct * 10) / 10,
+          up: finalRevChangePct >= 0,
+          monthly: finalRevMonthly,
         },
         saContractRevenue: {
-          current: saCurrent,
-          prevMonth: saPrev,
-          changePct: Math.round(saChangePct * 10) / 10,
-          up: saChangePct >= 0,
+          current: finalSaCurrent,
+          prevMonth: finalSaPrev,
+          changePct: Math.round(finalSaChangePct * 10) / 10,
+          up: finalSaChangePct >= 0,
           activeCount: saCount,
-          monthly: saMonthly,
+          monthly: finalSaMonthly,
         },
         pipeline: {
           value: pipeTotal,
           dealCount: pipeCount,
-          monthly: pipeMonthly,
+          monthly: finalPipeMonthly,
         },
         quoteConversionRate: {
           value: qcrAll,
@@ -9712,7 +9733,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           prev30d: qcrPrev,
           changePt: qcr30 - qcrPrev,
           up: qcr30 >= qcrPrev,
-          monthly: qcrMonthly,
+          monthly: finalQcrMonthly,
         },
         collectionsOutstanding: {
           total: Math.round(arTotal),
@@ -9720,14 +9741,13 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           bucket3060: Math.round(bucket3060),
           bucket6090: Math.round(bucket6090),
           bucket90plus: Math.round(bucket90plus),
-          monthly: arMonthly,
+          monthly: finalArMonthly,
         },
         operationalKpis: {
           dso: { value: dso, target: 30 },
-          backlog: { value: backlogTotal, target: 1000000 },
+          backlog: { value: backlogTotal, jobCount: backlogJobCount, target: 1000000 },
           recurringRevPct: { value: recurringPct, target: 40, saMonthlyRecurring: Math.round(saMonthlyRecurring) },
           utilizationRate: { value: effectiveUtilization, target: 85, source: utilizationSource },
-          firstTimeFixRate: { value: firstTimeFixRate, target: 90 },
           quoteConversionRate: { value: qcrAll, target: 70 },
         },
         topCustomers,
