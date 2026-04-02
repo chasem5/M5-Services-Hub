@@ -9084,81 +9084,118 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       let inserted = 0, updated = 0, skipped = 0;
 
       for (let i = 1; i < lines.length; i++) {
-        const row = parseCsvLine(lines[i]);
-        if (row.length < 3) { skipped++; continue; }
+        try {
+          const row = parseCsvLine(lines[i]);
+          if (row.length < 3) { skipped++; continue; }
 
-        const agreementNumber = f(row, "agreement number", "agreement #", "agreement no", "agreement no.", "sa number");
-        if (!agreementNumber) { skipped++; continue; }
+          const agreementNumber = f(row, "agreement number", "agreement #", "agreement no", "agreement no.", "sa number");
+          if (!agreementNumber) { skipped++; continue; }
 
-        const fields: Record<string, any> = {
-          agreement_name: f(row, "agreement name"),
-          customer_name: f(row, "customer name"),
-          billing_customer_name: f(row, "billing customer name"),
-          department_name: f(row, "department name"),
-          status: f(row, "status"),
-          billing_type: f(row, "billing type"),
-          service_agreement_type: f(row, "service agreement type"),
-          project_manager: f(row, "project manager"),
-          account_manager: f(row, "account manager"),
-          sold_by: f(row, "sold by"),
-          created_by: f(row, "created by"),
-          start_date: fDate(row, "start date local"),
-          end_date: fDate(row, "end date local"),
-          first_bill_date: fDate(row, "first bill date local"),
-          next_bill_date: fDate(row, "next bill date local"),
-          renewal_date: fDate(row, "renewal date local"),
-          created_timestamp: fDate(row, "created time local"),
-          contract_value: fNum(row, "total contract value"),
-          annual_contract_value: fNum(row, "annual contract value"),
-          total_amount: fNum(row, "total amount"),
-          adjustment_amount: fNum(row, "adjustment amount"),
-          total_cost: fNum(row, "total cost"),
-          material_cost: fNum(row, "material cost"),
-          labour_cost: fNum(row, "labour cost"),
-          labour_hours: fNum(row, "labour hours"),
-          total_budgeted_hours: fNum(row, "total budgeted hours"),
-          total_budgeted_amount: fNum(row, "total budgeted amount"),
-          number_of_maintenances: fNum(row, "number of maintenances"),
-          number_of_maintenances_completed: fNum(row, "number of maintenances completed"),
-          number_of_jobs: fNum(row, "number of jobs"),
-          number_of_jobs_completed: fNum(row, "number of jobs completed"),
-          csv_imported_at: new Date(),
-        };
-
-        // Remove null fields
-        const setFields = Object.entries(fields).filter(([, v]) => v !== null && v !== undefined);
-
-        // Check existing record by agreement_number
-        const existing = await db.execute(sql.raw(
-          `SELECT id FROM buildops_agreements WHERE agreement_number = $1 LIMIT 1`,
-          [agreementNumber]
-        ));
-
-        if ((existing.rows as any[]).length > 0) {
-          // UPDATE
-          const setClause = setFields.map(([k], idx) => `${k} = $${idx + 2}`).join(", ");
-          const vals = setFields.map(([, v]) => v);
-          await db.execute(sql.raw(
-            `UPDATE buildops_agreements SET ${setClause} WHERE agreement_number = $1`,
-            [agreementNumber, ...vals]
-          ));
-          updated++;
-        } else {
-          // INSERT — generate a synthetic buildops_id from agreement_number since it's unique
           const syntheticId = `csv-${agreementNumber}`;
-          const allFields: Record<string, any> = {
-            buildops_id: syntheticId,
-            agreement_number: agreementNumber,
-            ...Object.fromEntries(setFields),
-          };
-          const keys = Object.keys(allFields);
-          const placeholders = keys.map((_, idx) => `$${idx + 1}`).join(", ");
-          const vals = Object.values(allFields);
-          await db.execute(sql.raw(
-            `INSERT INTO buildops_agreements (${keys.join(", ")}) VALUES (${placeholders}) ON CONFLICT (buildops_id) DO NOTHING`,
-            vals
-          ));
-          inserted++;
+          const agreementName = f(row, "agreement name");
+          const customerName = f(row, "customer name");
+          const billingCustomerName = f(row, "billing customer name");
+          const departmentName = f(row, "department name");
+          const status = f(row, "status");
+          const billingType = f(row, "billing type");
+          const saType = f(row, "service agreement type");
+          const projectManager = f(row, "project manager");
+          const accountManager = f(row, "account manager");
+          const soldBy = f(row, "sold by");
+          const createdBy = f(row, "created by");
+          const startDate = fDate(row, "start date local");
+          const endDate = fDate(row, "end date local");
+          const firstBillDate = fDate(row, "first bill date local");
+          const nextBillDate = fDate(row, "next bill date local");
+          const renewalDate = fDate(row, "renewal date local");
+          const createdTs = fDate(row, "created time local");
+          const contractValue = fNum(row, "total contract value");
+          const annualContractValue = fNum(row, "annual contract value");
+          const totalAmount = fNum(row, "total amount");
+          const adjustmentAmount = fNum(row, "adjustment amount");
+          const totalCost = fNum(row, "total cost");
+          const materialCost = fNum(row, "material cost");
+          const labourCost = fNum(row, "labour cost");
+          const labourHours = fNum(row, "labour hours");
+          const totalBudgetedHours = fNum(row, "total budgeted hours");
+          const totalBudgetedAmount = fNum(row, "total budgeted amount");
+          const numMaintenances = fNum(row, "number of maintenances");
+          const numMaintenancesCompleted = fNum(row, "number of maintenances completed");
+          const numJobs = fNum(row, "number of jobs");
+          const numJobsCompleted = fNum(row, "number of jobs completed");
+
+          // Check existing record by agreement_number (using safe template literal)
+          const existing = await db.execute(sql`
+            SELECT id FROM buildops_agreements WHERE agreement_number = ${agreementNumber} LIMIT 1
+          `);
+
+          if ((existing.rows as any[]).length > 0) {
+            await db.execute(sql`
+              UPDATE buildops_agreements SET
+                agreement_name = COALESCE(${agreementName}, agreement_name),
+                customer_name = COALESCE(${customerName}, customer_name),
+                billing_customer_name = COALESCE(${billingCustomerName}, billing_customer_name),
+                department_name = COALESCE(${departmentName}, department_name),
+                status = COALESCE(${status}, status),
+                billing_type = COALESCE(${billingType}, billing_type),
+                service_agreement_type = COALESCE(${saType}, service_agreement_type),
+                project_manager = COALESCE(${projectManager}, project_manager),
+                account_manager = COALESCE(${accountManager}, account_manager),
+                sold_by = COALESCE(${soldBy}, sold_by),
+                created_by = COALESCE(${createdBy}, created_by),
+                start_date = COALESCE(${startDate}, start_date),
+                end_date = COALESCE(${endDate}, end_date),
+                first_bill_date = COALESCE(${firstBillDate}, first_bill_date),
+                next_bill_date = COALESCE(${nextBillDate}, next_bill_date),
+                renewal_date = COALESCE(${renewalDate}, renewal_date),
+                created_timestamp = COALESCE(${createdTs}, created_timestamp),
+                contract_value = COALESCE(${contractValue}, contract_value),
+                annual_contract_value = COALESCE(${annualContractValue}, annual_contract_value),
+                total_amount = COALESCE(${totalAmount}, total_amount),
+                adjustment_amount = COALESCE(${adjustmentAmount}, adjustment_amount),
+                total_cost = COALESCE(${totalCost}, total_cost),
+                material_cost = COALESCE(${materialCost}, material_cost),
+                labour_cost = COALESCE(${labourCost}, labour_cost),
+                labour_hours = COALESCE(${labourHours}, labour_hours),
+                total_budgeted_hours = COALESCE(${totalBudgetedHours}, total_budgeted_hours),
+                total_budgeted_amount = COALESCE(${totalBudgetedAmount}, total_budgeted_amount),
+                number_of_maintenances = COALESCE(${numMaintenances}, number_of_maintenances),
+                number_of_maintenances_completed = COALESCE(${numMaintenancesCompleted}, number_of_maintenances_completed),
+                number_of_jobs = COALESCE(${numJobs}, number_of_jobs),
+                number_of_jobs_completed = COALESCE(${numJobsCompleted}, number_of_jobs_completed),
+                csv_imported_at = NOW()
+              WHERE agreement_number = ${agreementNumber}
+            `);
+            updated++;
+          } else {
+            await db.execute(sql`
+              INSERT INTO buildops_agreements (
+                buildops_id, agreement_number, agreement_name, customer_name, billing_customer_name,
+                department_name, status, billing_type, service_agreement_type,
+                project_manager, account_manager, sold_by, created_by,
+                start_date, end_date, first_bill_date, next_bill_date, renewal_date, created_timestamp,
+                contract_value, annual_contract_value, total_amount, adjustment_amount,
+                total_cost, material_cost, labour_cost, labour_hours,
+                total_budgeted_hours, total_budgeted_amount,
+                number_of_maintenances, number_of_maintenances_completed,
+                number_of_jobs, number_of_jobs_completed, csv_imported_at
+              ) VALUES (
+                ${syntheticId}, ${agreementNumber}, ${agreementName}, ${customerName}, ${billingCustomerName},
+                ${departmentName}, ${status}, ${billingType}, ${saType},
+                ${projectManager}, ${accountManager}, ${soldBy}, ${createdBy},
+                ${startDate}, ${endDate}, ${firstBillDate}, ${nextBillDate}, ${renewalDate}, ${createdTs},
+                ${contractValue}, ${annualContractValue}, ${totalAmount}, ${adjustmentAmount},
+                ${totalCost}, ${materialCost}, ${labourCost}, ${labourHours},
+                ${totalBudgetedHours}, ${totalBudgetedAmount},
+                ${numMaintenances}, ${numMaintenancesCompleted},
+                ${numJobs}, ${numJobsCompleted}, NOW()
+              ) ON CONFLICT (buildops_id) DO NOTHING
+            `);
+            inserted++;
+          }
+        } catch (rowErr: any) {
+          console.error(`[import-agreements] row ${i}:`, rowErr.message);
+          skipped++;
         }
       }
 
@@ -9168,6 +9205,486 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       return res.json({ processed: lines.length - 1, inserted, updated, skipped, totalRows });
     } catch (err: any) {
       console.error("[import-agreements]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Import Jobs CSV ──────────────────────────────────────────────────────────
+  app.post("/api/buildops/import-jobs", isAuthenticated, requireRole(["super_admin", "admin"]), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const text = req.file.buffer.toString("utf-8");
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return res.status(400).json({ message: "CSV has no data rows" });
+
+      function parseCsvLine(line: string): string[] {
+        const result: string[] = [];
+        let cur = "", inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"' && !inQ) { inQ = true; continue; }
+          if (c === '"' && inQ) { if (line[i+1] === '"') { cur += '"'; i++; } else { inQ = false; } continue; }
+          if (c === ',' && !inQ) { result.push(cur.trim()); cur = ""; continue; }
+          cur += c;
+        }
+        result.push(cur.trim());
+        return result;
+      }
+
+      const headerRaw = parseCsvLine(lines[0]);
+      const header = headerRaw.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, " ").trim());
+
+      function col(...names: string[]): number {
+        for (const n of names) {
+          const idx = header.indexOf(n.toLowerCase().replace(/[^a-z0-9]/g, " ").trim());
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      }
+      function f(row: string[], ...names: string[]): string | null {
+        const idx = col(...names);
+        if (idx < 0 || idx >= row.length) return null;
+        return row[idx].replace(/^"(.*)"$/, "$1").trim() || null;
+      }
+      function fNum(row: string[], ...names: string[]): number | null {
+        const v = f(row, ...names);
+        if (!v) return null;
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+      }
+      function fDate(row: string[], ...names: string[]): Date | null {
+        const v = f(row, ...names);
+        if (!v) return null;
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+      }
+
+      if (col("job number", "job #") < 0) {
+        return res.status(400).json({ message: "Not a Jobs CSV — expected a 'Job Number' column." });
+      }
+
+      let inserted = 0, updated = 0, skipped = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        try {
+          const row = parseCsvLine(lines[i]);
+          if (row.length < 3) { skipped++; continue; }
+
+          const jobNumber = f(row, "job number", "job #");
+          if (!jobNumber) { skipped++; continue; }
+
+          const jobStatus = f(row, "job status", "status");
+          const jobType = f(row, "job type");
+          const quoteStatus = f(row, "quote status");
+          const reviewStatus = f(row, "review status");
+          const billingStatus = f(row, "billing status");
+          const procurementStatus = f(row, "procurement status");
+          const priority = f(row, "priority");
+          const projectManager = f(row, "project manager");
+          const accountManager = f(row, "account manager");
+          const soldBy = f(row, "sold by");
+          const authorizedBy = f(row, "authorized by");
+          const customerName = f(row, "customer name");
+          const propertyName = f(row, "property name");
+          const propertyType = f(row, "property type");
+          const departmentName = f(row, "department name");
+          const description = f(row, "description");
+          const amountQuoted = fNum(row, "total amount quoted", "amount quoted", "amount not to exceed");
+          const estimatedCost = fNum(row, "estimated cost");
+          const totalBudgetedHours = fNum(row, "total budgeted hours");
+          const saNumber = f(row, "service agreement number");
+          const completedDate = fDate(row, "completed date local");
+          const earliestVisit = fDate(row, "earliest visit scheduled time local");
+          const latestVisit = fDate(row, "latest visit scheduled time local");
+          const isServiceAgreementJob = saNumber != null;
+
+          const existing = await db.execute(sql`
+            SELECT id FROM buildops_jobs WHERE job_number = ${jobNumber} LIMIT 1
+          `);
+
+          if ((existing.rows as any[]).length > 0) {
+            await db.execute(sql`
+              UPDATE buildops_jobs SET
+                status = COALESCE(${jobStatus}, status),
+                job_type_name = COALESCE(${jobType}, job_type_name),
+                review_status = COALESCE(${reviewStatus}, review_status),
+                billing_status = COALESCE(${billingStatus}, billing_status),
+                procurement_status = COALESCE(${procurementStatus}, procurement_status),
+                priority = COALESCE(${priority}, priority),
+                project_manager = COALESCE(${projectManager}, project_manager),
+                account_manager = COALESCE(${accountManager}, account_manager),
+                sold_by = COALESCE(${soldBy}, sold_by),
+                customer_name = COALESCE(${customerName}, customer_name),
+                customer_property_name = COALESCE(${propertyName}, customer_property_name),
+                department = COALESCE(${departmentName}, department),
+                issue_description = COALESCE(${description}, issue_description),
+                amount_quoted = COALESCE(${amountQuoted}, amount_quoted),
+                cost_amount = COALESCE(${estimatedCost}, cost_amount),
+                total_budgeted_hours = COALESCE(${totalBudgetedHours}, total_budgeted_hours),
+                buildops_service_agreement_id = COALESCE(${saNumber}, buildops_service_agreement_id),
+                completed_date = COALESCE(${completedDate}, completed_date),
+                scheduled_date = COALESCE(${earliestVisit}, scheduled_date),
+                is_service_agreement_job = ${isServiceAgreementJob},
+                synced_at = NOW()
+              WHERE job_number = ${jobNumber}
+            `);
+            updated++;
+          } else {
+            await db.execute(sql`
+              INSERT INTO buildops_jobs (
+                buildops_id, job_number, status, job_type_name, review_status,
+                billing_status, procurement_status, priority,
+                project_manager, account_manager, sold_by,
+                customer_name, customer_property_name, department,
+                issue_description, amount_quoted, cost_amount, total_budgeted_hours,
+                buildops_service_agreement_id, is_service_agreement_job,
+                completed_date, scheduled_date, synced_at
+              ) VALUES (
+                ${jobNumber}, ${jobNumber}, ${jobStatus}, ${jobType}, ${reviewStatus},
+                ${billingStatus}, ${procurementStatus}, ${priority},
+                ${projectManager}, ${accountManager}, ${soldBy},
+                ${customerName}, ${propertyName}, ${departmentName},
+                ${description}, ${amountQuoted}, ${estimatedCost}, ${totalBudgetedHours},
+                ${saNumber}, ${isServiceAgreementJob},
+                ${completedDate}, ${earliestVisit}, NOW()
+              ) ON CONFLICT (buildops_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                job_type_name = EXCLUDED.job_type_name,
+                billing_status = EXCLUDED.billing_status,
+                customer_name = EXCLUDED.customer_name,
+                amount_quoted = EXCLUDED.amount_quoted,
+                completed_date = EXCLUDED.completed_date,
+                synced_at = NOW()
+            `);
+            inserted++;
+          }
+        } catch (rowErr: any) {
+          console.error(`[import-jobs] row ${i}:`, rowErr.message);
+          skipped++;
+        }
+      }
+
+      const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_jobs`);
+      const totalRows = parseInt((countRow.rows[0] as any)?.cnt) || 0;
+
+      return res.json({ processed: lines.length - 1, inserted, updated, skipped, totalRows, type: 'jobs' });
+    } catch (err: any) {
+      console.error("[import-jobs]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Import Visits CSV ────────────────────────────────────────────────────────
+  app.post("/api/buildops/import-visits", isAuthenticated, requireRole(["super_admin", "admin"]), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const text = req.file.buffer.toString("utf-8");
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return res.status(400).json({ message: "CSV has no data rows" });
+
+      function parseCsvLine(line: string): string[] {
+        const result: string[] = [];
+        let cur = "", inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"' && !inQ) { inQ = true; continue; }
+          if (c === '"' && inQ) { if (line[i+1] === '"') { cur += '"'; i++; } else { inQ = false; } continue; }
+          if (c === ',' && !inQ) { result.push(cur.trim()); cur = ""; continue; }
+          cur += c;
+        }
+        result.push(cur.trim());
+        return result;
+      }
+
+      const headerRaw = parseCsvLine(lines[0]);
+      const header = headerRaw.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, " ").trim());
+
+      function col(...names: string[]): number {
+        for (const n of names) {
+          const idx = header.indexOf(n.toLowerCase().replace(/[^a-z0-9]/g, " ").trim());
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      }
+      function f(row: string[], ...names: string[]): string | null {
+        const idx = col(...names);
+        if (idx < 0 || idx >= row.length) return null;
+        return row[idx].replace(/^"(.*)"$/, "$1").trim() || null;
+      }
+      function fNum(row: string[], ...names: string[]): number | null {
+        const v = f(row, ...names);
+        if (!v) return null;
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+      }
+      function fDate(row: string[], ...names: string[]): Date | null {
+        const v = f(row, ...names);
+        if (!v) return null;
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+      }
+
+      if (col("visit number") < 0) {
+        return res.status(400).json({ message: "Not a Visits CSV — expected a 'Visit Number' column." });
+      }
+
+      let inserted = 0, updated = 0, skipped = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        try {
+          const row = parseCsvLine(lines[i]);
+          if (row.length < 3) { skipped++; continue; }
+
+          const visitNumber = fNum(row, "visit number");
+          const jobNumber = f(row, "job number", "job #");
+          if (!jobNumber || visitNumber == null) { skipped++; continue; }
+
+          const buildopsId = `${jobNumber}-${visitNumber}`;
+          const status = f(row, "status");
+          const description = f(row, "description");
+          const jobType = f(row, "job type");
+          const onHoldStr = f(row, "on hold");
+          const onHold = onHoldStr === 'true' || onHoldStr === '1';
+          const onHoldReason = f(row, "on hold reason");
+          const primaryTech = f(row, "primary tech name");
+          const minDuration = fNum(row, "minimum duration mins");
+          const actualDuration = fNum(row, "actual duration mins");
+          const scheduledFor = fDate(row, "scheduled for local", "scheduled for");
+          const startTime = fDate(row, "start time local");
+          const endTime = fDate(row, "end time local");
+          const submittedBy = f(row, "submitted by");
+          const submittedTime = fDate(row, "submitted time local");
+          const reviewStatus = f(row, "review status");
+          const departmentName = f(row, "department name");
+          const billingCustomerName = f(row, "billing customer name");
+          const customerName = f(row, "customer name");
+          const propertyName = f(row, "property name");
+          const addressLine1 = f(row, "address line 1", "address");
+          const city = f(row, "city");
+          const state = f(row, "state");
+          const zipcode = f(row, "zipcode", "zip code", "zip");
+
+          const existing = await db.execute(sql`
+            SELECT id FROM buildops_visits WHERE buildops_id = ${buildopsId} LIMIT 1
+          `);
+
+          if ((existing.rows as any[]).length > 0) {
+            await db.execute(sql`
+              UPDATE buildops_visits SET
+                status = COALESCE(${status}, status),
+                review_status = COALESCE(${reviewStatus}, review_status),
+                primary_tech_name = COALESCE(${primaryTech}, primary_tech_name),
+                actual_duration_mins = COALESCE(${actualDuration}, actual_duration_mins),
+                scheduled_for = COALESCE(${scheduledFor}, scheduled_for),
+                start_time = COALESCE(${startTime}, start_time),
+                end_time = COALESCE(${endTime}, end_time),
+                submitted_by = COALESCE(${submittedBy}, submitted_by),
+                submitted_time = COALESCE(${submittedTime}, submitted_time),
+                department_name = COALESCE(${departmentName}, department_name),
+                billing_customer_name = COALESCE(${billingCustomerName}, billing_customer_name),
+                customer_name = COALESCE(${customerName}, customer_name),
+                property_name = COALESCE(${propertyName}, property_name),
+                address_line1 = COALESCE(${addressLine1}, address_line1),
+                city = COALESCE(${city}, city),
+                state = COALESCE(${state}, state),
+                zipcode = COALESCE(${zipcode}, zipcode),
+                synced_at = NOW()
+              WHERE buildops_id = ${buildopsId}
+            `);
+            updated++;
+          } else {
+            await db.execute(sql`
+              INSERT INTO buildops_visits (
+                buildops_id, visit_number, job_number, buildops_job_id,
+                status, description, job_type, on_hold, on_hold_reason,
+                primary_tech_name, minimum_duration_mins, actual_duration_mins,
+                scheduled_for, start_time, end_time,
+                submitted_by, submitted_time, review_status,
+                department_name, billing_customer_name, customer_name,
+                property_name, address_line1, city, state, zipcode, synced_at
+              ) VALUES (
+                ${buildopsId}, ${visitNumber}, ${jobNumber}, ${jobNumber},
+                ${status}, ${description}, ${jobType}, ${onHold}, ${onHoldReason},
+                ${primaryTech}, ${minDuration}, ${actualDuration},
+                ${scheduledFor}, ${startTime}, ${endTime},
+                ${submittedBy}, ${submittedTime}, ${reviewStatus},
+                ${departmentName}, ${billingCustomerName}, ${customerName},
+                ${propertyName}, ${addressLine1}, ${city}, ${state}, ${zipcode}, NOW()
+              ) ON CONFLICT (buildops_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                actual_duration_mins = EXCLUDED.actual_duration_mins,
+                submitted_by = EXCLUDED.submitted_by,
+                review_status = EXCLUDED.review_status,
+                synced_at = NOW()
+            `);
+            inserted++;
+          }
+        } catch (rowErr: any) {
+          console.error(`[import-visits] row ${i}:`, rowErr.message);
+          skipped++;
+        }
+      }
+
+      const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_visits`);
+      const totalRows = parseInt((countRow.rows[0] as any)?.cnt) || 0;
+
+      return res.json({ processed: lines.length - 1, inserted, updated, skipped, totalRows, type: 'visits' });
+    } catch (err: any) {
+      console.error("[import-visits]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Import Invoices CSV ──────────────────────────────────────────────────────
+  app.post("/api/buildops/import-invoices", isAuthenticated, requireRole(["super_admin", "admin"]), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      const text = req.file.buffer.toString("utf-8");
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return res.status(400).json({ message: "CSV has no data rows" });
+
+      function parseCsvLine(line: string): string[] {
+        const result: string[] = [];
+        let cur = "", inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"' && !inQ) { inQ = true; continue; }
+          if (c === '"' && inQ) { if (line[i+1] === '"') { cur += '"'; i++; } else { inQ = false; } continue; }
+          if (c === ',' && !inQ) { result.push(cur.trim()); cur = ""; continue; }
+          cur += c;
+        }
+        result.push(cur.trim());
+        return result;
+      }
+
+      const headerRaw = parseCsvLine(lines[0]);
+      const header = headerRaw.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, " ").trim());
+
+      function col(...names: string[]): number {
+        for (const n of names) {
+          const idx = header.indexOf(n.toLowerCase().replace(/[^a-z0-9]/g, " ").trim());
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      }
+      function f(row: string[], ...names: string[]): string | null {
+        const idx = col(...names);
+        if (idx < 0 || idx >= row.length) return null;
+        return row[idx].replace(/^"(.*)"$/, "$1").trim() || null;
+      }
+      function fNum(row: string[], ...names: string[]): number | null {
+        const v = f(row, ...names);
+        if (!v) return null;
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+      }
+      function fDate(row: string[], ...names: string[]): Date | null {
+        const v = f(row, ...names);
+        if (!v) return null;
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+      }
+
+      if (col("invoice number") < 0) {
+        return res.status(400).json({ message: "Not an Invoice CSV — expected an 'Invoice Number' column." });
+      }
+
+      let inserted = 0, updated = 0, skipped = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        try {
+          const row = parseCsvLine(lines[i]);
+          if (row.length < 3) { skipped++; continue; }
+
+          const invoiceNumber = f(row, "invoice number");
+          if (!invoiceNumber) { skipped++; continue; }
+
+          const status = f(row, "status");
+          if (status === 'void') { skipped++; continue; } // Skip voided invoices
+
+          const billingCustomerName = f(row, "billing customer name");
+          const departmentName = f(row, "department name");
+          const jobNumber = f(row, "job number", "job #");
+          const saNumber = f(row, "service agreement number");
+          const paymentTermName = f(row, "payment term name");
+          const daysPastDue = fNum(row, "days past due");
+          const issuedDate = fDate(row, "issue date local", "issued date");
+          const dueDate = fDate(row, "due date local");
+          const closedDate = fDate(row, "closed date local");
+          const totalAmount = fNum(row, "total amount", "amount");
+          const subtotal = fNum(row, "subtotal");
+          const taxAmount = fNum(row, "tax amount", "tax");
+          const customerName = billingCustomerName;
+
+          const existing = await db.execute(sql`
+            SELECT id FROM buildops_invoices WHERE invoice_number = ${invoiceNumber} LIMIT 1
+          `);
+
+          if ((existing.rows as any[]).length > 0) {
+            await db.execute(sql`
+              UPDATE buildops_invoices SET
+                status = COALESCE(${status}, status),
+                total_amount = COALESCE(${totalAmount}, total_amount),
+                subtotal = COALESCE(${subtotal}, subtotal),
+                tax_amount = COALESCE(${taxAmount}, tax_amount),
+                customer_name = COALESCE(${customerName}, customer_name),
+                job_number = COALESCE(${jobNumber}, job_number),
+                issued_date = COALESCE(${issuedDate}, issued_date),
+                due_date = COALESCE(${dueDate}, due_date),
+                closed_date = COALESCE(${closedDate}, closed_date),
+                department_name = COALESCE(${departmentName}, department_name),
+                days_past_due = COALESCE(${daysPastDue}, days_past_due),
+                payment_term_name = COALESCE(${paymentTermName}, payment_term_name),
+                service_agreement_number = COALESCE(${saNumber}, service_agreement_number),
+                synced_at = NOW()
+              WHERE invoice_number = ${invoiceNumber}
+            `);
+            updated++;
+          } else {
+            await db.execute(sql`
+              INSERT INTO buildops_invoices (
+                buildops_id, invoice_number, status,
+                total_amount, subtotal, tax_amount,
+                customer_name, job_number,
+                issued_date, due_date, closed_date,
+                department_name, days_past_due, payment_term_name,
+                service_agreement_number, synced_at
+              ) VALUES (
+                ${'inv-' + invoiceNumber}, ${invoiceNumber}, ${status},
+                ${totalAmount}, ${subtotal}, ${taxAmount},
+                ${customerName}, ${jobNumber},
+                ${issuedDate}, ${dueDate}, ${closedDate},
+                ${departmentName}, ${daysPastDue}, ${paymentTermName},
+                ${saNumber}, NOW()
+              ) ON CONFLICT (buildops_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                total_amount = EXCLUDED.total_amount,
+                issued_date = EXCLUDED.issued_date,
+                synced_at = NOW()
+            `);
+            inserted++;
+          }
+        } catch (rowErr: any) {
+          console.error(`[import-invoices] row ${i}:`, rowErr.message);
+          skipped++;
+        }
+      }
+
+      const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_invoices`);
+      const totalRows = parseInt((countRow.rows[0] as any)?.cnt) || 0;
+
+      return res.json({ processed: lines.length - 1, inserted, updated, skipped, totalRows, type: 'invoices' });
+    } catch (err: any) {
+      console.error("[import-invoices]", err.message);
       res.status(500).json({ message: err.message });
     }
   });

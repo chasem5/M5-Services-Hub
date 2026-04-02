@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const PRIMARY = "#BE1916";
 
@@ -250,6 +250,7 @@ const STATUS_CONFIG: Record<ActivityStatus, { label: string; dot: string; badge:
 export default function CEOCommandCenter() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (user && user.role !== "super_admin") navigate("/");
@@ -375,70 +376,78 @@ function CEOCommandCenterInner() {
         const text = await file.text();
         const firstLine = text.split(/\r?\n/)[0].toLowerCase();
 
-        // Detect Service Agreement CSV — accept if header contains any agreement number variant
-        // BuildOps exports use "Agreement #" not "Agreement Number"
-        const isSaCsv = firstLine.includes("agreement number")
-          || firstLine.includes("agreement #")
-          || firstLine.includes("agreement no")
-          || (firstLine.includes("agreement name") && firstLine.includes("status"));
-        if (isSaCsv) {
+        // Helper: upload a FormData to an endpoint and handle result
+        async function uploadCsv(endpoint: string, label: string, rowLabel: string) {
           setImportStatus({ status: 'uploading' });
           const formData = new FormData();
           formData.append("file", file);
-          try {
-            const resp = await fetch("/api/buildops/import-agreements", { method: "POST", body: formData });
-            const result = await resp.json();
-            if (!resp.ok) {
-              setImportStatus({ status: 'error', message: result.message || 'Import failed' });
-            } else {
-              setImportStatus({
-                status: 'success',
-                message: `Service Agreements: ${result.inserted} new + ${result.updated} updated (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} agreements.`,
-              });
-              setUploadedFiles(prev => [...prev, {
-                name: `${file.name} (SA import)`,
-                size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
-                uploadedAt: now,
-              }]);
-            }
-          } catch (err: any) {
-            setImportStatus({ status: 'error', message: err.message || 'Network error' });
-          }
-          continue;
+          const resp = await fetch(endpoint, { method: "POST", body: formData });
+          const result = await resp.json();
+          if (!resp.ok) throw new Error(result.message || 'Import failed');
+          setImportStatus({
+            status: 'success',
+            message: `${label}: ${result.inserted} new + ${result.updated} updated (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} ${rowLabel}.`,
+          });
+          setUploadedFiles(prev => [...prev, {
+            name: `${file.name} (${label.toLowerCase()} import)`,
+            size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
+            uploadedAt: now,
+          }]);
+          queryClient.invalidateQueries({ queryKey: ['/api/ceo/metrics'] });
         }
 
-        // Detect Timesheet CSV
-        const isTimesheetCsv = firstLine.includes("visit id") || firstLine.includes("total duration mins") || firstLine.includes("labor rate group") || firstLine.includes("employee name") && firstLine.includes("work date");
-        if (isTimesheetCsv) {
-          setImportStatus({ status: 'uploading' });
-          const formData = new FormData();
-          formData.append("file", file);
-          try {
-            const resp = await fetch("/api/buildops/import-timesheets", { method: "POST", body: formData });
-            const result = await resp.json();
-            if (!resp.ok) {
-              setImportStatus({ status: 'error', message: result.message || 'Import failed' });
-            } else {
-              setImportStatus({
-                status: 'success',
-                message: `Timesheets: ${result.inserted} new + ${result.updated} updated (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} records.`,
-              });
-              setUploadedFiles(prev => [...prev, {
-                name: `${file.name} (timesheet import)`,
-                size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
-                uploadedAt: now,
-              }]);
-            }
-          } catch (err: any) {
-            setImportStatus({ status: 'error', message: err.message || 'Network error' });
+        try {
+          // 1. Timesheet CSV — employee name + work date
+          const isTimesheetCsv = firstLine.includes("visit id") || firstLine.includes("total duration mins") || firstLine.includes("labor rate group") || (firstLine.includes("employee name") && firstLine.includes("work date"));
+          if (isTimesheetCsv) {
+            await uploadCsv("/api/buildops/import-timesheets", "Timesheets", "records");
+            continue;
           }
-          continue;
+
+          // 2. Invoice CSV — invoice number + issue date
+          const isInvoiceCsv = firstLine.includes("invoice number") && firstLine.includes("issue date");
+          if (isInvoiceCsv) {
+            await uploadCsv("/api/buildops/import-invoices", "Invoices", "invoices");
+            continue;
+          }
+
+          // 3. SA Contract CSV — agreement number / agreement # (but NOT SA-jobs which have "is maintenance")
+          const isSaContractCsv = (firstLine.includes("agreement number") || firstLine.includes("agreement #") || firstLine.includes("agreement no"))
+            && !firstLine.includes("is maintenance");
+          if (isSaContractCsv) {
+            await uploadCsv("/api/buildops/import-agreements", "Service Agreements", "agreements");
+            continue;
+          }
+
+          // 4. Visits CSV — visit number + job number + scheduled for
+          const isVisitCsv = firstLine.includes("visit number") && firstLine.includes("job number") && firstLine.includes("scheduled for");
+          if (isVisitCsv) {
+            await uploadCsv("/api/buildops/import-visits", "Visits", "visits");
+            continue;
+          }
+
+          // 5. SA-visits/SA-jobs CSV — job number + service agreement number + is maintenance
+          const isSaJobCsv = firstLine.includes("job number") && firstLine.includes("service agreement number") && firstLine.includes("is maintenance");
+          if (isSaJobCsv) {
+            await uploadCsv("/api/buildops/import-jobs", "SA Jobs", "jobs");
+            continue;
+          }
+
+          // 6. Jobs CSV — job number + job status (no visit number, no invoice number, no is maintenance)
+          const isJobCsv = firstLine.includes("job number") && firstLine.includes("job status") && !firstLine.includes("visit number") && !firstLine.includes("invoice number");
+          if (isJobCsv) {
+            await uploadCsv("/api/buildops/import-jobs", "Jobs", "jobs");
+            continue;
+          }
+
+          // Not recognized
+          setImportStatus({
+            status: 'error',
+            message: `CSV not recognized: "${file.name}". Supported exports from BuildOps: Timesheets, Invoices, Jobs, Visits, Service Agreements (contract list), and SA-linked jobs.`,
+          });
+        } catch (err: any) {
+          setImportStatus({ status: 'error', message: err.message || 'Network error' });
         }
-        // CSV not recognized — show error with guidance
-        setImportStatus({
-          status: 'error',
-          message: `CSV not recognized: "${file.name}". Expected a BuildOps Service Agreement CSV (must contain "Agreement Number" column) or a BuildOps Timesheet CSV (must contain "Visit ID" or "Employee Name" + "Work Date" columns). Check that you are exporting the correct report from BuildOps.`,
-        });
         continue;
       }
       // Non-CSV file: add to local list for AI context
@@ -1404,7 +1413,7 @@ function CEOCommandCenterInner() {
                       <>
                         <Upload className="w-6 h-6 text-gray-300" />
                         <p className="text-sm font-semibold text-gray-500">Drop Excel or CSV here</p>
-                        <p className="text-xs text-gray-400">.xlsx, .csv — max 25 MB · Service Agreements & Timesheets auto-detected</p>
+                        <p className="text-xs text-gray-400">.xlsx, .csv — max 25 MB · Jobs, Visits, Invoices, SAs & Timesheets auto-detected</p>
                         <button data-testid="button-browse-files" className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-100 transition-all">
                           Browse files
                         </button>
