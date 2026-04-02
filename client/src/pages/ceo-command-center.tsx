@@ -678,11 +678,11 @@ function CEOCommandCenterInner() {
               <span className="text-xs font-semibold ml-1.5 text-emerald-600">{liveKpi.pipeline.change}</span>
             </p>
             <div className="h-28 mt-2 relative">
-              {(!pipe?.monthly || pipe.monthly.length === 0) && !metricsLoading && (
+              {(!pipe?.monthly || !pipe.monthly.some(d => d.v > 0)) && !metricsLoading && (
                 <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No pipeline data for period</div>
               )}
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={(pipe?.monthly ?? FALLBACK_SPARK).slice(-6)} margin={{ top: 2, right: 0, left: 0, bottom: 0 }} barSize={14}>
+                <BarChart data={pipe?.monthly ?? FALLBACK_SPARK} margin={{ top: 2, right: 0, left: 0, bottom: 0 }} barSize={14}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTooltip format="dollar" />} />
@@ -702,11 +702,11 @@ function CEOCommandCenterInner() {
               <span className={`text-xs font-semibold ml-1.5 ${liveKpi.quoteConversionRate.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.quoteConversionRate.change}</span>
             </p>
             <div className="h-28 mt-2 relative">
-              {(!qcr?.monthly || qcr.monthly.length === 0) && !metricsLoading && (
+              {(!qcr?.monthly || !qcr.monthly.some(d => d.v > 0)) && !metricsLoading && (
                 <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No conversion data for period</div>
               )}
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={(qcr?.monthly ?? FALLBACK_SPARK).slice(-6)} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
+                <LineChart data={qcr?.monthly ?? FALLBACK_SPARK} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
@@ -732,7 +732,7 @@ function CEOCommandCenterInner() {
                 <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No AR data — invoices not synced</div>
               )}
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={(ar?.monthly ?? FALLBACK_SPARK).slice(-6)} margin={{ top: 2, right: 0, left: 4, bottom: 0 }}>
+                <AreaChart data={ar?.monthly ?? FALLBACK_SPARK} margin={{ top: 2, right: 0, left: 4, bottom: 0 }}>
                   <defs>
                     <linearGradient id="coll-grad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} />

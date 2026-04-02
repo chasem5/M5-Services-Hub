@@ -9043,6 +9043,53 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         labelExpr = `TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY')`;
       }
 
+      // ── Zero-fill helper: build complete bucket array for the selected period ──
+      // Generates full date-bucketed label array (30d / 12w / 12m) so charts
+      // always have the correct number of points even when no data exists.
+      function buildBuckets(): { label: string; key: string }[] {
+        const buckets: { label: string; key: string }[] = [];
+        if (period === "daily") {
+          for (let i = 29; i >= 0; i--) {
+            const d = new Date(now);
+            d.setDate(d.getDate() - i);
+            const label = d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+            const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
+            buckets.push({ label, key });
+          }
+        } else if (period === "weekly") {
+          for (let i = 11; i >= 0; i--) {
+            const d = new Date(now);
+            d.setDate(d.getDate() - i * 7);
+            // Snap to Monday for consistency
+            const day = d.getDay();
+            const diff = day === 0 ? -6 : 1 - day;
+            d.setDate(d.getDate() + diff);
+            const label = d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+            const key = d.toISOString().slice(0, 10);
+            buckets.push({ label, key });
+          }
+        } else {
+          for (let i = 11; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            buckets.push({ label, key });
+          }
+        }
+        return buckets;
+      }
+
+      // Merge sparse query results into zero-filled bucket array
+      function fillBuckets(
+        rows: { label: string; v: number }[],
+        buckets: { label: string; key: string }[]
+      ): { label: string; v: number }[] {
+        const byLabel = new Map(rows.map(r => [r.label, r.v]));
+        return buckets.map(b => ({ label: b.label, v: byLabel.get(b.label) ?? 0 }));
+      }
+
+      const allBuckets = buildBuckets();
+
       // ── Revenue: invoiced amounts bucketed by period ─────────────────────────
       const revenueRows = await db.execute(sql.raw(`
         SELECT
@@ -9056,10 +9103,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         GROUP BY ${dateTruncExpr}
         ORDER BY ${dateTruncExpr}
       `));
-      const revenueMonthly: { label: string; v: number }[] = (revenueRows.rows as any[]).map(r => ({
+      const revenueRaw: { label: string; v: number }[] = (revenueRows.rows as any[]).map(r => ({
         label: r.label,
         v: Math.round(parseFloat(r.total) || 0),
       }));
+      const revenueMonthly = fillBuckets(revenueRaw, allBuckets);
       const revCurrent = revenueMonthly.at(-1)?.v ?? 0;
       const revPrev = revenueMonthly.at(-2)?.v ?? 0;
       const revChangePct = revPrev > 0 ? ((revCurrent - revPrev) / revPrev) * 100 : 0;
@@ -9138,14 +9186,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         GROUP BY ${pipesTruncExpr}
         ORDER BY ${pipesTruncExpr}
       `));
-      const pipeMonthly = (pipeTrendRows.rows as any[]).map(r => ({
+      const pipeRaw: { label: string; v: number }[] = (pipeTrendRows.rows as any[]).map(r => ({
         label: r.label,
         v: Math.round(parseFloat(r.total) || 0),
       }));
-      // Pad with current pipeline if empty
-      if (pipeMonthly.length === 0) {
-        pipeMonthly.push({ label: "Now", v: pipeTotal });
-      }
+      const pipeMonthly = fillBuckets(pipeRaw, allBuckets);
 
       // ── Quote Conversion Rate: won / (won + lost) from leads ─────────────────
       const qcrRows = await db.execute(sql`
@@ -9194,13 +9239,12 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         GROUP BY ${qcrTruncExpr}
         ORDER BY ${qcrTruncExpr}
       `));
-      const qcrMonthly = (qcrTrendRows.rows as any[]).map(r => {
+      const qcrRaw: { label: string; v: number }[] = (qcrTrendRows.rows as any[]).map(r => {
         const w = parseInt(r.won_count) || 0;
         const l = parseInt(r.lost_count) || 0;
         return { label: r.label, v: (w + l) > 0 ? Math.round((w / (w + l)) * 100) : 0 };
       });
-      // Pad with overall rate if empty
-      if (qcrMonthly.length === 0) qcrMonthly.push({ label: "Now", v: qcrAll });
+      const qcrMonthly = fillBuckets(qcrRaw, allBuckets);
 
       // ── Collections Outstanding: unpaid invoices aged by days past due ───────
       const arRows = await db.execute(sql`
@@ -9239,11 +9283,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         GROUP BY ${dateTruncExpr}
         ORDER BY ${dateTruncExpr}
       `));
-      const arMonthly = (arTrendRows.rows as any[]).map(r => ({
+      const arRaw: { label: string; v: number }[] = (arTrendRows.rows as any[]).map(r => ({
         label: r.label,
         v: Math.round(parseFloat(r.total) || 0),
       }));
-      if (arMonthly.length === 0) arMonthly.push({ label: "Now", v: Math.round(arTotal) });
+      const arMonthly = fillBuckets(arRaw, allBuckets);
 
       // ── DSO: avg days from issued to closed for paid invoices ────────────────
       const dsoRows = await db.execute(sql`
