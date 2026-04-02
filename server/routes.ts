@@ -8884,6 +8884,9 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const iTotalDuration = col("total duration mins", "total_duration_mins");
       const iCostPerHour = col("cost per hour", "cost_per_hour");
       const iTotalCost = col("total cost", "total_cost");
+      // Pay-type breakdown columns (new CSV format: one row per pay type per visit)
+      const iPayTypeName = col("name");         // "Regular Time", "Overtime", "Double Time", etc.
+      const iPayTypeCode = col("abbreviation"); // RT, OT, DT, HOL, SICK, PTO, OTHER
 
       let processed = 0, inserted = 0, updated = 0, skipped = 0;
 
@@ -8906,55 +8909,126 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         return result;
       }
 
+      // Parse all rows first, then group by (visit_id, employee_name, labor_rate_group)
+      // The new CSV format exports one row per pay type per visit — we need to aggregate.
+      interface RawRow {
+        employeeName: string;
+        visitId: string | null;
+        laborRateGroup: string | null;
+        workDate: Date | null;
+        visitNumber: number | null;
+        jobNumber: string | null;
+        eventStatus: string | null;
+        scheduledDuration: number | null;
+        laborType: string | null;
+        deptName: string | null;
+        custName: string | null;
+        billingCust: string | null;
+        propertyName: string | null;
+        approvalStatus: string | null;
+        billable: boolean;
+        saNumber: string | null;
+        durationMins: number;
+        costPerHour: number | null;
+        totalCost: number;
+        payTypeCode: string;
+        payTypeName: string;
+      }
+      const rawRows: RawRow[] = [];
       for (let i = 1; i < lines.length; i++) {
-        const line = lines[i];
-        if (!line.trim()) continue;
+        if (!lines[i].trim()) continue;
         processed++;
-        const cols = parseCSVLine(line);
+        const cols = parseCSVLine(lines[i]);
         const employeeName = cols[iEmployee]?.trim();
         if (!employeeName) { skipped++; continue; }
-
-        const visitId = cols[iVisitId]?.trim() || null;
-        const laborRateGroup = cols[iLaborRateGroup]?.trim() || null;
-        const totalDurationMins = parseFloat(cols[iTotalDuration]) || 0;
-        // Skip zero-duration rows with no cost (they're rate rows, not actual time entries)
-        const totalCost = parseFloat(cols[iTotalCost]) || 0;
-        if (totalDurationMins === 0 && totalCost === 0) { skipped++; continue; }
-
         const workDateStr = cols[iWorkDate]?.trim();
-        const workDate = workDateStr ? new Date(workDateStr) : null;
-        const visitNumber = parseInt(cols[iVisitNumber]) || null;
-        const scheduledDuration = parseFloat(cols[iSchedDuration]) || null;
-        const costPerHour = parseFloat(cols[iCostPerHour]) || null;
         const billableStr = cols[iBillable]?.trim().toLowerCase();
-        const billable = billableStr === "true" || billableStr === "yes" || billableStr === "1";
+        rawRows.push({
+          employeeName,
+          visitId: cols[iVisitId]?.trim() || null,
+          laborRateGroup: cols[iLaborRateGroup]?.trim() || null,
+          workDate: workDateStr ? new Date(workDateStr) : null,
+          visitNumber: parseInt(cols[iVisitNumber]) || null,
+          jobNumber: cols[iJobNumber]?.trim() || null,
+          eventStatus: cols[iEventStatus]?.trim() || null,
+          scheduledDuration: parseFloat(cols[iSchedDuration]) || null,
+          laborType: cols[iLaborType]?.trim() || null,
+          deptName: cols[iDeptName]?.trim() || null,
+          custName: cols[iCustName]?.trim() || null,
+          billingCust: cols[iBillingCust]?.trim() || null,
+          propertyName: cols[iPropertyName]?.trim() || null,
+          approvalStatus: cols[iApproval]?.trim() || null,
+          billable: billableStr === "true" || billableStr === "yes" || billableStr === "1",
+          saNumber: cols[iSaNumber]?.trim() || null,
+          durationMins: parseFloat(cols[iTotalDuration]) || 0,
+          costPerHour: parseFloat(cols[iCostPerHour]) || null,
+          totalCost: parseFloat(cols[iTotalCost]) || 0,
+          payTypeCode: (iPayTypeCode >= 0 ? cols[iPayTypeCode]?.trim() : "") || "RT",
+          payTypeName: (iPayTypeName >= 0 ? cols[iPayTypeName]?.trim() : "") || "",
+        });
+      }
 
+      // Group by composite key to aggregate pay-type rows
+      const grouped = new Map<string, RawRow & {
+        regularMins: number; overtimeMins: number; doubleTimeMins: number; otherMins: number;
+        regularCost: number; overtimeCost: number; doubleTimeCost: number;
+        totalDurationMins: number; totalCostAgg: number;
+      }>();
+      for (const r of rawRows) {
+        const key = `${r.visitId ?? ""}|||${r.employeeName}|||${r.laborRateGroup ?? ""}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, { ...r, regularMins: 0, overtimeMins: 0, doubleTimeMins: 0, otherMins: 0,
+            regularCost: 0, overtimeCost: 0, doubleTimeCost: 0, totalDurationMins: 0, totalCostAgg: 0 });
+        }
+        const g = grouped.get(key)!;
+        const code = r.payTypeCode.toUpperCase();
+        if (code === "RT") { g.regularMins += r.durationMins; g.regularCost += r.totalCost; }
+        else if (code === "OT") { g.overtimeMins += r.durationMins; g.overtimeCost += r.totalCost; }
+        else if (code === "DT") { g.doubleTimeMins += r.durationMins; g.doubleTimeCost += r.totalCost; }
+        else { g.otherMins += r.durationMins; }
+        g.totalDurationMins += r.durationMins;
+        g.totalCostAgg += r.totalCost;
+        // Keep the latest non-null context fields
+        if (r.workDate) g.workDate = r.workDate;
+        if (r.eventStatus) g.eventStatus = r.eventStatus;
+        if (r.approvalStatus) g.approvalStatus = r.approvalStatus;
+      }
+
+      for (const [, g] of grouped) {
+        // Skip entries with no time logged at all
+        if (g.totalDurationMins === 0 && g.totalCostAgg === 0) { skipped++; continue; }
         try {
-          if (visitId && laborRateGroup) {
-            // Upsert on composite key (visit_id, employee_name, labor_rate_group)
+          if (g.visitId && g.laborRateGroup) {
             const existing = await db.execute(sql`
               SELECT id FROM buildops_timesheets
-              WHERE visit_id = ${visitId} AND employee_name = ${employeeName} AND labor_rate_group = ${laborRateGroup}
+              WHERE visit_id = ${g.visitId} AND employee_name = ${g.employeeName} AND labor_rate_group = ${g.laborRateGroup}
             `);
             if (existing.rows.length > 0) {
               await db.execute(sql`
                 UPDATE buildops_timesheets SET
-                  work_date = ${workDate},
-                  job_number = ${cols[iJobNumber]?.trim() || null},
-                  visit_number = ${visitNumber},
-                  event_status = ${cols[iEventStatus]?.trim() || null},
-                  scheduled_duration_mins = ${scheduledDuration},
-                  labor_type_name = ${cols[iLaborType]?.trim() || null},
-                  department_name = ${cols[iDeptName]?.trim() || null},
-                  customer_name = ${cols[iCustName]?.trim() || null},
-                  billing_customer_name = ${cols[iBillingCust]?.trim() || null},
-                  property_name = ${cols[iPropertyName]?.trim() || null},
-                  approval_status = ${cols[iApproval]?.trim() || null},
-                  billable = ${billable},
-                  service_agreement_number = ${cols[iSaNumber]?.trim() || null},
-                  total_duration_mins = ${totalDurationMins},
-                  cost_per_hour = ${costPerHour},
-                  total_cost = ${totalCost},
+                  work_date = ${g.workDate},
+                  job_number = ${g.jobNumber},
+                  visit_number = ${g.visitNumber},
+                  event_status = ${g.eventStatus},
+                  scheduled_duration_mins = ${g.scheduledDuration},
+                  labor_type_name = ${g.laborType},
+                  department_name = ${g.deptName},
+                  customer_name = ${g.custName},
+                  billing_customer_name = ${g.billingCust},
+                  property_name = ${g.propertyName},
+                  approval_status = ${g.approvalStatus},
+                  billable = ${g.billable},
+                  service_agreement_number = ${g.saNumber},
+                  total_duration_mins = ${g.totalDurationMins},
+                  cost_per_hour = ${g.costPerHour},
+                  total_cost = ${g.totalCostAgg},
+                  regular_mins = ${g.regularMins},
+                  overtime_mins = ${g.overtimeMins},
+                  double_time_mins = ${g.doubleTimeMins},
+                  other_mins = ${g.otherMins},
+                  regular_cost = ${g.regularCost},
+                  overtime_cost = ${g.overtimeCost},
+                  double_time_cost = ${g.doubleTimeCost},
                   imported_at = NOW()
                 WHERE id = ${(existing.rows[0] as any).id}
               `);
@@ -8966,38 +9040,45 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                   event_status, scheduled_duration_mins, labor_rate_group, labor_type_name,
                   department_name, customer_name, billing_customer_name, property_name,
                   approval_status, billable, service_agreement_number,
-                  total_duration_mins, cost_per_hour, total_cost
+                  total_duration_mins, cost_per_hour, total_cost,
+                  regular_mins, overtime_mins, double_time_mins, other_mins,
+                  regular_cost, overtime_cost, double_time_cost
                 ) VALUES (
-                  ${workDate}, ${employeeName}, ${visitId}, ${cols[iJobNumber]?.trim() || null}, ${visitNumber},
-                  ${cols[iEventStatus]?.trim() || null}, ${scheduledDuration}, ${laborRateGroup}, ${cols[iLaborType]?.trim() || null},
-                  ${cols[iDeptName]?.trim() || null}, ${cols[iCustName]?.trim() || null}, ${cols[iBillingCust]?.trim() || null}, ${cols[iPropertyName]?.trim() || null},
-                  ${cols[iApproval]?.trim() || null}, ${billable}, ${cols[iSaNumber]?.trim() || null},
-                  ${totalDurationMins}, ${costPerHour}, ${totalCost}
+                  ${g.workDate}, ${g.employeeName}, ${g.visitId}, ${g.jobNumber}, ${g.visitNumber},
+                  ${g.eventStatus}, ${g.scheduledDuration}, ${g.laborRateGroup}, ${g.laborType},
+                  ${g.deptName}, ${g.custName}, ${g.billingCust}, ${g.propertyName},
+                  ${g.approvalStatus}, ${g.billable}, ${g.saNumber},
+                  ${g.totalDurationMins}, ${g.costPerHour}, ${g.totalCostAgg},
+                  ${g.regularMins}, ${g.overtimeMins}, ${g.doubleTimeMins}, ${g.otherMins},
+                  ${g.regularCost}, ${g.overtimeCost}, ${g.doubleTimeCost}
                 )
               `);
               inserted++;
             }
           } else {
-            // No unique key — insert without upsert protection
             await db.execute(sql`
               INSERT INTO buildops_timesheets (
                 work_date, employee_name, visit_id, job_number, visit_number,
                 event_status, scheduled_duration_mins, labor_rate_group, labor_type_name,
                 department_name, customer_name, billing_customer_name, property_name,
                 approval_status, billable, service_agreement_number,
-                total_duration_mins, cost_per_hour, total_cost
+                total_duration_mins, cost_per_hour, total_cost,
+                regular_mins, overtime_mins, double_time_mins, other_mins,
+                regular_cost, overtime_cost, double_time_cost
               ) VALUES (
-                ${workDate}, ${employeeName}, ${visitId}, ${cols[iJobNumber]?.trim() || null}, ${visitNumber},
-                ${cols[iEventStatus]?.trim() || null}, ${scheduledDuration}, ${laborRateGroup || null}, ${cols[iLaborType]?.trim() || null},
-                ${cols[iDeptName]?.trim() || null}, ${cols[iCustName]?.trim() || null}, ${cols[iBillingCust]?.trim() || null}, ${cols[iPropertyName]?.trim() || null},
-                ${cols[iApproval]?.trim() || null}, ${billable}, ${cols[iSaNumber]?.trim() || null},
-                ${totalDurationMins}, ${costPerHour}, ${totalCost}
+                ${g.workDate}, ${g.employeeName}, ${g.visitId}, ${g.jobNumber}, ${g.visitNumber},
+                ${g.eventStatus}, ${g.scheduledDuration}, ${g.laborRateGroup ?? null}, ${g.laborType},
+                ${g.deptName}, ${g.custName}, ${g.billingCust}, ${g.propertyName},
+                ${g.approvalStatus}, ${g.billable}, ${g.saNumber},
+                ${g.totalDurationMins}, ${g.costPerHour}, ${g.totalCostAgg},
+                ${g.regularMins}, ${g.overtimeMins}, ${g.doubleTimeMins}, ${g.otherMins},
+                ${g.regularCost}, ${g.overtimeCost}, ${g.doubleTimeCost}
               )
             `);
             inserted++;
           }
         } catch (rowErr: any) {
-          console.error(`[timesheet import] row ${i} error:`, rowErr.message);
+          console.error(`[timesheet import] group error:`, rowErr.message);
           skipped++;
         }
       }
@@ -9886,8 +9967,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         WHERE margin_pct IS NOT NULL
       `);
       const avgMarginPct = parseFloat((avgRow.rows[0] as any)?.avg_margin) || 0;
-      const totalGrossProfit = parseFloat((avgRow.rows[0] as any)?.total_gross_profit) || 0;
-      const totalRevenue = parseFloat((avgRow.rows[0] as any)?.total_revenue) || 0;
+      const rawGP = (avgRow.rows[0] as any)?.total_gross_profit;
+      const rawRev = (avgRow.rows[0] as any)?.total_revenue;
+      // Return null (not 0) when revenue/GP are not imported — prevents $0 display
+      const totalGrossProfit = rawGP != null && parseFloat(rawGP) !== 0 ? parseFloat(rawGP) : null;
+      const totalRevenue = rawRev != null && parseFloat(rawRev) !== 0 ? parseFloat(rawRev) : null;
       const jobCount = parseInt((avgRow.rows[0] as any)?.job_count) || 0;
 
       // 6-month trend sparkline (avg margin per month)
@@ -10190,18 +10274,36 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }
       const arTotal = bucket030 + bucket3060 + bucket6090 + bucket90plus;
 
-      // Collections trend: bucketed by period
+      // Collections trend: amounts COLLECTED (closed invoices) per period — distinct from billed revenue
+      // Uses closed_date so the sparkline shows payments received, not new billings
+      let arClosedSinceExpr: string;
+      let arClosedTruncExpr: string;
+      let arClosedLabelExpr: string;
+      if (period === "daily") {
+        arClosedSinceExpr = `closed_date >= NOW() - INTERVAL '30 days'`;
+        arClosedTruncExpr = `DATE_TRUNC('day', closed_date)`;
+        arClosedLabelExpr = `TO_CHAR(DATE_TRUNC('day', closed_date), 'Mon DD')`;
+      } else if (period === "weekly") {
+        arClosedSinceExpr = `closed_date >= NOW() - INTERVAL '12 weeks'`;
+        arClosedTruncExpr = `DATE_TRUNC('week', closed_date)`;
+        arClosedLabelExpr = `TO_CHAR(DATE_TRUNC('week', closed_date), 'Mon DD')`;
+      } else {
+        arClosedSinceExpr = `closed_date >= '${twelveMonthsAgo.toISOString()}'`;
+        arClosedTruncExpr = `DATE_TRUNC('month', closed_date)`;
+        arClosedLabelExpr = `TO_CHAR(DATE_TRUNC('month', closed_date), 'Mon YY')`;
+      }
       const arTrendRows = await db.execute(sql.raw(`
         SELECT
-          ${labelExpr} AS label,
-          ${dateTruncExpr} AS bucket_start,
+          ${arClosedLabelExpr} AS label,
+          ${arClosedTruncExpr} AS bucket_start,
           SUM(CAST(total_amount AS DECIMAL)) AS total
         FROM buildops_invoices
-        WHERE ${invoiceSinceExpr}
+        WHERE closed_date IS NOT NULL
+          AND ${arClosedSinceExpr}
           AND total_amount IS NOT NULL
           AND CAST(total_amount AS DECIMAL) > 0
-        GROUP BY ${dateTruncExpr}
-        ORDER BY ${dateTruncExpr}
+        GROUP BY ${arClosedTruncExpr}
+        ORDER BY ${arClosedTruncExpr}
       `));
       const arRaw: { label: string; v: number }[] = (arTrendRows.rows as any[]).map(r => ({
         label: r.label,
@@ -10585,12 +10687,18 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           ) / 10
         : null;
 
-      // Active tech count: distinct techs across last 4 weeks
+      // Active tech count: distinct techs this week
       const activeTechCount = currentWeek?.techCount ?? 0;
 
-      // Forward booked: how many future weeks have visits scheduled
-      const futureWeeks = allWeeks.filter(w => w.isFuture && w.visitCount > 0);
-      const forwardBookedWeeks = futureWeeks.length;
+      // Forward booked: consecutive weeks from next week that have visits scheduled
+      // (stops counting when it hits the first empty week — shows how solid the near-term pipeline is)
+      const futureWeeksAll = allWeeks.filter(w => w.isFuture);
+      let forwardBookedWeeks = 0;
+      for (const fw of futureWeeksAll) {
+        if (fw.visitCount > 0) forwardBookedWeeks++;
+        else break; // stop at first gap
+      }
+      const totalFutureWeeksWithVisits = futureWeeksAll.filter(w => w.visitCount > 0).length;
 
       // Hire signal thresholds
       const signalPct = rollingAvgUtil ?? currentWeek?.utilPct ?? 0;
@@ -10612,12 +10720,55 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         rollingAvgUtilization: rollingAvgUtil,
         avgHrsPerTechPerWeek,
         forwardBookedWeeks,
+        totalFutureWeeksWithVisits,
         hireSignal,
         signalPct,
         weeklyTrend,
       });
     } catch (err: any) {
       console.error("[CEO staffing]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── CEO Crew-by-Tech Drill-Down ────────────────────────────────────────────
+  app.get("/api/ceo/crew-by-tech", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      // weekOffset: 0=current, 1=next, -1=previous
+      const weekOffset = parseInt((req.query.weekOffset as string) ?? "0");
+      const weekRows = await db.execute(sql`
+        SELECT
+          primary_tech_name AS tech_name,
+          COUNT(*) AS visit_count,
+          COALESCE(SUM(minimum_duration_mins), 0) AS scheduled_mins,
+          ROUND(COALESCE(SUM(minimum_duration_mins), 0) / 60.0, 1) AS scheduled_hrs,
+          COUNT(CASE WHEN status = 'Complete' THEN 1 END) AS completed,
+          COUNT(CASE WHEN status = 'Scheduled' THEN 1 END) AS upcoming,
+          array_agg(DISTINCT department_name) FILTER (WHERE department_name IS NOT NULL) AS departments
+        FROM buildops_visits
+        WHERE scheduled_for >= date_trunc('week', NOW()) + (${weekOffset} * INTERVAL '1 week')
+          AND scheduled_for < date_trunc('week', NOW()) + ((${weekOffset} + 1) * INTERVAL '1 week')
+          AND status NOT IN ('Canceled', 'Cancelled', 'Dismissed')
+          AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
+          AND primary_tech_name IS NOT NULL
+          AND primary_tech_name <> ''
+        GROUP BY primary_tech_name
+        ORDER BY scheduled_mins DESC
+      `);
+      const techs = (weekRows.rows as any[]).map(r => ({
+        techName: r.tech_name as string,
+        visitCount: parseInt(r.visit_count) || 0,
+        scheduledMins: parseFloat(r.scheduled_mins) || 0,
+        scheduledHrs: parseFloat(r.scheduled_hrs) || 0,
+        completed: parseInt(r.completed) || 0,
+        upcoming: parseInt(r.upcoming) || 0,
+        departments: r.departments ?? [],
+      }));
+      res.json({ techs, weekOffset });
+    } catch (err: any) {
+      console.error("[crew-by-tech]", err.message);
       res.status(500).json({ message: err.message });
     }
   });

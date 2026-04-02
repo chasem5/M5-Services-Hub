@@ -1741,6 +1741,14 @@ export class DatabaseStorage implements IStorage {
           uploaded_at timestamp DEFAULT now()
         )
       `);
+      // Add pay-type breakdown columns to timesheets if not present
+      await db.execute(sql`ALTER TABLE buildops_timesheets ADD COLUMN IF NOT EXISTS regular_mins numeric`);
+      await db.execute(sql`ALTER TABLE buildops_timesheets ADD COLUMN IF NOT EXISTS overtime_mins numeric`);
+      await db.execute(sql`ALTER TABLE buildops_timesheets ADD COLUMN IF NOT EXISTS double_time_mins numeric`);
+      await db.execute(sql`ALTER TABLE buildops_timesheets ADD COLUMN IF NOT EXISTS other_mins numeric`);
+      await db.execute(sql`ALTER TABLE buildops_timesheets ADD COLUMN IF NOT EXISTS regular_cost numeric`);
+      await db.execute(sql`ALTER TABLE buildops_timesheets ADD COLUMN IF NOT EXISTS overtime_cost numeric`);
+      await db.execute(sql`ALTER TABLE buildops_timesheets ADD COLUMN IF NOT EXISTS double_time_cost numeric`);
     } catch (e) {
       console.error("migrateJobMarginAndGenericCsvTables error:", e);
     }

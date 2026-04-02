@@ -3,7 +3,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Target, Percent,
   RefreshCw, AlertTriangle, AlertCircle, CheckCircle2,
   Send, Upload, FileSpreadsheet, X, Lock, Bot,
-  BarChart2, Repeat2, ChevronRight, ChevronDown, ChevronUp,
+  BarChart2, Repeat2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   Clock, Wrench, Zap, Users, Activity, PhoneCall, Mail, Calendar,
 } from "lucide-react";
 import {
@@ -73,9 +73,19 @@ interface StaffingMetrics {
   rollingAvgUtilization: number | null;
   avgHrsPerTechPerWeek: number | null;
   forwardBookedWeeks: number;
+  totalFutureWeeksWithVisits: number;
   hireSignal: 'ok' | 'watch' | 'hire';
   signalPct: number;
   weeklyTrend: StaffingWeek[];
+}
+interface CrewTech {
+  techName: string;
+  visitCount: number;
+  scheduledMins: number;
+  scheduledHrs: number;
+  completed: number;
+  upcoming: number;
+  departments: string[];
 }
 
 // ── Fallback spark data (shown while loading) ─────────────────────────────────
@@ -286,6 +296,16 @@ function CEOCommandCenterInner() {
   const { data: staffing, isLoading: staffingLoading } = useQuery<StaffingMetrics>({
     queryKey: ["/api/ceo/staffing"],
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const [showCrewDrilldown, setShowCrewDrilldown] = useState(false);
+  const [crewWeekOffset, setCrewWeekOffset] = useState(0);
+  const { data: crewByTech, isLoading: crewLoading } = useQuery<{ techs: CrewTech[]; weekOffset: number }>({
+    queryKey: ["/api/ceo/crew-by-tech", crewWeekOffset],
+    queryFn: () => fetch(`/api/ceo/crew-by-tech?weekOffset=${crewWeekOffset}`).then(r => r.json()),
+    enabled: showCrewDrilldown,
+    staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 
@@ -839,7 +859,10 @@ function CEOCommandCenterInner() {
 
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-util-chart">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Collections Outstanding</p>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Collections Outstanding</p>
+                <p className="text-[9px] text-gray-400 normal-case">Sparkline = cash collected per period (by payment date)</p>
+              </div>
               <Activity className="w-3.5 h-3.5 text-gray-300" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
@@ -1049,7 +1072,9 @@ function CEOCommandCenterInner() {
                     {
                       label: 'Forward Booked',
                       value: staffingLoading ? '—' : staffing?.forwardBookedWeeks != null ? `${staffing.forwardBookedWeeks} wk${staffing.forwardBookedWeeks !== 1 ? 's' : ''}` : '—',
-                      sub: 'weeks with visits scheduled',
+                      sub: staffing?.totalFutureWeeksWithVisits != null && staffing.totalFutureWeeksWithVisits !== staffing.forwardBookedWeeks
+                        ? `consecutive · ${staffing.totalFutureWeeksWithVisits} total weeks w/ visits`
+                        : 'consecutive weeks from next week',
                       icon: Calendar,
                       color: '#8b5cf6',
                     },
@@ -1162,6 +1187,56 @@ function CEOCommandCenterInner() {
                     </div>
                   </div>
 
+                  {/* ── Tech Workload Drill-Down ── */}
+                  <div className="border-t border-gray-100 pt-2">
+                    <button
+                      onClick={() => { setShowCrewDrilldown(!showCrewDrilldown); setCrewWeekOffset(0); }}
+                      className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-indigo-500 hover:text-indigo-700 transition-colors"
+                      data-testid="btn-crew-drilldown"
+                    >
+                      {showCrewDrilldown ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      {showCrewDrilldown ? 'Hide' : 'View'} workload by tech
+                    </button>
+                    {showCrewDrilldown && (
+                      <div className="mt-2">
+                        {/* Week nav */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <button onClick={() => setCrewWeekOffset(o => o - 1)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400" data-testid="crew-week-prev">
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="text-[10px] font-semibold text-gray-600">
+                            {crewWeekOffset === 0 ? 'This Week' : crewWeekOffset > 0 ? `+${crewWeekOffset} wk${crewWeekOffset !== 1 ? 's' : ''}` : `${crewWeekOffset} wk${crewWeekOffset !== -1 ? 's' : ''}`}
+                          </span>
+                          <button onClick={() => setCrewWeekOffset(o => o + 1)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400" data-testid="crew-week-next">
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        {crewLoading ? (
+                          <div className="h-20 bg-gray-50 rounded animate-pulse" />
+                        ) : !crewByTech?.techs?.length ? (
+                          <p className="text-[10px] text-gray-400 italic">No visits scheduled this week</p>
+                        ) : (
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {crewByTech.techs.map(t => {
+                              const maxHrs = Math.max(...crewByTech.techs.map(x => x.scheduledHrs), 1);
+                              const barPct = Math.min((t.scheduledHrs / maxHrs) * 100, 100);
+                              return (
+                                <div key={t.techName} className="flex items-center gap-2" data-testid={`crew-tech-${t.techName}`}>
+                                  <div className="w-20 text-[10px] text-gray-700 font-medium truncate flex-shrink-0">{t.techName.split(' ')[0]}</div>
+                                  <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                                    <div className="h-2 rounded-full bg-indigo-400" style={{ width: `${barPct}%` }} />
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 w-10 text-right flex-shrink-0">{t.scheduledHrs}h</div>
+                                  <div className="text-[10px] text-gray-400 w-6 text-right flex-shrink-0">{t.visitCount}v</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   {/* ── Labor Cost Spark (from timesheets) ── */}
                   {metrics?.labor?.hasData && (metrics.labor.laborCostSpark?.length ?? 0) > 0 ? (
                     <div className="border-t border-gray-100 pt-2">
@@ -1250,6 +1325,17 @@ function CEOCommandCenterInner() {
                       </defs>
                       <XAxis dataKey="label" tick={{ fontSize: 8, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
                       <YAxis hide />
+                      <Tooltip
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload?.length) return null;
+                          return (
+                            <div className="bg-gray-900 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl">
+                              <p className="font-bold mb-0.5">{label}</p>
+                              <p>Avg Margin: <span className="font-semibold text-emerald-400">{(payload[0]?.value as number)?.toFixed(1)}%</span></p>
+                            </div>
+                          );
+                        }}
+                      />
                       <Area type="monotone" dataKey="v" stroke="#10b981" strokeWidth={1.5} fill="url(#marginGrad)" dot={false} />
                     </AreaChart>
                   </ResponsiveContainer>
