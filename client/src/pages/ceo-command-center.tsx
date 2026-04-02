@@ -36,6 +36,8 @@ interface LaborAnalytics {
 interface CeoMetrics {
   lastUpdated: string;
   period?: string;
+  isPeriodIncomplete?: boolean;
+  dayOfMonth?: number;
   revenue: { current: number; prevMonth: number; changePct: number; up: boolean; monthly: SparkPoint[] };
   saContractRevenue: { current: number; prevMonth: number; changePct: number; up: boolean; activeCount: number; monthly: SparkPoint[] };
   pipeline: { value: number; dealCount: number; monthly: SparkPoint[] };
@@ -44,8 +46,8 @@ interface CeoMetrics {
   operationalKpis: {
     dso: { value: number; target: number };
     backlog: { value: number; target: number };
-    recurringRevPct: { value: number; target: number };
-    utilizationRate: { value: number | null; target: number };
+    recurringRevPct: { value: number; target: number; saMonthlyRecurring?: number };
+    utilizationRate: { value: number | null; target: number; source?: string | null };
     firstTimeFixRate: { value: number | null; target: number };
     quoteConversionRate: { value: number; target: number };
   };
@@ -371,8 +373,10 @@ function CEOCommandCenterInner() {
         const text = await file.text();
         const firstLine = text.split(/\r?\n/)[0].toLowerCase();
 
-        // Detect Service Agreement CSV
-        if (firstLine.includes("agreement number") && firstLine.includes("annual contract value")) {
+        // Detect Service Agreement CSV — accept if header contains agreement number
+        // (with or without annual contract value column — backend handles both)
+        const isSaCsv = firstLine.includes("agreement number") || firstLine.includes("agreement name") && firstLine.includes("status");
+        if (isSaCsv) {
           setImportStatus({ status: 'uploading' });
           const formData = new FormData();
           formData.append("file", file);
@@ -399,7 +403,8 @@ function CEOCommandCenterInner() {
         }
 
         // Detect Timesheet CSV
-        if (firstLine.includes("visit id") || firstLine.includes("total duration mins") || firstLine.includes("labor rate group")) {
+        const isTimesheetCsv = firstLine.includes("visit id") || firstLine.includes("total duration mins") || firstLine.includes("labor rate group") || firstLine.includes("employee name") && firstLine.includes("work date");
+        if (isTimesheetCsv) {
           setImportStatus({ status: 'uploading' });
           const formData = new FormData();
           formData.append("file", file);
@@ -424,8 +429,14 @@ function CEOCommandCenterInner() {
           }
           continue;
         }
+        // CSV not recognized — show error with guidance
+        setImportStatus({
+          status: 'error',
+          message: `CSV not recognized: "${file.name}". Expected a BuildOps Service Agreement CSV (must contain "Agreement Number" column) or a BuildOps Timesheet CSV (must contain "Visit ID" or "Employee Name" + "Work Date" columns). Check that you are exporting the correct report from BuildOps.`,
+        });
+        continue;
       }
-      // Generic file: add to local list for AI context
+      // Non-CSV file: add to local list for AI context
       setUploadedFiles(prev => [...prev, {
         name: file.name,
         size: file.size > 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`,
@@ -507,25 +518,52 @@ function CEOCommandCenterInner() {
 
       <div className="px-6 py-5 max-w-screen-xl mx-auto space-y-5">
 
+        {/* ── MTD / Period-in-progress banner ──────────────────────────────── */}
+        {metrics?.isPeriodIncomplete && (
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200" data-testid="banner-mtd-context">
+            <div className="w-5 h-5 rounded-full bg-amber-400 flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-[10px] font-black">!</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="text-xs font-bold text-amber-800">
+                {period === 'monthly'
+                  ? `Month-to-date · ${metrics.dayOfMonth ?? '?'} day${(metrics.dayOfMonth ?? 0) !== 1 ? 's' : ''} into the period`
+                  : period === 'weekly'
+                  ? `Week-to-date · current week is in progress`
+                  : `Day-to-date · today is still in progress`}
+              </span>
+              <span className="ml-2 text-[11px] text-amber-600">
+                The current {period === 'monthly' ? 'month' : period === 'weekly' ? 'week' : 'day'} bucket will grow as more invoices are issued and closed.
+              </span>
+            </div>
+            <span className="flex-shrink-0 text-[10px] font-bold text-amber-500 uppercase tracking-widest">
+              {period === 'monthly' ? 'MTD' : period === 'weekly' ? 'WTD' : 'DTD'}
+            </span>
+          </div>
+        )}
+
         {/* ── KPI Strip with sparklines ─────────────────────────────────────── */}
         <div className="grid grid-cols-5 gap-3" data-testid="section-kpi-strip">
           {[
             { label: "Revenue", icon: DollarSign, ...liveKpi.revenue, sparkData: revenueData, fmt: "dollar" },
-            { label: "Pipeline", icon: BarChart2, ...liveKpi.pipeline, sparkData: pipe?.monthly ?? FALLBACK_SPARK, fmt: "dollar" },
-            { label: "Quote Conv.", icon: Target, ...liveKpi.quoteConversionRate, sparkData: qcr?.monthly ?? FALLBACK_SPARK, fmt: "pct" },
-            { label: "SA Contract Rev", icon: Repeat2, ...liveKpi.saContractRevenue, sparkData: sa?.monthly ?? FALLBACK_SPARK, fmt: "dollar" },
-            { label: "Collections", icon: Percent, ...liveKpi.collectionsOutstanding, sparkData: ar?.monthly ?? FALLBACK_SPARK, fmt: "dollar" },
-          ].map(({ label, icon: Icon, value, change, up, sparkData, fmt }) => (
+            { label: "Pipeline", icon: BarChart2, ...liveKpi.pipeline, sparkData: pipe?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: "new leads by created date" },
+            { label: "Quote Conv.", icon: Target, ...liveKpi.quoteConversionRate, sparkData: qcr?.monthly ?? FALLBACK_SPARK, fmt: "pct", sparkNote: "won/lost by close date" },
+            { label: "SA Contract Rev", icon: Repeat2, ...liveKpi.saContractRevenue, sparkData: sa?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: "SA-tagged invoice revenue" },
+            { label: "Collections", icon: Percent, ...liveKpi.collectionsOutstanding, sparkData: ar?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: undefined },
+          ].map(({ label, icon: Icon, value, change, up, sparkData, fmt, sparkNote }: any) => (
             <div key={label} className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 pt-3.5 pb-0 overflow-hidden" data-testid={`kpi-${label.toLowerCase().replace(/\s+/g, '-')}`}>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{label}</span>
                 <Icon className="w-3.5 h-3.5 text-gray-300" />
               </div>
               <div className="text-2xl font-black text-gray-900 leading-tight" style={{ fontFamily: "'Archivo Black', sans-serif" }}>{value}</div>
-              <div className={`flex items-center gap-1 mt-0.5 mb-2 text-xs font-semibold ${up ? "text-emerald-600" : "text-red-500"}`}>
+              <div className={`flex items-center gap-1 mt-0.5 mb-1 text-xs font-semibold ${up ? "text-emerald-600" : "text-red-500"}`}>
                 {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                 {change}
               </div>
+              {sparkNote && (
+                <p className="text-[9px] text-gray-300 mb-1 leading-none">{sparkNote}</p>
+              )}
               <div className="h-12 -mx-4">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={sparkData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
@@ -554,8 +592,15 @@ function CEOCommandCenterInner() {
               {
                 label: "Utilization Rate",
                 value: opsKpis?.utilizationRate.value != null ? `${opsKpis.utilizationRate.value}%` : "—",
-                target: "85%", change: "+2pp", up: true, icon: Activity, color: "#3b82f6",
-                tip: "Actual visit duration ÷ minimum duration. Target: 85%+ (requires visits sync)",
+                target: "85%",
+                change: opsKpis?.utilizationRate.source === 'timesheets' ? 'from timesheets' : opsKpis?.utilizationRate.source === 'visits' ? 'from visits' : 'no data',
+                up: (opsKpis?.utilizationRate.value ?? 0) >= 70,
+                icon: Activity, color: "#3b82f6",
+                tip: opsKpis?.utilizationRate.source === 'timesheets'
+                  ? "Actual vs scheduled hours from timesheet import (last 4 weeks). Target: 85%+"
+                  : opsKpis?.utilizationRate.source === 'visits'
+                  ? "Actual visit duration ÷ minimum scheduled duration. Target: 85%+"
+                  : "Requires timesheets or visits data. Import timesheet CSV to populate.",
                 progress: opsKpis?.utilizationRate.value ?? 0,
                 targetPct: opsKpis?.utilizationRate.target ?? 85,
               },
@@ -588,16 +633,24 @@ function CEOCommandCenterInner() {
               {
                 label: "Backlog Value",
                 value: opsKpis ? fmtDollar(opsKpis.backlog.value) : "—",
-                target: "$1M+", change: "+14%", up: true, icon: BarChart2, color: "#06b6d4",
-                tip: "Quoted value of open/active jobs (active departments only).",
+                target: "$1M+",
+                change: opsKpis?.backlog.value === 0 ? "needs job sync" : "+14%",
+                up: (opsKpis?.backlog.value ?? 0) > 0,
+                icon: BarChart2, color: "#06b6d4",
+                tip: "Quoted value of accepted jobs not yet completed. Requires BuildOps job sync to populate — sync your jobs in BuildOps settings.",
                 progress: opsKpis ? Math.min(opsKpis.backlog.value / opsKpis.backlog.target * 100, 100) : 0,
                 targetPct: 100,
               },
               {
                 label: "Recurring Rev %",
                 value: opsKpis ? `${opsKpis.recurringRevPct.value}%` : "—",
-                target: "40%", change: "+2pp", up: true, icon: Repeat2, color: "#ec4899",
-                tip: "% of invoiced revenue tagged to service agreement jobs (last 6 months).",
+                target: "40%",
+                change: opsKpis?.recurringRevPct.saMonthlyRecurring
+                  ? `~${fmtDollar(opsKpis.recurringRevPct.saMonthlyRecurring)}/mo from SAs`
+                  : "import SA CSV",
+                up: (opsKpis?.recurringRevPct.value ?? 0) > 0,
+                icon: Repeat2, color: "#ec4899",
+                tip: "Monthly SA contract value ÷ prior month total revenue. Based on active service agreement annual values (import SA CSV to update).",
                 progress: opsKpis?.recurringRevPct.value ?? 0,
                 targetPct: opsKpis?.recurringRevPct.target ?? 40,
               },
@@ -826,8 +879,12 @@ function CEOCommandCenterInner() {
         {/* ── Crew Capacity & Hire Signal ──────────────────────────────────── */}
         {(() => {
           const signal = staffing?.hireSignal ?? 'ok';
-          const utilPct = staffing?.rollingAvgUtilization ?? staffing?.currentWeekUtilization ?? 0;
-          const signalColor = signal === 'hire' ? '#BE1916' : signal === 'watch' ? '#f59e0b' : '#10b981';
+          // Use scheduling-based utilization when available; fall back to timesheet-derived rate
+          const schedUtilPct = staffing?.rollingAvgUtilization ?? staffing?.currentWeekUtilization ?? null;
+          const tsUtilPct = metrics?.labor?.hrsUtilizationPct ?? null;
+          const utilPct = schedUtilPct ?? tsUtilPct ?? 0;
+          const utilSource = schedUtilPct != null ? 'scheduling' : tsUtilPct != null ? 'timesheets' : null;
+          const signalColor = signal === 'hire' ? '#BE1916' : signal === 'watch' ? '#f59e0b' : utilPct >= 85 ? '#f59e0b' : '#10b981';
           const signalBg = signal === 'hire' ? 'bg-red-50 border-red-200 text-red-700' : signal === 'watch' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700';
           const signalLabel = signal === 'hire' ? '⚡ Consider Hiring' : signal === 'watch' ? '👀 Watch Capacity' : '✓ Capacity OK';
           const signalTip = signal === 'hire'
@@ -894,7 +951,12 @@ function CEOCommandCenterInner() {
                       <span className="text-[9px] text-gray-400">100%</span>
                     </div>
                   </div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-1">4-Wk Avg Utilization</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-1">
+                    {utilSource === 'timesheets' ? 'Timesheet Utilization (4wk)' : utilSource === 'scheduling' ? '4-Wk Avg Utilization' : '4-Wk Avg Utilization'}
+                  </p>
+                  {utilSource === 'timesheets' && (
+                    <p className="text-[9px] text-amber-500 mt-0.5">actual ÷ scheduled hrs · from import</p>
+                  )}
                   <p className="text-[10px] text-gray-400 mt-0.5">{signalTip}</p>
                 </div>
 

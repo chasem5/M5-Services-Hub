@@ -9053,12 +9053,10 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         return -1;
       }
 
-      // Detect SA CSV
+      // Validate SA CSV — only require the agreement number to identify it
       const hasAgreementNumber = col("agreement number") >= 0;
-      const hasStatus = col("status") >= 0;
-      const hasContractValue = col("annual contract value", "total contract value") >= 0;
-      if (!hasAgreementNumber || !hasStatus || !hasContractValue) {
-        return res.status(400).json({ message: "Not a Service Agreement CSV — expected 'Agreement Number', 'Status', and contract value columns" });
+      if (!hasAgreementNumber) {
+        return res.status(400).json({ message: "Not a Service Agreement CSV — expected an 'Agreement Number' column. Check that you are uploading the BuildOps Service Agreement export file." });
       }
 
       function f(row: string[], ...names: string[]): string | null {
@@ -9275,10 +9273,21 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const revChangePct = revPrev > 0 ? ((revCurrent - revPrev) / revPrev) * 100 : 0;
 
       // ── SA Contract Revenue: sum active agreements ───────────────────────────
+      // Use COALESCE(contract_value, annual_contract_value) since CSV imports
+      // populate annual_contract_value when total_contract_value column is empty.
       const agRows = await db.execute(sql`
-        SELECT SUM(CAST(contract_value AS DECIMAL)) AS total, COUNT(*) AS cnt
+        SELECT
+          SUM(COALESCE(
+            NULLIF(CAST(contract_value AS DECIMAL), 0),
+            CAST(annual_contract_value AS DECIMAL)
+          )) AS total,
+          COUNT(*) AS cnt
         FROM buildops_agreements
-        WHERE status ILIKE '%active%' AND contract_value IS NOT NULL AND contract_value != '0'
+        WHERE status ILIKE '%active%'
+          AND (
+            (contract_value IS NOT NULL AND contract_value != '0')
+            OR (annual_contract_value IS NOT NULL AND annual_contract_value != '0')
+          )
       `);
       const saTotal = Math.round(parseFloat((agRows.rows[0] as any)?.total) || 0);
       const saCount = parseInt((agRows.rows[0] as any)?.cnt) || 0;
@@ -9475,19 +9484,25 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const backlogWip = parseFloat(bRow?.wip_value) || 0;
       const backlogTotal = Math.round(backlogQuoted + backlogWip);
 
-      // ── Recurring Rev %: invoices tied to service agreements / total ──────────
-      const rrRows = await db.execute(sql`
-        SELECT
-          SUM(CASE WHEN service_agreement_number IS NOT NULL AND service_agreement_number != '' THEN CAST(total_amount AS DECIMAL) ELSE 0 END) AS sa_rev,
-          SUM(CAST(total_amount AS DECIMAL)) AS total_rev
-        FROM buildops_invoices
-        WHERE total_amount IS NOT NULL
-          AND issued_date >= NOW() - INTERVAL '6 months'
+      // ── Recurring Rev %: monthly SA contract value vs last full month revenue ──
+      // Uses annual_contract_value from active SAs (from CSV import) since
+      // invoices don't have service_agreement_number populated from BuildOps API.
+      const saAnnualRows = await db.execute(sql`
+        SELECT SUM(COALESCE(
+          NULLIF(CAST(contract_value AS DECIMAL), 0),
+          CAST(annual_contract_value AS DECIMAL)
+        )) AS annual_total
+        FROM buildops_agreements
+        WHERE status ILIKE '%active%'
+          AND (
+            (contract_value IS NOT NULL AND contract_value != '0')
+            OR (annual_contract_value IS NOT NULL AND annual_contract_value != '0')
+          )
       `);
-      const rrRow = rrRows.rows[0] as any;
-      const saRev = parseFloat(rrRow?.sa_rev) || 0;
-      const totalRev6m = parseFloat(rrRow?.total_rev) || 1;
-      const recurringPct = Math.round((saRev / totalRev6m) * 100);
+      const saAnnualTotal = parseFloat((saAnnualRows.rows[0] as any)?.annual_total) || 0;
+      const saMonthlyRecurring = saAnnualTotal / 12;
+      // Use prior month revenue as denominator (current month is always incomplete)
+      const recurringPct = revPrev > 0 ? Math.round((saMonthlyRecurring / revPrev) * 100) : 0;
 
       // ── Visits-based metrics (best-effort; may be 0 if visits not yet synced) ─
       const visitRows = await db.execute(sql`
@@ -9645,9 +9660,32 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }
 
       // ── Assemble response ─────────────────────────────────────────────────────
+      // Determine if the most recent bucket is the current incomplete period
+      // (e.g., April has only started — helps frontend show MTD context)
+      const currentBucketLabel = allBuckets.at(-1)?.label ?? '';
+      const nowLabel = period === 'daily'
+        ? now.toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
+        : period === 'weekly'
+        ? (() => {
+            const d = new Date(now);
+            const day = d.getDay();
+            const diff = day === 0 ? -6 : 1 - day;
+            d.setDate(d.getDate() + diff);
+            return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+          })()
+        : now.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      const isPeriodIncomplete = currentBucketLabel === nowLabel;
+      const dayOfMonth = now.getDate();
+
+      // Effective utilization: visits-based first, fall back to timesheet-derived
+      const effectiveUtilization = utilizationRate ?? (laborAnalytics?.hrsUtilizationPct ?? null);
+      const utilizationSource = utilizationRate != null ? 'visits' : (laborAnalytics?.hrsUtilizationPct != null ? 'timesheets' : null);
+
       res.json({
         lastUpdated: now.toISOString(),
         period,
+        isPeriodIncomplete,
+        dayOfMonth,
         revenue: {
           current: revCurrent,
           prevMonth: revPrev,
@@ -9687,8 +9725,8 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         operationalKpis: {
           dso: { value: dso, target: 30 },
           backlog: { value: backlogTotal, target: 1000000 },
-          recurringRevPct: { value: recurringPct, target: 40 },
-          utilizationRate: { value: utilizationRate, target: 85 },
+          recurringRevPct: { value: recurringPct, target: 40, saMonthlyRecurring: Math.round(saMonthlyRecurring) },
+          utilizationRate: { value: effectiveUtilization, target: 85, source: utilizationSource },
           firstTimeFixRate: { value: firstTimeFixRate, target: 90 },
           quoteConversionRate: { value: qcrAll, target: 70 },
         },
