@@ -9791,6 +9791,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 total_amount = EXCLUDED.total_amount,
                 issued_date = EXCLUDED.issued_date,
                 total_amount_paid = EXCLUDED.total_amount_paid,
+                adjustment_amount = EXCLUDED.adjustment_amount,
                 outstanding_balance = EXCLUDED.outstanding_balance,
                 last_payment_date = EXCLUDED.last_payment_date,
                 synced_at = NOW()
