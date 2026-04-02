@@ -8868,14 +8868,33 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const saTotal = Math.round(parseFloat((agRows.rows[0] as any)?.total) || 0);
       const saCount = parseInt((agRows.rows[0] as any)?.cnt) || 0;
 
-      // SA monthly trend: use months from revenue as guide (SA value is relatively stable)
-      // Approximate with slightly growing trend based on total
-      const saMonthly = revenueMonthly.map((r, i, arr) => ({
+      // SA monthly trend: SA-tagged invoice revenue by month (invoices with service_agreement_number)
+      const saTrendRows = await db.execute(sql`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY') AS label,
+          DATE_TRUNC('month', issued_date) AS month_start,
+          SUM(CAST(total_amount AS DECIMAL)) AS total
+        FROM buildops_invoices
+        WHERE issued_date >= ${twelveMonthsAgo}
+          AND service_agreement_number IS NOT NULL
+          AND service_agreement_number != ''
+          AND total_amount IS NOT NULL
+          AND CAST(total_amount AS DECIMAL) > 0
+        GROUP BY DATE_TRUNC('month', issued_date)
+        ORDER BY DATE_TRUNC('month', issued_date)
+      `);
+      const saMonthly = (saTrendRows.rows as any[]).map(r => ({
         label: r.label,
-        v: Math.round(saTotal * (0.9 + (0.1 * i) / Math.max(arr.length - 1, 1))),
+        v: Math.round(parseFloat(r.total) || 0),
       }));
-      const saCurrent = saTotal;
-      const saPrev = saMonthly.at(-2)?.v ?? saTotal;
+      // If no SA invoices found (field not populated yet), fall back to agreement total as single point
+      if (saMonthly.length === 0 && saTotal > 0) {
+        saMonthly.push({ label: "Now", v: saTotal });
+      } else if (saMonthly.length === 0) {
+        saMonthly.push({ label: "Now", v: 0 });
+      }
+      const saCurrent = saMonthly.at(-1)?.v ?? saTotal;
+      const saPrev = saMonthly.at(-2)?.v ?? 0;
       const saChangePct = saPrev > 0 ? ((saCurrent - saPrev) / saPrev) * 100 : 0;
 
       // ── Pipeline: open leads value ───────────────────────────────────────────
@@ -8933,12 +8952,26 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const lostPrev = parseInt(r0?.lost_prev30) || 0;
       const qcrPrev = (wonPrev + lostPrev) > 0 ? Math.round((wonPrev / (wonPrev + lostPrev)) * 100) : 0;
 
-      // QCR monthly trend using revenue months as a scaffold
-      const qcrMonthly = revenueMonthly.map((r, i, arr) => {
-        const base = qcrAll;
-        const noise = Math.sin(i * 1.3) * 4;
-        return { label: r.label, v: Math.max(0, Math.min(100, Math.round(base + noise))) };
+      // QCR monthly trend: actual won/(won+lost) per month from lead close dates
+      const qcrTrendRows = await db.execute(sql`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', updated_at), 'Mon YY') AS label,
+          DATE_TRUNC('month', updated_at) AS month_start,
+          SUM(CASE WHEN stage = 'won' THEN 1 ELSE 0 END) AS won_count,
+          SUM(CASE WHEN stage = 'lost' THEN 1 ELSE 0 END) AS lost_count
+        FROM leads
+        WHERE updated_at >= ${twelveMonthsAgo}
+          AND stage IN ('won', 'lost')
+        GROUP BY DATE_TRUNC('month', updated_at)
+        ORDER BY DATE_TRUNC('month', updated_at)
+      `);
+      const qcrMonthly = (qcrTrendRows.rows as any[]).map(r => {
+        const w = parseInt(r.won_count) || 0;
+        const l = parseInt(r.lost_count) || 0;
+        return { label: r.label, v: (w + l) > 0 ? Math.round((w / (w + l)) * 100) : 0 };
       });
+      // Pad with overall rate if empty
+      if (qcrMonthly.length === 0) qcrMonthly.push({ label: "Now", v: qcrAll });
 
       // ── Collections Outstanding: unpaid invoices aged by days past due ───────
       const arRows = await db.execute(sql`
@@ -8964,15 +8997,24 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }
       const arTotal = bucket030 + bucket3060 + bucket6090 + bucket90plus;
 
-      // Collections monthly trend (outstanding per month from issued_date)
-      const arMonthly = revenueMonthly.map(r => ({
+      // Collections monthly trend: invoice amounts by issued month (open/unpaid)
+      const arTrendRows = await db.execute(sql`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY') AS label,
+          DATE_TRUNC('month', issued_date) AS month_start,
+          SUM(CAST(total_amount AS DECIMAL)) AS total
+        FROM buildops_invoices
+        WHERE issued_date >= ${twelveMonthsAgo}
+          AND total_amount IS NOT NULL
+          AND CAST(total_amount AS DECIMAL) > 0
+        GROUP BY DATE_TRUNC('month', issued_date)
+        ORDER BY DATE_TRUNC('month', issued_date)
+      `);
+      const arMonthly = (arTrendRows.rows as any[]).map(r => ({
         label: r.label,
-        v: Math.round(r.v * 0.12), // rough proxy: ~12% of revenue in AR at any month
+        v: Math.round(parseFloat(r.total) || 0),
       }));
-      if (arTotal > 0) {
-        // Override last point with actual
-        if (arMonthly.length > 0) arMonthly[arMonthly.length - 1].v = Math.round(arTotal);
-      }
+      if (arMonthly.length === 0) arMonthly.push({ label: "Now", v: Math.round(arTotal) });
 
       // ── DSO: avg days from issued to closed for paid invoices ────────────────
       const dsoRows = await db.execute(sql`
