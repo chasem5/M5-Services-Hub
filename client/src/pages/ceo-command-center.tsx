@@ -1244,10 +1244,10 @@ function CEOCommandCenterInner() {
                                     {t.hasTimesheetData ? (
                                       <span>
                                         {t.actualHrs}h
-                                        {t.otHrs > 0 && <span className="text-amber-500 ml-0.5">+{t.otHrs}OT</span>}
+                                        {t.otHrs > 0 && <span className="text-amber-500 ml-0.5">•&nbsp;{t.otHrs}&nbsp;OT</span>}
                                       </span>
                                     ) : (
-                                      <span className="text-gray-400">{t.scheduledHrs}h</span>
+                                      <span className="text-gray-400" title="scheduled hours (no timesheet data for this week)">{t.scheduledHrs}h <span className="text-[8px]">sched</span></span>
                                     )}
                                   </div>
                                   <div className="text-[10px] text-gray-400 w-6 text-right flex-shrink-0">{t.visitCount}v</div>
