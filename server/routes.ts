@@ -9830,8 +9830,19 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       const rowCount = Math.max(0, lines.length - 1);
       const rawHeaderLine = lines[0] ?? "";
-      // Parse header into structured array for easier future column matching
-      const parsedHeaders = rawHeaderLine.split(",").map(h => h.replace(/^"|"$/g, "").trim()).filter(Boolean);
+      // Parse header using quote-aware splitter for accurate column extraction
+      function parseHeaderLine(line: string): string[] {
+        const result: string[] = []; let cur = "", inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"' && !inQ) { inQ = true; continue; }
+          if (c === '"' && inQ) { if (line[i+1] === '"') { cur += '"'; i++; } else { inQ = false; } continue; }
+          if (c === ',' && !inQ) { result.push(cur.trim()); cur = ""; continue; }
+          cur += c;
+        }
+        result.push(cur.trim()); return result.filter(Boolean);
+      }
+      const parsedHeaders = parseHeaderLine(rawHeaderLine);
       const detectedHeaders = JSON.stringify(parsedHeaders);
       const filename = req.file.originalname;
 
@@ -9854,11 +9865,12 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
 
-      const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_job_margin`);
+      const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt, COUNT(margin_pct) AS with_margin FROM buildops_job_margin`);
       const totalRows = parseInt((countRow.rows[0] as any)?.cnt) || 0;
+      const withMargin = parseInt((countRow.rows[0] as any)?.with_margin) || 0;
 
-      if (totalRows === 0) {
-        return res.json({ hasData: false, avgMarginPct: null, totalRows: 0, monthly: [] });
+      if (totalRows === 0 || withMargin === 0) {
+        return res.json({ hasData: false, avgMarginPct: null, totalRows, monthly: [] });
       }
 
       // Overall avg margin across all imported rows with a margin value
