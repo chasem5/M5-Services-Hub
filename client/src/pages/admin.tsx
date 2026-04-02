@@ -59,6 +59,7 @@ import {
   Link2,
   Search,
   MapPin,
+  Database,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -1856,6 +1857,129 @@ function AccountManagerMappingPanel() {
   );
 }
 
+function DataSourcesPanel() {
+  const { toast } = useToast();
+  const { data, isLoading, refetch } = useQuery<any>({ queryKey: ["/api/admin/data-sources"] });
+  const resolveMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      apiRequest("PATCH", `/api/admin/merge-conflicts/${id}`, { status }).then(r => r.json()),
+    onSuccess: () => { refetch(); toast({ title: "Conflict updated" }); },
+  });
+
+  const fmt = (ts: string | null) => ts ? new Date(ts).toLocaleString() : "Never";
+
+  if (isLoading) return <div className="text-xs text-muted-foreground p-4">Loading data sources…</div>;
+
+  const inv = data?.invoices ?? {};
+  const jobs = data?.jobs ?? {};
+  const conflicts: any[] = data?.conflicts ?? [];
+  const importLog: any[] = data?.importLog ?? [];
+  const pendingConflicts = conflicts.filter((c: any) => c.status === "pending");
+
+  return (
+    <Card className="border-none shadow-sm bg-card">
+      <CardHeader className="pb-4 border-b">
+        <div className="flex items-center gap-3">
+          <div className="bg-primary/10 p-2 rounded-full">
+            <Database className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-heading">Data Sources</CardTitle>
+            <CardDescription className="text-xs">
+              Central data layer — import history, coverage, and merge conflicts
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-6 space-y-6">
+        {/* Coverage grid */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="border rounded-lg p-4 space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Invoices</p>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Total records</span><span className="font-medium">{inv.total?.toLocaleString() ?? 0}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">From API sync</span><span className="font-medium">{inv.fromApi?.toLocaleString() ?? 0}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">CSV enriched</span>
+                <span className="font-medium text-emerald-700">{inv.fromCsv?.toLocaleString() ?? 0} ({inv.total ? Math.round((inv.hasPaymentData / inv.total) * 100) : 0}%)</span>
+              </div>
+              <div className="flex justify-between pt-1 border-t"><span className="text-muted-foreground">Last API sync</span><span className="font-medium text-xs">{fmt(inv.lastApiSync)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Last CSV upload</span><span className="font-medium text-xs">{fmt(inv.lastCsvSync)}</span></div>
+            </div>
+          </div>
+          <div className="border rounded-lg p-4 space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Jobs</p>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Total records</span><span className="font-medium">{jobs.total?.toLocaleString() ?? 0}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">From API sync</span><span className="font-medium">{jobs.total?.toLocaleString() ?? 0}</span></div>
+              <div className="flex justify-between pt-1 border-t"><span className="text-muted-foreground">Last API sync</span><span className="font-medium text-xs">{fmt(jobs.lastApiSync)}</span></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Recent imports */}
+        {importLog.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Recent Imports</p>
+            <div className="max-h-48 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b text-left text-muted-foreground">
+                  <th className="pb-1 pr-3">Source</th><th className="pb-1 pr-3">Type</th>
+                  <th className="pb-1 pr-3">Processed</th><th className="pb-1 pr-3">Updated</th>
+                  <th className="pb-1 pr-3">Conflicts</th><th className="pb-1">Time</th>
+                </tr></thead>
+                <tbody>
+                  {importLog.map((r: any) => (
+                    <tr key={r.id} className="border-b last:border-0">
+                      <td className="py-1 pr-3 font-medium">{r.import_source}</td>
+                      <td className="py-1 pr-3">{r.entity_type}</td>
+                      <td className="py-1 pr-3">{r.records_processed}</td>
+                      <td className="py-1 pr-3">{r.records_updated}</td>
+                      <td className="py-1 pr-3">{r.conflict_count > 0 ? <span className="text-amber-600 font-medium">{r.conflict_count}</span> : 0}</td>
+                      <td className="py-1 text-muted-foreground">{new Date(r.created_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Merge conflicts */}
+        {pendingConflicts.length > 0 ? (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              Pending Conflicts <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">{pendingConflicts.length}</span>
+            </p>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {pendingConflicts.map((c: any) => (
+                <div key={c.id} className="border rounded-lg p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">{c.entity_type} · {c.entity_key}</span>
+                    <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Field: <span className="font-medium text-foreground">{c.conflict_field}</span></p>
+                  <div className="flex gap-2 text-xs">
+                    <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">{c.source_a}: {c.value_a}</span>
+                    <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200">{c.source_b}: {c.value_b}</span>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" variant="outline" className="h-6 text-xs"
+                      onClick={() => resolveMutation.mutate({ id: c.id, status: "resolved" })}>Resolve</Button>
+                    <Button size="sm" variant="ghost" className="h-6 text-xs text-muted-foreground"
+                      onClick={() => resolveMutation.mutate({ id: c.id, status: "ignored" })}>Ignore</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No pending merge conflicts.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminPage() {
   const [, setLocation] = useLocation();
   const { user: currentUser } = useAuth();
@@ -2800,6 +2924,7 @@ export default function AdminPage() {
 
         <TabsContent value="buildops" className="pt-4 space-y-6">
           <BuildOpsPanel />
+          <DataSourcesPanel />
           {isBuildopsVerifiedForPanel ? (
             <>
               <BuildOpsAuditPanel />

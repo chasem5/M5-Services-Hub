@@ -1608,6 +1608,50 @@ export class DatabaseStorage implements IStorage {
     } catch (e) {
       console.error("migrateBuildopsVisitsAndExtendedFields: invoice payment columns error:", e);
     }
+    // Data lineage columns (Task #107)
+    try {
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS last_api_sync timestamp`);
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS last_csv_sync timestamp`);
+      await db.execute(sql`ALTER TABLE buildops_jobs ADD COLUMN IF NOT EXISTS last_api_sync timestamp`);
+      await db.execute(sql`ALTER TABLE buildops_jobs ADD COLUMN IF NOT EXISTS last_csv_sync timestamp`);
+    } catch (e) {
+      console.error("migrateBuildopsVisitsAndExtendedFields: data lineage columns error:", e);
+    }
+    // Merge conflicts + import audit tables (Task #107)
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS merge_conflicts (
+          id serial PRIMARY KEY,
+          entity_type varchar NOT NULL,
+          entity_key varchar NOT NULL,
+          source_a varchar NOT NULL,
+          source_b varchar NOT NULL,
+          conflict_field varchar NOT NULL,
+          value_a text,
+          value_b text,
+          status varchar NOT NULL DEFAULT 'pending',
+          created_at timestamp DEFAULT NOW() NOT NULL,
+          resolved_at timestamp
+        )
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS data_import_log (
+          id serial PRIMARY KEY,
+          import_source varchar NOT NULL,
+          entity_type varchar NOT NULL,
+          entity_key varchar,
+          fields_written text,
+          fields_skipped text,
+          conflict_count integer DEFAULT 0,
+          records_processed integer DEFAULT 0,
+          records_inserted integer DEFAULT 0,
+          records_updated integer DEFAULT 0,
+          created_at timestamp DEFAULT NOW() NOT NULL
+        )
+      `);
+    } catch (e) {
+      console.error("migrateBuildopsVisitsAndExtendedFields: merge/audit tables error:", e);
+    }
     // buildops_visits table (Task #99)
     try {
       await db.execute(sql`

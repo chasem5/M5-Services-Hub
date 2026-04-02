@@ -96,6 +96,7 @@ import {
   Archive,
   MoveRight,
   AlignLeft,
+  Receipt,
 } from "lucide-react";
 import {
   Card,
@@ -561,6 +562,7 @@ function KanbanColumn({
   selectedIds,
   onToggleSelect,
   isBuildopsTab = false,
+  invoiceStatusMap = {},
 }: { 
   stage: PipelineStage;
   sc: any;
@@ -586,6 +588,7 @@ function KanbanColumn({
   selectedIds: Set<number>;
   onToggleSelect: (id: number) => void;
   isBuildopsTab?: boolean;
+  invoiceStatusMap?: Record<number, any>;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.slug,
@@ -649,6 +652,7 @@ function KanbanColumn({
                 isSelected={selectedIds.has(lead.id)}
                 onToggleSelect={onToggleSelect}
                 isBuildopsTab={isBuildopsTab}
+                invoiceStatus={invoiceStatusMap[lead.id] ?? null}
               />
             ))}
         </div>
@@ -678,6 +682,7 @@ function LeadCard({
   isSelected = false,
   onToggleSelect,
   isBuildopsTab = false,
+  invoiceStatus,
 }: { 
   lead: Lead; 
   formatCurrency: (v: string | number) => string;
@@ -699,6 +704,7 @@ function LeadCard({
   isSelected?: boolean;
   onToggleSelect?: (id: number) => void;
   isBuildopsTab?: boolean;
+  invoiceStatus?: { invoicedTotal: number; outstandingTotal: number; paidTotal: number; invoiceCount: number; paymentStatus: string } | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: lead.id,
@@ -892,6 +898,26 @@ function LeadCard({
                     {formatCurrency(lead.buildopsQuoteTotal)}
                   </span>
                 )}
+              </div>
+            )}
+            {invoiceStatus && invoiceStatus.invoiceCount > 0 && (
+              <div className="flex items-center gap-1.5 border-t pt-1.5 mt-0.5" data-testid={`badge-invoice-status-${lead.id}`}>
+                <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 font-medium gap-1 ${
+                  invoiceStatus.paymentStatus === "paid"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400"
+                    : invoiceStatus.paymentStatus === "partial"
+                    ? "border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400"
+                    : "border-orange-200 bg-orange-50 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400"
+                }`}>
+                  <Receipt className="h-3 w-3 shrink-0" />
+                  {invoiceStatus.paymentStatus === "paid" ? "Paid" : invoiceStatus.paymentStatus === "partial" ? "Partial" : "Invoiced"}
+                </Badge>
+                <span className="text-[10px] font-bold tabular-nums text-muted-foreground">
+                  {formatCurrency(invoiceStatus.invoicedTotal)}
+                  {invoiceStatus.outstandingTotal > 0 && (
+                    <span className="text-orange-600 dark:text-orange-400"> · ${Math.round(invoiceStatus.outstandingTotal / 1000)}K due</span>
+                  )}
+                </span>
               </div>
             )}
 
@@ -1244,6 +1270,11 @@ export default function Leads() {
   const { data: pipelineViews = [] } = useQuery<PipelineView[]>({
     queryKey: ["/api/pipeline-views"],
   });
+
+  const { data: invoiceStatusMap = {} } = useQuery<Record<number, {
+    invoicedTotal: number; outstandingTotal: number; paidTotal: number;
+    invoiceCount: number; paymentStatus: string;
+  }>>({ queryKey: ["/api/leads/invoice-status"] });
 
   const { data: buildingsForCreate = [] } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/clients", selectedClientIdForBuilding, "all-buildings"],
@@ -2339,6 +2370,7 @@ export default function Leads() {
                               selectedIds={selectedIds}
                               onToggleSelect={toggleSelectId}
                               isBuildopsTab={sourceTab === "buildops"}
+                              invoiceStatusMap={invoiceStatusMap}
                             />
                           );
                         })}
@@ -2392,6 +2424,7 @@ export default function Leads() {
                               selectedIds={selectedIds}
                               onToggleSelect={toggleSelectId}
                               isBuildopsTab={sourceTab === "buildops"}
+                              invoiceStatusMap={invoiceStatusMap}
                             />
                           );
                         })}

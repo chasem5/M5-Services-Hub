@@ -1680,6 +1680,47 @@ Do not include any other text, just the JSON.`,
     res.json(leadsWithFlags);
   });
 
+  // Invoice payment status for leads — joins lead → job (via quote_id) → invoices
+  app.get("/api/leads/invoice-status", isAuthenticated, async (_req, res) => {
+    try {
+      const { db } = await import("./db");
+      const rows = await db.execute(sql`
+        SELECT
+          l.id AS lead_id,
+          l.buildops_quote_id,
+          COALESCE(SUM(CAST(i.total_amount AS numeric)), 0) AS invoiced_total,
+          COALESCE(SUM(i.outstanding_balance), 0) AS outstanding_total,
+          COALESCE(SUM(i.total_amount_paid), 0) AS paid_total,
+          COUNT(i.id) AS invoice_count,
+          CASE
+            WHEN COUNT(i.id) = 0 THEN 'none'
+            WHEN SUM(i.outstanding_balance) IS NULL THEN 'unknown'
+            WHEN SUM(i.outstanding_balance) <= 0 THEN 'paid'
+            WHEN SUM(i.total_amount_paid) > 0 THEN 'partial'
+            ELSE 'pending'
+          END AS payment_status
+        FROM leads l
+        JOIN buildops_jobs j ON j.buildops_quote_id = l.buildops_quote_id
+        JOIN buildops_invoices i ON i.buildops_job_id = j.buildops_id
+        WHERE l.buildops_quote_id IS NOT NULL
+        GROUP BY l.id, l.buildops_quote_id
+      `);
+      const byLeadId: Record<number, any> = {};
+      for (const r of rows.rows as any[]) {
+        byLeadId[r.lead_id] = {
+          invoicedTotal: parseFloat(r.invoiced_total) || 0,
+          outstandingTotal: parseFloat(r.outstanding_total) || 0,
+          paidTotal: parseFloat(r.paid_total) || 0,
+          invoiceCount: parseInt(r.invoice_count) || 0,
+          paymentStatus: r.payment_status,
+        };
+      }
+      res.json(byLeadId);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Return set of lead IDs (with expired proposals) that already have a follow-up email note logged since expiry
   app.get("/api/leads/proposal-expiry-suppression", isAuthenticated, async (req, res) => {
     try {
@@ -6317,10 +6358,10 @@ Respond with this JSON:
 
         const [existing] = await db.select().from(buildopsJobs).where(eq(buildopsJobs.buildopsId, job.id));
         if (existing) {
-          await db.update(buildopsJobs).set(payload).where(eq(buildopsJobs.buildopsId, job.id));
+          await db.update(buildopsJobs).set({ ...payload, lastApiSync: new Date() }).where(eq(buildopsJobs.buildopsId, job.id));
           updated++;
         } else {
-          await db.insert(buildopsJobs).values(payload);
+          await db.insert(buildopsJobs).values({ ...payload, lastApiSync: new Date() });
           created++;
         }
       }
@@ -6401,10 +6442,16 @@ Respond with this JSON:
 
         const [existing] = await db.select().from(buildopsInvoices).where(eq(buildopsInvoices.buildopsId, inv.id));
         if (existing) {
-          await db.update(buildopsInvoices).set(payload).where(eq(buildopsInvoices.buildopsId, inv.id));
+          // Preserve CSV-enriched payment fields — never let an API re-sync wipe them
+          const updatePayload: any = { ...payload, lastApiSync: new Date() };
+          if (existing.outstandingBalance !== null) updatePayload.outstandingBalance = existing.outstandingBalance;
+          if (existing.totalAmountPaid !== null) updatePayload.totalAmountPaid = existing.totalAmountPaid;
+          if (existing.adjustmentAmount !== null) updatePayload.adjustmentAmount = existing.adjustmentAmount;
+          if (existing.lastPaymentDate !== null) updatePayload.lastPaymentDate = existing.lastPaymentDate;
+          await db.update(buildopsInvoices).set(updatePayload).where(eq(buildopsInvoices.buildopsId, inv.id));
           updated++;
         } else {
-          await db.insert(buildopsInvoices).values(payload);
+          await db.insert(buildopsInvoices).values({ ...payload, lastApiSync: new Date() });
           created++;
         }
       }
@@ -6416,6 +6463,77 @@ Respond with this JSON:
     } catch (err: any) {
       console.error("[BuildOps sync-invoices] Error:", err.message);
       await storage.createBuildopsSyncLog({ entityType: "invoice", action: "error", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Admin: Data Sources status + import audit ─────────────────────────────
+  app.get("/api/admin/data-sources", isAuthenticated, requireRole(["super_admin", "admin"]), async (_req, res) => {
+    try {
+      const { db } = await import("./db");
+      // Invoice stats
+      const invStats = await db.execute(sql`
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE last_api_sync IS NOT NULL) AS from_api,
+          COUNT(*) FILTER (WHERE last_csv_sync IS NOT NULL) AS from_csv,
+          COUNT(*) FILTER (WHERE outstanding_balance IS NOT NULL) AS has_payment_data,
+          MAX(last_api_sync) AS last_api_sync,
+          MAX(last_csv_sync) AS last_csv_sync
+        FROM buildops_invoices
+      `);
+      // Job stats
+      const jobStats = await db.execute(sql`
+        SELECT COUNT(*) AS total, MAX(last_api_sync) AS last_api_sync FROM buildops_jobs
+      `);
+      // Pending conflicts
+      const conflicts = await db.execute(sql`
+        SELECT id, entity_type, entity_key, source_a, source_b, conflict_field, value_a, value_b, status, created_at
+        FROM merge_conflicts
+        ORDER BY created_at DESC
+        LIMIT 50
+      `);
+      // Recent import log
+      const importLog = await db.execute(sql`
+        SELECT id, import_source, entity_type, records_processed, records_inserted, records_updated, conflict_count, created_at
+        FROM data_import_log
+        ORDER BY created_at DESC
+        LIMIT 20
+      `);
+      const inv = (invStats.rows[0] as any) ?? {};
+      const job = (jobStats.rows[0] as any) ?? {};
+      res.json({
+        invoices: {
+          total: parseInt(inv.total) || 0,
+          fromApi: parseInt(inv.from_api) || 0,
+          fromCsv: parseInt(inv.from_csv) || 0,
+          hasPaymentData: parseInt(inv.has_payment_data) || 0,
+          lastApiSync: inv.last_api_sync ?? null,
+          lastCsvSync: inv.last_csv_sync ?? null,
+        },
+        jobs: {
+          total: parseInt(job.total) || 0,
+          lastApiSync: job.last_api_sync ?? null,
+        },
+        conflicts: conflicts.rows,
+        importLog: importLog.rows,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Resolve / ignore a merge conflict
+  app.patch("/api/admin/merge-conflicts/:id", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { status } = req.body as { status: "resolved" | "ignored" };
+      const id = parseInt(req.params.id);
+      await db.execute(sql`
+        UPDATE merge_conflicts SET status = ${status}, resolved_at = NOW() WHERE id = ${id}
+      `);
+      res.json({ ok: true });
+    } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
@@ -9706,7 +9824,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         return res.status(400).json({ message: "Not an Invoice CSV — expected an 'Invoice Number' column." });
       }
 
-      let inserted = 0, updated = 0, skipped = 0;
+      let inserted = 0, updated = 0, skipped = 0, conflictCount = 0;
 
       for (let i = 1; i < lines.length; i++) {
         try {
@@ -9739,10 +9857,22 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           const customerName = billingCustomerName;
 
           const existing = await db.execute(sql`
-            SELECT id FROM buildops_invoices WHERE invoice_number = ${invoiceNumber} LIMIT 1
+            SELECT id, customer_name FROM buildops_invoices WHERE invoice_number = ${invoiceNumber} LIMIT 1
           `);
 
           if ((existing.rows as any[]).length > 0) {
+            const existingRow = (existing.rows as any[])[0];
+            // Conflict detection: same invoice_number but different customer → flag it
+            if (customerName && existingRow.customer_name &&
+                customerName.trim().toLowerCase() !== existingRow.customer_name.trim().toLowerCase()) {
+              await db.execute(sql`
+                INSERT INTO merge_conflicts (entity_type, entity_key, source_a, source_b, conflict_field, value_a, value_b, status)
+                VALUES ('invoice', ${invoiceNumber}, 'buildops_api', 'csv_invoice', 'customer_name',
+                        ${existingRow.customer_name}, ${customerName}, 'pending')
+                ON CONFLICT DO NOTHING
+              `);
+              conflictCount++;
+            }
             await db.execute(sql`
               UPDATE buildops_invoices SET
                 status = COALESCE(${status}, status),
@@ -9762,6 +9892,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 adjustment_amount = ${adjustmentAmount},
                 outstanding_balance = ${outstandingBalance},
                 last_payment_date = ${lastPaymentDate},
+                last_csv_sync = NOW(),
                 synced_at = NOW()
               WHERE invoice_number = ${invoiceNumber}
             `);
@@ -9776,7 +9907,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 department_name, days_past_due, payment_term_name,
                 service_agreement_number,
                 total_amount_paid, adjustment_amount, outstanding_balance, last_payment_date,
-                synced_at
+                last_csv_sync, synced_at
               ) VALUES (
                 ${'inv-' + invoiceNumber}, ${invoiceNumber}, ${status},
                 ${totalAmount}, ${subtotal}, ${taxAmount},
@@ -9785,7 +9916,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 ${departmentName}, ${daysPastDue}, ${paymentTermName},
                 ${saNumber},
                 ${totalAmountPaid}, ${adjustmentAmount}, ${outstandingBalance}, ${lastPaymentDate},
-                NOW()
+                NOW(), NOW()
               ) ON CONFLICT (buildops_id) DO UPDATE SET
                 status = EXCLUDED.status,
                 total_amount = EXCLUDED.total_amount,
@@ -9794,6 +9925,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 adjustment_amount = EXCLUDED.adjustment_amount,
                 outstanding_balance = EXCLUDED.outstanding_balance,
                 last_payment_date = EXCLUDED.last_payment_date,
+                last_csv_sync = NOW(),
                 synced_at = NOW()
             `);
             inserted++;
@@ -9807,7 +9939,15 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const countRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_invoices`);
       const totalRows = parseInt((countRow.rows[0] as any)?.cnt) || 0;
 
-      return res.json({ processed: lines.length - 1, inserted, updated, skipped, totalRows, type: 'invoices' });
+      // Write audit log entry
+      await db.execute(sql`
+        INSERT INTO data_import_log (import_source, entity_type, fields_written, conflict_count, records_processed, records_inserted, records_updated)
+        VALUES ('csv_invoice', 'invoice',
+          ${JSON.stringify(['status','total_amount','customer_name','outstanding_balance','total_amount_paid','adjustment_amount','last_payment_date'])},
+          ${conflictCount}, ${lines.length - 1 - skipped}, ${inserted}, ${updated})
+      `);
+
+      return res.json({ processed: lines.length - 1, inserted, updated, skipped, conflicts: conflictCount, totalRows, type: 'invoices' });
     } catch (err: any) {
       console.error("[import-invoices]", err.message);
       res.status(500).json({ message: err.message });

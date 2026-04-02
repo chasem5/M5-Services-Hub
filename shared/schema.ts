@@ -750,6 +750,9 @@ export const buildopsJobs = pgTable("buildops_jobs", {
   procurementStatus: varchar("procurement_status"),
   totalBudgetedHours: decimal("total_budgeted_hours", { precision: 8, scale: 2 }),
   department: varchar("department"),
+  // Data lineage — which source last touched this record
+  lastApiSync: timestamp("last_api_sync"),
+  lastCsvSync: timestamp("last_csv_sync"),
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
 });
 export type BuildopsJob = typeof buildopsJobs.$inferSelect;
@@ -782,6 +785,9 @@ export const buildopsInvoices = pgTable("buildops_invoices", {
   adjustmentAmount: decimal("adjustment_amount", { precision: 12, scale: 2 }),
   outstandingBalance: decimal("outstanding_balance", { precision: 12, scale: 2 }),
   lastPaymentDate: timestamp("last_payment_date"),
+  // Data lineage — which source last touched this record
+  lastApiSync: timestamp("last_api_sync"),
+  lastCsvSync: timestamp("last_csv_sync"),
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
 });
 export type BuildopsInvoice = typeof buildopsInvoices.$inferSelect;
@@ -1006,3 +1012,37 @@ export const insertActionPlanSchema = createInsertSchema(actionPlans).omit({ id:
 });
 export type ActionPlan = typeof actionPlans.$inferSelect;
 export type InsertActionPlan = z.infer<typeof insertActionPlanSchema>;
+
+// ── Data Merge / Import Audit ───────────────────────────────────────────────
+
+// merge_conflicts: records where two sources disagree on the same field
+export const mergeConflicts = pgTable("merge_conflicts", {
+  id: serial("id").primaryKey(),
+  entityType: varchar("entity_type").notNull(), // 'invoice' | 'customer' | 'job' | 'employee'
+  entityKey: varchar("entity_key").notNull(),   // the stable key (invoice_number, job_number, etc.)
+  sourceA: varchar("source_a").notNull(),       // 'buildops_api' | 'csv_invoice' | 'csv_timesheet' | 'crm'
+  sourceB: varchar("source_b").notNull(),
+  conflictField: varchar("conflict_field").notNull(),
+  valueA: text("value_a"),
+  valueB: text("value_b"),
+  status: varchar("status").notNull().default("pending"), // 'pending' | 'resolved' | 'ignored'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+});
+export type MergeConflict = typeof mergeConflicts.$inferSelect;
+
+// data_import_log: audit trail for every CSV import and API sync write
+export const dataImportLog = pgTable("data_import_log", {
+  id: serial("id").primaryKey(),
+  importSource: varchar("import_source").notNull(), // 'buildops_api' | 'csv_invoice' | 'csv_timesheet' | 'csv_employee' | 'crm'
+  entityType: varchar("entity_type").notNull(),
+  entityKey: varchar("entity_key"),
+  fieldsWritten: text("fields_written"),   // JSON array of field names written
+  fieldsSkipped: text("fields_skipped"),   // JSON array of field names skipped (preserved)
+  conflictCount: integer("conflict_count").default(0),
+  recordsProcessed: integer("records_processed").default(0),
+  recordsInserted: integer("records_inserted").default(0),
+  recordsUpdated: integer("records_updated").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type DataImportLog = typeof dataImportLog.$inferSelect;
