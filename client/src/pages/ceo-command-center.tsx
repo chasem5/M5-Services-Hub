@@ -454,8 +454,12 @@ function CEOCommandCenterInner() {
             continue;
           }
 
-          // 7. Jobs CSV — job number + job status (no visit number, no invoice number, no is maintenance)
-          const isJobCsv = firstLine.includes("job number") && firstLine.includes("job status") && !firstLine.includes("visit number") && !firstLine.includes("invoice number");
+          // 7. Jobs CSV — job number + (amount quoted OR status), but not visits/invoices/maintenance
+          const isJobCsv = firstLine.includes("job number")
+            && (firstLine.includes("amount quoted") || firstLine.includes("status"))
+            && !firstLine.includes("visit number")
+            && !firstLine.includes("invoice number")
+            && !firstLine.includes("is maintenance");
           if (isJobCsv) {
             await uploadCsv("/api/buildops/import-jobs", "Jobs", "jobs");
             continue;
