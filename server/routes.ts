@@ -11058,8 +11058,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const hireSignal: 'ok' | 'watch' | 'hire' =
         signalPct >= 85 ? 'hire' : signalPct >= 70 ? 'watch' : 'ok';
 
-      // Week-by-week trend for chart (past 8 + next 4)
-      const weeklyTrend = allWeeks.slice(-12).map(w => ({
+      // Week-by-week trend for chart: all past weeks (up to 10) + next 5 future weeks
+      // Past weeks are needed for persistence scoring in the hiring engine
+      const pastTrend = allWeeks.filter(w => !w.isFuture);
+      const futureTrend = allWeeks.filter(w => w.isFuture).slice(0, 5);
+      const weeklyTrend = [...pastTrend, ...futureTrend].map(w => ({
         label: w.label,
         utilPct: w.utilPct,
         scheduledHrs: w.scheduledHrs,

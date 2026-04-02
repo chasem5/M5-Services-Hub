@@ -5,8 +5,19 @@ import {
   Send, Upload, FileSpreadsheet, X, Lock, Bot,
   BarChart2, Repeat2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   Clock, Wrench, Zap, Users, Activity, PhoneCall, Mail, Calendar, Info,
+  Minus, Settings2, Package,
   type LucideIcon,
 } from "lucide-react";
+import {
+  useHiringThresholds,
+  scoreSignals,
+  computeTrendDirection,
+  computePersistence,
+  buildRecommendationReasons,
+  applyScenario,
+  DEFAULT_HIRING_THRESHOLDS,
+  type HiringLevel,
+} from "@/lib/hiringEngine";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -323,6 +334,13 @@ function CEOCommandCenterInner() {
 
   const [showCrewDrilldown, setShowCrewDrilldown] = useState(false);
   const [crewWeekOffset, setCrewWeekOffset] = useState(0);
+
+  // Hiring decision dashboard state
+  const [hiringThresholds, setHiringThresholds, resetHiringThresholds] = useHiringThresholds();
+  const [showHiringSettings, setShowHiringSettings] = useState(false);
+  const [showWhatChanged, setShowWhatChanged] = useState(false);
+  const [showScenario, setShowScenario] = useState(false);
+  const [showStubs, setShowStubs] = useState(false);
   const { data: crewByTech, isLoading: crewLoading } = useQuery<{ techs: CrewTech[]; weekOffset: number }>({
     queryKey: ["/api/ceo/crew-by-tech", crewWeekOffset],
     queryFn: () => fetch(`/api/ceo/crew-by-tech?weekOffset=${crewWeekOffset}`).then(r => r.json()),
@@ -996,172 +1014,290 @@ function CEOCommandCenterInner() {
           </div>
         </div>
 
-        {/* ── Crew Capacity & Hire Signal ──────────────────────────────────── */}
+        {/* ── Crew Capacity & Hiring Decision Dashboard ─────────────────────── */}
         {(() => {
-          // Use scheduling-based utilization when available; fall back to timesheet-derived rate
-          const schedUtilPct = staffing?.rollingAvgUtilization ?? staffing?.currentWeekUtilization ?? null;
-          const tsUtilPct = metrics?.labor?.hrsUtilizationPct ?? null;
-          const utilPct = schedUtilPct ?? tsUtilPct ?? 0;
-          const utilSource = schedUtilPct != null ? 'scheduling' : tsUtilPct != null ? 'timesheets' : null;
-
-          // Booked-load framing: primary whenever we have timesheet hours (scheduledHrs + actualHrs from imports)
-          // bookedLoadPct = scheduledHrs ÷ actualHrs (how much of available capacity is booked)
-          // >115% → Fully Booked (amber), >90% → At Capacity (amber), else On Track
-          const actualHrs = metrics?.labor?.actualHrs4wk ?? 0;
-          const scheduledHrs = metrics?.labor?.scheduledHrs4wk ?? 0;
-          const hasTimesheetHrs = scheduledHrs > 0 && actualHrs > 0;
-          const bookedLoadPct = hasTimesheetHrs ? Math.round((scheduledHrs / actualHrs) * 100) : 0;
-          const atCapacity = hasTimesheetHrs && bookedLoadPct > 90 && bookedLoadPct <= 115;
-          const fullyBooked = hasTimesheetHrs && bookedLoadPct > 115;
-
-          // Booked-load signal takes priority over scheduling heuristic whenever timesheet hours exist
-          let signal: 'ok' | 'watch' | 'hire' = staffing?.hireSignal ?? 'ok';
-          if (hasTimesheetHrs) {
-            signal = fullyBooked ? 'hire' : atCapacity ? 'watch' : 'ok';
-          }
-
-          // Both alert states use amber styling — this is a capacity warning, not an error
-          const signalColor = (signal === 'hire' || signal === 'watch') ? '#f59e0b' : '#10b981';
-          const signalBg = (signal === 'hire' || signal === 'watch') ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700';
-          const signalLabel = signal === 'hire' ? '⚠ Fully Booked' : signal === 'watch' ? '⚠ At Capacity' : '✓ On Track';
-          const signalTip = signal === 'hire'
-            ? `${scheduledHrs}h booked vs ${actualHrs}h available capacity (4wk) — ${bookedLoadPct}% booked. Scheduled hours significantly exceed crew capacity. Consider adding headcount.`
-            : signal === 'watch'
-            ? `${scheduledHrs}h booked vs ${actualHrs}h available capacity (4wk) — ${bookedLoadPct}% booked. Crew is near full capacity — monitor closely.`
-            : hasTimesheetHrs
-            ? `${scheduledHrs}h booked vs ${actualHrs}h available capacity (4wk) — ${bookedLoadPct}% booked. Crew has headroom.`
-            : 'Crew has capacity headroom. No immediate hiring pressure.';
-
           const trendData = staffing?.weeklyTrend ?? [];
+
+          // Raw inputs for scoring engine
+          const rollingAvgUtilization = staffing?.rollingAvgUtilization ?? staffing?.currentWeekUtilization ?? 0;
+          const forwardBookedWeeks = staffing?.forwardBookedWeeks ?? 0;
+          const overtimeRatePct = metrics?.labor?.overtimeRatePct ?? 0;
+          const actualHrs4wk = metrics?.labor?.actualHrs4wk ?? 0;
+          const scheduledHrs4wk = metrics?.labor?.scheduledHrs4wk ?? 0;
+          const hasTimesheetHrs = scheduledHrs4wk > 0 && actualHrs4wk > 0;
+
+          // Gauge display value (booked-load if timesheets available, else schedule util)
+          const gaugeValue = hasTimesheetHrs
+            ? Math.round((scheduledHrs4wk / actualHrs4wk) * 100)
+            : rollingAvgUtilization;
+
+          // Run the scoring engine
+          const scores = scoreSignals(
+            { rollingAvgUtilization, forwardBookedWeeks, overtimeRatePct, actualHrs4wk, scheduledHrs4wk, weeks: trendData },
+            hiringThresholds
+          );
+          const trend = computeTrendDirection(trendData);
+          const persistenceWarn = computePersistence(trendData, hiringThresholds.utilWarn);
+          const reasons = buildRecommendationReasons(scores, { rollingAvgUtilization, forwardBookedWeeks, overtimeRatePct, actualHrs4wk, scheduledHrs4wk }, hiringThresholds, trend, persistenceWarn);
+
+          // What-changed deltas (last 2 past weeks)
+          const pastWeeks = trendData.filter(w => !w.isFuture);
+          const prevWeek = pastWeeks.length >= 2 ? pastWeeks[pastWeeks.length - 2] : null;
+          const currWeek = pastWeeks.length >= 1 ? pastWeeks[pastWeeks.length - 1] : null;
+          const utilDelta = (currWeek && prevWeek) ? currWeek.utilPct - prevWeek.utilPct : null;
+          const schedHrsDelta = (currWeek && prevWeek) ? Math.round((currWeek.scheduledHrs - prevWeek.scheduledHrs) * 10) / 10 : null;
+
+          // Recommendation display config
+          const levelConfig: Record<HiringLevel, { label: string; pill: string; border: string; bg: string; icon: string; summary: string }> = {
+            healthy: {
+              label: 'Healthy',
+              pill: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+              border: 'border-l-emerald-400',
+              bg: 'bg-emerald-50/40',
+              icon: '✓',
+              summary: 'Crew capacity is healthy. No hiring action needed at this time.',
+            },
+            monitor: {
+              label: 'Monitor',
+              pill: 'bg-blue-100 text-blue-700 border-blue-200',
+              border: 'border-l-blue-400',
+              bg: 'bg-blue-50/30',
+              icon: '◉',
+              summary: 'Capacity signals are elevated. Watch closely over the next few weeks.',
+            },
+            prepare: {
+              label: 'Prepare to Hire',
+              pill: 'bg-amber-100 text-amber-700 border-amber-200',
+              border: 'border-l-amber-400',
+              bg: 'bg-amber-50/30',
+              icon: '⚠',
+              summary: 'Crew is running near full capacity. Begin the hiring process now to avoid gaps.',
+            },
+            hire: {
+              label: 'Hire Now',
+              pill: 'bg-red-100 text-red-700 border-red-200',
+              border: 'border-l-red-500',
+              bg: 'bg-red-50/30',
+              icon: '!',
+              summary: 'Crew capacity is critically constrained — sustained over multiple weeks. Add headcount.',
+            },
+          };
+          const cfg = levelConfig[scores.overall];
+
+          const signalLevelColor = (level: HiringLevel) =>
+            level === 'hire' ? '#ef4444'
+            : level === 'prepare' ? '#f59e0b'
+            : level === 'monitor' ? '#3b82f6'
+            : '#10b981';
+
+          const driverTileClass = (level: HiringLevel) =>
+            level === 'hire' ? 'bg-red-50 border-red-200 text-red-700'
+            : level === 'prepare' ? 'bg-amber-50 border-amber-200 text-amber-700'
+            : level === 'monitor' ? 'bg-blue-50 border-blue-200 text-blue-700'
+            : 'bg-emerald-50 border-emerald-200 text-emerald-700';
+
+          const trendIcon = trend === 'rising' ? <TrendingUp className="w-4 h-4" /> : trend === 'falling' ? <TrendingDown className="w-4 h-4" /> : <Minus className="w-4 h-4" />;
+
+          // Scenario calculator
+          const baseTechCount = staffing?.techCount ?? 8;
+          const scenarios = [
+            { label: '+1 Tech', deltaTechs: 1, deltaWork: 0 },
+            { label: '−1 Tech', deltaTechs: -1, deltaWork: 0 },
+            { label: '+1 Project Crew', deltaTechs: 2, deltaWork: 5 },
+            { label: 'Workload +10%', deltaTechs: 0, deltaWork: 10 },
+            { label: 'Workload −10%', deltaTechs: 0, deltaWork: -10 },
+          ];
 
           return (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5" data-testid="section-crew-capacity">
               {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: `${signalColor}18` }}>
-                    <Users className="w-3.5 h-3.5" style={{ color: signalColor }} />
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: `${signalLevelColor(scores.overall)}18` }}>
+                    <Users className="w-3.5 h-3.5" style={{ color: signalLevelColor(scores.overall) }} />
                   </div>
                   <span className="text-sm font-bold text-gray-800">Crew Capacity</span>
-                  <span className="ml-1 text-[10px] text-gray-400">— 4-week rolling utilization · hire signal</span>
-                  <span
-                    className="ml-1 text-gray-300 cursor-default"
-                    title={hasTimesheetHrs
-                      ? `Formula: scheduled hours ÷ actual hours (last 28 days) from timesheet import — shows what fraction of real worked capacity is already booked.`
-                      : `Formula: total scheduled visit minutes ÷ (N full-time techs × 2,400 min/wk) — theoretical capacity based on visit schedule.`}
-                  >
+                  <span className="ml-1 text-[10px] text-gray-400">— multi-signal hiring decision</span>
+                  <span className="ml-1 text-gray-300 cursor-default" title="Composite score from 5 signals: rolling utilization, forward booked weeks, OT rate, workload trend, and actual-vs-scheduled stress.">
                     <Info className="w-3 h-3" />
                   </span>
                 </div>
                 <span
-                  className={`flex items-center gap-1.5 text-[11px] font-bold border rounded-full px-3 py-1 ${signalBg}`}
+                  className={`flex items-center gap-1.5 text-[11px] font-bold border rounded-full px-3 py-1 ${cfg.pill}`}
                   data-testid="badge-hire-signal"
-                  title={signalTip}
                 >
-                  {signalLabel}
+                  {cfg.icon} {cfg.label}
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
-                {/* ── Gauge ── */}
+              {/* ── 1. Recommendation Card ── */}
+              <div className={`border-l-4 rounded-r-lg px-4 py-3 mb-4 ${cfg.border} ${cfg.bg}`} data-testid="hiring-recommendation-card">
+                {staffingLoading ? (
+                  <div className="space-y-2">
+                    <div className="h-3 bg-gray-200 rounded animate-pulse w-3/4" />
+                    <div className="h-2.5 bg-gray-100 rounded animate-pulse w-full" />
+                    <div className="h-2.5 bg-gray-100 rounded animate-pulse w-5/6" />
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[12px] font-semibold text-gray-800 mb-2">{cfg.summary}</p>
+                    <ul className="space-y-1">
+                      {reasons.map((r, i) => (
+                        <li key={i} className="text-[11px] text-gray-600 flex gap-1.5">
+                          <span className="mt-0.5 flex-shrink-0 text-gray-400">•</span>
+                          <span>{r}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {persistenceWarn > 0 && (
+                      <p className="text-[10px] text-gray-400 mt-2 italic">
+                        {persistenceWarn >= hiringThresholds.weeksRequired
+                          ? `Sustained: elevated for ${persistenceWarn} of last 4 weeks (threshold: ${hiringThresholds.weeksRequired})`
+                          : `Spike detected: elevated for ${persistenceWarn} of last 4 weeks — monitoring (threshold: ${hiringThresholds.weeksRequired} to escalate)`}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* ── 2. Driver Stat Tiles ── */}
+              <div className="grid grid-cols-4 gap-2 mb-4" data-testid="hiring-driver-tiles">
+                {/* Utilization */}
+                <div className={`rounded-lg border px-3 py-2 ${driverTileClass(scores.utilLevel)}`} data-testid="driver-tile-util">
+                  <p className="text-[9px] font-bold uppercase tracking-widest opacity-60 mb-0.5">4-Wk Util</p>
+                  <p className="text-lg font-black leading-none">{staffingLoading ? '—' : `${rollingAvgUtilization}%`}</p>
+                  <p className="text-[9px] opacity-70 mt-0.5">warn ≥{hiringThresholds.utilWarn}%</p>
+                </div>
+                {/* Forward Booked */}
+                <div className={`rounded-lg border px-3 py-2 ${driverTileClass(scores.fwdLevel)}`} data-testid="driver-tile-fwd">
+                  <p className="text-[9px] font-bold uppercase tracking-widest opacity-60 mb-0.5">Fwd Booked</p>
+                  <p className="text-lg font-black leading-none">{staffingLoading ? '—' : `${forwardBookedWeeks}wk`}</p>
+                  <p className="text-[9px] opacity-70 mt-0.5">warn ≥{hiringThresholds.fwdWarn}wk</p>
+                </div>
+                {/* OT Rate */}
+                <div className={`rounded-lg border px-3 py-2 ${driverTileClass(scores.otLevel)}`} data-testid="driver-tile-ot">
+                  <p className="text-[9px] font-bold uppercase tracking-widest opacity-60 mb-0.5">OT Rate</p>
+                  <p className="text-lg font-black leading-none">{staffingLoading ? '—' : hasTimesheetHrs ? `${overtimeRatePct}%` : '—'}</p>
+                  <p className="text-[9px] opacity-70 mt-0.5">{hasTimesheetHrs ? `warn ≥${hiringThresholds.otWarn}%` : 'no timesheet data'}</p>
+                </div>
+                {/* Trend */}
+                <div className={`rounded-lg border px-3 py-2 ${driverTileClass(scores.trendLevel)}`} data-testid="driver-tile-trend">
+                  <p className="text-[9px] font-bold uppercase tracking-widest opacity-60 mb-0.5">Trend</p>
+                  <div className="flex items-center gap-1 mt-1">{trendIcon}<p className="text-sm font-bold capitalize leading-none">{trend}</p></div>
+                  <p className="text-[9px] opacity-70 mt-0.5">last {trendData.filter(w => !w.isFuture).length} weeks</p>
+                </div>
+              </div>
+
+              {/* ── 3. What Changed ── */}
+              <div className="border-t border-gray-100 pt-3 mb-3">
+                <button
+                  onClick={() => setShowWhatChanged(v => !v)}
+                  className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700 transition-colors mb-2"
+                  data-testid="btn-what-changed"
+                >
+                  {showWhatChanged ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  What Changed This Week?
+                </button>
+                {showWhatChanged && (
+                  <div className="space-y-1" data-testid="what-changed-panel">
+                    {utilDelta !== null ? (
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <span className="w-28 text-gray-500">Utilization</span>
+                        <span className={`font-semibold ${utilDelta > 0 ? 'text-red-600' : utilDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                          {utilDelta > 0 ? '+' : ''}{utilDelta}pp
+                        </span>
+                        <span className="text-gray-400">vs prior week ({prevWeek?.utilPct}% → {currWeek?.utilPct}%)</span>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-gray-300 italic">Need at least 2 weeks of history for deltas</p>
+                    )}
+                    {schedHrsDelta !== null && (
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <span className="w-28 text-gray-500">Scheduled Hrs</span>
+                        <span className={`font-semibold ${schedHrsDelta > 0 ? 'text-amber-600' : schedHrsDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                          {schedHrsDelta > 0 ? '+' : ''}{schedHrsDelta}h
+                        </span>
+                        <span className="text-gray-400">vs prior week</span>
+                      </div>
+                    )}
+                    {hasTimesheetHrs && (
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <span className="w-28 text-gray-500">OT Rate</span>
+                        <span className="font-semibold text-gray-700">{overtimeRatePct}%</span>
+                        <span className="text-gray-400">30-day rolling (from timesheets)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ── 4. Weekly Chart + Gauge + Stats ── */}
+              <div className="grid grid-cols-3 gap-4 border-t border-gray-100 pt-3 mb-3">
+                {/* Gauge */}
                 <div className="flex flex-col items-center justify-center">
-                  <div className="relative" style={{ width: 180, height: 100 }}>
-                    <svg viewBox="0 0 200 110" width="180" height="100">
-                      {/* Track */}
-                      <path
-                        d="M 20 100 A 80 80 0 0 1 180 100"
-                        fill="none"
-                        stroke="#f3f4f6"
-                        strokeWidth="16"
-                        strokeLinecap="round"
-                      />
-                      {/* Fill — booked-load pct when timesheet data present, else scheduling utilPct */}
-                      {(hasTimesheetHrs ? bookedLoadPct : utilPct) > 0 && (
+                  <div className="relative" style={{ width: 160, height: 88 }}>
+                    <svg viewBox="0 0 200 110" width="160" height="88">
+                      <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#f3f4f6" strokeWidth="16" strokeLinecap="round" />
+                      {gaugeValue > 0 && (
                         <path
                           d="M 20 100 A 80 80 0 0 1 180 100"
                           fill="none"
-                          stroke={signalColor}
+                          stroke={signalLevelColor(scores.overall)}
                           strokeWidth="16"
                           strokeLinecap="round"
-                          strokeDasharray={`${Math.PI * 80 * Math.min((hasTimesheetHrs ? bookedLoadPct : utilPct) / 100, 1)} ${Math.PI * 80}`}
+                          strokeDasharray={`${Math.PI * 80 * Math.min(gaugeValue / 100, 1)} ${Math.PI * 80}`}
                           style={{ transition: 'stroke-dasharray 0.6s ease' }}
                         />
                       )}
-                      {/* Center text */}
-                      <text x="100" y="90" textAnchor="middle" fontSize="28" fontWeight="900" fill={staffingLoading ? '#d1d5db' : signalColor} fontFamily="'Archivo Black', sans-serif">
-                        {staffingLoading ? '—' : `${hasTimesheetHrs ? bookedLoadPct : utilPct}%`}
+                      <text x="100" y="90" textAnchor="middle" fontSize="28" fontWeight="900" fill={staffingLoading ? '#d1d5db' : signalLevelColor(scores.overall)} fontFamily="'Archivo Black', sans-serif">
+                        {staffingLoading ? '—' : `${gaugeValue}%`}
                       </text>
                     </svg>
-                    {/* Tick labels */}
                     <div className="absolute bottom-0 left-0 right-0 flex justify-between px-1">
                       <span className="text-[9px] text-gray-400">0%</span>
                       <span className="text-[9px] text-gray-400">100%</span>
                     </div>
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-1">
-                    {hasTimesheetHrs ? 'Crew Booked Load (4wk)' : '4-Wk Avg Utilization'}
+                    {hasTimesheetHrs ? 'Booked Load (4wk)' : '4-Wk Utilization'}
                   </p>
                   <span
                     className={`inline-block text-[9px] font-semibold px-2 py-0.5 rounded-full mt-1 ${hasTimesheetHrs ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}
                     data-testid="badge-gauge-source"
-                    title={hasTimesheetHrs ? 'Based on actual vs scheduled hours from timesheet import' : 'Based on visit schedule — no timesheet data imported'}
                   >
                     {hasTimesheetHrs ? 'from timesheets' : 'from visit schedule'}
                   </span>
                   {hasTimesheetHrs && (
-                    <p className={`text-[9px] mt-0.5 font-semibold ${(atCapacity || fullyBooked) ? 'text-amber-500' : 'text-gray-400'}`}>
-                      {scheduledHrs}h booked · {actualHrs}h available
-                    </p>
+                    <p className="text-[9px] mt-0.5 text-gray-400">{scheduledHrs4wk}h booked · {actualHrs4wk}h available</p>
                   )}
-                  <p className="text-[10px] text-gray-400 mt-0.5 text-center max-w-[160px]">{signalTip}</p>
+                  {/* Active Techs + Hrs */}
+                  <div className="flex items-center gap-2 mt-3" data-testid="staffing-stat-active-techs">
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: '#6366f115' }}>
+                      <Users className="w-3.5 h-3.5" style={{ color: '#6366f1' }} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-800 leading-none">{staffingLoading ? '—' : staffing?.techCount ?? '—'}</p>
+                      <p className="text-[10px] text-gray-400">Active Techs</p>
+                      {(staffing?.partTimeTechCount ?? 0) > 0 && <p className="text-[9px] text-amber-500">+{staffing!.partTimeTechCount} part-time</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2" data-testid="staffing-stat-avg-hrs">
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: '#0ea5e915' }}>
+                      <Clock className="w-3.5 h-3.5" style={{ color: '#0ea5e9' }} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-800 leading-none">{staffingLoading ? '—' : staffing?.avgHrsPerTechPerWeek != null ? `${staffing.avgHrsPerTechPerWeek}h` : '—'}</p>
+                      <p className="text-[10px] text-gray-400">Avg Hrs/Tech/Wk</p>
+                    </div>
+                  </div>
                 </div>
 
-                {/* ── Stats ── */}
-                <div className="flex flex-col justify-center gap-3 border-x border-gray-100 px-5">
-                  {[
-                    {
-                      label: 'Active Techs',
-                      value: staffingLoading ? '—' : staffing?.techCount != null ? String(staffing.techCount) : '—',
-                      extraNote: !staffingLoading && (staffing?.partTimeTechCount ?? 0) > 0
-                        ? `+ ${staffing!.partTimeTechCount} part-time excluded from capacity`
-                        : undefined,
-                      sub: 'this week (distinct)',
-                      icon: Users,
-                      color: '#6366f1',
-                    },
-                    {
-                      label: 'Avg Hrs / Tech / Week',
-                      value: staffingLoading ? '—' : staffing?.avgHrsPerTechPerWeek != null ? `${staffing.avgHrsPerTechPerWeek}h` : '—',
-                      sub: 'rolling 4-week scheduled',
-                      icon: Clock,
-                      color: '#0ea5e9',
-                    },
-                  ].map(s => {
-                    const Icon = s.icon;
-                    return (
-                      <div key={s.label} className="flex items-center gap-3" data-testid={`staffing-stat-${s.label.toLowerCase().replace(/[\s/]+/g, '-')}`}>
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${s.color}15` }}>
-                          <Icon className="w-4 h-4" style={{ color: s.color }} />
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-gray-800 leading-none">{s.value}</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">{s.label}</p>
-                          <p className="text-[10px] text-gray-300">{(s as any).sub}</p>
-                          {(s as any).extraNote && <p className="text-[9px] text-amber-500 font-medium mt-0.5">{(s as any).extraNote}</p>}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* ── Schedule Horizon (replaces Forward Booked) ── */}
+                {/* Schedule Horizon */}
+                <div className="flex flex-col justify-start gap-2">
                   {(() => {
                     const nextFive = trendData.filter(w => w.isFuture).slice(0, 5);
-                    if (!nextFive.length && !staffingLoading) return null;
                     const aboveThreshold = nextFive.filter(w => w.utilPct >= 70).length;
                     const gapWeeks = nextFive.filter(w => (w.visitCount ?? 0) === 0 && w.utilPct === 0).length;
-                    const summaryNote = staffingLoading ? null
-                      : nextFive.length === 0 ? 'No visits scheduled ahead'
-                      : `${aboveThreshold} of ${nextFive.length} weeks above 70%${gapWeeks > 0 ? ` · ${gapWeeks} gap week${gapWeeks > 1 ? 's' : ''}` : ''}`;
                     return (
                       <div data-testid="staffing-stat-schedule-horizon">
                         <div className="flex items-center gap-1.5 mb-1.5">
@@ -1173,30 +1309,26 @@ function CEOCommandCenterInner() {
                         ) : nextFive.length === 0 ? (
                           <p className="text-[10px] text-gray-300 italic">No upcoming visits synced</p>
                         ) : (
-                          <div className="flex gap-1">
-                            {nextFive.map((w, i) => {
-                              const hasVisits = (w.visitCount ?? 0) > 0 || w.utilPct > 0;
-                              const barColor = !hasVisits ? '#e5e7eb'
-                                : w.utilPct >= 90 ? '#ef4444'
-                                : w.utilPct >= 70 ? '#f59e0b'
-                                : '#10b981';
-                              const textColor = !hasVisits ? 'text-gray-300'
-                                : w.utilPct >= 90 ? 'text-red-600'
-                                : w.utilPct >= 70 ? 'text-amber-600'
-                                : 'text-emerald-600';
-                              return (
-                                <div key={i} className="flex flex-col items-center gap-0.5 w-9" data-testid={`horizon-week-${i}`} title={`${w.label}: ${w.utilPct}% utilization · ${w.scheduledHrs}h scheduled`}>
-                                  <div className="w-full rounded-t-sm" style={{ height: 28, backgroundColor: '#f3f4f6', position: 'relative' }}>
-                                    <div className="absolute bottom-0 left-0 right-0 rounded-t-sm transition-all" style={{ height: `${Math.min(w.utilPct, 100)}%`, backgroundColor: barColor, minHeight: hasVisits ? 3 : 0 }} />
+                          <>
+                            <div className="flex gap-1">
+                              {nextFive.map((w, i) => {
+                                const hasVisits = (w.visitCount ?? 0) > 0 || w.utilPct > 0;
+                                const barColor = !hasVisits ? '#e5e7eb' : w.utilPct >= 90 ? '#ef4444' : w.utilPct >= 70 ? '#f59e0b' : '#10b981';
+                                const textColor = !hasVisits ? 'text-gray-300' : w.utilPct >= 90 ? 'text-red-600' : w.utilPct >= 70 ? 'text-amber-600' : 'text-emerald-600';
+                                return (
+                                  <div key={i} className="flex flex-col items-center gap-0.5 w-9" data-testid={`horizon-week-${i}`} title={`${w.label}: ${w.utilPct}% · ${w.scheduledHrs}h scheduled`}>
+                                    <div className="w-full rounded-t-sm" style={{ height: 28, backgroundColor: '#f3f4f6', position: 'relative' }}>
+                                      <div className="absolute bottom-0 left-0 right-0 rounded-t-sm transition-all" style={{ height: `${Math.min(w.utilPct, 100)}%`, backgroundColor: barColor, minHeight: hasVisits ? 3 : 0 }} />
+                                    </div>
+                                    <p className={`text-[9px] font-bold leading-none ${textColor}`}>{hasVisits ? `${w.utilPct}%` : '—'}</p>
+                                    <p className="text-[8px] text-gray-300 leading-none">{w.label}</p>
                                   </div>
-                                  <p className={`text-[9px] font-bold leading-none ${textColor}`}>{hasVisits ? `${w.utilPct}%` : '—'}</p>
-                                  <p className="text-[8px] text-gray-300 leading-none">{w.label}</p>
-                                </div>
-                              );
-                            })}
-                          </div>
+                                );
+                              })}
+                            </div>
+                            <p className="text-[9px] text-gray-300 mt-1">{aboveThreshold} of {nextFive.length} wks above 70%{gapWeeks > 0 ? ` · ${gapWeeks} gap wk${gapWeeks > 1 ? 's' : ''}` : ''}</p>
+                          </>
                         )}
-                        {summaryNote && <p className="text-[9px] text-gray-300 mt-1">{summaryNote}</p>}
                         <p className="text-[8px] text-gray-200 mt-0.5">
                           <span className="inline-block w-1.5 h-1.5 rounded-sm bg-gray-200 mr-1 align-middle" />gap
                           <span className="inline-block w-1.5 h-1.5 rounded-sm bg-emerald-400 ml-2 mr-1 align-middle" />&lt;70%
@@ -1206,107 +1338,99 @@ function CEOCommandCenterInner() {
                       </div>
                     );
                   })()}
-                  {/* ── Labor stats from timesheets ── */}
+                  {/* Labor stats */}
                   {metrics?.labor?.hasData ? (
-                    <>
-                      <div className="border-t border-gray-100 pt-3 flex flex-col gap-2">
-                        <div className="flex items-center gap-2" data-testid="labor-stat-ot-rate">
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#f5910015' }}>
-                            <Zap className="w-4 h-4" style={{ color: '#f59100' }} />
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-gray-800 leading-none">{metrics.labor.overtimeRatePct ?? 0}%</p>
-                            <p className="text-[10px] text-gray-400 mt-0.5">OT Rate (30d)</p>
-                            <p className="text-[10px] text-gray-300">overtime / total hours</p>
-                          </div>
-                          {(metrics.labor.overtimeRatePct ?? 0) >= 15 && (
-                            <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700">High</span>
-                          )}
+                    <div className="border-t border-gray-100 pt-2 flex flex-col gap-2">
+                      <div className="flex items-center gap-2" data-testid="labor-stat-ot-rate">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#f5910015' }}>
+                          <Zap className="w-3.5 h-3.5" style={{ color: '#f59100' }} />
                         </div>
-                        <div className="flex items-center gap-2" data-testid="labor-stat-actual-vs-sched">
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#10b98115' }}>
-                            <Activity className="w-4 h-4" style={{ color: '#10b981' }} />
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-gray-800 leading-none">
-                              {metrics.labor.actualHrs4wk ?? 0}h <span className="text-gray-400 font-normal">/ {metrics.labor.scheduledHrs4wk ?? 0}h sched</span>
-                            </p>
-                            <p className="text-[10px] text-gray-400 mt-0.5">Actual vs Scheduled (4wk)</p>
-                            <p className="text-[10px] text-gray-300">from timesheet import</p>
-                          </div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-800 leading-none">{overtimeRatePct}%</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">OT Rate (30d)</p>
+                        </div>
+                        {overtimeRatePct >= hiringThresholds.otCritical && (
+                          <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-700">High</span>
+                        )}
+                        {overtimeRatePct >= hiringThresholds.otWarn && overtimeRatePct < hiringThresholds.otCritical && (
+                          <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700">Watch</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2" data-testid="labor-stat-actual-vs-sched">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#10b98115' }}>
+                          <Activity className="w-3.5 h-3.5" style={{ color: '#10b981' }} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-800 leading-none">{actualHrs4wk}h <span className="text-gray-400 font-normal">/ {scheduledHrs4wk}h</span></p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">Actual vs Sched (4wk)</p>
                         </div>
                       </div>
-                    </>
+                    </div>
                   ) : (
-                    <div className="border-t border-gray-100 pt-3">
-                      <p className="text-[10px] text-gray-300 italic">Upload a BuildOps timesheet CSV to see labor analytics</p>
+                    <div className="border-t border-gray-100 pt-2">
+                      <p className="text-[10px] text-gray-300 italic">Upload a timesheet CSV to see labor analytics</p>
                     </div>
                   )}
                 </div>
 
-                {/* ── Weekly trend chart ── */}
+                {/* Weekly trend chart */}
                 <div className="flex flex-col gap-2">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">Weekly Utilization</p>
-                    <p className="text-[9px] text-gray-300 mb-2">visit schedule · full-time techs only</p>
-                    <p className="text-[9px] text-gray-300 mb-2">
-                      <span className="inline-block w-2 h-2 rounded-sm bg-indigo-400 mr-1 align-middle" />past
-                      <span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 ml-2 mr-1 align-middle" />on track
-                      <span className="inline-block w-2 h-2 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />watch (≥70%)
-                      <span className="inline-block w-2 h-2 rounded-sm bg-red-400 ml-2 mr-1 align-middle" />hire (≥85%)
-                    </p>
-                    <p className="text-[8px] text-gray-200 mb-2">future weeks show scheduled visits only · subject to change</p>
-                    <div style={{ minHeight: 100 }}>
-                      {staffingLoading ? (
-                        <div className="h-24 bg-gray-50 rounded animate-pulse" />
-                      ) : trendData.length === 0 ? (
-                        <div className="h-24 flex flex-col items-center justify-center gap-1">
-                          <p className="text-[11px] text-gray-400">Sync visits to populate</p>
-                          <p className="text-[10px] text-gray-300">No BuildOps visits synced yet</p>
-                        </div>
-                      ) : (
-                        <ResponsiveContainer width="100%" height={110}>
-                          <BarChart data={trendData} margin={{ top: 2, right: 0, left: -20, bottom: 0 }} barSize={10}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
-                            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} interval={1} />
-                            <YAxis tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={v => `${v}%`} />
-                            <ReferenceLine y={85} stroke="#BE1916" strokeDasharray="4 2" strokeWidth={1} />
-                            <ReferenceLine y={70} stroke="#f59e0b" strokeDasharray="4 2" strokeWidth={1} />
-                            <Tooltip
-                              content={({ active, payload, label }) => {
-                                if (!active || !payload?.length) return null;
-                                const d = payload[0]?.payload as StaffingWeek;
-                                return (
-                                  <div className="bg-gray-900 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl space-y-1">
-                                    <p className="font-bold">{label} {d?.isFuture ? '(upcoming)' : '(past)'}</p>
-                                    <p>Utilization: <span className="font-semibold">{d?.utilPct ?? 0}%</span></p>
-                                    <p>Sched hrs: <span className="font-semibold">{d?.scheduledHrs}h</span></p>
-                                    <p>Active techs: <span className="font-semibold">{d?.techCount}</span></p>
-                                    {d?.visitCount != null && <p>Visits: <span className="font-semibold">{d.visitCount}</span></p>}
-                                  </div>
-                                );
-                              }}
-                            />
-                            <Bar dataKey="utilPct" radius={[3, 3, 0, 0]}>
-                              {trendData.map((entry, index) => {
-                                const fillColor = entry.isFuture
-                                  ? entry.utilPct >= 85 ? '#fca5a5'
-                                  : entry.utilPct >= 70 ? '#fcd34d'
-                                  : (entry.visitCount ?? 0) === 0 && entry.utilPct === 0 ? '#e5e7eb'
-                                  : '#6ee7b7'
-                                  : entry.utilPct >= 85 ? '#BE1916'
-                                  : entry.utilPct >= 70 ? '#f59e0b'
-                                  : '#818cf8';
-                                return <Cell key={`cell-${index}`} fill={fillColor} />;
-                              })}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      )}
-                    </div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">Weekly Utilization</p>
+                  <p className="text-[9px] text-gray-300 mb-1">
+                    <span className="inline-block w-2 h-2 rounded-sm bg-indigo-400 mr-1 align-middle" />past
+                    <span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 ml-2 mr-1 align-middle" />on track
+                    <span className="inline-block w-2 h-2 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />watch
+                    <span className="inline-block w-2 h-2 rounded-sm bg-red-400 ml-2 mr-1 align-middle" />critical
+                  </p>
+                  <div style={{ minHeight: 100 }}>
+                    {staffingLoading ? (
+                      <div className="h-24 bg-gray-50 rounded animate-pulse" />
+                    ) : trendData.length === 0 ? (
+                      <div className="h-24 flex flex-col items-center justify-center gap-1">
+                        <p className="text-[11px] text-gray-400">Sync visits to populate</p>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={110}>
+                        <BarChart data={trendData} margin={{ top: 2, right: 0, left: -20, bottom: 0 }} barSize={10}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
+                          <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} interval={1} />
+                          <YAxis tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                          <ReferenceLine y={hiringThresholds.utilCritical} stroke="#BE1916" strokeDasharray="4 2" strokeWidth={1} />
+                          <ReferenceLine y={hiringThresholds.utilWarn} stroke="#f59e0b" strokeDasharray="4 2" strokeWidth={1} />
+                          <Tooltip
+                            content={({ active, payload, label }) => {
+                              if (!active || !payload?.length) return null;
+                              const d = payload[0]?.payload as StaffingWeek;
+                              return (
+                                <div className="bg-gray-900 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl space-y-1">
+                                  <p className="font-bold">{label} {d?.isFuture ? '(upcoming)' : '(past)'}</p>
+                                  <p>Utilization: <span className="font-semibold">{d?.utilPct ?? 0}%</span></p>
+                                  <p>Sched hrs: <span className="font-semibold">{d?.scheduledHrs}h</span></p>
+                                  <p>Active techs: <span className="font-semibold">{d?.techCount}</span></p>
+                                  {d?.visitCount != null && <p>Visits: <span className="font-semibold">{d.visitCount}</span></p>}
+                                </div>
+                              );
+                            }}
+                          />
+                          <Bar dataKey="utilPct" radius={[3, 3, 0, 0]}>
+                            {trendData.map((entry, index) => {
+                              const fillColor = entry.isFuture
+                                ? entry.utilPct >= hiringThresholds.utilCritical ? '#fca5a5'
+                                : entry.utilPct >= hiringThresholds.utilWarn ? '#fcd34d'
+                                : (entry.visitCount ?? 0) === 0 && entry.utilPct === 0 ? '#e5e7eb'
+                                : '#6ee7b7'
+                                : entry.utilPct >= hiringThresholds.utilCritical ? '#BE1916'
+                                : entry.utilPct >= hiringThresholds.utilWarn ? '#f59e0b'
+                                : '#818cf8';
+                              return <Cell key={`cell-${index}`} fill={fillColor} />;
+                            })}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
 
-                  {/* ── Tech Workload Drill-Down ── */}
+                  {/* Tech Workload Drill-Down */}
                   <div className="border-t border-gray-100 pt-2">
                     <button
                       onClick={() => { setShowCrewDrilldown(!showCrewDrilldown); setCrewWeekOffset(0); }}
@@ -1318,7 +1442,6 @@ function CEOCommandCenterInner() {
                     </button>
                     {showCrewDrilldown && (
                       <div className="mt-2">
-                        {/* Week nav */}
                         <div className="flex items-center gap-2 mb-2">
                           <button onClick={() => setCrewWeekOffset(o => o - 1)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400" data-testid="crew-week-prev">
                             <ChevronLeft className="w-3.5 h-3.5" />
@@ -1356,7 +1479,7 @@ function CEOCommandCenterInner() {
                                         {t.otHrs > 0 && <span className="text-amber-500 ml-0.5">•&nbsp;{t.otHrs}&nbsp;OT</span>}
                                       </span>
                                     ) : (
-                                      <span className="text-gray-400" title="scheduled hours (no timesheet data for this week)">{t.scheduledHrs}h <span className="text-[8px]">sched</span></span>
+                                      <span className="text-gray-400" title="scheduled hours (no timesheet data)">{t.scheduledHrs}h <span className="text-[8px]">sched</span></span>
                                     )}
                                   </div>
                                   <div className="text-[10px] text-gray-400 w-6 text-right flex-shrink-0">{t.visitCount}v</div>
@@ -1369,7 +1492,7 @@ function CEOCommandCenterInner() {
                     )}
                   </div>
 
-                  {/* ── Labor Cost Spark (from timesheets) ── */}
+                  {/* Labor Cost Spark */}
                   {metrics?.labor?.hasData && (metrics.labor.laborCostSpark?.length ?? 0) > 0 ? (
                     <div className="border-t border-gray-100 pt-2">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
@@ -1396,12 +1519,125 @@ function CEOCommandCenterInner() {
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
-                  ) : (
-                    <div className="border-t border-gray-100 pt-2">
-                      <p className="text-[10px] text-gray-300">Upload a timesheet CSV to see labor cost trend</p>
-                    </div>
-                  )}
+                  ) : null}
                 </div>
+              </div>
+
+              {/* ── 5. Settings Panel ── */}
+              <div className="border-t border-gray-100 pt-3 mt-3">
+                <button
+                  onClick={() => setShowHiringSettings(v => !v)}
+                  className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700 transition-colors"
+                  data-testid="btn-hiring-settings"
+                >
+                  {showHiringSettings ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  <Settings2 className="w-3 h-3" />
+                  Adjust Thresholds
+                </button>
+                {showHiringSettings && (
+                  <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3" data-testid="hiring-settings-panel">
+                    {([
+                      { key: 'utilWarn', label: 'Utilization Warn (%)', min: 50, max: 99 },
+                      { key: 'utilCritical', label: 'Utilization Critical (%)', min: 50, max: 100 },
+                      { key: 'fwdWarn', label: 'Forward Booked Warn (wks)', min: 1, max: 10 },
+                      { key: 'fwdCritical', label: 'Forward Booked Critical (wks)', min: 1, max: 12 },
+                      { key: 'otWarn', label: 'OT Rate Warn (%)', min: 0, max: 30 },
+                      { key: 'otCritical', label: 'OT Rate Critical (%)', min: 0, max: 50 },
+                      { key: 'weeksRequired', label: 'Weeks Required to Escalate', min: 1, max: 4 },
+                    ] as Array<{ key: keyof typeof hiringThresholds; label: string; min: number; max: number }>).map(({ key, label, min, max }) => (
+                      <div key={key} className="flex items-center justify-between gap-2">
+                        <label className="text-[10px] text-gray-500 flex-1">{label}</label>
+                        <input
+                          type="number"
+                          min={min}
+                          max={max}
+                          value={hiringThresholds[key]}
+                          onChange={e => setHiringThresholds({ ...hiringThresholds, [key]: Number(e.target.value) })}
+                          className="w-16 text-center text-[11px] font-semibold border border-gray-200 rounded px-1 py-0.5 focus:outline-none focus:border-indigo-400"
+                          data-testid={`input-threshold-${key}`}
+                        />
+                      </div>
+                    ))}
+                    <div className="col-span-2 mt-1">
+                      <button
+                        onClick={() => resetHiringThresholds()}
+                        className="text-[10px] text-indigo-500 hover:text-indigo-700 font-semibold transition-colors"
+                        data-testid="btn-reset-thresholds"
+                      >
+                        Reset to defaults
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── 6. Scenario Calculator ── */}
+              <div className="border-t border-gray-100 pt-3 mt-1">
+                <button
+                  onClick={() => setShowScenario(v => !v)}
+                  className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700 transition-colors"
+                  data-testid="btn-scenario-calculator"
+                >
+                  {showScenario ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  What-If Scenarios
+                </button>
+                {showScenario && (
+                  <div className="mt-3" data-testid="scenario-calculator-panel">
+                    <p className="text-[10px] text-gray-400 mb-2">Projected utilization and status after applying each scenario. No data is saved.</p>
+                    <div className="flex flex-wrap gap-2">
+                      {scenarios.map(s => {
+                        const projected = applyScenario(rollingAvgUtilization, baseTechCount, s.deltaTechs, s.deltaWork);
+                        const projectedScores = scoreSignals(
+                          { rollingAvgUtilization: projected, forwardBookedWeeks, overtimeRatePct, actualHrs4wk, scheduledHrs4wk, weeks: trendData },
+                          hiringThresholds
+                        );
+                        const projCfg = levelConfig[projectedScores.overall];
+                        return (
+                          <div key={s.label} className="flex flex-col items-center gap-0.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 min-w-[90px]" data-testid={`scenario-${s.label.replace(/\s+/g, '-').toLowerCase()}`}>
+                            <span className="text-[10px] font-semibold text-gray-600">{s.label}</span>
+                            <span className="text-base font-black text-gray-800">{projected}%</span>
+                            <span className={`text-[9px] font-bold border rounded-full px-2 py-0.5 mt-0.5 ${projCfg.pill}`}>{projCfg.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── 7. Supporting Indicators (Stubs) ── */}
+              <div className="border-t border-gray-100 pt-3 mt-1">
+                <button
+                  onClick={() => setShowStubs(v => !v)}
+                  className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700 transition-colors"
+                  data-testid="btn-supporting-indicators"
+                >
+                  {showStubs ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  <Package className="w-3 h-3" />
+                  Supporting Indicators
+                </button>
+                {showStubs && (
+                  <div className="mt-3 grid grid-cols-3 gap-2" data-testid="supporting-indicators-panel">
+                    {/* TODO: connect to real data source — sold-but-not-scheduled pipeline hours */}
+                    <div className="border border-dashed border-gray-300 rounded-lg px-3 py-2 flex flex-col gap-1">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Sold, Not Scheduled</p>
+                      <p className="text-[11px] text-gray-300 italic">No data yet</p>
+                      <p className="text-[9px] text-gray-200">Hours sold but not yet placed on calendar. Future: connect to BuildOps job pipeline.</p>
+                    </div>
+                    {/* TODO: connect to real data source — pipeline uplift toggle */}
+                    <div className="border border-dashed border-gray-300 rounded-lg px-3 py-2 flex flex-col gap-1">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Pipeline Uplift</p>
+                      <p className="text-[11px] text-gray-300 italic">Stub toggle</p>
+                      <p className="text-[9px] text-gray-200">Adds a configurable % uplift to forward demand for scenario modeling. Future: read from CRM pipeline.</p>
+                    </div>
+                    {/* TODO: connect to real data source — service vs project split from BuildOps job type */}
+                    <div className="border border-dashed border-gray-300 rounded-lg px-3 py-2 flex flex-col gap-1">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Service / Project Split</p>
+                      <p className="text-[11px] text-gray-600 font-semibold">~70% / 30%</p>
+                      <p className="text-[9px] text-gray-200">Mocked ratio. Future: read from BuildOps job type flag when reliably populated.</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           );
