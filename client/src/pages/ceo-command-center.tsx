@@ -15,7 +15,6 @@ import {
   computePersistence,
   buildRecommendationReasons,
   applyScenario,
-  DEFAULT_HIRING_THRESHOLDS,
   type HiringLevel,
 } from "@/lib/hiringEngine";
 import {
