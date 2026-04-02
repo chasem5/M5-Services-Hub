@@ -1515,7 +1515,7 @@ function CEOCommandCenterInner() {
                       <>
                         <Upload className="w-6 h-6 text-gray-300" />
                         <p className="text-sm font-semibold text-gray-500">Drop Excel or CSV here</p>
-                        <p className="text-xs text-gray-400">.xlsx, .csv — max 25 MB · Jobs, Visits, Invoices, SAs & Timesheets auto-detected</p>
+                        <p className="text-xs text-gray-400">.xlsx, .csv — max 25 MB · Jobs, Visits, Invoices, SAs, Timesheets, Job Margin auto-detected · others logged</p>
                         <button data-testid="button-browse-files" className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-100 transition-all">
                           Browse files
                         </button>
