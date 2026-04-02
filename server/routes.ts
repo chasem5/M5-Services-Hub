@@ -6102,6 +6102,30 @@ Respond with this JSON:
     }
   });
 
+  // ── BuildOps Employees — list all + update employment type ───────────────
+  app.get("/api/buildops/employees", isAuthenticated, requireRole(["super_admin"]), async (_req, res) => {
+    try {
+      const emps = await storage.getAllBuildOpsEmployees();
+      res.json(emps);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/buildops/employees/:id", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { employmentType } = req.body as { employmentType: string };
+      if (!["full_time", "part_time"].includes(employmentType)) {
+        return res.status(400).json({ message: "employmentType must be full_time or part_time" });
+      }
+      const emp = await storage.updateBuildOpsEmployeeType(id, employmentType);
+      res.json(emp);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ── BuildOps Employee API Diagnostic ─────────────────────────────────────
   app.get("/api/buildops/diagnose-employees", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     try {
@@ -10627,6 +10651,12 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
 
+      // Fetch part-time employee names for capacity exclusion
+      const ptRows = await db.execute(sql`
+        SELECT LOWER(TRIM(name)) AS name FROM buildops_employees WHERE employment_type = 'part_time'
+      `);
+      const partTimeNames = new Set((ptRows.rows as any[]).map(r => r.name as string));
+
       // Per-week utilization: past 10 weeks + next 5 weeks (covers historical trend + forward booking)
       const weekRows = await db.execute(sql`
         SELECT
@@ -10634,7 +10664,8 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           TO_CHAR(date_trunc('week', scheduled_for), 'Mon DD') AS week_label,
           COUNT(*) AS visit_count,
           COALESCE(SUM(minimum_duration_mins), 0) AS total_scheduled_mins,
-          COUNT(DISTINCT primary_tech_name) FILTER (WHERE primary_tech_name IS NOT NULL AND primary_tech_name <> '') AS tech_count
+          COUNT(DISTINCT primary_tech_name) FILTER (WHERE primary_tech_name IS NOT NULL AND primary_tech_name <> '') AS tech_count,
+          array_agg(DISTINCT LOWER(TRIM(primary_tech_name))) FILTER (WHERE primary_tech_name IS NOT NULL AND primary_tech_name <> '') AS tech_names
         FROM buildops_visits
         WHERE scheduled_for >= NOW() - INTERVAL '10 weeks'
           AND scheduled_for < NOW() + INTERVAL '5 weeks'
@@ -10647,9 +10678,13 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const MINS_PER_TECH_PER_WEEK = 40 * 60; // 40-hour work week
 
       const allWeeks = (weekRows.rows as any[]).map(r => {
-        const techCount = parseInt(r.tech_count) || 1;
+        const techCount = parseInt(r.tech_count) || 0;
+        const techNames: string[] = r.tech_names ?? [];
+        // Capacity is based only on full-time techs active that week
+        const fullTimeTechCount = techNames.filter(n => !partTimeNames.has(n)).length || techCount;
+        const partTimeTechCount = techNames.filter(n => partTimeNames.has(n)).length;
         const scheduledMins = parseFloat(r.total_scheduled_mins) || 0;
-        const capacity = techCount * MINS_PER_TECH_PER_WEEK;
+        const capacity = fullTimeTechCount * MINS_PER_TECH_PER_WEEK;
         const utilPct = capacity > 0 ? Math.round((scheduledMins / capacity) * 100) : 0;
         const scheduledHrs = Math.round(scheduledMins / 60 * 10) / 10;
         const weekStart = new Date(r.week_start);
@@ -10662,6 +10697,8 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           scheduledMins,
           scheduledHrs,
           techCount,
+          fullTimeTechCount,
+          partTimeTechCount,
           utilPct,
           isFuture,
         };
@@ -10683,12 +10720,13 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
 
       const avgHrsPerTechPerWeek = rolling4.length > 0
         ? Math.round(
-            rolling4.reduce((sum, w) => sum + (w.techCount > 0 ? w.scheduledMins / w.techCount / 60 : 0), 0) / rolling4.length * 10
+            rolling4.reduce((sum, w) => sum + (w.fullTimeTechCount > 0 ? w.scheduledMins / w.fullTimeTechCount / 60 : 0), 0) / rolling4.length * 10
           ) / 10
         : null;
 
-      // Active tech count: distinct techs this week
-      const activeTechCount = currentWeek?.techCount ?? 0;
+      // Active tech count: distinct techs this week (full-time only for capacity)
+      const activeTechCount = currentWeek?.fullTimeTechCount ?? 0;
+      const partTimeTechCount = currentWeek?.partTimeTechCount ?? 0;
 
       // Forward booked: consecutive weeks from next week that have visits scheduled
       // (stops counting when it hits the first empty week — shows how solid the near-term pipeline is)
@@ -10716,6 +10754,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
 
       res.json({
         techCount: activeTechCount,
+        partTimeTechCount,
         currentWeekUtilization: currentWeek?.utilPct ?? null,
         rollingAvgUtilization: rollingAvgUtil,
         avgHrsPerTechPerWeek,
@@ -10740,21 +10779,23 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const weekOffset = parseInt((req.query.weekOffset as string) ?? "0");
       const weekRows = await db.execute(sql`
         SELECT
-          primary_tech_name AS tech_name,
+          v.primary_tech_name AS tech_name,
           COUNT(*) AS visit_count,
-          COALESCE(SUM(minimum_duration_mins), 0) AS scheduled_mins,
-          ROUND(COALESCE(SUM(minimum_duration_mins), 0) / 60.0, 1) AS scheduled_hrs,
-          COUNT(CASE WHEN status = 'Complete' THEN 1 END) AS completed,
-          COUNT(CASE WHEN status = 'Scheduled' THEN 1 END) AS upcoming,
-          array_agg(DISTINCT department_name) FILTER (WHERE department_name IS NOT NULL) AS departments
-        FROM buildops_visits
-        WHERE scheduled_for >= date_trunc('week', NOW()) + (${weekOffset} * INTERVAL '1 week')
-          AND scheduled_for < date_trunc('week', NOW()) + ((${weekOffset} + 1) * INTERVAL '1 week')
-          AND status NOT IN ('Canceled', 'Cancelled', 'Dismissed')
-          AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
-          AND primary_tech_name IS NOT NULL
-          AND primary_tech_name <> ''
-        GROUP BY primary_tech_name
+          COALESCE(SUM(v.minimum_duration_mins), 0) AS scheduled_mins,
+          ROUND(COALESCE(SUM(v.minimum_duration_mins), 0) / 60.0, 1) AS scheduled_hrs,
+          COUNT(CASE WHEN v.status = 'Complete' THEN 1 END) AS completed,
+          COUNT(CASE WHEN v.status = 'Scheduled' THEN 1 END) AS upcoming,
+          array_agg(DISTINCT v.department_name) FILTER (WHERE v.department_name IS NOT NULL) AS departments,
+          COALESCE(MAX(CASE WHEN be.employment_type = 'part_time' THEN 1 ELSE 0 END), 0) AS is_part_time
+        FROM buildops_visits v
+        LEFT JOIN buildops_employees be ON LOWER(TRIM(be.name)) = LOWER(TRIM(v.primary_tech_name))
+        WHERE v.scheduled_for >= date_trunc('week', NOW()) + (${weekOffset} * INTERVAL '1 week')
+          AND v.scheduled_for < date_trunc('week', NOW()) + ((${weekOffset} + 1) * INTERVAL '1 week')
+          AND v.status NOT IN ('Canceled', 'Cancelled', 'Dismissed')
+          AND (v.department_name NOT IN ('Bay Area', 'Sacramento') OR v.department_name IS NULL)
+          AND v.primary_tech_name IS NOT NULL
+          AND v.primary_tech_name <> ''
+        GROUP BY v.primary_tech_name
         ORDER BY scheduled_mins DESC
       `);
       const techs = (weekRows.rows as any[]).map(r => ({
@@ -10765,6 +10806,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         completed: parseInt(r.completed) || 0,
         upcoming: parseInt(r.upcoming) || 0,
         departments: r.departments ?? [],
+        isPartTime: parseInt(r.is_part_time) === 1,
       }));
       res.json({ techs, weekOffset });
     } catch (err: any) {

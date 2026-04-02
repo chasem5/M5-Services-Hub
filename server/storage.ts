@@ -430,6 +430,8 @@ export interface IStorage {
   getBuildOpsRepsForMatching(): Promise<{ buildopsId: string; name: string; email: string | null }[]>;
   upsertBuildOpsEmployees(employees: { buildopsId: string; name: string; email: string | null; phone: string | null; title: string | null; isActive: boolean }[]): Promise<{ created: number; updated: number }>;
   updateUserBuildopsRep(userId: string, buildopsRepId: string | null): Promise<User>;
+  getAllBuildOpsEmployees(): Promise<BuildopsEmployee[]>;
+  updateBuildOpsEmployeeType(id: number, employmentType: string): Promise<BuildopsEmployee>;
 
   // Bulk Operations
   deleteBulkClients(ids: number[]): Promise<void>;
@@ -1764,6 +1766,8 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`ALTER TABLE leads ADD COLUMN IF NOT EXISTS won_at timestamp`);
       // Backfill won_at for existing won leads using updated_at as fallback
       await db.execute(sql`UPDATE leads SET won_at = updated_at WHERE stage = 'won' AND won_at IS NULL`);
+      // Employment type for techs — used to exclude part-time contracted staff from capacity calculations
+      await db.execute(sql`ALTER TABLE buildops_employees ADD COLUMN IF NOT EXISTS employment_type varchar NOT NULL DEFAULT 'full_time'`);
     } catch (e) {
       console.error("migrateBuildopsPropertyColumns error:", e);
     }
@@ -3054,6 +3058,19 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning();
     return user;
+  }
+
+  async getAllBuildOpsEmployees(): Promise<BuildopsEmployee[]> {
+    return db.select().from(buildopsEmployees).orderBy(buildopsEmployees.name);
+  }
+
+  async updateBuildOpsEmployeeType(id: number, employmentType: string): Promise<BuildopsEmployee> {
+    const [emp] = await db
+      .update(buildopsEmployees)
+      .set({ employmentType })
+      .where(eq(buildopsEmployees.id, id))
+      .returning();
+    return emp;
   }
 
   // Bulk Operations

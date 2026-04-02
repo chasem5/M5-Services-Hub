@@ -902,6 +902,7 @@ export const buildopsEmployees = pgTable("buildops_employees", {
   phone: varchar("phone"),
   title: varchar("title"),
   isActive: boolean("is_active").default(true),
+  employmentType: varchar("employment_type").default("full_time").notNull(),
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
 });
 export type BuildopsEmployee = typeof buildopsEmployees.$inferSelect;

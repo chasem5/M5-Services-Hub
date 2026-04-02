@@ -231,6 +231,24 @@ function BuildOpsPanel() {
     onError: (err: any) => toast({ title: "Employee sync failed", description: err.message, variant: "destructive" }),
   });
 
+  const { data: buildopsEmployeeList, isLoading: employeesLoading } = useQuery<any[]>({
+    queryKey: ["/api/buildops/employees"],
+    staleTime: 60 * 1000,
+  });
+
+  const updateEmployeeTypeMutation = useMutation({
+    mutationFn: async ({ id, employmentType }: { id: number; employmentType: string }) => {
+      const res = await apiRequest("PATCH", `/api/buildops/employees/${id}`, { employmentType });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/employees"] });
+      toast({ title: "Employment type updated" });
+    },
+    onError: (err: any) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+  });
+
   const [diagResult, setDiagResult] = useState<any>(null);
   const diagnoseMutation = useMutation({
     mutationFn: async () => {
@@ -525,6 +543,49 @@ function BuildOpsPanel() {
                 {syncRepresentativesMutation.isPending ? "Syncing..." : "Sync Employees"}
               </Button>
             </div>
+            {/* ── Employee Capacity Type Management ── */}
+            {buildopsEmployeeList && buildopsEmployeeList.length > 0 && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-medium flex items-center gap-2">
+                    <Users className="h-4 w-4 text-primary" />
+                    Capacity Type
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Mark employees as part-time to exclude them from the utilization capacity denominator on the CEO dashboard.
+                    Part-time techs still appear in the workload drill-down but don't count toward the 40h/week capacity total.
+                  </p>
+                </div>
+                {employeesLoading ? (
+                  <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {buildopsEmployeeList.map((emp: any) => (
+                      <div key={emp.id} className="flex items-center justify-between gap-3 py-1.5 border-b border-muted last:border-0">
+                        <div>
+                          <p className="text-sm font-medium">{emp.name}</p>
+                          {emp.title && <p className="text-xs text-muted-foreground">{emp.title}</p>}
+                        </div>
+                        <Select
+                          value={emp.employmentType ?? "full_time"}
+                          onValueChange={(val) => updateEmployeeTypeMutation.mutate({ id: emp.id, employmentType: val })}
+                          disabled={updateEmployeeTypeMutation.isPending}
+                        >
+                          <SelectTrigger className="w-32 h-7 text-xs" data-testid={`select-emp-type-${emp.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="full_time">Full-time</SelectItem>
+                            <SelectItem value="part_time">Part-time</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="border rounded-lg p-4 space-y-2">
               <h4 className="text-sm font-medium flex items-center gap-2">
                 <Search className="h-4 w-4 text-primary" />

@@ -69,6 +69,7 @@ function fmtChange(pct: number, unit = "%") {
 interface StaffingWeek { label: string; utilPct: number; scheduledHrs: number; techCount: number; isFuture: boolean; }
 interface StaffingMetrics {
   techCount: number;
+  partTimeTechCount: number;
   currentWeekUtilization: number | null;
   rollingAvgUtilization: number | null;
   avgHrsPerTechPerWeek: number | null;
@@ -82,6 +83,7 @@ interface CrewTech {
   techName: string;
   visitCount: number;
   scheduledMins: number;
+  isPartTime: boolean;
   scheduledHrs: number;
   completed: number;
   upcoming: number;
@@ -1058,6 +1060,9 @@ function CEOCommandCenterInner() {
                     {
                       label: 'Active Techs',
                       value: staffingLoading ? '—' : staffing?.techCount != null ? String(staffing.techCount) : '—',
+                      extraNote: !staffingLoading && (staffing?.partTimeTechCount ?? 0) > 0
+                        ? `+ ${staffing!.partTimeTechCount} part-time excluded from capacity`
+                        : undefined,
                       sub: 'this week (distinct)',
                       icon: Users,
                       color: '#6366f1',
@@ -1088,7 +1093,8 @@ function CEOCommandCenterInner() {
                         <div>
                           <p className="text-xs font-bold text-gray-800 leading-none">{s.value}</p>
                           <p className="text-[10px] text-gray-400 mt-0.5">{s.label}</p>
-                          <p className="text-[10px] text-gray-300">{s.sub}</p>
+                          <p className="text-[10px] text-gray-300">{(s as any).sub}</p>
+                          {(s as any).extraNote && <p className="text-[9px] text-amber-500 font-medium mt-0.5">{(s as any).extraNote}</p>}
                         </div>
                       </div>
                     );
@@ -1222,9 +1228,12 @@ function CEOCommandCenterInner() {
                               const barPct = Math.min((t.scheduledHrs / maxHrs) * 100, 100);
                               return (
                                 <div key={t.techName} className="flex items-center gap-2" data-testid={`crew-tech-${t.techName}`}>
-                                  <div className="w-20 text-[10px] text-gray-700 font-medium truncate flex-shrink-0">{t.techName.split(' ')[0]}</div>
+                                  <div className="w-20 flex-shrink-0">
+                                    <div className="text-[10px] text-gray-700 font-medium truncate">{t.techName.split(' ')[0]}</div>
+                                    {t.isPartTime && <div className="text-[9px] text-amber-500 font-semibold leading-tight">part-time</div>}
+                                  </div>
                                   <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                                    <div className="h-2 rounded-full bg-indigo-400" style={{ width: `${barPct}%` }} />
+                                    <div className={`h-2 rounded-full ${t.isPartTime ? 'bg-amber-300' : 'bg-indigo-400'}`} style={{ width: `${barPct}%` }} />
                                   </div>
                                   <div className="text-[10px] text-gray-500 w-10 text-right flex-shrink-0">{t.scheduledHrs}h</div>
                                   <div className="text-[10px] text-gray-400 w-6 text-right flex-shrink-0">{t.visitCount}v</div>
