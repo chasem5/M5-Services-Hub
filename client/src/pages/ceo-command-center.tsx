@@ -700,7 +700,7 @@ function CEOCommandCenterInner() {
                 up: (opsKpis?.utilizationRate.value ?? 0) >= 70,
                 icon: Activity, color: "#3b82f6",
                 tip: opsKpis?.utilizationRate.source === 'timesheets'
-                  ? "Actual hours worked ÷ scheduled hours (from timesheet import, last 4 weeks). Measures how fully the crew's booked time was used. Target: 85%+."
+                  ? "Actual hours worked ÷ scheduled hours (from timesheet import, last 4 weeks). Proxy for labor efficiency when per-visit duration data is unavailable. Target: 85%+."
                   : opsKpis?.utilizationRate.source === 'visits'
                   ? "Actual visit duration ÷ minimum expected visit duration (per-visit average). Measures job execution efficiency — not crew load. Target: 85%+."
                   : "Requires timesheets or BuildOps visits with duration data. Import a timesheet CSV to populate.",
