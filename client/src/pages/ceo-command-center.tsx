@@ -867,7 +867,7 @@ function CEOCommandCenterInner() {
             <div className="flex items-center justify-between mb-1">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">AR Outstanding</p>
-                <p className="text-[9px] text-gray-400 normal-case">Sparkline = invoices billed per period (by issue date)</p>
+                <p className="text-[9px] text-gray-400 normal-case">Balance from BuildOps payment data · Sparkline = billed per period</p>
               </div>
               <Activity className="w-3.5 h-3.5 text-gray-300" />
             </div>

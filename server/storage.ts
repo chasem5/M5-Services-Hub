@@ -1599,6 +1599,15 @@ export class DatabaseStorage implements IStorage {
     } catch (e) {
       console.error("migrateBuildopsVisitsAndExtendedFields: invoice columns error:", e);
     }
+    // Payment data columns (Task #106)
+    try {
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS total_amount_paid numeric(12,2)`);
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS adjustment_amount numeric(12,2)`);
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS outstanding_balance numeric(12,2)`);
+      await db.execute(sql`ALTER TABLE buildops_invoices ADD COLUMN IF NOT EXISTS last_payment_date timestamp`);
+    } catch (e) {
+      console.error("migrateBuildopsVisitsAndExtendedFields: invoice payment columns error:", e);
+    }
     // buildops_visits table (Task #99)
     try {
       await db.execute(sql`

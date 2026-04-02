@@ -777,6 +777,11 @@ export const buildopsInvoices = pgTable("buildops_invoices", {
   daysPastDue: integer("days_past_due"),
   paymentTermName: varchar("payment_term_name"),
   serviceAgreementNumber: varchar("service_agreement_number"),
+  // Payment data (from BuildOps invoice export CSV)
+  totalAmountPaid: decimal("total_amount_paid", { precision: 12, scale: 2 }),
+  adjustmentAmount: decimal("adjustment_amount", { precision: 12, scale: 2 }),
+  outstandingBalance: decimal("outstanding_balance", { precision: 12, scale: 2 }),
+  lastPaymentDate: timestamp("last_payment_date"),
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
 });
 export type BuildopsInvoice = typeof buildopsInvoices.$inferSelect;

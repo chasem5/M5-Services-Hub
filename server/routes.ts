@@ -9731,6 +9731,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           const totalAmount = fNum(row, "total amount", "amount");
           const subtotal = fNum(row, "subtotal");
           const taxAmount = fNum(row, "tax amount", "tax");
+          // Payment columns (BuildOps invoice export with payment data)
+          const totalAmountPaid = fNum(row, "total amount paid");
+          const adjustmentAmount = fNum(row, "adjustment amount");
+          const outstandingBalance = fNum(row, "outstanding balance");
+          const lastPaymentDate = fDate(row, "last payment time local", "payment date");
           const customerName = billingCustomerName;
 
           const existing = await db.execute(sql`
@@ -9753,6 +9758,10 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 days_past_due = COALESCE(${daysPastDue}, days_past_due),
                 payment_term_name = COALESCE(${paymentTermName}, payment_term_name),
                 service_agreement_number = COALESCE(${saNumber}, service_agreement_number),
+                total_amount_paid = ${totalAmountPaid},
+                adjustment_amount = ${adjustmentAmount},
+                outstanding_balance = ${outstandingBalance},
+                last_payment_date = ${lastPaymentDate},
                 synced_at = NOW()
               WHERE invoice_number = ${invoiceNumber}
             `);
@@ -9765,18 +9774,25 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
                 customer_name, job_number,
                 issued_date, due_date, closed_date,
                 department_name, days_past_due, payment_term_name,
-                service_agreement_number, synced_at
+                service_agreement_number,
+                total_amount_paid, adjustment_amount, outstanding_balance, last_payment_date,
+                synced_at
               ) VALUES (
                 ${'inv-' + invoiceNumber}, ${invoiceNumber}, ${status},
                 ${totalAmount}, ${subtotal}, ${taxAmount},
                 ${customerName}, ${jobNumber},
                 ${issuedDate}, ${dueDate}, ${closedDate},
                 ${departmentName}, ${daysPastDue}, ${paymentTermName},
-                ${saNumber}, NOW()
+                ${saNumber},
+                ${totalAmountPaid}, ${adjustmentAmount}, ${outstandingBalance}, ${lastPaymentDate},
+                NOW()
               ) ON CONFLICT (buildops_id) DO UPDATE SET
                 status = EXCLUDED.status,
                 total_amount = EXCLUDED.total_amount,
                 issued_date = EXCLUDED.issued_date,
+                total_amount_paid = EXCLUDED.total_amount_paid,
+                outstanding_balance = EXCLUDED.outstanding_balance,
+                last_payment_date = EXCLUDED.last_payment_date,
                 synced_at = NOW()
             `);
             inserted++;
@@ -10273,23 +10289,27 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const qcrMonthly = fillBuckets(qcrRaw, allBuckets);
 
       // ── AR Outstanding: unpaid invoices aged by days past due ─────────────────
-      // Status-based: exported/posted = outstanding balance. Not filtered by closed_date
-      // because BuildOps doesn't populate closed_date when invoices are paid (payment
-      // data lives in QuickBooks). Status alone is the reliable indicator.
+      // Primary: use outstanding_balance > 0 when available (populated from BuildOps
+      // invoice export CSV which includes payment data). This is the accurate measure.
+      // Fallback: for invoices without payment data (outstanding_balance IS NULL),
+      // fall back to status-based filter (exported/posted = likely outstanding).
       const arRows = await db.execute(sql`
         SELECT
-          total_amount,
+          COALESCE(outstanding_balance, total_amount) AS amt,
           issued_date,
           due_date,
           EXTRACT(EPOCH FROM (NOW() - COALESCE(due_date, issued_date + INTERVAL '30 days'))) / 86400 AS days_past_due
         FROM buildops_invoices
-        WHERE LOWER(status) IN ('exported', 'posted')
-          AND total_amount IS NOT NULL
-          AND CAST(total_amount AS DECIMAL) > 0
+        WHERE (
+          (outstanding_balance IS NOT NULL AND CAST(outstanding_balance AS DECIMAL) > 0)
+          OR
+          (outstanding_balance IS NULL AND LOWER(status) IN ('exported', 'posted')
+            AND total_amount IS NOT NULL AND CAST(total_amount AS DECIMAL) > 0)
+        )
       `);
       let bucket030 = 0, bucket3060 = 0, bucket6090 = 0, bucket90plus = 0;
       for (const r of arRows.rows as any[]) {
-        const amt = parseFloat(r.total_amount) || 0;
+        const amt = parseFloat(r.amt) || 0;
         const dpd = parseFloat(r.days_past_due) || 0;
         if (dpd <= 0) { /* not yet due — skip or put in 0-30 */ bucket030 += amt; }
         else if (dpd <= 30) bucket030 += amt;
