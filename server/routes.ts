@@ -9998,12 +9998,12 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
             CAST(total_amount AS DECIMAL)
           )) AS backlog_value
         FROM buildops_jobs j
-        WHERE j.status IN ('Approved', 'In Progress', 'Scheduled', 'Active', 'Open')
+        WHERE j.status IN ('Approved', 'Won', 'In Progress', 'Scheduled', 'Active', 'Open')
           AND j.department NOT IN ('Bay Area', 'Sacramento')
           AND NOT EXISTS (
             SELECT 1 FROM buildops_visits v
             WHERE v.buildops_job_id = j.buildops_id
-              AND v.status IN ('Submitted', 'Completed', 'Approved')
+              AND LOWER(v.status) = 'completed'
           )
       `);
       const bRow = backlogRows.rows[0] as any;

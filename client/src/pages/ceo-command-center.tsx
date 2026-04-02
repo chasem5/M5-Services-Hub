@@ -410,8 +410,8 @@ function CEOCommandCenterInner() {
             continue;
           }
 
-          // 3. SA Contract CSV — agreement number / agreement # (but NOT SA-jobs which have "is maintenance")
-          const isSaContractCsv = (firstLine.includes("agreement number") || firstLine.includes("agreement #") || firstLine.includes("agreement no"))
+          // 3. SA Contract CSV — agreement number / agreement # / sa number (but NOT SA-jobs which have "is maintenance")
+          const isSaContractCsv = (firstLine.includes("agreement number") || firstLine.includes("agreement #") || firstLine.includes("agreement no") || firstLine.includes("sa number"))
             && !firstLine.includes("is maintenance");
           if (isSaContractCsv) {
             await uploadCsv("/api/buildops/import-agreements", "Service Agreements", "agreements");
@@ -892,18 +892,19 @@ function CEOCommandCenterInner() {
           const utilPct = schedUtilPct ?? tsUtilPct ?? 0;
           const utilSource = schedUtilPct != null ? 'scheduling' : tsUtilPct != null ? 'timesheets' : null;
 
-          // Booked-load framing: how much scheduled work relative to available capacity (actual hrs completed)
-          // bookedLoadPct > 90% (scheduledHrs > actualHrs * 0.90) → At Capacity (amber)
-          // bookedLoadPct > 115% (scheduledHrs > actualHrs * 1.15) → Fully Booked (amber, more urgent)
+          // Booked-load framing: primary whenever we have timesheet hours (scheduledHrs + actualHrs from imports)
+          // bookedLoadPct = scheduledHrs ÷ actualHrs (how much of available capacity is booked)
+          // >115% → Fully Booked (amber), >90% → At Capacity (amber), else On Track
           const actualHrs = metrics?.labor?.actualHrs4wk ?? 0;
           const scheduledHrs = metrics?.labor?.scheduledHrs4wk ?? 0;
-          const bookedLoadPct = actualHrs > 0 ? Math.round((scheduledHrs / actualHrs) * 100) : 0;
-          const atCapacity = utilSource === 'timesheets' && scheduledHrs > 0 && bookedLoadPct > 90 && bookedLoadPct <= 115;
-          const fullyBooked = utilSource === 'timesheets' && scheduledHrs > 0 && bookedLoadPct > 115;
+          const hasTimesheetHrs = scheduledHrs > 0 && actualHrs > 0;
+          const bookedLoadPct = hasTimesheetHrs ? Math.round((scheduledHrs / actualHrs) * 100) : 0;
+          const atCapacity = hasTimesheetHrs && bookedLoadPct > 90 && bookedLoadPct <= 115;
+          const fullyBooked = hasTimesheetHrs && bookedLoadPct > 115;
 
-          // Signal derived from booked load (both alert states are amber, not red)
+          // Booked-load signal takes priority over scheduling heuristic whenever timesheet hours exist
           let signal: 'ok' | 'watch' | 'hire' = staffing?.hireSignal ?? 'ok';
-          if (utilSource === 'timesheets') {
+          if (hasTimesheetHrs) {
             signal = fullyBooked ? 'hire' : atCapacity ? 'watch' : 'ok';
           }
 
@@ -915,7 +916,7 @@ function CEOCommandCenterInner() {
             ? `${scheduledHrs}h booked vs ${actualHrs}h available capacity (4wk) — ${bookedLoadPct}% booked. Scheduled hours significantly exceed crew capacity. Consider adding headcount.`
             : signal === 'watch'
             ? `${scheduledHrs}h booked vs ${actualHrs}h available capacity (4wk) — ${bookedLoadPct}% booked. Crew is near full capacity — monitor closely.`
-            : utilSource === 'timesheets'
+            : hasTimesheetHrs
             ? `${scheduledHrs}h booked vs ${actualHrs}h available capacity (4wk) — ${bookedLoadPct}% booked. Crew has headroom.`
             : 'Crew has capacity headroom. No immediate hiring pressure.';
 
@@ -954,21 +955,21 @@ function CEOCommandCenterInner() {
                         strokeWidth="16"
                         strokeLinecap="round"
                       />
-                      {/* Fill — animate via strokeDasharray; booked-load pct for timesheets, utilPct for scheduling */}
-                      {(utilSource === 'timesheets' ? bookedLoadPct : utilPct) > 0 && (
+                      {/* Fill — booked-load pct when timesheet data present, else scheduling utilPct */}
+                      {(hasTimesheetHrs ? bookedLoadPct : utilPct) > 0 && (
                         <path
                           d="M 20 100 A 80 80 0 0 1 180 100"
                           fill="none"
                           stroke={signalColor}
                           strokeWidth="16"
                           strokeLinecap="round"
-                          strokeDasharray={`${Math.PI * 80 * Math.min((utilSource === 'timesheets' ? bookedLoadPct : utilPct) / 100, 1)} ${Math.PI * 80}`}
+                          strokeDasharray={`${Math.PI * 80 * Math.min((hasTimesheetHrs ? bookedLoadPct : utilPct) / 100, 1)} ${Math.PI * 80}`}
                           style={{ transition: 'stroke-dasharray 0.6s ease' }}
                         />
                       )}
                       {/* Center text */}
                       <text x="100" y="90" textAnchor="middle" fontSize="28" fontWeight="900" fill={staffingLoading ? '#d1d5db' : signalColor} fontFamily="'Archivo Black', sans-serif">
-                        {staffingLoading ? '—' : `${utilSource === 'timesheets' ? bookedLoadPct : utilPct}%`}
+                        {staffingLoading ? '—' : `${hasTimesheetHrs ? bookedLoadPct : utilPct}%`}
                       </text>
                     </svg>
                     {/* Tick labels */}
@@ -978,9 +979,9 @@ function CEOCommandCenterInner() {
                     </div>
                   </div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-1">
-                    {utilSource === 'timesheets' ? 'Crew Booked Load (4wk)' : utilSource === 'scheduling' ? '4-Wk Avg Utilization' : '4-Wk Avg Utilization'}
+                    {hasTimesheetHrs ? 'Crew Booked Load (4wk)' : '4-Wk Avg Utilization'}
                   </p>
-                  {utilSource === 'timesheets' && (
+                  {hasTimesheetHrs && (
                     <p className={`text-[9px] mt-0.5 font-semibold ${(atCapacity || fullyBooked) ? 'text-amber-500' : 'text-gray-400'}`}>
                       {scheduledHrs}h booked · {actualHrs}h available
                     </p>
