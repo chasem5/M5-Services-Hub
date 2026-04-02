@@ -9746,22 +9746,24 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         try {
           const row = parseCsvLine(lines[i]);
           if (row.length < 3) { skipped++; continue; }
-          const jobNumber = f(row, "job number");
+          const jobNumber = f(row, "job number", "job #");
           if (!jobNumber) { skipped++; continue; }
-          const jobTitle = f(row, "job title", "title");
-          const customerName = f(row, "customer name");
-          const department = f(row, "department name", "department");
-          const jobType = f(row, "job type");
-          const status = f(row, "status");
-          const totalRevenue = fNum(row, "total revenue", "revenue");
-          const totalCost = fNum(row, "total cost", "cost");
-          const grossProfit = fNum(row, "gross profit");
-          const marginPct = fNum(row, "margin %", "margin percent", "margin");
-          const laborRevenue = fNum(row, "labor revenue");
-          const laborCost = fNum(row, "labor cost");
-          const materialRevenue = fNum(row, "material revenue");
-          const materialCost = fNum(row, "material cost");
-          const completedDate = fDate(row, "completed date local", "completed date");
+          const jobTitle = f(row, "job title", "title", "job name");
+          const customerName = f(row, "customer name", "customer", "billing customer name", "billing customer");
+          const department = f(row, "department name", "department", "division");
+          const jobType = f(row, "job type", "type");
+          const status = f(row, "status", "job status");
+          const totalRevenue = fNum(row, "total revenue", "revenue", "job revenue", "total amount", "amount", "revenue amount", "total billed", "billed amount");
+          const totalCost = fNum(row, "total cost", "cost", "job cost", "total job cost", "total expenses");
+          const grossProfit = fNum(row, "gross profit", "gross profit $", "gross profit amount", "profit", "gp", "net profit");
+          // Detect margin fraction vs percentage: if value is between -5 and 1.5, multiply by 100
+          let marginPctRaw = fNum(row, "margin %", "margin percent", "gross margin %", "gross margin", "margin", "profit %", "profit margin");
+          const marginPct = marginPctRaw != null && marginPctRaw >= -5 && marginPctRaw <= 1.5 ? marginPctRaw * 100 : marginPctRaw;
+          const laborRevenue = fNum(row, "labor revenue", "labour revenue", "labor amount", "labour amount", "total labor amount non taxable", "labor billed");
+          const laborCost = fNum(row, "labor cost", "labour cost", "total labor cost", "total labour cost");
+          const materialRevenue = fNum(row, "material revenue", "materials revenue", "material amount", "total material amount non taxable", "material billed");
+          const materialCost = fNum(row, "material cost", "materials cost", "total material cost");
+          const completedDate = fDate(row, "completed date local", "completed date", "completion date", "close date", "end date", "finished date");
 
           const existing = await db.execute(sql`SELECT id FROM buildops_job_margin WHERE job_number = ${jobNumber} LIMIT 1`);
           if ((existing.rows as any[]).length > 0) {
@@ -10163,6 +10165,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const qcrMonthly = fillBuckets(qcrRaw, allBuckets);
 
       // ── Collections Outstanding: unpaid invoices aged by days past due ───────
+      // BuildOps statuses: exported, posted, draft; exclude void and closed (has closed_date)
       const arRows = await db.execute(sql`
         SELECT
           total_amount,
@@ -10170,7 +10173,8 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           due_date,
           EXTRACT(EPOCH FROM (NOW() - COALESCE(due_date, issued_date + INTERVAL '30 days'))) / 86400 AS days_past_due
         FROM buildops_invoices
-        WHERE status IN ('Sent', 'Approved', 'Viewed', 'Draft', 'Open', 'Pending', 'Overdue')
+        WHERE LOWER(status) NOT IN ('void', 'paid', 'closed', 'cancelled', 'canceled', 'credit memo')
+          AND closed_date IS NULL
           AND total_amount IS NOT NULL
           AND CAST(total_amount AS DECIMAL) > 0
       `);
@@ -10561,11 +10565,12 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         };
       });
 
-      const currentWeekStart = new Date();
-      currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay()); // Sunday
-      const currentWeek = allWeeks.find(w =>
-        w.weekStart.toDateString() === currentWeekStart.toDateString()
-      ) ?? allWeeks[allWeeks.length - 1];
+      // Find the week that actually contains "now" by epoch range — avoids timezone mismatch
+      const nowMs = Date.now();
+      const currentWeek = allWeeks.find(w => {
+        const weekEndMs = w.weekStart.getTime() + 7 * 24 * 60 * 60 * 1000;
+        return nowMs >= w.weekStart.getTime() && nowMs < weekEndMs;
+      }) ?? allWeeks[allWeeks.length - 1];
 
       // Rolling 4-week historical average (past, not future)
       const pastWeeks = allWeeks.filter(w => !w.isFuture);
