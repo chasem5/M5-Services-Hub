@@ -4,7 +4,7 @@ import {
   RefreshCw, AlertTriangle, AlertCircle, CheckCircle2,
   Send, Upload, FileSpreadsheet, X, Lock, Bot,
   BarChart2, Repeat2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
-  Clock, Wrench, Zap, Users, Activity, PhoneCall, Mail, Calendar,
+  Clock, Wrench, Zap, Users, Activity, PhoneCall, Mail, Calendar, Info,
 } from "lucide-react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, Cell,
@@ -676,17 +676,18 @@ function CEOCommandCenterInner() {
           <div className="grid grid-cols-5 gap-3">
             {[
               {
-                label: "Utilization Rate",
+                label: "Job Efficiency",
+                sub: "actual vs. expected visit time",
                 value: opsKpis?.utilizationRate.value != null ? `${opsKpis.utilizationRate.value}%` : "—",
                 target: "85%",
                 change: opsKpis?.utilizationRate.source === 'timesheets' ? 'from timesheets' : opsKpis?.utilizationRate.source === 'visits' ? 'from visits' : 'no data',
                 up: (opsKpis?.utilizationRate.value ?? 0) >= 70,
                 icon: Activity, color: "#3b82f6",
                 tip: opsKpis?.utilizationRate.source === 'timesheets'
-                  ? "Actual vs scheduled hours from timesheet import (last 4 weeks). Target: 85%+"
+                  ? "Actual hours worked ÷ scheduled hours (from timesheet import, last 4 weeks). Measures how fully the crew's booked time was used. Target: 85%+."
                   : opsKpis?.utilizationRate.source === 'visits'
-                  ? "Actual visit duration ÷ minimum scheduled duration. Target: 85%+"
-                  : "Requires timesheets or visits data. Import timesheet CSV to populate.",
+                  ? "Actual visit duration ÷ minimum expected visit duration (per-visit average). Measures job execution efficiency — not crew load. Target: 85%+."
+                  : "Requires timesheets or BuildOps visits with duration data. Import a timesheet CSV to populate.",
                 progress: opsKpis?.utilizationRate.value ?? 0,
                 targetPct: opsKpis?.utilizationRate.target ?? 85,
               },
@@ -756,7 +757,8 @@ function CEOCommandCenterInner() {
                     </div>
                     <span className={`text-[10px] font-semibold ${k.up ? "text-emerald-600" : "text-red-500"}`}>{k.change}</span>
                   </div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1 leading-tight">{k.label}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5 leading-tight">{k.label}</p>
+                  {(k as any).sub && <p className="text-[9px] text-gray-300 mb-1 leading-tight">{(k as any).sub}</p>}
                   <p className="text-lg font-black text-gray-900 leading-none mb-1" style={{ fontFamily: "'Archivo Black', sans-serif" }}>{k.value}</p>
                   <p className="text-[10px] text-gray-400 mb-2">Target: {k.target}</p>
                   {/* Progress bar */}
@@ -1026,6 +1028,14 @@ function CEOCommandCenterInner() {
                   </div>
                   <span className="text-sm font-bold text-gray-800">Crew Capacity</span>
                   <span className="ml-1 text-[10px] text-gray-400">— 4-week rolling utilization · hire signal</span>
+                  <span
+                    className="ml-1 text-gray-300 cursor-default"
+                    title={hasTimesheetHrs
+                      ? `Formula: scheduled hours ÷ actual hours (last 28 days) from timesheet import — shows what fraction of real worked capacity is already booked.`
+                      : `Formula: total scheduled visit minutes ÷ (N full-time techs × 2,400 min/wk) — theoretical capacity based on visit schedule.`}
+                  >
+                    <Info className="w-3 h-3" />
+                  </span>
                 </div>
                 <span
                   className={`flex items-center gap-1.5 text-[11px] font-bold border rounded-full px-3 py-1 ${signalBg}`}
@@ -1075,6 +1085,13 @@ function CEOCommandCenterInner() {
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-1">
                     {hasTimesheetHrs ? 'Crew Booked Load (4wk)' : '4-Wk Avg Utilization'}
                   </p>
+                  <span
+                    className={`inline-block text-[9px] font-semibold px-2 py-0.5 rounded-full mt-1 ${hasTimesheetHrs ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}
+                    data-testid="badge-gauge-source"
+                    title={hasTimesheetHrs ? 'Based on actual vs scheduled hours from timesheet import' : 'Based on visit schedule — no timesheet data imported'}
+                  >
+                    {hasTimesheetHrs ? 'from timesheets' : 'from visit schedule'}
+                  </span>
                   {hasTimesheetHrs && (
                     <p className={`text-[9px] mt-0.5 font-semibold ${(atCapacity || fullyBooked) ? 'text-amber-500' : 'text-gray-400'}`}>
                       {scheduledHrs}h booked · {actualHrs}h available
@@ -1214,7 +1231,8 @@ function CEOCommandCenterInner() {
                 {/* ── Weekly trend chart ── */}
                 <div className="flex flex-col gap-2">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Weekly Utilization</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">Weekly Utilization</p>
+                    <p className="text-[9px] text-gray-300 mb-2">visit schedule · full-time techs only</p>
                     <p className="text-[9px] text-gray-300 mb-2">
                       <span className="inline-block w-2 h-2 rounded-sm bg-indigo-400 mr-1 align-middle" />past
                       <span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 ml-2 mr-1 align-middle" />on track
