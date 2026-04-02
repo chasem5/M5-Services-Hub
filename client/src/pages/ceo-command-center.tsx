@@ -7,7 +7,7 @@ import {
   Clock, Wrench, Zap, Users, Activity, PhoneCall, Mail, Calendar,
 } from "lucide-react";
 import {
-  AreaChart, Area, LineChart, Line, BarChart, Bar,
+  AreaChart, Area, LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   ReferenceLine,
 } from "recharts";
@@ -46,6 +46,18 @@ function fmtDollar(v: number) {
 
 function fmtChange(pct: number, unit = "%") {
   return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}${unit}`;
+}
+
+interface StaffingWeek { label: string; utilPct: number; scheduledHrs: number; techCount: number; isFuture: boolean; }
+interface StaffingMetrics {
+  techCount: number;
+  currentWeekUtilization: number | null;
+  rollingAvgUtilization: number | null;
+  avgHrsPerTechPerWeek: number | null;
+  forwardBookedWeeks: number;
+  hireSignal: 'ok' | 'watch' | 'hire';
+  signalPct: number;
+  weeklyTrend: StaffingWeek[];
 }
 
 // ── Fallback spark data (shown while loading) ─────────────────────────────────
@@ -247,6 +259,12 @@ function CEOCommandCenterInner() {
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<CeoMetrics>({
     queryKey: ["/api/ceo/metrics"],
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const { data: staffing, isLoading: staffingLoading } = useQuery<StaffingMetrics>({
+    queryKey: ["/api/ceo/staffing"],
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -704,6 +722,178 @@ function CEOCommandCenterInner() {
             </button>
           </div>
         </div>
+
+        {/* ── Crew Capacity & Hire Signal ──────────────────────────────────── */}
+        {(() => {
+          const signal = staffing?.hireSignal ?? 'ok';
+          const utilPct = staffing?.rollingAvgUtilization ?? staffing?.currentWeekUtilization ?? 0;
+          const signalColor = signal === 'hire' ? '#BE1916' : signal === 'watch' ? '#f59e0b' : '#10b981';
+          const signalBg = signal === 'hire' ? 'bg-red-50 border-red-200 text-red-700' : signal === 'watch' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700';
+          const signalLabel = signal === 'hire' ? '⚡ Consider Hiring' : signal === 'watch' ? '👀 Watch Capacity' : '✓ Capacity OK';
+          const signalTip = signal === 'hire'
+            ? 'Crew is at or above 85% booked capacity. Adding a tech would protect quality and growth.'
+            : signal === 'watch'
+            ? 'Crew is between 70–85% booked. Monitor closely — new contracts may push you over.'
+            : 'Crew has capacity headroom below 70%. No immediate hiring pressure.';
+
+          const trendData = staffing?.weeklyTrend ?? [];
+
+          return (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5" data-testid="section-crew-capacity">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: `${signalColor}18` }}>
+                    <Users className="w-3.5 h-3.5" style={{ color: signalColor }} />
+                  </div>
+                  <span className="text-sm font-bold text-gray-800">Crew Capacity</span>
+                  <span className="ml-1 text-[10px] text-gray-400">— 4-week rolling utilization · hire signal</span>
+                </div>
+                <span
+                  className={`flex items-center gap-1.5 text-[11px] font-bold border rounded-full px-3 py-1 ${signalBg}`}
+                  data-testid="badge-hire-signal"
+                  title={signalTip}
+                >
+                  {signalLabel}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                {/* ── Gauge ── */}
+                <div className="flex flex-col items-center justify-center">
+                  <div className="relative" style={{ width: 180, height: 100 }}>
+                    <svg viewBox="0 0 200 110" width="180" height="100">
+                      {/* Track */}
+                      <path
+                        d="M 20 100 A 80 80 0 0 1 180 100"
+                        fill="none"
+                        stroke="#f3f4f6"
+                        strokeWidth="16"
+                        strokeLinecap="round"
+                      />
+                      {/* Fill — animate via strokeDasharray */}
+                      {utilPct > 0 && (
+                        <path
+                          d="M 20 100 A 80 80 0 0 1 180 100"
+                          fill="none"
+                          stroke={signalColor}
+                          strokeWidth="16"
+                          strokeLinecap="round"
+                          strokeDasharray={`${Math.PI * 80 * Math.min(utilPct / 100, 1)} ${Math.PI * 80}`}
+                          style={{ transition: 'stroke-dasharray 0.6s ease' }}
+                        />
+                      )}
+                      {/* Center text */}
+                      <text x="100" y="90" textAnchor="middle" fontSize="28" fontWeight="900" fill={staffingLoading ? '#d1d5db' : signalColor} fontFamily="'Archivo Black', sans-serif">
+                        {staffingLoading ? '—' : `${utilPct}%`}
+                      </text>
+                    </svg>
+                    {/* Tick labels */}
+                    <div className="absolute bottom-0 left-0 right-0 flex justify-between px-1">
+                      <span className="text-[9px] text-gray-400">0%</span>
+                      <span className="text-[9px] text-gray-400">100%</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-1">4-Wk Avg Utilization</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{signalTip}</p>
+                </div>
+
+                {/* ── Stats ── */}
+                <div className="flex flex-col justify-center gap-4 border-x border-gray-100 px-5">
+                  {[
+                    {
+                      label: 'Active Techs',
+                      value: staffingLoading ? '—' : staffing?.techCount != null ? String(staffing.techCount) : '—',
+                      sub: 'this week (distinct)',
+                      icon: Users,
+                      color: '#6366f1',
+                    },
+                    {
+                      label: 'Avg Hrs / Tech / Week',
+                      value: staffingLoading ? '—' : staffing?.avgHrsPerTechPerWeek != null ? `${staffing.avgHrsPerTechPerWeek}h` : '—',
+                      sub: 'rolling 4-week scheduled',
+                      icon: Clock,
+                      color: '#0ea5e9',
+                    },
+                    {
+                      label: 'Forward Booked',
+                      value: staffingLoading ? '—' : staffing?.forwardBookedWeeks != null ? `${staffing.forwardBookedWeeks} wk${staffing.forwardBookedWeeks !== 1 ? 's' : ''}` : '—',
+                      sub: 'weeks with visits scheduled',
+                      icon: Calendar,
+                      color: '#8b5cf6',
+                    },
+                  ].map(s => {
+                    const Icon = s.icon;
+                    return (
+                      <div key={s.label} className="flex items-center gap-3" data-testid={`staffing-stat-${s.label.toLowerCase().replace(/[\s/]+/g, '-')}`}>
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${s.color}15` }}>
+                          <Icon className="w-4 h-4" style={{ color: s.color }} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-800 leading-none">{s.value}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">{s.label}</p>
+                          <p className="text-[10px] text-gray-300">{s.sub}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ── Weekly trend chart ── */}
+                <div className="flex flex-col">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Weekly Utilization</p>
+                  <p className="text-[9px] text-gray-300 mb-2">
+                    <span className="inline-block w-2 h-2 rounded-sm bg-indigo-400 mr-1 align-middle" />past
+                    <span className="inline-block w-2 h-2 rounded-sm bg-indigo-200 ml-2 mr-1 align-middle" />upcoming
+                    <span className="inline-block w-2 h-2 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />watch
+                    <span className="inline-block w-2 h-2 rounded-sm bg-red-400 ml-2 mr-1 align-middle" />hire
+                  </p>
+                  <div className="flex-1" style={{ minHeight: 120 }}>
+                    {staffingLoading ? (
+                      <div className="h-full bg-gray-50 rounded animate-pulse" />
+                    ) : trendData.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-[11px] text-gray-400">Sync visits to populate</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={130}>
+                        <BarChart data={trendData} margin={{ top: 2, right: 0, left: -20, bottom: 0 }} barSize={10}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
+                          <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} interval={1} />
+                          <YAxis tick={{ fontSize: 9, fill: "#9ca3af" }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                          <ReferenceLine y={85} stroke="#BE1916" strokeDasharray="4 2" strokeWidth={1} />
+                          <ReferenceLine y={70} stroke="#f59e0b" strokeDasharray="4 2" strokeWidth={1} />
+                          <Tooltip
+                            content={({ active, payload, label }) => {
+                              if (!active || !payload?.length) return null;
+                              const d = payload[0]?.payload as StaffingWeek;
+                              return (
+                                <div className="bg-gray-900 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl space-y-1">
+                                  <p className="font-bold">{label} {d?.isFuture ? '(upcoming)' : '(past)'}</p>
+                                  <p>Utilization: <span className="font-semibold">{d?.utilPct ?? 0}%</span></p>
+                                  <p>Sched hrs: <span className="font-semibold">{d?.scheduledHrs}h</span></p>
+                                  <p>Active techs: <span className="font-semibold">{d?.techCount}</span></p>
+                                </div>
+                              );
+                            }}
+                          />
+                          <Bar dataKey="utilPct" radius={[3, 3, 0, 0]}>
+                            {trendData.map((entry, index) => {
+                              const fillColor = entry.isFuture
+                                ? '#c7d2fe'
+                                : entry.utilPct >= 85 ? '#BE1916'
+                                : entry.utilPct >= 70 ? '#f59e0b'
+                                : '#818cf8';
+                              return <Cell key={`cell-${index}`} fill={fillColor} />;
+                            })}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Team Performance ──────────────────────────────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm" data-testid="section-team-performance">

@@ -9191,6 +9191,108 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
     }
   });
 
+  // ── CEO Staffing / Crew Capacity Signal ───────────────────────────────────
+  app.get("/api/ceo/staffing", isAuthenticated, requireRole(["super_admin"]), async (_req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+
+      // Per-week utilization: past 10 weeks + next 5 weeks (covers historical trend + forward booking)
+      const weekRows = await db.execute(sql`
+        SELECT
+          date_trunc('week', scheduled_for) AS week_start,
+          TO_CHAR(date_trunc('week', scheduled_for), 'Mon DD') AS week_label,
+          COUNT(*) AS visit_count,
+          COALESCE(SUM(minimum_duration_mins), 0) AS total_scheduled_mins,
+          COUNT(DISTINCT primary_tech_name) FILTER (WHERE primary_tech_name IS NOT NULL AND primary_tech_name <> '') AS tech_count
+        FROM buildops_visits
+        WHERE scheduled_for >= NOW() - INTERVAL '10 weeks'
+          AND scheduled_for < NOW() + INTERVAL '5 weeks'
+          AND status NOT IN ('Canceled', 'Cancelled', 'Dismissed')
+          AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
+        GROUP BY date_trunc('week', scheduled_for), TO_CHAR(date_trunc('week', scheduled_for), 'Mon DD')
+        ORDER BY week_start
+      `);
+
+      const MINS_PER_TECH_PER_WEEK = 40 * 60; // 40-hour work week
+
+      const allWeeks = (weekRows.rows as any[]).map(r => {
+        const techCount = parseInt(r.tech_count) || 1;
+        const scheduledMins = parseFloat(r.total_scheduled_mins) || 0;
+        const capacity = techCount * MINS_PER_TECH_PER_WEEK;
+        const utilPct = capacity > 0 ? Math.round((scheduledMins / capacity) * 100) : 0;
+        const scheduledHrs = Math.round(scheduledMins / 60 * 10) / 10;
+        const weekStart = new Date(r.week_start);
+        const now = new Date();
+        const isFuture = weekStart > now;
+        return {
+          weekStart,
+          label: r.week_label as string,
+          visitCount: parseInt(r.visit_count) || 0,
+          scheduledMins,
+          scheduledHrs,
+          techCount,
+          utilPct,
+          isFuture,
+        };
+      });
+
+      const currentWeekStart = new Date();
+      currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay()); // Sunday
+      const currentWeek = allWeeks.find(w =>
+        w.weekStart.toDateString() === currentWeekStart.toDateString()
+      ) ?? allWeeks[allWeeks.length - 1];
+
+      // Rolling 4-week historical average (past, not future)
+      const pastWeeks = allWeeks.filter(w => !w.isFuture);
+      const rolling4 = pastWeeks.slice(-4);
+      const rollingAvgUtil = rolling4.length > 0
+        ? Math.round(rolling4.reduce((sum, w) => sum + w.utilPct, 0) / rolling4.length)
+        : null;
+
+      const avgHrsPerTechPerWeek = rolling4.length > 0
+        ? Math.round(
+            rolling4.reduce((sum, w) => sum + (w.techCount > 0 ? w.scheduledMins / w.techCount / 60 : 0), 0) / rolling4.length * 10
+          ) / 10
+        : null;
+
+      // Active tech count: distinct techs across last 4 weeks
+      const activeTechCount = currentWeek?.techCount ?? 0;
+
+      // Forward booked: how many future weeks have visits scheduled
+      const futureWeeks = allWeeks.filter(w => w.isFuture && w.visitCount > 0);
+      const forwardBookedWeeks = futureWeeks.length;
+
+      // Hire signal thresholds
+      const signalPct = rollingAvgUtil ?? currentWeek?.utilPct ?? 0;
+      const hireSignal: 'ok' | 'watch' | 'hire' =
+        signalPct >= 85 ? 'hire' : signalPct >= 70 ? 'watch' : 'ok';
+
+      // Week-by-week trend for chart (past 8 + next 4)
+      const weeklyTrend = allWeeks.slice(-12).map(w => ({
+        label: w.label,
+        utilPct: w.utilPct,
+        scheduledHrs: w.scheduledHrs,
+        techCount: w.techCount,
+        isFuture: w.isFuture,
+      }));
+
+      res.json({
+        techCount: activeTechCount,
+        currentWeekUtilization: currentWeek?.utilPct ?? null,
+        rollingAvgUtilization: rollingAvgUtil,
+        avgHrsPerTechPerWeek,
+        forwardBookedWeeks,
+        hireSignal,
+        signalPct,
+        weeklyTrend,
+      });
+    } catch (err: any) {
+      console.error("[CEO staffing]", err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // DELETE /api/action-plans/:id
   app.delete("/api/action-plans/:id", isAuthenticated, async (req, res) => {
     try {
