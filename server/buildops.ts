@@ -654,6 +654,44 @@ export interface BuildOpsJob {
   customerPropertyId?: string;
   quoteId?: string;
   serviceAgreementId?: string;
+  // Extended fields
+  accountManager?: string;
+  projectManager?: string;
+  soldBy?: string;
+  reviewStatus?: string;
+  procurementStatus?: string;
+  totalBudgetedHours?: number;
+  department?: string;
+}
+
+export interface BuildOpsVisit {
+  id: string;
+  visitNumber?: number;
+  description?: string;
+  jobNumber?: string;
+  jobId?: string;
+  jobType?: string;
+  status?: string;
+  reviewStatus?: string;
+  onHold?: boolean;
+  onHoldReason?: string;
+  primaryTechName?: string;
+  minimumDurationMins?: number;
+  actualDurationMins?: number;
+  scheduledFor?: string;
+  startTime?: string;
+  endTime?: string;
+  submittedBy?: string;
+  submittedTime?: string;
+  departmentName?: string;
+  billingCustomerName?: string;
+  customerName?: string;
+  propertyName?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  zipcode?: string;
+  customerId?: string;
 }
 
 export interface BuildOpsInvoice {
@@ -671,6 +709,11 @@ export interface BuildOpsInvoice {
   closedDate?: string;
   customerId?: string;
   jobId?: string;
+  // Extended fields
+  departmentName?: string;
+  daysPastDue?: number;
+  paymentTermName?: string;
+  serviceAgreementNumber?: string;
 }
 
 export async function getJobs(
@@ -702,6 +745,85 @@ export async function getJobs(
     if (page > 200) break;
   }
   return allJobs;
+}
+
+export async function getVisits(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+  customerId?: string,
+): Promise<BuildOpsVisit[]> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+  const allVisits: BuildOpsVisit[] = [];
+  let page = 1;
+  const limit = 100;
+  while (true) {
+    let url = `${BASE_URL}/v1/visits?page=${page}&limit=${limit}`;
+    if (customerId) url += `&customer_id=${encodeURIComponent(customerId)}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const rawText = await res.text().catch(() => "");
+      let body: any = {};
+      try { body = JSON.parse(rawText); } catch {}
+      console.warn(`[BuildOps getVisits] HTTP ${res.status} page ${page}:`, rawText.slice(0, 200));
+      // If the endpoint doesn't exist or returns 404/405, break gracefully
+      if (res.status === 404 || res.status === 405) break;
+      throw new Error(body.message ?? body.error ?? `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (page === 1) {
+      const keys = Object.keys(data);
+      const totalCount = data.totalCount ?? data.total ?? "?";
+      console.log(`[BuildOps getVisits] page=1 keys=${JSON.stringify(keys)} totalCount=${totalCount}`);
+    }
+    const items: BuildOpsVisit[] = (
+      Array.isArray(data.items) ? data.items :
+      Array.isArray(data.data) ? data.data :
+      Array.isArray(data.results) ? data.results :
+      Array.isArray(data.visits) ? data.visits :
+      Array.isArray(data) ? data : []
+    );
+    const totalCount: number = data.totalCount ?? data.total ?? data.count ?? 0;
+    // Map raw API fields to our interface (handle various field name conventions)
+    const mapped: BuildOpsVisit[] = items.map((v: any) => ({
+      id: v.id,
+      visitNumber: v.visitNumber ?? v.visit_number ?? v.number ?? null,
+      description: v.description ?? null,
+      jobNumber: v.jobNumber ?? v.job_number ?? v.job?.jobNumber ?? null,
+      jobId: v.jobId ?? v.job_id ?? v.job?.id ?? null,
+      jobType: v.jobType ?? v.job_type ?? v.job?.jobTypeName ?? null,
+      status: v.status ?? null,
+      reviewStatus: v.reviewStatus ?? v.review_status ?? null,
+      onHold: v.onHold ?? v.on_hold ?? false,
+      onHoldReason: v.onHoldReason ?? v.on_hold_reason ?? null,
+      primaryTechName: v.primaryTechName ?? v.primary_tech_name ?? v.techName ?? v.tech?.name ?? v.assignee?.name ?? null,
+      minimumDurationMins: v.minimumDurationMins ?? v.minimum_duration_mins ?? v.minDuration ?? null,
+      actualDurationMins: v.actualDurationMins ?? v.actual_duration_mins ?? v.duration ?? null,
+      scheduledFor: v.scheduledFor ?? v.scheduled_for ?? v.scheduledStart ?? v.scheduledDate ?? null,
+      startTime: v.startTime ?? v.start_time ?? v.start ?? null,
+      endTime: v.endTime ?? v.end_time ?? v.end ?? null,
+      submittedBy: v.submittedBy ?? v.submitted_by ?? v.submitter?.name ?? null,
+      submittedTime: v.submittedTime ?? v.submitted_time ?? v.submittedAt ?? null,
+      departmentName: v.departmentName ?? v.department_name ?? v.department?.name ?? null,
+      billingCustomerName: v.billingCustomerName ?? v.billing_customer_name ?? v.billingCustomer?.name ?? null,
+      customerName: v.customerName ?? v.customer_name ?? v.customer?.name ?? null,
+      propertyName: v.propertyName ?? v.property_name ?? v.property?.name ?? null,
+      addressLine1: v.addressLine1 ?? v.address_line1 ?? v.address?.addressLine1 ?? v.address?.street ?? null,
+      city: v.city ?? v.address?.city ?? null,
+      state: v.state ?? v.address?.state ?? null,
+      zipcode: v.zipcode ?? v.zip ?? v.address?.zipCode ?? null,
+      customerId: v.customerId ?? v.customer_id ?? v.customer?.id ?? null,
+    }));
+    allVisits.push(...mapped);
+    console.log(`[BuildOps getVisits] page=${page} got=${items.length} total=${totalCount} accumulated=${allVisits.length}`);
+    if (items.length === 0) break;
+    if (totalCount > 0 && allVisits.length >= totalCount) break;
+    if (items.length < limit && totalCount === 0) break;
+    page++;
+    if (page > 500) break;
+  }
+  return allVisits;
 }
 
 async function fetchInvoicePages(

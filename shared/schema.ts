@@ -742,6 +742,14 @@ export const buildopsJobs = pgTable("buildops_jobs", {
   buildopsPropertyId: varchar("buildops_property_id"),
   buildopsQuoteId: varchar("buildops_quote_id"),
   buildopsServiceAgreementId: varchar("buildops_service_agreement_id"),
+  // Extended fields
+  accountManager: varchar("account_manager"),
+  projectManager: varchar("project_manager"),
+  soldBy: varchar("sold_by"),
+  reviewStatus: varchar("review_status"),
+  procurementStatus: varchar("procurement_status"),
+  totalBudgetedHours: decimal("total_budgeted_hours", { precision: 8, scale: 2 }),
+  department: varchar("department"),
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
 });
 export type BuildopsJob = typeof buildopsJobs.$inferSelect;
@@ -764,6 +772,11 @@ export const buildopsInvoices = pgTable("buildops_invoices", {
   closedDate: timestamp("closed_date"),
   buildopsCustomerId: varchar("buildops_customer_id"),
   buildopsJobId: varchar("buildops_job_id"),
+  // Extended fields
+  departmentName: varchar("department_name"),
+  daysPastDue: integer("days_past_due"),
+  paymentTermName: varchar("payment_term_name"),
+  serviceAgreementNumber: varchar("service_agreement_number"),
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
 });
 export type BuildopsInvoice = typeof buildopsInvoices.$inferSelect;
@@ -786,6 +799,41 @@ export const buildopsAgreements = pgTable("buildops_agreements", {
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
 });
 export type BuildopsAgreement = typeof buildopsAgreements.$inferSelect;
+
+// BuildOps Visits (individual field visits linked to jobs, synced from BuildOps)
+export const buildopsVisits = pgTable("buildops_visits", {
+  id: serial("id").primaryKey(),
+  buildopsId: varchar("buildops_id").notNull().unique(),
+  clientId: integer("client_id").references(() => clients.id),
+  visitNumber: integer("visit_number"),
+  jobNumber: varchar("job_number"),
+  buildopsJobId: varchar("buildops_job_id"),
+  jobType: varchar("job_type"),
+  status: varchar("status"),
+  reviewStatus: varchar("review_status"),
+  primaryTechName: varchar("primary_tech_name"),
+  submittedBy: varchar("submitted_by"),
+  minimumDurationMins: integer("minimum_duration_mins"),
+  actualDurationMins: integer("actual_duration_mins"),
+  scheduledFor: timestamp("scheduled_for"),
+  startTime: timestamp("start_time"),
+  endTime: timestamp("end_time"),
+  submittedTime: timestamp("submitted_time"),
+  onHold: boolean("on_hold").default(false),
+  onHoldReason: text("on_hold_reason"),
+  departmentName: varchar("department_name"),
+  billingCustomerName: varchar("billing_customer_name"),
+  customerName: varchar("customer_name"),
+  propertyName: varchar("property_name"),
+  addressLine1: varchar("address_line1"),
+  city: varchar("city"),
+  state: varchar("state"),
+  zipcode: varchar("zipcode"),
+  description: text("description"),
+  buildopsCustomerId: varchar("buildops_customer_id"),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+});
+export type BuildopsVisit = typeof buildopsVisits.$inferSelect;
 
 // BuildOps Employees (M5's own staff synced from BuildOps)
 export const buildopsEmployees = pgTable("buildops_employees", {

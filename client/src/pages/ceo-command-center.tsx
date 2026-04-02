@@ -13,155 +13,43 @@ import {
 } from "recharts";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 
 const PRIMARY = "#BE1916";
 
-// ── Time-series data ──────────────────────────────────────────────────────────
-const REVENUE_MONTHLY = [
-  { label: "May", v: 890000 }, { label: "Jun", v: 940000 }, { label: "Jul", v: 870000 },
-  { label: "Aug", v: 1010000 }, { label: "Sep", v: 1080000 }, { label: "Oct", v: 1150000 },
-  { label: "Nov", v: 1020000 }, { label: "Dec", v: 1090000 }, { label: "Jan", v: 980000 },
-  { label: "Feb", v: 1060000 }, { label: "Mar", v: 1040000 }, { label: "Apr", v: 1240000 },
-];
-const REVENUE_WEEKLY = [
-  { label: "W1", v: 241000 }, { label: "W2", v: 258000 }, { label: "W3", v: 280700 }, { label: "W4", v: 312750 },
-];
-const REVENUE_DAILY = [
-  { label: "Mon", v: 41200 }, { label: "Tue", v: 38800 }, { label: "Wed", v: 45500 }, { label: "Thu", v: 48320 },
-];
-const MRR_MONTHLY = [
-  { label: "May", v: 148000 }, { label: "Jun", v: 153000 }, { label: "Jul", v: 155000 },
-  { label: "Aug", v: 159000 }, { label: "Sep", v: 162000 }, { label: "Oct", v: 166000 },
-  { label: "Nov", v: 169000 }, { label: "Dec", v: 172000 }, { label: "Jan", v: 175000 },
-  { label: "Feb", v: 180000 }, { label: "Mar", v: 184000 }, { label: "Apr", v: 187400 },
-];
-const WIN_RATE_MONTHLY = [
-  { label: "May", v: 54 }, { label: "Jun", v: 57 }, { label: "Jul", v: 55 },
-  { label: "Aug", v: 59 }, { label: "Sep", v: 56 }, { label: "Oct", v: 60 },
-  { label: "Nov", v: 58 }, { label: "Dec", v: 61 }, { label: "Jan", v: 57 },
-  { label: "Feb", v: 59 }, { label: "Mar", v: 58 }, { label: "Apr", v: 61 },
-];
-const PIPELINE_MONTHLY = [
-  { label: "May", v: 1.4 }, { label: "Jun", v: 1.6 }, { label: "Jul", v: 1.5 },
-  { label: "Aug", v: 1.7 }, { label: "Sep", v: 1.9 }, { label: "Oct", v: 1.8 },
-  { label: "Nov", v: 1.7 }, { label: "Dec", v: 1.9 }, { label: "Jan", v: 1.8 },
-  { label: "Feb", v: 1.9 }, { label: "Mar", v: 2.0 }, { label: "Apr", v: 2.1 },
-];
-const MARGIN_MONTHLY = [
-  { label: "May", v: 36.2 }, { label: "Jun", v: 35.8 }, { label: "Jul", v: 34.9 },
-  { label: "Aug", v: 36.1 }, { label: "Sep", v: 35.6 }, { label: "Oct", v: 36.4 },
-  { label: "Nov", v: 35.2 }, { label: "Dec", v: 35.8 }, { label: "Jan", v: 34.9 },
-  { label: "Feb", v: 35.4 }, { label: "Mar", v: 35.3 }, { label: "Apr", v: 35.1 },
-];
-const UTIL_MONTHLY = [
-  { label: "May", v: 71 }, { label: "Jun", v: 74 }, { label: "Jul", v: 68 },
-  { label: "Aug", v: 76 }, { label: "Sep", v: 79 }, { label: "Oct", v: 81 },
-  { label: "Nov", v: 77 }, { label: "Dec", v: 73 }, { label: "Jan", v: 75 },
-  { label: "Feb", v: 78 }, { label: "Mar", v: 80 }, { label: "Apr", v: 82 },
-];
+// ── Types ──────────────────────────────────────────────────────────────────────
+interface SparkPoint { label: string; v: number; }
+interface CeoMetrics {
+  lastUpdated: string;
+  revenue: { current: number; prevMonth: number; changePct: number; up: boolean; monthly: SparkPoint[] };
+  saContractRevenue: { current: number; prevMonth: number; changePct: number; up: boolean; activeCount: number; monthly: SparkPoint[] };
+  pipeline: { value: number; dealCount: number; monthly: SparkPoint[] };
+  quoteConversionRate: { value: number; current30d: number; prev30d: number; changePt: number; up: boolean; monthly: SparkPoint[] };
+  collectionsOutstanding: { total: number; bucket030: number; bucket3060: number; bucket6090: number; bucket90plus: number; monthly: SparkPoint[] };
+  operationalKpis: {
+    dso: { value: number; target: number };
+    backlog: { value: number; target: number };
+    recurringRevPct: { value: number; target: number };
+    utilizationRate: { value: number | null; target: number };
+    firstTimeFixRate: { value: number | null; target: number };
+    quoteConversionRate: { value: number; target: number };
+  };
+  topCustomers: { name: string; revenue: number; invoiceCount: number }[];
+  activeJobs: { total: number; byStatus: { status: string; count: number }[] };
+  visitsSync: { totalVisits: number; completedVisits: number };
+}
 
-// ── KPI data ──────────────────────────────────────────────────────────────────
-const KPI_DATA = {
-  daily: {
-    revenue: { value: "$48,320", change: "+6.2%", up: true },
-    pipeline: { value: "$2.1M", change: "-3.1%", up: false },
-    winRate: { value: "62%", change: "+4pp", up: true },
-    mrr: { value: "$187,400", change: "+1.2%", up: true },
-    margin: { value: "34.8%", change: "-0.9pp", up: false },
-  },
-  weekly: {
-    revenue: { value: "$312,750", change: "+11.4%", up: true },
-    pipeline: { value: "$2.1M", change: "+5.8%", up: true },
-    winRate: { value: "58%", change: "-2pp", up: false },
-    mrr: { value: "$187,400", change: "+1.2%", up: true },
-    margin: { value: "35.6%", change: "+0.4pp", up: true },
-  },
-  monthly: {
-    revenue: { value: "$1.24M", change: "+18.7%", up: true },
-    pipeline: { value: "$2.1M", change: "+12.3%", up: true },
-    winRate: { value: "61%", change: "+3pp", up: true },
-    mrr: { value: "$187,400", change: "+8.9%", up: true },
-    margin: { value: "35.1%", change: "-0.2pp", up: false },
-  },
-};
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtDollar(v: number) {
+  return v >= 1000000 ? `$${(v / 1000000).toFixed(2)}M` : v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${v}`;
+}
 
-// ── Operational KPIs ──────────────────────────────────────────────────────────
-const OPS_KPIS = [
-  {
-    label: "Utilization Rate",
-    value: "82%",
-    target: "85%",
-    change: "+2pp",
-    up: true,
-    icon: Activity,
-    color: "#3b82f6",
-    tip: "Billable hours ÷ available capacity. Target: 85%+",
-    progress: 82,
-    targetPct: 85,
-  },
-  {
-    label: "Days to Collect (DSO)",
-    value: "38 days",
-    target: "< 30d",
-    change: "-4d",
-    up: true,
-    icon: Clock,
-    color: "#f59e0b",
-    tip: "Average days from invoice to payment. Lower is better.",
-    progress: 62,
-    targetPct: 100,
-    invertProgress: true,
-  },
-  {
-    label: "First-Time Fix Rate",
-    value: "88%",
-    target: "90%",
-    change: "+3pp",
-    up: true,
-    icon: Wrench,
-    color: "#10b981",
-    tip: "% of jobs resolved without a return visit. Industry benchmark: 90%+",
-    progress: 88,
-    targetPct: 90,
-  },
-  {
-    label: "Quote Turnaround",
-    value: "2.4 days",
-    target: "< 2d",
-    change: "-0.6d",
-    up: true,
-    icon: Zap,
-    color: "#8b5cf6",
-    tip: "Average days from inquiry to proposal sent. Faster = higher conversion.",
-    progress: 60,
-    targetPct: 100,
-    invertProgress: true,
-  },
-  {
-    label: "Backlog Value",
-    value: "$890K",
-    target: "$1M+",
-    change: "+14%",
-    up: true,
-    icon: BarChart2,
-    color: "#06b6d4",
-    tip: "Total value of scheduled but not yet started work.",
-    progress: 89,
-    targetPct: 100,
-  },
-  {
-    label: "Recurring Rev %",
-    value: "34%",
-    target: "40%",
-    change: "+2pp",
-    up: true,
-    icon: Repeat2,
-    color: "#ec4899",
-    tip: "% of revenue from service agreements vs. one-off jobs. Higher = more predictable.",
-    progress: 34,
-    targetPct: 40,
-  },
-];
+function fmtChange(pct: number, unit = "%") {
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}${unit}`;
+}
+
+// ── Fallback spark data (shown while loading) ─────────────────────────────────
+const FALLBACK_SPARK: SparkPoint[] = Array.from({ length: 12 }, (_, i) => ({ label: `M${i + 1}`, v: 0 }));
 
 // ── Team performance data ─────────────────────────────────────────────────────
 type ActivityStatus = "active" | "at_risk" | "inactive";
@@ -309,11 +197,6 @@ const SAMPLE_CONVERSATION: ChatMessage[] = [
 type Period = "daily" | "weekly" | "monthly";
 type UploadedFile = { name: string; size: string; uploadedAt: string };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtDollar(v: number) {
-  return v >= 1000000 ? `$${(v / 1000000).toFixed(2)}M` : `$${(v / 1000).toFixed(0)}K`;
-}
-
 const CustomTooltip = ({ active, payload, label, format }: any) => {
   if (!active || !payload?.length) return null;
   const v = payload[0]?.value;
@@ -362,9 +245,50 @@ function CEOCommandCenterInner() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
-  const kpi = KPI_DATA[period];
+  const { data: metrics, isLoading: metricsLoading } = useQuery<CeoMetrics>({
+    queryKey: ["/api/ceo/metrics"],
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  // ── Compute live KPI card values from API data ─────────────────────────────
+  const rev = metrics?.revenue;
+  const sa = metrics?.saContractRevenue;
+  const pipe = metrics?.pipeline;
+  const qcr = metrics?.quoteConversionRate;
+  const ar = metrics?.collectionsOutstanding;
+  const opsKpis = metrics?.operationalKpis;
+
+  const liveKpi = {
+    revenue: {
+      value: rev ? fmtDollar(rev.current) : "—",
+      change: rev ? fmtChange(rev.changePct) : "—",
+      up: rev?.up ?? true,
+    },
+    saContractRevenue: {
+      value: sa ? fmtDollar(sa.current) : "—",
+      change: sa ? fmtChange(sa.changePct) : "—",
+      up: sa?.up ?? true,
+    },
+    pipeline: {
+      value: pipe ? fmtDollar(pipe.value) : "—",
+      change: pipe ? `${pipe.dealCount} deals` : "—",
+      up: true,
+    },
+    quoteConversionRate: {
+      value: qcr ? `${qcr.value}%` : "—",
+      change: qcr ? `${qcr.changePt >= 0 ? "+" : ""}${qcr.changePt}pp` : "—",
+      up: qcr?.up ?? true,
+    },
+    collectionsOutstanding: {
+      value: ar ? fmtDollar(ar.total) : "—",
+      change: ar ? `${ar.bucket90plus > 0 ? fmtDollar(ar.bucket90plus) + " 90d+" : "current"}` : "—",
+      up: ar ? (ar.bucket90plus < ar.total * 0.15) : true,
+    },
+  };
+
   const summary = SUMMARIES[period];
-  const revenueData = period === "monthly" ? REVENUE_MONTHLY : period === "weekly" ? REVENUE_WEEKLY : REVENUE_DAILY;
+  const revenueData = rev?.monthly ?? FALLBACK_SPARK;
 
   function handlePeriodChange(p: Period) {
     setPeriod(p);
@@ -487,11 +411,11 @@ function CEOCommandCenterInner() {
         {/* ── KPI Strip with sparklines ─────────────────────────────────────── */}
         <div className="grid grid-cols-5 gap-3" data-testid="section-kpi-strip">
           {[
-            { label: "Revenue", icon: DollarSign, ...kpi.revenue, sparkData: revenueData, fmt: "dollar" },
-            { label: "Pipeline", icon: BarChart2, ...kpi.pipeline, sparkData: PIPELINE_MONTHLY, fmt: "m" },
-            { label: "Win Rate", icon: Target, ...kpi.winRate, sparkData: WIN_RATE_MONTHLY, fmt: "pct" },
-            { label: "MRR", icon: Repeat2, ...kpi.mrr, sparkData: MRR_MONTHLY, fmt: "dollar" },
-            { label: "Margin %", icon: Percent, ...kpi.margin, sparkData: MARGIN_MONTHLY, fmt: "pct" },
+            { label: "Revenue", icon: DollarSign, ...liveKpi.revenue, sparkData: revenueData, fmt: "dollar" },
+            { label: "Pipeline", icon: BarChart2, ...liveKpi.pipeline, sparkData: pipe?.monthly ?? FALLBACK_SPARK, fmt: "dollar" },
+            { label: "Quote Conv.", icon: Target, ...liveKpi.quoteConversionRate, sparkData: qcr?.monthly ?? FALLBACK_SPARK, fmt: "pct" },
+            { label: "SA Contract Rev", icon: Repeat2, ...liveKpi.saContractRevenue, sparkData: sa?.monthly ?? FALLBACK_SPARK, fmt: "dollar" },
+            { label: "Collections", icon: Percent, ...liveKpi.collectionsOutstanding, sparkData: ar?.monthly ?? FALLBACK_SPARK, fmt: "dollar" },
           ].map(({ label, icon: Icon, value, change, up, sparkData, fmt }) => (
             <div key={label} className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 pt-3.5 pb-0 overflow-hidden" data-testid={`kpi-${label.toLowerCase().replace(/\s+/g, '-')}`}>
               <div className="flex items-center justify-between mb-1">
@@ -527,7 +451,58 @@ function CEOCommandCenterInner() {
             <span className="text-[10px] text-gray-300">— metrics that drive margin in service businesses</span>
           </div>
           <div className="grid grid-cols-6 gap-3">
-            {OPS_KPIS.map((k) => {
+            {[
+              {
+                label: "Utilization Rate",
+                value: opsKpis?.utilizationRate.value != null ? `${opsKpis.utilizationRate.value}%` : "—",
+                target: "85%", change: "+2pp", up: true, icon: Activity, color: "#3b82f6",
+                tip: "Actual visit duration ÷ minimum duration. Target: 85%+ (requires visits sync)",
+                progress: opsKpis?.utilizationRate.value ?? 0,
+                targetPct: opsKpis?.utilizationRate.target ?? 85,
+              },
+              {
+                label: "Days to Collect (DSO)",
+                value: opsKpis ? `${opsKpis.dso.value} days` : "—",
+                target: "< 30d", change: opsKpis ? (opsKpis.dso.value <= 30 ? "✓ On target" : `${opsKpis.dso.value - 30}d over`) : "—",
+                up: opsKpis ? opsKpis.dso.value <= 30 : true, icon: Clock, color: "#f59e0b",
+                tip: "Average days from invoice issued to payment received. Target: <30 days.",
+                progress: opsKpis ? Math.max(0, 100 - Math.max(0, opsKpis.dso.value - 30) * 2) : 0,
+                targetPct: 100, invertProgress: true,
+              },
+              {
+                label: "First-Time Fix Rate",
+                value: opsKpis?.firstTimeFixRate.value != null ? `${opsKpis.firstTimeFixRate.value}%` : "—",
+                target: "90%", change: "+3pp", up: true, icon: Wrench, color: "#10b981",
+                tip: "% of jobs resolved with a single visit. Target: 90%+ (requires visits sync)",
+                progress: opsKpis?.firstTimeFixRate.value ?? 0,
+                targetPct: opsKpis?.firstTimeFixRate.target ?? 90,
+              },
+              {
+                label: "Quote Conv. Rate",
+                value: opsKpis ? `${opsKpis.quoteConversionRate.value}%` : "—",
+                target: "70%", change: qcr ? `${qcr.changePt >= 0 ? "+" : ""}${qcr.changePt}pp` : "—",
+                up: qcr ? qcr.changePt >= 0 : true, icon: Zap, color: "#8b5cf6",
+                tip: "Won leads ÷ (won + lost) leads. Target: 70%+.",
+                progress: opsKpis?.quoteConversionRate.value ?? 0,
+                targetPct: opsKpis?.quoteConversionRate.target ?? 70,
+              },
+              {
+                label: "Backlog Value",
+                value: opsKpis ? fmtDollar(opsKpis.backlog.value) : "—",
+                target: "$1M+", change: "+14%", up: true, icon: BarChart2, color: "#06b6d4",
+                tip: "Quoted value of open/active jobs (active departments only).",
+                progress: opsKpis ? Math.min(opsKpis.backlog.value / opsKpis.backlog.target * 100, 100) : 0,
+                targetPct: 100,
+              },
+              {
+                label: "Recurring Rev %",
+                value: opsKpis ? `${opsKpis.recurringRevPct.value}%` : "—",
+                target: "40%", change: "+2pp", up: true, icon: Repeat2, color: "#ec4899",
+                tip: "% of invoiced revenue tagged to service agreement jobs (last 6 months).",
+                progress: opsKpis?.recurringRevPct.value ?? 0,
+                targetPct: opsKpis?.recurringRevPct.target ?? 40,
+              },
+            ].map((k) => {
               const Icon = k.icon;
               const pct = Math.min((k.progress / k.targetPct) * 100, 100);
               const isHovered = hoveredKpi === k.label;
@@ -577,8 +552,8 @@ function CEOCommandCenterInner() {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">Revenue Trend</p>
               <p className="text-2xl font-black text-gray-900" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
-                {kpi.revenue.value}
-                <span className={`text-sm font-semibold ml-2 ${kpi.revenue.up ? "text-emerald-600" : "text-red-500"}`}>{kpi.revenue.change}</span>
+                {liveKpi.revenue.value}
+                <span className={`text-sm font-semibold ml-2 ${liveKpi.revenue.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.revenue.change}</span>
               </p>
             </div>
             <span className="text-xs text-gray-400 capitalize">{period} view</span>
@@ -611,15 +586,15 @@ function CEOCommandCenterInner() {
               <BarChart2 className="w-3.5 h-3.5 text-gray-300" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
-              {kpi.pipeline.value}
-              <span className={`text-xs font-semibold ml-1.5 ${kpi.pipeline.up ? "text-emerald-600" : "text-red-500"}`}>{kpi.pipeline.change}</span>
+              {liveKpi.pipeline.value}
+              <span className="text-xs font-semibold ml-1.5 text-emerald-600">{liveKpi.pipeline.change}</span>
             </p>
             <div className="h-28 mt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={PIPELINE_MONTHLY.slice(-6)} margin={{ top: 2, right: 0, left: 0, bottom: 0 }} barSize={14}>
+                <BarChart data={(pipe?.monthly ?? FALLBACK_SPARK).slice(-6)} margin={{ top: 2, right: 0, left: 0, bottom: 0 }} barSize={14}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip format="m" />} />
+                  <Tooltip content={<CustomTooltip format="dollar" />} />
                   <Bar dataKey="v" fill="#3b82f6" radius={[3, 3, 0, 0]} opacity={0.85} />
                 </BarChart>
               </ResponsiveContainer>
@@ -628,21 +603,21 @@ function CEOCommandCenterInner() {
 
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-winrate-chart">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Win Rate</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Quote Conversion Rate</p>
               <Target className="w-3.5 h-3.5 text-gray-300" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
-              {kpi.winRate.value}
-              <span className={`text-xs font-semibold ml-1.5 ${kpi.winRate.up ? "text-emerald-600" : "text-red-500"}`}>{kpi.winRate.change}</span>
+              {liveKpi.quoteConversionRate.value}
+              <span className={`text-xs font-semibold ml-1.5 ${liveKpi.quoteConversionRate.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.quoteConversionRate.change}</span>
             </p>
             <div className="h-28 mt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={WIN_RATE_MONTHLY.slice(-6)} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
+                <LineChart data={(qcr?.monthly ?? FALLBACK_SPARK).slice(-6)} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[50, 70]} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
                   <Tooltip content={<CustomTooltip format="pct" />} />
-                  <ReferenceLine y={60} stroke="#e5e7eb" strokeDasharray="4 4" label={{ value: "Target 60%", fontSize: 9, fill: "#9ca3af" }} />
+                  <ReferenceLine y={70} stroke="#e5e7eb" strokeDasharray="4 4" label={{ value: "Target 70%", fontSize: 9, fill: "#9ca3af" }} />
                   <Line type="monotone" dataKey="v" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2.5, fill: "#8b5cf6" }} activeDot={{ r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -651,28 +626,26 @@ function CEOCommandCenterInner() {
 
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-util-chart">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Utilization Rate</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Collections Outstanding</p>
               <Activity className="w-3.5 h-3.5 text-gray-300" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
-              82%
-              <span className="text-xs font-semibold ml-1.5 text-emerald-600">+2pp</span>
+              {liveKpi.collectionsOutstanding.value}
+              <span className={`text-xs font-semibold ml-1.5 ${liveKpi.collectionsOutstanding.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.collectionsOutstanding.change}</span>
             </p>
             <div className="h-28 mt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={UTIL_MONTHLY.slice(-6)} margin={{ top: 2, right: 0, left: 4, bottom: 0 }}>
+                <AreaChart data={(ar?.monthly ?? FALLBACK_SPARK).slice(-6)} margin={{ top: 2, right: 0, left: 4, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="util-grad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    <linearGradient id="coll-grad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[60, 90]} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
-                  <Tooltip content={<CustomTooltip format="pct" />} />
-                  <ReferenceLine y={85} stroke="#e5e7eb" strokeDasharray="4 4" label={{ value: "Target 85%", fontSize: 9, fill: "#9ca3af" }} />
-                  <Area type="monotone" dataKey="v" stroke="#3b82f6" strokeWidth={2} fill="url(#util-grad)" dot={false} activeDot={{ r: 4, fill: "#3b82f6" }} />
+                  <Tooltip content={<CustomTooltip format="dollar" />} />
+                  <Area type="monotone" dataKey="v" stroke="#f59e0b" strokeWidth={2} fill="url(#coll-grad)" dot={false} activeDot={{ r: 4, fill: "#f59e0b" }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -683,21 +656,20 @@ function CEOCommandCenterInner() {
         <div className="grid grid-cols-3 gap-4">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 col-span-2" data-testid="section-margin-chart">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Gross Margin %</p>
-              <Percent className="w-3.5 h-3.5 text-gray-300" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">SA Contract Revenue</p>
+              <Repeat2 className="w-3.5 h-3.5 text-gray-300" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
-              {kpi.margin.value}
-              <span className={`text-xs font-semibold ml-1.5 ${kpi.margin.up ? "text-emerald-600" : "text-red-500"}`}>{kpi.margin.change}</span>
+              {liveKpi.saContractRevenue.value}
+              <span className={`text-xs font-semibold ml-1.5 ${liveKpi.saContractRevenue.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.saContractRevenue.change}</span>
             </p>
             <div className="h-28 mt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={MARGIN_MONTHLY} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
+                <LineChart data={(sa?.monthly ?? FALLBACK_SPARK)} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[33, 38]} tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
-                  <Tooltip content={<CustomTooltip format="pct" />} />
-                  <ReferenceLine y={36} stroke="#e5e7eb" strokeDasharray="4 4" label={{ value: "Target 36%", fontSize: 9, fill: "#9ca3af" }} />
+                  <YAxis tick={{ fontSize: 10, fill: "#9ca3af" }} axisLine={false} tickLine={false} tickFormatter={v => fmtDollar(v)} />
+                  <Tooltip content={<CustomTooltip format="dollar" />} />
                   <Line type="monotone" dataKey="v" stroke={PRIMARY} strokeWidth={2} dot={{ r: 2.5, fill: PRIMARY }} activeDot={{ r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
