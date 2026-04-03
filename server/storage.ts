@@ -1487,21 +1487,21 @@ export class DatabaseStorage implements IStorage {
             eq(leads.stage, "lost"),
             sql`(${leads.lostAt} >= ${firstOfMonth} OR (${leads.lostAt} IS NULL AND ${leads.updatedAt} >= ${firstOfMonth}))`,
           )),
-        // Won count prior month
+        // Won count prior month — outer parens ensure OR doesn't escape the AND group
         db.select({ count: sql<number>`count(*)` })
           .from(leads)
           .where(and(
             eq(leads.assignedTo, user.id),
             eq(leads.stage, "won"),
-            sql`(${leads.wonAt} >= ${firstOfPriorMonth} AND ${leads.wonAt} < ${firstOfMonth}) OR (${leads.wonAt} IS NULL AND ${leads.updatedAt} >= ${firstOfPriorMonth} AND ${leads.updatedAt} < ${firstOfMonth})`,
+            sql`((${leads.wonAt} >= ${firstOfPriorMonth} AND ${leads.wonAt} < ${firstOfMonth}) OR (${leads.wonAt} IS NULL AND ${leads.updatedAt} >= ${firstOfPriorMonth} AND ${leads.updatedAt} < ${firstOfMonth}))`,
           )),
-        // Lost count prior month
+        // Lost count prior month — outer parens ensure OR doesn't escape the AND group
         db.select({ count: sql<number>`count(*)` })
           .from(leads)
           .where(and(
             eq(leads.assignedTo, user.id),
             eq(leads.stage, "lost"),
-            sql`(${leads.lostAt} >= ${firstOfPriorMonth} AND ${leads.lostAt} < ${firstOfMonth}) OR (${leads.lostAt} IS NULL AND ${leads.updatedAt} >= ${firstOfPriorMonth} AND ${leads.updatedAt} < ${firstOfMonth})`,
+            sql`((${leads.lostAt} >= ${firstOfPriorMonth} AND ${leads.lostAt} < ${firstOfMonth}) OR (${leads.lostAt} IS NULL AND ${leads.updatedAt} >= ${firstOfPriorMonth} AND ${leads.updatedAt} < ${firstOfMonth}))`,
           )),
         // Calls logged MTD — from activity_logs where action='call'
         db.select({ count: sql<number>`count(*)` })
