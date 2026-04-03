@@ -1447,11 +1447,17 @@ export class DatabaseStorage implements IStorage {
     const userList = await db.select().from(users);
 
     const stats = await Promise.all(userList.map(async (user) => {
-      // Attribution filter: lead directly assigned to user, OR lead's client has this user as account manager.
-      // LEFT JOIN ensures leads without a client still match via assignedTo.
+      // Attribution filter:
+      //  Primary: lead directly assigned to this user
+      //  Fallback: lead is unassigned (assignedTo IS NULL) AND its client's AM is this user
+      // This ensures explicit assignment always takes priority; AM attribution only covers
+      // leads that have no rep assigned (the common case with BuildOps-synced quotes).
       const isAttrib = or(
         eq(leads.assignedTo, user.id),
-        eq(clients.accountManagerUserId, user.id),
+        and(
+          sql`${leads.assignedTo} IS NULL`,
+          eq(clients.accountManagerUserId, user.id),
+        ),
       )!;
 
       const [
