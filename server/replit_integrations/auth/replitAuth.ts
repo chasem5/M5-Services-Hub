@@ -151,6 +151,11 @@ export function requireRole(roles: string[]): RequestHandler {
   };
 }
 
+async function checkUserIsActive(userId: string): Promise<boolean> {
+  const dbUser = await authStorage.getUser(userId);
+  return !!dbUser && dbUser.isActive !== false;
+}
+
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const user = req.user as any;
 
@@ -158,8 +163,13 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
+  const userId = user.claims?.sub;
+
   const now = Math.floor(Date.now() / 1000);
   if (now <= user.expires_at) {
+    if (userId && !await checkUserIsActive(userId)) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
     return next();
   }
 
@@ -173,6 +183,9 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     const config = await getOidcConfig();
     const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
     updateUserSession(user, tokenResponse);
+    if (userId && !await checkUserIsActive(userId)) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
     return next();
   } catch (error) {
     res.status(401).json({ message: "Unauthorized" });

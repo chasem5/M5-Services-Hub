@@ -40,6 +40,7 @@ export const users = pgTable("users", {
   emailNotifyTaskDue: boolean("email_notify_task_due").default(true).notNull(),
   emailNotifyAnnouncement: boolean("email_notify_announcement").default(true).notNull(),
   emailNotifyReminder: boolean("email_notify_reminder").default(true).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

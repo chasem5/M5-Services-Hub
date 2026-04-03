@@ -484,7 +484,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async listUsers(): Promise<User[]> {
-    return await db.select().from(users);
+    return await db.select().from(users).where(eq(users.isActive, true));
   }
 
   async updateUserRole(id: string, role: any): Promise<User> {
@@ -506,7 +506,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: string): Promise<void> {
-    await db.delete(users).where(eq(users.id, id));
+    await db.update(users).set({ isActive: false, updatedAt: new Date() }).where(eq(users.id, id));
   }
 
   // Invites
@@ -1408,7 +1408,7 @@ export class DatabaseStorage implements IStorage {
     const today = new Date();
     const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-    const userList = await db.select().from(users);
+    const userList = await db.select().from(users).where(eq(users.isActive, true));
 
     const stats = await Promise.all(
       userList.map(async (user) => {
@@ -1454,7 +1454,7 @@ export class DatabaseStorage implements IStorage {
       super_admin: 500000, admin: 500000, manager: 400000, member: 300000,
     };
 
-    const userList = await db.select().from(users);
+    const userList = await db.select().from(users).where(eq(users.isActive, true));
 
     const stats = await Promise.all(userList.map(async (user) => {
       // Attribution filter:
