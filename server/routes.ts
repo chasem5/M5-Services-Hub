@@ -10385,8 +10385,8 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         dateTruncExpr = `DATE_TRUNC('week', issued_date)`;
         labelExpr = `TO_CHAR(DATE_TRUNC('week', issued_date), 'Mon DD')`;
       } else {
-        invoiceSinceExpr = `issued_date >= '${twelveMonthsAgo.toISOString()}'`;
-        leadsSinceExpr = `created_at >= '${twelveMonthsAgo.toISOString()}'`;
+        invoiceSinceExpr = `issued_date >= '${twelveMonthsAgo.toISOString()}' AND issued_date <= '${rangeEnd.toISOString()}'`;
+        leadsSinceExpr = `created_at >= '${twelveMonthsAgo.toISOString()}' AND created_at <= '${rangeEnd.toISOString()}'`;
         dateTruncExpr = `DATE_TRUNC('month', issued_date)`;
         labelExpr = `TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY')`;
       }
@@ -10504,14 +10504,19 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const saPrev = saMonthly.at(-2)?.v ?? 0;
       const saChangePct = saPrev > 0 ? ((saCurrent - saPrev) / saPrev) * 100 : 0;
 
-      // ── Pipeline: open leads value ───────────────────────────────────────────
-      const pipeRows = await db.execute(sql`
+      // ── Pipeline: open leads value created within the effective window ──────────
+      const rangeStartIsoScalar = rangeStart.toISOString();
+      const rangeEndIsoScalar = rangeEnd.toISOString();
+      const pipeRows = await db.execute(sql.raw(`
         SELECT
           SUM(CAST(value AS DECIMAL)) AS total,
           COUNT(*) AS cnt
         FROM leads
-        WHERE stage NOT IN ('won', 'lost') AND value IS NOT NULL
-      `);
+        WHERE stage NOT IN ('won', 'lost')
+          AND value IS NOT NULL
+          AND created_at >= '${rangeStartIsoScalar}'
+          AND created_at <= '${rangeEndIsoScalar}'
+      `));
       const pipeTotal = Math.round(parseFloat((pipeRows.rows[0] as any)?.total) || 0);
       const pipeCount = parseInt((pipeRows.rows[0] as any)?.cnt) || 0;
 
@@ -10546,17 +10551,22 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }));
       const pipeMonthly = fillBuckets(pipeRaw, allBuckets);
 
-      // ── Quote Conversion Rate: won / (won + lost) from leads ─────────────────
-      const qcrRows = await db.execute(sql`
+      // ── Quote Conversion Rate: won / (won + lost) within effective window ────
+      const rangeMonthsCount =
+        (rangeEnd.getFullYear() - rangeStart.getFullYear()) * 12 +
+        (rangeEnd.getMonth() - rangeStart.getMonth()) + 1;
+      const qcrPriorEnd = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 0);
+      const qcrPriorStart = new Date(rangeStart.getFullYear(), rangeStart.getMonth() - rangeMonthsCount, 1);
+      const qcrRows = await db.execute(sql.raw(`
         SELECT
-          SUM(CASE WHEN stage = 'won' THEN 1 ELSE 0 END) AS won,
-          SUM(CASE WHEN stage = 'lost' THEN 1 ELSE 0 END) AS lost,
-          SUM(CASE WHEN stage = 'won' AND updated_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 ELSE 0 END) AS won_30d,
-          SUM(CASE WHEN stage = 'lost' AND updated_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 ELSE 0 END) AS lost_30d,
-          SUM(CASE WHEN stage = 'won' AND updated_at >= CURRENT_DATE - INTERVAL '60 days' AND updated_at < CURRENT_DATE - INTERVAL '30 days' THEN 1 ELSE 0 END) AS won_prev30,
-          SUM(CASE WHEN stage = 'lost' AND updated_at >= CURRENT_DATE - INTERVAL '60 days' AND updated_at < CURRENT_DATE - INTERVAL '30 days' THEN 1 ELSE 0 END) AS lost_prev30
+          SUM(CASE WHEN stage = 'won' AND updated_at >= '${rangeStartIsoScalar}' AND updated_at <= '${rangeEndIsoScalar}' THEN 1 ELSE 0 END) AS won,
+          SUM(CASE WHEN stage = 'lost' AND updated_at >= '${rangeStartIsoScalar}' AND updated_at <= '${rangeEndIsoScalar}' THEN 1 ELSE 0 END) AS lost,
+          SUM(CASE WHEN stage = 'won' AND updated_at >= '${rangeStartIsoScalar}' AND updated_at <= '${rangeEndIsoScalar}' THEN 1 ELSE 0 END) AS won_30d,
+          SUM(CASE WHEN stage = 'lost' AND updated_at >= '${rangeStartIsoScalar}' AND updated_at <= '${rangeEndIsoScalar}' THEN 1 ELSE 0 END) AS lost_30d,
+          SUM(CASE WHEN stage = 'won' AND updated_at >= '${qcrPriorStart.toISOString()}' AND updated_at <= '${qcrPriorEnd.toISOString()}' THEN 1 ELSE 0 END) AS won_prev30,
+          SUM(CASE WHEN stage = 'lost' AND updated_at >= '${qcrPriorStart.toISOString()}' AND updated_at <= '${qcrPriorEnd.toISOString()}' THEN 1 ELSE 0 END) AS lost_prev30
         FROM leads
-      `);
+      `));
       const r0 = qcrRows.rows[0] as any;
       const wonAll = parseInt(r0?.won) || 0;
       const lostAll = parseInt(r0?.lost) || 0;
@@ -10641,7 +10651,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         arIssuedTruncExpr = `DATE_TRUNC('week', issued_date)`;
         arIssuedLabelExpr = `TO_CHAR(DATE_TRUNC('week', issued_date), 'Mon DD')`;
       } else {
-        arIssuedSinceExpr = `issued_date >= '${twelveMonthsAgo.toISOString()}'`;
+        arIssuedSinceExpr = `issued_date >= '${twelveMonthsAgo.toISOString()}' AND issued_date <= '${rangeEnd.toISOString()}'`;
         arIssuedTruncExpr = `DATE_TRUNC('month', issued_date)`;
         arIssuedLabelExpr = `TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY')`;
       }
@@ -10736,18 +10746,21 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const rawUtil = parseFloat(vRow?.util_ratio);
       const utilizationRate = rawUtil > 0 ? Math.round(rawUtil * 100) : null;
 
-      // ── Top customers (from invoices) ─────────────────────────────────────────
-      const topCustRows = await db.execute(sql`
+      // ── Top customers (from invoices within effective window) ────────────────
+      const topCustRows = await db.execute(sql.raw(`
         SELECT
           customer_name,
           SUM(CAST(total_amount AS DECIMAL)) AS revenue,
           COUNT(*) AS invoice_count
         FROM buildops_invoices
-        WHERE customer_name IS NOT NULL AND total_amount IS NOT NULL
+        WHERE customer_name IS NOT NULL
+          AND total_amount IS NOT NULL
+          AND issued_date >= '${rangeStartIsoScalar}'
+          AND issued_date <= '${rangeEndIsoScalar}'
         GROUP BY customer_name
         ORDER BY revenue DESC
         LIMIT 5
-      `);
+      `));
       const topCustomers = (topCustRows.rows as any[]).map(r => ({
         name: r.customer_name,
         revenue: Math.round(parseFloat(r.revenue) || 0),
