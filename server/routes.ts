@@ -437,6 +437,13 @@ export async function registerRoutes(
     res.json(user);
   });
 
+  app.patch("/api/users/:id/team", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    const id = req.params.id as string;
+    const { team } = z.object({ team: z.string().nullable() }).parse(req.body);
+    const user = await storage.updateUserTeam(id, team);
+    res.json(user);
+  });
+
   app.delete("/api/users/:id", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const id = req.params.id as string;
     await storage.deleteUser(id);

@@ -2148,6 +2148,16 @@ export default function AdminPage() {
     },
   });
 
+  const updateTeamMutation = useMutation({
+    mutationFn: ({ id, team }: { id: string; team: string | null }) =>
+      apiRequest("PATCH", `/api/users/${id}/team`, { team }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ceo/team-performance"] });
+    },
+    onError: () => toast({ title: "Failed to update team", variant: "destructive" }),
+  });
+
   const removeUserMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/users/${id}`),
     onSuccess: () => {
@@ -2327,6 +2337,24 @@ export default function AdminPage() {
                       )}
                     </p>
                     <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[10px] text-muted-foreground">Team:</span>
+                      <input
+                        key={`team-${u.id}-${u.team}`}
+                        defaultValue={u.team ?? ""}
+                        placeholder="No team"
+                        disabled={!isSuperAdmin}
+                        onBlur={(e) => {
+                          const val = e.target.value.trim() || null;
+                          if (val !== (u.team ?? null)) {
+                            updateTeamMutation.mutate({ id: u.id, team: val });
+                          }
+                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                        className="text-[11px] font-medium text-foreground bg-transparent border-b border-dashed border-muted-foreground/30 focus:border-primary focus:outline-none px-0.5 w-28 placeholder:text-muted-foreground/50"
+                        data-testid={`input-team-${u.id}`}
+                      />
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Select

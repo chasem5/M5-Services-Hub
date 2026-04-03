@@ -140,6 +140,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   listUsers(): Promise<User[]>;
   updateUserRole(id: string, role: string): Promise<User>;
+  updateUserTeam(id: string, team: string | null): Promise<User>;
   deleteUser(id: string): Promise<void>;
 
   // Invites
@@ -490,6 +491,15 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db
       .update(users)
       .set({ role, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async updateUserTeam(id: string, team: string | null): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ team: team || null, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
     return user;
@@ -1599,6 +1609,7 @@ export class DatabaseStorage implements IStorage {
         initials,
         avatarColor,
         role: user.role,
+        team: user.team ?? null,
         status,
         lastActiveDisplay,
         revenueTarget: REVENUE_TARGETS[user.role] ?? 300000,

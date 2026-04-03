@@ -132,6 +132,7 @@ interface CeoTeamMember {
   initials: string;
   avatarColor: string;
   role: string;
+  team: string | null;
   status: ActivityStatus;
   lastActiveDisplay: string;
   revenueTarget: number;
@@ -142,6 +143,48 @@ interface CeoTeamMember {
   callsMTD: number;
   meetingsMTD: number;
   proposalsMTD: number;
+}
+
+interface TeamGroup {
+  name: string;
+  members: CeoTeamMember[];
+  revenueMTD: number;
+  pipelineValue: number;
+  revenueTarget: number;
+  winRate: number | null;
+  callsMTD: number;
+  meetingsMTD: number;
+  proposalsMTD: number;
+}
+
+function buildTeamGroups(members: CeoTeamMember[]): { groups: TeamGroup[]; ungrouped: CeoTeamMember[] } {
+  const map = new Map<string, CeoTeamMember[]>();
+  const ungrouped: CeoTeamMember[] = [];
+  for (const m of members) {
+    if (m.team) {
+      if (!map.has(m.team)) map.set(m.team, []);
+      map.get(m.team)!.push(m);
+    } else {
+      ungrouped.push(m);
+    }
+  }
+  const groups: TeamGroup[] = Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, mems]) => {
+      const rates = mems.map(m => m.winRate).filter((r): r is number => r !== null);
+      return {
+        name,
+        members: mems,
+        revenueMTD: mems.reduce((s, m) => s + m.revenueMTD, 0),
+        pipelineValue: mems.reduce((s, m) => s + m.pipelineValue, 0),
+        revenueTarget: mems.reduce((s, m) => s + m.revenueTarget, 0),
+        winRate: rates.length > 0 ? Math.round(rates.reduce((s, r) => s + r, 0) / rates.length) : null,
+        callsMTD: mems.reduce((s, m) => s + m.callsMTD, 0),
+        meetingsMTD: mems.reduce((s, m) => s + m.meetingsMTD, 0),
+        proposalsMTD: mems.reduce((s, m) => s + m.proposalsMTD, 0),
+      };
+    });
+  return { groups, ungrouped };
 }
 
 const SUMMARIES: Record<string, string> = {
@@ -213,6 +256,12 @@ function CEOCommandCenterInner() {
   const [chatInput, setChatInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
+  const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+  const toggleTeam = (name: string) => setExpandedTeams(prev => {
+    const s = new Set(prev);
+    s.has(name) ? s.delete(name) : s.add(name);
+    return s;
+  });
   const [hoveredKpi, setHoveredKpi] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([
     { name: "BuildOps_JobCostReport_Q1.xlsx", size: "284 KB", uploadedAt: "Apr 1, 2026 — 9:14 AM" },
@@ -1705,33 +1754,35 @@ function CEOCommandCenterInner() {
                     <td colSpan={7} className="px-5 py-8 text-center text-sm text-gray-600">No team members found</td>
                   </tr>
                 ) : (
-                  teamPerf.map((member, i) => {
-                    const sc = STATUS_CONFIG[member.status];
-                    const revPct = member.revenueTarget > 0 ? Math.min((member.revenueMTD / member.revenueTarget) * 100, 100) : 0;
-                    const isLow = revPct < 70;
-                    const isMid = revPct >= 70 && revPct < 90;
-                    const barColor = isLow ? "#ef4444" : isMid ? "#f59e0b" : "#10b981";
-                    return (
-                      <tr key={member.userId} className={`border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors ${member.status === "inactive" ? "opacity-80" : ""}`} data-testid={`team-row-${i}`}>
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ backgroundColor: member.avatarColor }}>
-                              {member.initials}
+                  // Build team groups and render as flat array of <tr> elements
+                  (() => {
+                    const { groups, ungrouped } = buildTeamGroups(teamPerf);
+                    const renderMemberRow = (member: CeoTeamMember, idx: number, indented: boolean) => {
+                      const sc = STATUS_CONFIG[member.status];
+                      const revPct = member.revenueTarget > 0 ? Math.min((member.revenueMTD / member.revenueTarget) * 100, 100) : 0;
+                      const isLow = revPct < 70;
+                      const isMid = revPct >= 70 && revPct < 90;
+                      const barColor = isLow ? "#ef4444" : isMid ? "#f59e0b" : "#10b981";
+                      return (
+                        <tr key={member.userId} className={`border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors ${member.status === "inactive" ? "opacity-80" : ""}`} data-testid={`team-row-${idx}`}>
+                          <td className={`${indented ? "pl-10 pr-5" : "px-5"} py-3.5`}>
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ backgroundColor: member.avatarColor }}>
+                                {member.initials}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-gray-800">{member.name}</p>
+                                <p className="text-[10px] text-gray-600 capitalize">{member.role.replace(/_/g, " ")}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-sm font-semibold text-gray-800">{member.name}</p>
-                              <p className="text-[10px] text-gray-600 capitalize">{member.role.replace(/_/g, " ")}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className={`flex items-center gap-1.5 text-[11px] font-semibold border rounded-full px-2.5 py-1 w-fit ${sc.badge} ${sc.text}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full inline-block flex-shrink-0 ${sc.dot}`} />
-                            {sc.label}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 min-w-[160px]">
-                          <div className="flex items-center gap-2">
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className={`flex items-center gap-1.5 text-[11px] font-semibold border rounded-full px-2.5 py-1 w-fit ${sc.badge} ${sc.text}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full inline-block flex-shrink-0 ${sc.dot}`} />
+                              {sc.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 min-w-[160px]">
                             <div className="flex-1">
                               <div className="flex items-center justify-between mb-1">
                                 <span className="text-xs font-semibold text-gray-700">{fmtDollar(member.revenueMTD)}</span>
@@ -1742,45 +1793,123 @@ function CEOCommandCenterInner() {
                               </div>
                               <p className="text-[10px] text-gray-600 mt-0.5">of {fmtDollar(member.revenueTarget)} target</p>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="text-sm font-semibold text-gray-700">{fmtDollar(member.pipelineValue)}</span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-semibold text-gray-700">{member.winRate !== null ? `${member.winRate}%` : "—"}</span>
-                            {member.winRateChange !== null && (
-                              <span className={`text-[10px] font-semibold ${member.winRateChange > 0 ? "text-emerald-600" : member.winRateChange < 0 ? "text-red-500" : "text-gray-600"}`}>
-                                {member.winRateChange > 0 ? `+${member.winRateChange}pp` : member.winRateChange < 0 ? `${member.winRateChange}pp` : "—"}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                              <PhoneCall className="w-3 h-3 text-gray-500" />
-                              <span className="font-semibold text-gray-700">{member.callsMTD}</span>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className="text-sm font-semibold text-gray-700">{fmtDollar(member.pipelineValue)}</span>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-semibold text-gray-700">{member.winRate !== null ? `${member.winRate}%` : "—"}</span>
+                              {member.winRateChange !== null && (
+                                <span className={`text-[10px] font-semibold ${member.winRateChange > 0 ? "text-emerald-600" : member.winRateChange < 0 ? "text-red-500" : "text-gray-600"}`}>
+                                  {member.winRateChange > 0 ? `+${member.winRateChange}pp` : member.winRateChange < 0 ? `${member.winRateChange}pp` : "—"}
+                                </span>
+                              )}
                             </div>
-                            <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                              <Calendar className="w-3 h-3 text-gray-500" />
-                              <span className="font-semibold text-gray-700">{member.meetingsMTD}</span>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                                <PhoneCall className="w-3 h-3 text-gray-500" />
+                                <span className="font-semibold text-gray-700">{member.callsMTD}</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                                <Calendar className="w-3 h-3 text-gray-500" />
+                                <span className="font-semibold text-gray-700">{member.meetingsMTD}</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                                <Mail className="w-3 h-3 text-gray-500" />
+                                <span className="font-semibold text-gray-700">{member.proposalsMTD}</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                              <Mail className="w-3 h-3 text-gray-500" />
-                              <span className="font-semibold text-gray-700">{member.proposalsMTD}</span>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className={`text-xs ${member.status === "inactive" ? "text-red-500 font-semibold" : member.status === "at_risk" ? "text-amber-600 font-semibold" : "text-gray-600"}`}>
+                              {member.lastActiveDisplay}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    };
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const rows: any[] = [];
+                    groups.forEach(group => {
+                      const isExpanded = expandedTeams.has(group.name);
+                      const revPct = group.revenueTarget > 0 ? Math.min((group.revenueMTD / group.revenueTarget) * 100, 100) : 0;
+                      const isLow = revPct < 70;
+                      const isMid = revPct >= 70 && revPct < 90;
+                      const barColor = isLow ? "#ef4444" : isMid ? "#f59e0b" : "#10b981";
+                      rows.push(
+                        <tr
+                          key={`team-hdr-${group.name}`}
+                          className="border-b border-gray-100 bg-gray-50 hover:bg-gray-100/70 cursor-pointer transition-colors"
+                          onClick={() => toggleTeam(group.name)}
+                          data-testid={`team-group-${group.name}`}
+                        >
+                          <td className="px-5 py-3">
+                            <div className="flex items-center gap-2.5">
+                              {isExpanded
+                                ? <ChevronDown className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                                : <ChevronRight className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                              }
+                              <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black text-white flex-shrink-0" style={{ backgroundColor: PRIMARY }}>
+                                {group.name.slice(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold text-gray-800">{group.name}</p>
+                                <p className="text-[10px] text-gray-500">{group.members.length} member{group.members.length !== 1 ? "s" : ""}</p>
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className={`text-xs ${member.status === "inactive" ? "text-red-500 font-semibold" : member.status === "at_risk" ? "text-amber-600 font-semibold" : "text-gray-600"}`}>
-                            {member.lastActiveDisplay}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-[10px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">Team</span>
+                          </td>
+                          <td className="px-4 py-3 min-w-[160px]">
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-bold text-gray-800">{fmtDollar(group.revenueMTD)}</span>
+                                <span className="text-[10px] text-gray-600">{Math.round(revPct)}%</span>
+                              </div>
+                              <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full" style={{ width: `${revPct}%`, backgroundColor: barColor }} />
+                              </div>
+                              <p className="text-[10px] text-gray-500 mt-0.5">of {fmtDollar(group.revenueTarget)} combined target</p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-sm font-bold text-gray-800">{fmtDollar(group.pipelineValue)}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-sm font-bold text-gray-800">{group.winRate !== null ? `${group.winRate}%` : "—"}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                                <PhoneCall className="w-3 h-3 text-gray-500" />
+                                <span className="font-bold text-gray-700">{group.callsMTD}</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                                <Calendar className="w-3 h-3 text-gray-500" />
+                                <span className="font-bold text-gray-700">{group.meetingsMTD}</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                                <Mail className="w-3 h-3 text-gray-500" />
+                                <span className="font-bold text-gray-700">{group.proposalsMTD}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-[10px] text-gray-500">{isExpanded ? "Click to collapse" : "Click to expand"}</span>
+                          </td>
+                        </tr>
+                      );
+                      if (isExpanded) {
+                        group.members.forEach((member, i) => rows.push(renderMemberRow(member, i, true)));
+                      }
+                    });
+                    ungrouped.forEach((member, i) => rows.push(renderMemberRow(member, i, false)));
+                    return rows;
+                  })()
                 )}
               </tbody>
             </table>
