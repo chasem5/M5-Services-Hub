@@ -125,121 +125,23 @@ const FALLBACK_SPARK: SparkPoint[] = Array.from({ length: 12 }, (_, i) => ({ lab
 
 // ── Team performance data ─────────────────────────────────────────────────────
 type ActivityStatus = "active" | "at_risk" | "inactive";
-interface TeamMember {
+interface CeoTeamMember {
+  userId: string;
   name: string;
   initials: string;
-  role: "Account Manager" | "Field Lead" | "Senior AM";
+  avatarColor: string;
+  role: string;
   status: ActivityStatus;
-  lastActive: string;
+  lastActiveDisplay: string;
   revenueTarget: number;
-  revenueClosed: number;
-  pipeline: string;
-  winRate: number;
-  winRateChange: number;
-  calls: number;
-  meetings: number;
-  proposals: number;
-  color: string;
+  revenueMTD: number;
+  pipelineValue: number;
+  winRate: number | null;
+  winRateChange: number | null;
+  callsMTD: number;
+  meetingsMTD: number;
+  proposalsMTD: number;
 }
-
-const TEAM: TeamMember[] = [
-  {
-    name: "Sarah Chen",
-    initials: "SC",
-    role: "Senior AM",
-    status: "active",
-    lastActive: "Today, 2:14 PM",
-    revenueTarget: 400000,
-    revenueClosed: 387000,
-    pipeline: "$610K",
-    winRate: 68,
-    winRateChange: 3,
-    calls: 24,
-    meetings: 11,
-    proposals: 9,
-    color: "#3b82f6",
-  },
-  {
-    name: "Marcus Rodriguez",
-    initials: "MR",
-    role: "Account Manager",
-    status: "active",
-    lastActive: "Today, 11:40 AM",
-    revenueTarget: 300000,
-    revenueClosed: 294000,
-    pipeline: "$480K",
-    winRate: 61,
-    winRateChange: 1,
-    calls: 18,
-    meetings: 8,
-    proposals: 7,
-    color: "#8b5cf6",
-  },
-  {
-    name: "David Park",
-    initials: "DP",
-    role: "Account Manager",
-    status: "at_risk",
-    lastActive: "5 days ago",
-    revenueTarget: 300000,
-    revenueClosed: 201000,
-    pipeline: "$310K",
-    winRate: 52,
-    winRateChange: -4,
-    calls: 6,
-    meetings: 2,
-    proposals: 3,
-    color: "#f59e0b",
-  },
-  {
-    name: "Lisa Torres",
-    initials: "LT",
-    role: "Account Manager",
-    status: "active",
-    lastActive: "Today, 9:55 AM",
-    revenueTarget: 300000,
-    revenueClosed: 218000,
-    pipeline: "$390K",
-    winRate: 58,
-    winRateChange: 0,
-    calls: 20,
-    meetings: 9,
-    proposals: 6,
-    color: "#10b981",
-  },
-  {
-    name: "James Wu",
-    initials: "JW",
-    role: "Field Lead",
-    status: "active",
-    lastActive: "Today, 3:00 PM",
-    revenueTarget: 250000,
-    revenueClosed: 243000,
-    pipeline: "$120K",
-    winRate: 74,
-    winRateChange: 2,
-    calls: 31,
-    meetings: 6,
-    proposals: 4,
-    color: "#06b6d4",
-  },
-  {
-    name: "Tony Reeves",
-    initials: "TR",
-    role: "Account Manager",
-    status: "inactive",
-    lastActive: "8 days ago",
-    revenueTarget: 280000,
-    revenueClosed: 118000,
-    pipeline: "$190K",
-    winRate: 41,
-    winRateChange: -7,
-    calls: 3,
-    meetings: 1,
-    proposals: 1,
-    color: "#ef4444",
-  },
-];
 
 const SUMMARIES: Record<string, string> = {
   daily: `**Revenue vs. Prior Day**\nToday is tracking at $48,320 — up 6.2% from yesterday's $45,500. HVAC preventive maintenance jobs are the primary driver; three large TI completions invoiced this morning.\n\n**Pipeline Health**\nActive pipeline sits at $2.1M across 34 open opportunities. Two deals moved backward from Proposal to Scoping today — both tied to budget approval delays at Cushman & Wakefield East Bay. Eight new leads entered the top of funnel from inbound referrals.\n\n**Win/Loss Trends**\nToday's win rate is 62%. Three estimates converted; two were lost to competitor on price. Average discount on won deals: 4.1% — within acceptable range.\n\n**Top Clients**\nCushman & Wakefield (YTD: $387K) and Prologis (YTD: $294K) remain the top two contributors. Prologis health score improved to 88 after a successful site walk this week.\n\n**Margin & Budget Concerns**\nJob #4471 (HVAC Retrofit — Embarcadero Tower 3) is running 11% over labor estimate. Field lead cites scope creep on ductwork. Needs change order review today.\n\n**Opportunities**\nBrookfield Property Group inquiry came in at $140K estimated value — first contact scheduled tomorrow. Potential to be the 4th Tier-A account this year.`,
@@ -368,6 +270,12 @@ function CEOCommandCenterInner() {
     paidCount: number; partialCount: number; pendingCount: number;
   }>({
     queryKey: ["/api/ceo/pipeline-invoice-summary"],
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const { data: teamPerf, isLoading: teamPerfLoading } = useQuery<CeoTeamMember[]>({
+    queryKey: ["/api/ceo/team-performance"],
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -1750,16 +1658,16 @@ function CEOCommandCenterInner() {
               <span className="ml-1 text-[10px] text-gray-400">— revenue vs. target · activity · pipeline</span>
             </div>
             <div className="flex items-center gap-2">
-              {TEAM.filter(m => m.status === "inactive").length > 0 && (
+              {(teamPerf ?? []).filter(m => m.status === "inactive").length > 0 && (
                 <span className="flex items-center gap-1 text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
-                  {TEAM.filter(m => m.status === "inactive").length} inactive
+                  {(teamPerf ?? []).filter(m => m.status === "inactive").length} inactive
                 </span>
               )}
-              {TEAM.filter(m => m.status === "at_risk").length > 0 && (
+              {(teamPerf ?? []).filter(m => m.status === "at_risk").length > 0 && (
                 <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
-                  {TEAM.filter(m => m.status === "at_risk").length} at risk
+                  {(teamPerf ?? []).filter(m => m.status === "at_risk").length} at risk
                 </span>
               )}
             </div>
@@ -1779,80 +1687,97 @@ function CEOCommandCenterInner() {
                 </tr>
               </thead>
               <tbody>
-                {TEAM.map((member, i) => {
-                  const sc = STATUS_CONFIG[member.status];
-                  const revPct = Math.min((member.revenueClosed / member.revenueTarget) * 100, 100);
-                  const isLow = revPct < 70;
-                  const isMid = revPct >= 70 && revPct < 90;
-                  const barColor = isLow ? "#ef4444" : isMid ? "#f59e0b" : "#10b981";
-                  return (
-                    <tr key={member.name} className={`border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors ${member.status === "inactive" ? "opacity-80" : ""}`} data-testid={`team-row-${i}`}>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ backgroundColor: member.color }}>
-                            {member.initials}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-800">{member.name}</p>
-                            <p className="text-[10px] text-gray-400">{member.role}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className={`flex items-center gap-1.5 text-[11px] font-semibold border rounded-full px-2.5 py-1 w-fit ${sc.badge} ${sc.text}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full inline-block flex-shrink-0 ${sc.dot}`} />
-                          {sc.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 min-w-[160px]">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-semibold text-gray-700">{fmtDollar(member.revenueClosed)}</span>
-                              <span className="text-[10px] text-gray-400">{Math.round(revPct)}%</span>
-                            </div>
-                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${revPct}%`, backgroundColor: barColor }} />
-                            </div>
-                            <p className="text-[10px] text-gray-400 mt-0.5">of {fmtDollar(member.revenueTarget)} target</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className="text-sm font-semibold text-gray-700">{member.pipeline}</span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-semibold text-gray-700">{member.winRate}%</span>
-                          <span className={`text-[10px] font-semibold ${member.winRateChange > 0 ? "text-emerald-600" : member.winRateChange < 0 ? "text-red-500" : "text-gray-400"}`}>
-                            {member.winRateChange > 0 ? `+${member.winRateChange}pp` : member.winRateChange < 0 ? `${member.winRateChange}pp` : "—"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                            <PhoneCall className="w-3 h-3 text-gray-300" />
-                            <span className="font-semibold text-gray-700">{member.calls}</span>
-                          </div>
-                          <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                            <Calendar className="w-3 h-3 text-gray-300" />
-                            <span className="font-semibold text-gray-700">{member.meetings}</span>
-                          </div>
-                          <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                            <Mail className="w-3 h-3 text-gray-300" />
-                            <span className="font-semibold text-gray-700">{member.proposals}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className={`text-xs ${member.status === "inactive" ? "text-red-500 font-semibold" : member.status === "at_risk" ? "text-amber-600 font-semibold" : "text-gray-400"}`}>
-                          {member.lastActive}
-                        </span>
-                      </td>
+                {teamPerfLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <tr key={i} className="border-b border-gray-50">
+                      <td className="px-5 py-3.5"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gray-100 animate-pulse" /><div className="space-y-1"><div className="h-3 w-28 bg-gray-100 rounded animate-pulse" /><div className="h-2.5 w-20 bg-gray-100 rounded animate-pulse" /></div></div></td>
+                      {Array.from({ length: 6 }).map((_, j) => (
+                        <td key={j} className="px-4 py-3.5"><div className="h-3 w-16 bg-gray-100 rounded animate-pulse" /></td>
+                      ))}
                     </tr>
-                  );
-                })}
+                  ))
+                ) : !teamPerf || teamPerf.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-8 text-center text-sm text-gray-400">No team members found</td>
+                  </tr>
+                ) : (
+                  teamPerf.map((member, i) => {
+                    const sc = STATUS_CONFIG[member.status];
+                    const revPct = member.revenueTarget > 0 ? Math.min((member.revenueMTD / member.revenueTarget) * 100, 100) : 0;
+                    const isLow = revPct < 70;
+                    const isMid = revPct >= 70 && revPct < 90;
+                    const barColor = isLow ? "#ef4444" : isMid ? "#f59e0b" : "#10b981";
+                    return (
+                      <tr key={member.userId} className={`border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors ${member.status === "inactive" ? "opacity-80" : ""}`} data-testid={`team-row-${i}`}>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0" style={{ backgroundColor: member.avatarColor }}>
+                              {member.initials}
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800">{member.name}</p>
+                              <p className="text-[10px] text-gray-400 capitalize">{member.role.replace(/_/g, " ")}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className={`flex items-center gap-1.5 text-[11px] font-semibold border rounded-full px-2.5 py-1 w-fit ${sc.badge} ${sc.text}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full inline-block flex-shrink-0 ${sc.dot}`} />
+                            {sc.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 min-w-[160px]">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-semibold text-gray-700">{fmtDollar(member.revenueMTD)}</span>
+                                <span className="text-[10px] text-gray-400">{Math.round(revPct)}%</span>
+                              </div>
+                              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full" style={{ width: `${revPct}%`, backgroundColor: barColor }} />
+                              </div>
+                              <p className="text-[10px] text-gray-400 mt-0.5">of {fmtDollar(member.revenueTarget)} target</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="text-sm font-semibold text-gray-700">{fmtDollar(member.pipelineValue)}</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-semibold text-gray-700">{member.winRate !== null ? `${member.winRate}%` : "—"}</span>
+                            {member.winRateChange !== null && (
+                              <span className={`text-[10px] font-semibold ${member.winRateChange > 0 ? "text-emerald-600" : member.winRateChange < 0 ? "text-red-500" : "text-gray-400"}`}>
+                                {member.winRateChange > 0 ? `+${member.winRateChange}pp` : member.winRateChange < 0 ? `${member.winRateChange}pp` : "—"}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                              <PhoneCall className="w-3 h-3 text-gray-300" />
+                              <span className="font-semibold text-gray-700">{member.callsMTD}</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                              <Calendar className="w-3 h-3 text-gray-300" />
+                              <span className="font-semibold text-gray-700">{member.meetingsMTD}</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                              <Mail className="w-3 h-3 text-gray-300" />
+                              <span className="font-semibold text-gray-700">{member.proposalsMTD}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className={`text-xs ${member.status === "inactive" ? "text-red-500 font-semibold" : member.status === "at_risk" ? "text-amber-600 font-semibold" : "text-gray-400"}`}>
+                            {member.lastActiveDisplay}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>

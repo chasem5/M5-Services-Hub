@@ -10951,6 +10951,17 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
     }
   });
 
+  // ── CEO Team Performance (real data) ─────────────────────────────────────
+  app.get("/api/ceo/team-performance", isAuthenticated, requireRole(["super_admin"]), async (_req, res) => {
+    try {
+      const stats = await storage.getCeoTeamPerformanceStats();
+      res.json(stats);
+    } catch (err: any) {
+      console.error("CEO team performance error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ── CEO Staffing / Crew Capacity Signal ───────────────────────────────────
   app.get("/api/ceo/staffing", isAuthenticated, requireRole(["super_admin"]), async (_req, res) => {
     try {

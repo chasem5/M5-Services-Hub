@@ -242,6 +242,7 @@ export interface IStorage {
   // Dashboard
   getDashboardStats(filterUserId?: string): Promise<any>;
   getTeamPerformanceStats(): Promise<any[]>;
+  getCeoTeamPerformanceStats(): Promise<any[]>;
 
   // Value Tier Settings
   getValueTierSettings(): Promise<ValueTierSetting[]>;
@@ -1430,6 +1431,168 @@ export class DatabaseStorage implements IStorage {
     );
 
     return stats.sort((a, b) => Number(b.pipelineValue) - Number(a.pipelineValue));
+  }
+
+  async getCeoTeamPerformanceStats(): Promise<any[]> {
+    const today = new Date();
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const firstOfPriorMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+
+    const AVATAR_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#6366f1"];
+    // TODO: make these editable per user (requires schema change + settings UI)
+    const REVENUE_TARGETS: Record<string, number> = {
+      super_admin: 500000, admin: 500000, manager: 400000, member: 300000,
+    };
+
+    const userList = await db.select().from(users);
+
+    const stats = await Promise.all(userList.map(async (user) => {
+      const [
+        revenueMTDRow,
+        pipelineRow,
+        wonCurrRow,
+        lostCurrRow,
+        wonPriorRow,
+        lostPriorRow,
+        callsMTDRow,
+        meetingsMTDRow,
+        proposalsMTDRow,
+        lastActiveRow,
+      ] = await Promise.all([
+        // Revenue closed MTD — use wonAt with updatedAt fallback
+        db.select({ total: sql<string>`coalesce(sum(${leads.value}), 0)` })
+          .from(leads)
+          .where(and(
+            eq(leads.assignedTo, user.id),
+            eq(leads.stage, "won"),
+            sql`(${leads.wonAt} >= ${firstOfMonth} OR (${leads.wonAt} IS NULL AND ${leads.updatedAt} >= ${firstOfMonth}))`,
+          )),
+        // Pipeline value
+        db.select({ total: sql<string>`coalesce(sum(${leads.value}), 0)` })
+          .from(leads)
+          .where(and(eq(leads.assignedTo, user.id), sql`${leads.stage} NOT IN ('won', 'lost')`)),
+        // Won count this month
+        db.select({ count: sql<number>`count(*)` })
+          .from(leads)
+          .where(and(
+            eq(leads.assignedTo, user.id),
+            eq(leads.stage, "won"),
+            sql`(${leads.wonAt} >= ${firstOfMonth} OR (${leads.wonAt} IS NULL AND ${leads.updatedAt} >= ${firstOfMonth}))`,
+          )),
+        // Lost count this month
+        db.select({ count: sql<number>`count(*)` })
+          .from(leads)
+          .where(and(
+            eq(leads.assignedTo, user.id),
+            eq(leads.stage, "lost"),
+            sql`(${leads.lostAt} >= ${firstOfMonth} OR (${leads.lostAt} IS NULL AND ${leads.updatedAt} >= ${firstOfMonth}))`,
+          )),
+        // Won count prior month
+        db.select({ count: sql<number>`count(*)` })
+          .from(leads)
+          .where(and(
+            eq(leads.assignedTo, user.id),
+            eq(leads.stage, "won"),
+            sql`(${leads.wonAt} >= ${firstOfPriorMonth} AND ${leads.wonAt} < ${firstOfMonth}) OR (${leads.wonAt} IS NULL AND ${leads.updatedAt} >= ${firstOfPriorMonth} AND ${leads.updatedAt} < ${firstOfMonth})`,
+          )),
+        // Lost count prior month
+        db.select({ count: sql<number>`count(*)` })
+          .from(leads)
+          .where(and(
+            eq(leads.assignedTo, user.id),
+            eq(leads.stage, "lost"),
+            sql`(${leads.lostAt} >= ${firstOfPriorMonth} AND ${leads.lostAt} < ${firstOfMonth}) OR (${leads.lostAt} IS NULL AND ${leads.updatedAt} >= ${firstOfPriorMonth} AND ${leads.updatedAt} < ${firstOfMonth})`,
+          )),
+        // Calls logged MTD
+        db.select({ count: sql<number>`count(*)` })
+          .from(leadNotes)
+          .where(and(eq(leadNotes.userId, user.id), eq(leadNotes.activityType, "call"), sql`${leadNotes.createdAt} >= ${firstOfMonth}`)),
+        // Meetings MTD (created by this user)
+        db.select({ count: sql<number>`count(*)` })
+          .from(meetings)
+          .where(and(eq(meetings.createdBy, user.id), sql`${meetings.date} >= ${firstOfMonth}`)),
+        // Proposals/estimates MTD
+        db.select({ count: sql<number>`count(*)` })
+          .from(proposals)
+          .where(and(eq(proposals.createdBy, user.id), sql`${proposals.createdAt} >= ${firstOfMonth}`)),
+        // Last active: most recent lead note by this user
+        db.select({ maxAt: sql<string | null>`max(${leadNotes.createdAt})` })
+          .from(leadNotes)
+          .where(eq(leadNotes.userId, user.id)),
+      ]);
+
+      // Display name
+      const displayName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email?.split("@")[0] || "Unknown";
+
+      // Initials
+      const nameParts = displayName.trim().split(/\s+/).filter(Boolean);
+      const initials = nameParts.length >= 2
+        ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+        : displayName.slice(0, 2).toUpperCase();
+
+      // Deterministic avatar color from userId char sum
+      const colorIdx = user.id.split("").reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
+      const avatarColor = AVATAR_COLORS[colorIdx];
+
+      // Revenue
+      const revenueMTD = Math.round(parseFloat(revenueMTDRow[0].total));
+      const pipelineValue = Math.round(parseFloat(pipelineRow[0].total));
+
+      // Win rate
+      const wonCurr = Number(wonCurrRow[0].count);
+      const lostCurr = Number(lostCurrRow[0].count);
+      const wonPrior = Number(wonPriorRow[0].count);
+      const lostPrior = Number(lostPriorRow[0].count);
+      const winRateCurrent = (wonCurr + lostCurr) > 0 ? Math.round((wonCurr / (wonCurr + lostCurr)) * 100) : null;
+      const winRatePrior = (wonPrior + lostPrior) > 0 ? Math.round((wonPrior / (wonPrior + lostPrior)) * 100) : null;
+      const winRateChange = (winRateCurrent !== null && winRatePrior !== null) ? winRateCurrent - winRatePrior : null;
+
+      // Last active & status
+      const lastActiveAtStr = lastActiveRow[0].maxAt;
+      const lastActiveAt = lastActiveAtStr ? new Date(lastActiveAtStr) : null;
+      let status: "active" | "at_risk" | "inactive" = "inactive";
+      let lastActiveDisplay = "—";
+      if (lastActiveAt) {
+        const diffMs = today.getTime() - lastActiveAt.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDays === 0) {
+          const h = lastActiveAt.getHours();
+          const m = lastActiveAt.getMinutes().toString().padStart(2, "0");
+          const ampm = h >= 12 ? "PM" : "AM";
+          lastActiveDisplay = `Today, ${h % 12 || 12}:${m} ${ampm}`;
+          status = "active";
+        } else if (diffDays <= 2) {
+          lastActiveDisplay = diffDays === 1 ? "Yesterday" : `${diffDays} days ago`;
+          status = "active";
+        } else if (diffDays <= 7) {
+          lastActiveDisplay = `${diffDays} days ago`;
+          status = "at_risk";
+        } else {
+          lastActiveDisplay = `${diffDays} days ago`;
+          status = "inactive";
+        }
+      }
+
+      return {
+        userId: user.id,
+        name: displayName,
+        initials,
+        avatarColor,
+        role: user.role,
+        status,
+        lastActiveDisplay,
+        revenueTarget: REVENUE_TARGETS[user.role] ?? 300000,
+        revenueMTD,
+        pipelineValue,
+        winRate: winRateCurrent,
+        winRateChange,
+        callsMTD: Number(callsMTDRow[0].count),
+        meetingsMTD: Number(meetingsMTDRow[0].count),
+        proposalsMTD: Number(proposalsMTDRow[0].count),
+      };
+    }));
+
+    return stats.sort((a, b) => b.pipelineValue - a.pipelineValue);
   }
 
   // Contact Stages
