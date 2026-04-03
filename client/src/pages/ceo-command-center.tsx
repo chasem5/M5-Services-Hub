@@ -501,7 +501,7 @@ function CEOCommandCenterInner() {
   const amberCount = ALERTS.filter(a => a.level === "amber").length;
   const greenCount = ALERTS.filter(a => a.level === "green").length;
 
-  const atRisk = TEAM.filter(m => m.status === "at_risk" || m.status === "inactive");
+  const atRisk = (teamPerf ?? []).filter(m => m.status === "at_risk" || m.status === "inactive");
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
