@@ -2042,7 +2042,7 @@ function CEOCommandCenterInner() {
                 <strong>Account Manager</strong> field on each client record. Open a client and set their account manager to start seeing data here.
               </div>
               <button
-                onClick={() => navigate("/clients")}
+                onClick={() => navigate("/customers")}
                 className="flex-shrink-0 text-[11px] font-semibold text-blue-700 bg-white border border-blue-200 rounded-md px-2.5 py-1 hover:bg-blue-50 transition-colors"
                 data-testid="btn-manage-account-managers"
               >
