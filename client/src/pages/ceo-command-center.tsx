@@ -1785,6 +1785,24 @@ function CEOCommandCenterInner() {
               </tbody>
             </table>
           </div>
+          {/* Attribution hint — shown when all revenue/pipeline is zero */}
+          {!teamPerfLoading && teamPerf && teamPerf.length > 0 && teamPerf.every(m => m.revenueMTD === 0 && m.pipelineValue === 0) && (
+            <div className="flex items-start gap-3 px-5 py-3.5 border-t border-gray-100 bg-blue-50/60">
+              <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 text-xs text-blue-800">
+                <span className="font-semibold">No revenue or pipeline attributed yet.</span>{" "}
+                Revenue, pipeline, and win rates are attributed to team members via the{" "}
+                <strong>Account Manager</strong> field on each client record. Open a client and set their account manager to start seeing data here.
+              </div>
+              <button
+                onClick={() => navigate("/clients")}
+                className="flex-shrink-0 text-[11px] font-semibold text-blue-700 bg-white border border-blue-200 rounded-md px-2.5 py-1 hover:bg-blue-50 transition-colors"
+                data-testid="btn-manage-account-managers"
+              >
+                Manage Clients →
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Drill-down detail (toggleable) ───────────────────────────────── */}

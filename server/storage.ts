@@ -1447,6 +1447,13 @@ export class DatabaseStorage implements IStorage {
     const userList = await db.select().from(users);
 
     const stats = await Promise.all(userList.map(async (user) => {
+      // Attribution filter: lead directly assigned to user, OR lead's client has this user as account manager.
+      // LEFT JOIN ensures leads without a client still match via assignedTo.
+      const isAttrib = or(
+        eq(leads.assignedTo, user.id),
+        eq(clients.accountManagerUserId, user.id),
+      )!;
+
       const [
         revenueMTDRow,
         pipelineRow,
@@ -1462,44 +1469,50 @@ export class DatabaseStorage implements IStorage {
         // Revenue closed MTD — use wonAt with updatedAt fallback
         db.select({ total: sql<string>`coalesce(sum(${leads.value}), 0)` })
           .from(leads)
+          .leftJoin(clients, eq(leads.clientId, clients.id))
           .where(and(
-            eq(leads.assignedTo, user.id),
+            isAttrib,
             eq(leads.stage, "won"),
             sql`(${leads.wonAt} >= ${firstOfMonth} OR (${leads.wonAt} IS NULL AND ${leads.updatedAt} >= ${firstOfMonth}))`,
           )),
         // Pipeline value
         db.select({ total: sql<string>`coalesce(sum(${leads.value}), 0)` })
           .from(leads)
-          .where(and(eq(leads.assignedTo, user.id), sql`${leads.stage} NOT IN ('won', 'lost')`)),
+          .leftJoin(clients, eq(leads.clientId, clients.id))
+          .where(and(isAttrib, sql`${leads.stage} NOT IN ('won', 'lost', 'canceled')`)),
         // Won count this month
         db.select({ count: sql<number>`count(*)` })
           .from(leads)
+          .leftJoin(clients, eq(leads.clientId, clients.id))
           .where(and(
-            eq(leads.assignedTo, user.id),
+            isAttrib,
             eq(leads.stage, "won"),
             sql`(${leads.wonAt} >= ${firstOfMonth} OR (${leads.wonAt} IS NULL AND ${leads.updatedAt} >= ${firstOfMonth}))`,
           )),
         // Lost count this month
         db.select({ count: sql<number>`count(*)` })
           .from(leads)
+          .leftJoin(clients, eq(leads.clientId, clients.id))
           .where(and(
-            eq(leads.assignedTo, user.id),
+            isAttrib,
             eq(leads.stage, "lost"),
             sql`(${leads.lostAt} >= ${firstOfMonth} OR (${leads.lostAt} IS NULL AND ${leads.updatedAt} >= ${firstOfMonth}))`,
           )),
         // Won count prior month — outer parens ensure OR doesn't escape the AND group
         db.select({ count: sql<number>`count(*)` })
           .from(leads)
+          .leftJoin(clients, eq(leads.clientId, clients.id))
           .where(and(
-            eq(leads.assignedTo, user.id),
+            isAttrib,
             eq(leads.stage, "won"),
             sql`((${leads.wonAt} >= ${firstOfPriorMonth} AND ${leads.wonAt} < ${firstOfMonth}) OR (${leads.wonAt} IS NULL AND ${leads.updatedAt} >= ${firstOfPriorMonth} AND ${leads.updatedAt} < ${firstOfMonth}))`,
           )),
         // Lost count prior month — outer parens ensure OR doesn't escape the AND group
         db.select({ count: sql<number>`count(*)` })
           .from(leads)
+          .leftJoin(clients, eq(leads.clientId, clients.id))
           .where(and(
-            eq(leads.assignedTo, user.id),
+            isAttrib,
             eq(leads.stage, "lost"),
             sql`((${leads.lostAt} >= ${firstOfPriorMonth} AND ${leads.lostAt} < ${firstOfMonth}) OR (${leads.lostAt} IS NULL AND ${leads.updatedAt} >= ${firstOfPriorMonth} AND ${leads.updatedAt} < ${firstOfMonth}))`,
           )),
