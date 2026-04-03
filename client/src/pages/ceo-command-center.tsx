@@ -1169,24 +1169,24 @@ function CEOCommandCenterInner() {
               </div>
 
               {/* ── 4. Weekly Chart + Gauge + Stats ── */}
-              <div className="grid grid-cols-3 gap-4 border-t border-gray-100 pt-3 mb-3">
+              <div className="grid grid-cols-3 gap-4 border-t border-gray-100 pt-4 mb-3">
                 {/* Gauge */}
-                <div className="flex flex-col items-center justify-center">
-                  <div className="relative" style={{ width: 160, height: 88 }}>
-                    <svg viewBox="0 0 200 110" width="160" height="88">
-                      <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#f3f4f6" strokeWidth="16" strokeLinecap="round" />
+                <div className="flex flex-col items-center justify-start pt-1">
+                  <div className="relative" style={{ width: 200, height: 112 }}>
+                    <svg viewBox="0 0 200 110" width="200" height="112">
+                      <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#f3f4f6" strokeWidth="14" strokeLinecap="round" />
                       {gaugeValue > 0 && (
                         <path
                           d="M 20 100 A 80 80 0 0 1 180 100"
                           fill="none"
                           stroke={signalLevelColor(scores.overall)}
-                          strokeWidth="16"
+                          strokeWidth="14"
                           strokeLinecap="round"
                           strokeDasharray={`${Math.PI * 80 * Math.min(gaugeValue / 100, 1)} ${Math.PI * 80}`}
                           style={{ transition: 'stroke-dasharray 0.6s ease' }}
                         />
                       )}
-                      <text x="100" y="90" textAnchor="middle" fontSize="28" fontWeight="900" fill={staffingLoading ? '#d1d5db' : signalLevelColor(scores.overall)} fontFamily="'Archivo Black', sans-serif">
+                      <text x="100" y="92" textAnchor="middle" fontSize="30" fontWeight="900" fill={staffingLoading ? '#d1d5db' : signalLevelColor(scores.overall)} fontFamily="'Archivo Black', sans-serif">
                         {staffingLoading ? '—' : `${gaugeValue}%`}
                       </text>
                     </svg>
@@ -1195,36 +1195,36 @@ function CEOCommandCenterInner() {
                       <span className="text-[9px] text-gray-400">100%</span>
                     </div>
                   </div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mt-1">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mt-2">
                     {hasTimesheetHrs ? 'Booked Load (4wk)' : '4-Wk Utilization'}
                   </p>
                   <span
-                    className={`inline-block text-[9px] font-semibold px-2 py-0.5 rounded-full mt-1 ${hasTimesheetHrs ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}
+                    className={`inline-block text-[10px] font-semibold px-2.5 py-0.5 rounded-full mt-1.5 ${hasTimesheetHrs ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}
                     data-testid="badge-gauge-source"
                   >
                     {hasTimesheetHrs ? 'from timesheets' : 'from visit schedule'}
                   </span>
                   {hasTimesheetHrs && (
-                    <p className="text-[9px] mt-0.5 text-gray-400">{scheduledHrs4wk}h booked · {actualHrs4wk}h available</p>
+                    <p className="text-[10px] mt-1 text-gray-400">{scheduledHrs4wk}h booked · {actualHrs4wk}h available</p>
                   )}
                   {/* Active Techs + Hrs */}
-                  <div className="flex items-center gap-2 mt-3" data-testid="staffing-stat-active-techs">
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: '#6366f115' }}>
-                      <Users className="w-3.5 h-3.5" style={{ color: '#6366f1' }} />
+                  <div className="flex items-center gap-2.5 mt-4" data-testid="staffing-stat-active-techs">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#6366f115' }}>
+                      <Users className="w-4 h-4" style={{ color: '#6366f1' }} />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-gray-800 leading-none">{staffingLoading ? '—' : staffing?.techCount ?? '—'}</p>
-                      <p className="text-[10px] text-gray-400">Active Techs</p>
-                      {(staffing?.partTimeTechCount ?? 0) > 0 && <p className="text-[9px] text-amber-500">+{staffing!.partTimeTechCount} part-time</p>}
+                      <p className="text-sm font-bold text-gray-800 leading-none">{staffingLoading ? '—' : staffing?.techCount ?? '—'}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Active Techs</p>
+                      {(staffing?.partTimeTechCount ?? 0) > 0 && <p className="text-[10px] text-amber-500 mt-0.5">+{staffing!.partTimeTechCount} part-time</p>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 mt-2" data-testid="staffing-stat-avg-hrs">
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: '#0ea5e915' }}>
-                      <Clock className="w-3.5 h-3.5" style={{ color: '#0ea5e9' }} />
+                  <div className="flex items-center gap-2.5 mt-3" data-testid="staffing-stat-avg-hrs">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#0ea5e915' }}>
+                      <Clock className="w-4 h-4" style={{ color: '#0ea5e9' }} />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-gray-800 leading-none">{staffingLoading ? '—' : staffing?.avgHrsPerTechPerWeek != null ? `${staffing.avgHrsPerTechPerWeek}h` : '—'}</p>
-                      <p className="text-[10px] text-gray-400">Avg Hrs/Tech/Wk</p>
+                      <p className="text-sm font-bold text-gray-800 leading-none">{staffingLoading ? '—' : staffing?.avgHrsPerTechPerWeek != null ? `${staffing.avgHrsPerTechPerWeek}h` : '—'}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Avg Hrs/Tech/Wk</p>
                     </div>
                   </div>
                 </div>
