@@ -579,7 +579,7 @@ function CEOCommandCenterInner() {
             { label: "SA Contract Rev", icon: Repeat2, ...liveKpi.saContractRevenue, sparkData: sa?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: "SA-tagged invoice revenue" },
             { label: "AR Outstanding", icon: Percent, ...liveKpi.collectionsOutstanding, sparkData: ar?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: undefined },
           ].map(({ label, icon: Icon, value, change, up, sparkData, fmt, sparkNote }: any) => {
-            const gradId = `grad-${label.replace(/\s/g, '_')}`;
+            const gradId = `grad-${label.replace(/[^a-zA-Z0-9]/g, '-')}`;
             return (
             <div key={label} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 pt-3.5 pb-0 overflow-hidden" data-testid={`kpi-${label.toLowerCase().replace(/\s+/g, '-')}`}>
               <div className="flex items-center justify-between mb-1">
