@@ -549,7 +549,7 @@ function BuildOpsPanel() {
 
             {/* ── Employee Capacity Type Management ── */}
             {(employeesLoading || (buildopsEmployeeList && buildopsEmployeeList.length > 0)) && (
-              <div className="border rounded-lg p-4 space-y-3">
+              <div className="col-span-full border rounded-lg p-4 space-y-3">
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <h4 className="text-sm font-medium flex items-center gap-2">
