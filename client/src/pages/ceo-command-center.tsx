@@ -25,6 +25,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const PRIMARY = "#BE1916";
 
@@ -212,8 +213,164 @@ const SAMPLE_CONVERSATION: ChatMessage[] = [
   },
 ];
 
-type Period = "daily" | "weekly" | "monthly";
 type UploadedFile = { name: string; size: string; uploadedAt: string };
+
+// ── Date Range Picker ─────────────────────────────────────────────────────────
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+type DateRange = { startDate: string; endDate: string; label: string };
+
+function isoFirstOfMonth(y: number, m: number): string {
+  return `${y}-${String(m + 1).padStart(2, "0")}-01`;
+}
+function isoLastOfMonth(y: number, m: number): string {
+  return new Date(y, m + 1, 0).toISOString().slice(0, 10);
+}
+
+function getDefaultDateRange(): DateRange {
+  const now = new Date();
+  return {
+    startDate: isoFirstOfMonth(now.getFullYear(), now.getMonth()),
+    endDate: now.toISOString().slice(0, 10),
+    label: "This Month",
+  };
+}
+
+function DateRangePicker({ value, onChange }: { value: DateRange; onChange: (v: DateRange) => void }) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"quick" | "month" | "range" | "year">("quick");
+  const now = new Date();
+  const [pickYear, setPickYear] = useState(now.getFullYear());
+  const [pickMonth, setPickMonth] = useState(now.getMonth());
+  const [rangeFrom, setRangeFrom] = useState<{ year: number; month: number } | null>(null);
+  const [rangeTo, setRangeTo] = useState<{ year: number; month: number } | null>(null);
+
+  function apply(v: DateRange) { onChange(v); setOpen(false); }
+
+  function selectThisMonth() {
+    const d = new Date();
+    apply({ startDate: isoFirstOfMonth(d.getFullYear(), d.getMonth()), endDate: d.toISOString().slice(0, 10), label: "This Month" });
+  }
+  function selectPriorMonth() {
+    const d = new Date();
+    const pm = d.getMonth() === 0 ? 11 : d.getMonth() - 1;
+    const py = d.getMonth() === 0 ? d.getFullYear() - 1 : d.getFullYear();
+    apply({ startDate: isoFirstOfMonth(py, pm), endDate: isoLastOfMonth(py, pm), label: `${MONTH_NAMES[pm]} ${py}` });
+  }
+  function applyMonth() {
+    apply({ startDate: isoFirstOfMonth(pickYear, pickMonth), endDate: isoLastOfMonth(pickYear, pickMonth), label: `${MONTH_NAMES[pickMonth]} ${pickYear}` });
+  }
+  function applyRange() {
+    if (!rangeFrom || !rangeTo) return;
+    const aMs = rangeFrom.year * 12 + rangeFrom.month;
+    const bMs = rangeTo.year * 12 + rangeTo.month;
+    const from = aMs <= bMs ? rangeFrom : rangeTo;
+    const to   = aMs <= bMs ? rangeTo   : rangeFrom;
+    const label = from.year === to.year && from.month === to.month
+      ? `${MONTH_NAMES[from.month]} ${from.year}`
+      : `${MONTH_NAMES[from.month]} ${from.year} – ${MONTH_NAMES[to.month]} ${to.year}`;
+    apply({ startDate: isoFirstOfMonth(from.year, from.month), endDate: isoLastOfMonth(to.year, to.month), label });
+  }
+  function applyYear() {
+    apply({ startDate: `${pickYear}-01-01`, endDate: `${pickYear}-12-31`, label: String(pickYear) });
+  }
+
+  const tabCls = (t: string) =>
+    `flex-1 py-2 text-xs font-bold transition-all ${mode === t ? "text-gray-900 border-b-2 border-gray-900" : "text-gray-400 hover:text-gray-700"}`;
+  const monthBtnCls = (active: boolean) =>
+    `py-1.5 rounded text-xs font-semibold transition-all ${active ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-100"}`;
+  const applyBtnCls = "mt-3 w-full py-2 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition-all disabled:opacity-40";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          data-testid="button-date-range-picker"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold border border-gray-200 bg-white shadow-sm text-gray-700 hover:bg-gray-50 transition-all"
+        >
+          <Calendar className="w-4 h-4 text-gray-400" />
+          {value.label}
+          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-0" align="end">
+        {/* Mode tabs */}
+        <div className="flex border-b border-gray-100">
+          {(["quick","month","range","year"] as const).map(t => (
+            <button key={t} onClick={() => setMode(t)} className={tabCls(t)}>
+              {t === "quick" ? "Quick" : t === "month" ? "Month" : t === "range" ? "Range" : "Year"}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-3">
+          {mode === "quick" && (
+            <div className="space-y-1">
+              <button onClick={selectThisMonth} className="w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all">This Month (MTD)</button>
+              <button onClick={selectPriorMonth} className="w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all">Prior Month</button>
+            </div>
+          )}
+
+          {mode === "month" && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <button onClick={() => setPickYear(y => y - 1)} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+                <span className="text-sm font-bold text-gray-800">{pickYear}</span>
+                <button onClick={() => setPickYear(y => y + 1)} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {MONTH_NAMES.map((m, i) => (
+                  <button key={m} onClick={() => setPickMonth(i)} className={monthBtnCls(pickMonth === i)}>{m}</button>
+                ))}
+              </div>
+              <button onClick={applyMonth} className={applyBtnCls}>Apply</button>
+            </div>
+          )}
+
+          {mode === "range" && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <button onClick={() => setPickYear(y => y - 1)} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+                <span className="text-sm font-bold text-gray-800">{pickYear}</span>
+                <button onClick={() => setPickYear(y => y + 1)} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {MONTH_NAMES.map((m, i) => {
+                  const isFrom = rangeFrom?.year === pickYear && rangeFrom?.month === i;
+                  const isTo   = rangeTo?.year   === pickYear && rangeTo?.month   === i;
+                  return (
+                    <button key={m} onClick={() => {
+                      if (!rangeFrom || (rangeFrom && rangeTo)) { setRangeFrom({ year: pickYear, month: i }); setRangeTo(null); }
+                      else { setRangeTo({ year: pickYear, month: i }); }
+                    }} className={monthBtnCls(isFrom || isTo)}>{m}</button>
+                  );
+                })}
+              </div>
+              {rangeFrom && (
+                <p className="mt-2 text-xs text-gray-500">
+                  {MONTH_NAMES[rangeFrom.month]} {rangeFrom.year}
+                  {rangeTo ? ` – ${MONTH_NAMES[rangeTo.month]} ${rangeTo.year}` : " — pick end month"}
+                </p>
+              )}
+              <button onClick={applyRange} disabled={!rangeFrom || !rangeTo} className={applyBtnCls}>Apply Range</button>
+            </div>
+          )}
+
+          {mode === "year" && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <button onClick={() => setPickYear(y => y - 1)} className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+                <span className="text-2xl font-black text-gray-900">{pickYear}</span>
+                <button onClick={() => setPickYear(y => y + 1)} className="p-1 rounded hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+              </div>
+              <button onClick={applyYear} className={applyBtnCls}>Apply {pickYear}</button>
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 const CustomTooltip = ({ active, payload, label, format }: any) => {
   if (!active || !payload?.length) return null;
@@ -249,8 +406,7 @@ export default function CEOCommandCenter() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 function CEOCommandCenterInner() {
   const queryClient = useQueryClient();
-  const [period, setPeriod] = useState<Period>("monthly");
-  const [viewPrior, setViewPrior] = useState(false);
+  const [dateRange, setDateRange] = useState<DateRange>(getDefaultDateRange);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(SAMPLE_CONVERSATION);
   const [chatInput, setChatInput] = useState("");
@@ -271,8 +427,8 @@ function CEOCommandCenterInner() {
   const detailRef = useRef<HTMLDivElement>(null);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<CeoMetrics>({
-    queryKey: ["/api/ceo/metrics", period, viewPrior],
-    queryFn: () => fetch(`/api/ceo/metrics?period=${period}&viewPrior=${viewPrior}`).then(r => r.json()),
+    queryKey: ["/api/ceo/metrics", dateRange.startDate, dateRange.endDate],
+    queryFn: () => fetch(`/api/ceo/metrics?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`).then(r => r.json()),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -366,17 +522,10 @@ function CEOCommandCenterInner() {
     },
   };
 
-  const summary = SUMMARIES[period];
+  const summary = SUMMARIES["monthly"];
   const revenueMonthly = rev?.monthly ?? [];
   const revenueHasData = revenueMonthly.length > 0 && revenueMonthly.some(d => d.v > 0);
   const revenueData = revenueHasData ? revenueMonthly : FALLBACK_SPARK;
-
-  function handlePeriodChange(p: Period) {
-    setPeriod(p);
-    setViewPrior(false);
-    setIsRegenerating(true);
-    setTimeout(() => setIsRegenerating(false), 1200);
-  }
 
   function handleRegenerate() {
     setIsRegenerating(true);
@@ -581,39 +730,7 @@ function CEOCommandCenterInner() {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {/* MTD / Prior toggle — only shown when viewing an incomplete current period */}
-            {(metrics?.isPeriodIncomplete || viewPrior) && !metricsLoading && (
-              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1" data-testid="toggle-view-prior">
-                <button
-                  data-testid="button-view-mtd"
-                  onClick={() => setViewPrior(false)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${!viewPrior ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  {period === 'monthly' ? 'MTD' : period === 'weekly' ? 'WTD' : 'DTD'}
-                </button>
-                <button
-                  data-testid="button-view-prior"
-                  onClick={() => setViewPrior(true)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${viewPrior ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  Prior
-                </button>
-              </div>
-            )}
-            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-              {(["daily", "weekly", "monthly"] as Period[]).map(p => (
-                <button
-                  key={p}
-                  data-testid={`button-period-${p}`}
-                  onClick={() => handlePeriodChange(p)}
-                  className={`px-4 py-1.5 rounded-md text-sm font-semibold capitalize transition-all ${period === p ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
+          <DateRangePicker value={dateRange} onChange={v => { setDateRange(v); setIsRegenerating(true); setTimeout(() => setIsRegenerating(false), 1000); }} />
         </div>
       </div>
 
@@ -788,7 +905,7 @@ function CEOCommandCenterInner() {
                 <span className={`text-sm font-semibold ml-2 ${liveKpi.revenue.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.revenue.change}</span>
               </p>
             </div>
-            <span className="text-xs text-gray-600 capitalize">{period} view</span>
+            <span className="text-xs text-gray-600">{dateRange.label}</span>
           </div>
           <div className="h-48 relative">
             {!revenueHasData && !metricsLoading && (
@@ -1961,7 +2078,7 @@ function CEOCommandCenterInner() {
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
                 <div className="flex items-center gap-2">
                   <Bot className="w-4 h-4" style={{ color: PRIMARY }} />
-                  <span className="text-sm font-bold text-gray-800">AI Executive Summary — {period.charAt(0).toUpperCase() + period.slice(1)} View</span>
+                  <span className="text-sm font-bold text-gray-800">AI Executive Summary — {dateRange.label}</span>
                 </div>
                 <button
                   data-testid="button-regenerate-summary"

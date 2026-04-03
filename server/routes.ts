@@ -10342,10 +10342,31 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
 
-      const period = (req.query.period as string) || "monthly";
-      const viewPrior = req.query.viewPrior === 'true';
+      let period = (req.query.period as string) || "monthly";
+      let viewPrior = req.query.viewPrior === 'true';
       const now = new Date();
-      const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+      let twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+
+      // ── Date-range mode: accept startDate/endDate for flexible filtering ─────
+      const startDateParam = req.query.startDate as string | undefined;
+      const endDateParam = req.query.endDate as string | undefined;
+      const useDateRange = !!startDateParam;
+      let rangeStart: Date, rangeEnd: Date, bucketAnchor: Date;
+      if (useDateRange) {
+        rangeStart = new Date(startDateParam!);
+        rangeEnd = endDateParam
+          ? (() => { const d = new Date(endDateParam); d.setHours(23, 59, 59, 999); return d; })()
+          : now;
+        bucketAnchor = rangeEnd;
+        // Override: always monthly in date-range mode; sparkline covers 12 months back from rangeEnd
+        period = "monthly";
+        viewPrior = false;
+        twelveMonthsAgo = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth() - 11, 1);
+      } else {
+        rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        rangeEnd = now;
+        bucketAnchor = now;
+      }
 
       // ── Period-aware SQL expressions ────────────────────────────────────────
       // Build dynamic SQL for period-bucketed queries
@@ -10397,7 +10418,7 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
           }
         } else {
           for (let i = 11; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const d = new Date(bucketAnchor.getFullYear(), bucketAnchor.getMonth() - i, 1);
             const label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
             buckets.push({ label, key });
@@ -10891,6 +10912,33 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         finalSaPrev = saMonthly.at(-3)?.v ?? 0;
         finalSaChangePct = finalSaPrev > 0 ? ((finalSaCurrent - finalSaPrev) / finalSaPrev) * 100 : 0;
         finalIsPeriodIncomplete = false;
+      } else if (useDateRange) {
+        // Compute prior period dates (same number of months, immediately before rangeStart)
+        const rangeMonths =
+          (rangeEnd.getFullYear() - rangeStart.getFullYear()) * 12 +
+          (rangeEnd.getMonth() - rangeStart.getMonth()) + 1;
+        const priorEnd = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 0); // last day before rangeStart month
+        const priorStart = new Date(rangeStart.getFullYear(), rangeStart.getMonth() - rangeMonths, 1);
+
+        const rangeStartIso = rangeStart.toISOString();
+        const rangeEndIso = rangeEnd.toISOString();
+        const priorStartIso = priorStart.toISOString();
+        const priorEndIso = priorEnd.toISOString();
+
+        const [periodRevRow, priorRevRow, periodSaRow, priorSaRow] = await Promise.all([
+          db.execute(sql.raw(`SELECT COALESCE(SUM(CAST(total_amount AS DECIMAL)), 0) AS total FROM buildops_invoices WHERE issued_date >= '${rangeStartIso}' AND issued_date <= '${rangeEndIso}' AND total_amount IS NOT NULL`)),
+          db.execute(sql.raw(`SELECT COALESCE(SUM(CAST(total_amount AS DECIMAL)), 0) AS total FROM buildops_invoices WHERE issued_date >= '${priorStartIso}' AND issued_date <= '${priorEndIso}' AND total_amount IS NOT NULL`)),
+          db.execute(sql.raw(`SELECT COALESCE(SUM(CAST(total_amount AS DECIMAL)), 0) AS total FROM buildops_invoices WHERE issued_date >= '${rangeStartIso}' AND issued_date <= '${rangeEndIso}' AND total_amount IS NOT NULL AND service_agreement_number IS NOT NULL AND service_agreement_number != '' AND CAST(total_amount AS DECIMAL) > 0`)),
+          db.execute(sql.raw(`SELECT COALESCE(SUM(CAST(total_amount AS DECIMAL)), 0) AS total FROM buildops_invoices WHERE issued_date >= '${priorStartIso}' AND issued_date <= '${priorEndIso}' AND total_amount IS NOT NULL AND service_agreement_number IS NOT NULL AND service_agreement_number != '' AND CAST(total_amount AS DECIMAL) > 0`)),
+        ]);
+
+        finalRevCurrent = Math.round(parseFloat((periodRevRow.rows[0] as any)?.total) || 0);
+        finalRevPrev = Math.round(parseFloat((priorRevRow.rows[0] as any)?.total) || 0);
+        finalRevChangePct = finalRevPrev > 0 ? ((finalRevCurrent - finalRevPrev) / finalRevPrev) * 100 : 0;
+        finalSaCurrent = Math.round(parseFloat((periodSaRow.rows[0] as any)?.total) || 0);
+        finalSaPrev = Math.round(parseFloat((priorSaRow.rows[0] as any)?.total) || 0);
+        finalSaChangePct = finalSaPrev > 0 ? ((finalSaCurrent - finalSaPrev) / finalSaPrev) * 100 : 0;
+        finalIsPeriodIncomplete = rangeEnd >= now;
       }
 
       res.json({
