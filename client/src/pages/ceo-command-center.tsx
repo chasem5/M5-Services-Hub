@@ -420,9 +420,17 @@ function CEOCommandCenterInner() {
     return s;
   });
   const [hoveredKpi, setHoveredKpi] = useState<string | null>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([
-    { name: "BuildOps_JobCostReport_Q1.xlsx", size: "284 KB", uploadedAt: "Apr 1, 2026 — 9:14 AM" },
-  ]);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>(() => {
+    try {
+      const stored = localStorage.getItem("ceo-uploaded-files");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem("ceo-uploaded-files", JSON.stringify(uploadedFiles));
+  }, [uploadedFiles]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
@@ -576,7 +584,7 @@ function CEOCommandCenterInner() {
           if (!resp.ok) throw new Error(result.message || 'Import failed');
           setImportStatus({
             status: 'success',
-            message: `${label}: ${result.inserted} new + ${result.updated} updated (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} ${rowLabel}.`,
+            message: `${label}: ${result.inserted} new + ${result.updated} updated (${result.skipped} skipped). Total: ${result.totalRows.toLocaleString()} ${rowLabel}. If charts don't update, adjust the date range to match the data's period.`,
           });
           setUploadedFiles(prev => [...prev, {
             name: `${file.name} (${label} Import)`,
