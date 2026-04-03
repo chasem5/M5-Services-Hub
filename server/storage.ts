@@ -261,6 +261,7 @@ export interface IStorage {
   migrateIndustryOptions(): Promise<void>;
   migrateDashboardFilter(): Promise<void>;
   migrateEmailNotificationPreferences(): Promise<void>;
+  migrateUserIsActive(): Promise<void>;
   migrateBuildopsClientColumns(): Promise<void>;
   migrateBuildopsPropertyColumns(): Promise<void>;
   migrateBuildopsVisitsAndExtendedFields(): Promise<void>;
