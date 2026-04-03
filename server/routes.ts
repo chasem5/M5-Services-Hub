@@ -10353,10 +10353,13 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       const useDateRange = !!startDateParam;
       let rangeStart: Date, rangeEnd: Date, bucketAnchor: Date;
       if (useDateRange) {
-        rangeStart = new Date(startDateParam!);
-        rangeEnd = endDateParam
-          ? (() => { const d = new Date(endDateParam); d.setHours(23, 59, 59, 999); return d; })()
-          : now;
+        const parsedStart = new Date(startDateParam!);
+        if (isNaN(parsedStart.getTime())) return res.status(400).json({ error: "Invalid startDate" });
+        const parsedEnd = endDateParam ? (() => { const d = new Date(endDateParam); d.setHours(23, 59, 59, 999); return d; })() : now;
+        if (isNaN(parsedEnd.getTime())) return res.status(400).json({ error: "Invalid endDate" });
+        if (parsedStart > parsedEnd) return res.status(400).json({ error: "startDate must be <= endDate" });
+        rangeStart = parsedStart;
+        rangeEnd = parsedEnd;
         bucketAnchor = rangeEnd;
         // Override: always monthly in date-range mode; sparkline covers 12 months back from rangeEnd
         period = "monthly";
@@ -10610,12 +10613,12 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       });
       const qcrMonthly = fillBuckets(qcrRaw, allBuckets);
 
-      // ── AR Outstanding: unpaid invoices aged by days past due ─────────────────
+      // ── AR Outstanding: unpaid invoices issued within effective window ─────────
       // Uses outstanding_balance column populated from BuildOps invoice export CSV.
       // Only invoices with outstanding_balance > 0 are counted — fully paid invoices
       // (outstanding_balance = 0) and API-synced rows without payment data (NULL) are
-      // excluded. This yields the accurate true outstanding balance.
-      const arRows = await db.execute(sql`
+      // excluded. Filtered to issued_date within the selected range.
+      const arRows = await db.execute(sql.raw(`
         SELECT
           outstanding_balance AS amt,
           issued_date,
@@ -10624,7 +10627,9 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         FROM buildops_invoices
         WHERE outstanding_balance IS NOT NULL
           AND CAST(outstanding_balance AS DECIMAL) > 0
-      `);
+          AND issued_date >= '${rangeStartIsoScalar}'
+          AND issued_date <= '${rangeEndIsoScalar}'
+      `));
       let bucket030 = 0, bucket3060 = 0, bucket6090 = 0, bucket90plus = 0;
       for (const r of arRows.rows as any[]) {
         const amt = parseFloat(r.amt) || 0;
@@ -10675,8 +10680,8 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }));
       const arMonthly = fillBuckets(arRaw, allBuckets);
 
-      // ── DSO: avg days from issued to closed for paid invoices ────────────────
-      const dsoRows = await db.execute(sql`
+      // ── DSO: avg days from issued to closed for paid invoices within range ────
+      const dsoRows = await db.execute(sql.raw(`
         SELECT
           AVG(
             EXTRACT(EPOCH FROM (COALESCE(closed_date, synced_at) - issued_date)) / 86400
@@ -10684,14 +10689,14 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         FROM buildops_invoices
         WHERE status IN ('Paid', 'Closed', 'Exported')
           AND issued_date IS NOT NULL
+          AND issued_date >= '${rangeStartIsoScalar}'
+          AND issued_date <= '${rangeEndIsoScalar}'
           AND EXTRACT(EPOCH FROM (COALESCE(closed_date, synced_at) - issued_date)) / 86400 BETWEEN 0 AND 365
-      `);
+      `));
       const dso = Math.round(parseFloat((dsoRows.rows[0] as any)?.avg_days) || 38);
 
-      // ── Active Job Backlog: won/approved/active jobs with no completed visits ──
-      // Counts jobs that have been accepted (won) but haven't had their first
-      // completed visit yet — i.e., they are queued but not yet in progress.
-      const backlogRows = await db.execute(sql`
+      // ── Active Job Backlog: jobs opened in effective window with no completed visits
+      const backlogRows = await db.execute(sql.raw(`
         SELECT
           COUNT(*) AS job_count,
           SUM(COALESCE(
@@ -10701,12 +10706,14 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         FROM buildops_jobs j
         WHERE j.status IN ('Approved', 'Won', 'In Progress', 'Scheduled', 'Active', 'Open')
           AND j.department NOT IN ('Bay Area', 'Sacramento')
+          AND j.created_at >= '${rangeStartIsoScalar}'
+          AND j.created_at <= '${rangeEndIsoScalar}'
           AND NOT EXISTS (
             SELECT 1 FROM buildops_visits v
             WHERE v.buildops_job_id = j.buildops_id
               AND LOWER(v.status) = 'completed'
           )
-      `);
+      `));
       const bRow = backlogRows.rows[0] as any;
       const backlogJobCount = parseInt(bRow?.job_count) || 0;
       const backlogTotal = Math.round(parseFloat(bRow?.backlog_value) || 0);
@@ -10731,14 +10738,16 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       // Use prior month revenue as denominator (current month is always incomplete)
       const recurringPct = revPrev > 0 ? Math.round((saMonthlyRecurring / revPrev) * 100) : 0;
 
-      // ── Visits-based metrics (best-effort; may be 0 if visits not yet synced) ─
-      const visitRows = await db.execute(sql`
+      // ── Visits-based metrics within effective window ──────────────────────────
+      const visitRows = await db.execute(sql.raw(`
         SELECT
           COUNT(*) AS total_visits,
           SUM(CASE WHEN status IN ('Submitted', 'Completed', 'Approved') THEN 1 ELSE 0 END) AS completed_visits,
           AVG(CASE WHEN actual_duration_mins > 0 AND minimum_duration_mins > 0 THEN actual_duration_mins::decimal / minimum_duration_mins ELSE NULL END) AS util_ratio
         FROM buildops_visits
-      `);
+        WHERE scheduled_start >= '${rangeStartIsoScalar}'
+          AND scheduled_start <= '${rangeEndIsoScalar}'
+      `));
       const vRow = visitRows.rows[0] as any;
       const totalVisits = parseInt(vRow?.total_visits) || 0;
       const completedVisits = parseInt(vRow?.completed_visits) || 0;
@@ -10788,9 +10797,8 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         const tsCountRow = await db.execute(sql`SELECT COUNT(*) AS cnt FROM buildops_timesheets`);
         const tsCount = parseInt((tsCountRow.rows[0] as any)?.cnt) || 0;
         if (tsCount > 0) {
-          // Overtime rate %: OT hours / total hours in last 30 days (exclude Bay Area, Sacramento)
-          // Uses overtime_mins column (populated by new CSV import) with fallback to labor_rate_group LIKE filter (old format)
-          const otRows = await db.execute(sql`
+          // Overtime rate %: OT hours / total hours within effective window
+          const otRows = await db.execute(sql.raw(`
             SELECT
               SUM(CASE
                 WHEN overtime_mins IS NOT NULL THEN overtime_mins
@@ -10799,42 +10807,45 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
               END) AS ot_mins,
               SUM(CAST(total_duration_mins AS DECIMAL)) AS total_mins
             FROM buildops_timesheets
-            WHERE work_date >= NOW() - INTERVAL '30 days'
+            WHERE work_date >= '${rangeStartIsoScalar}'
+              AND work_date <= '${rangeEndIsoScalar}'
               AND total_duration_mins > 0
               AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
-          `);
+          `));
           const otRow = otRows.rows[0] as any;
           const otMins = parseFloat(otRow?.ot_mins) || 0;
           const totalMins = parseFloat(otRow?.total_mins) || 0;
           const overtimeRatePct = totalMins > 0 ? Math.round((otMins / totalMins) * 1000) / 10 : 0;
 
-          // Actual hours from timesheets vs scheduled hours from visits (last 4 weeks)
-          const actualHrsRow = await db.execute(sql`
+          // Actual hours vs scheduled hours within effective window
+          const actualHrsRow = await db.execute(sql.raw(`
             SELECT
               SUM(CAST(total_duration_mins AS DECIMAL)) / 60 AS actual_hrs,
               SUM(CAST(scheduled_duration_mins AS DECIMAL)) / 60 AS scheduled_hrs
             FROM buildops_timesheets
-            WHERE work_date >= NOW() - INTERVAL '28 days'
+            WHERE work_date >= '${rangeStartIsoScalar}'
+              AND work_date <= '${rangeEndIsoScalar}'
               AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
-          `);
+          `));
           const ahRow = actualHrsRow.rows[0] as any;
           const actualHrs = Math.round((parseFloat(ahRow?.actual_hrs) || 0) * 10) / 10;
           const scheduledHrs = Math.round((parseFloat(ahRow?.scheduled_hrs) || 0) * 10) / 10;
           const hrsUtilPct = scheduledHrs > 0 ? Math.round((actualHrs / scheduledHrs) * 100) : null;
 
-          // Monthly labor cost spark (last 6 months, department-filtered)
-          const laborCostRows = await db.execute(sql`
+          // Monthly labor cost spark (12 months back from rangeEnd, department-filtered)
+          const laborCostRows = await db.execute(sql.raw(`
             SELECT
               TO_CHAR(DATE_TRUNC('month', work_date), 'Mon YY') AS label,
               DATE_TRUNC('month', work_date) AS month_start,
               SUM(CAST(total_cost AS DECIMAL)) AS total
             FROM buildops_timesheets
-            WHERE work_date >= NOW() - INTERVAL '6 months'
+            WHERE work_date >= '${twelveMonthsAgo.toISOString()}'
+              AND work_date <= '${rangeEndIsoScalar}'
               AND total_cost IS NOT NULL
               AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
             GROUP BY DATE_TRUNC('month', work_date)
             ORDER BY DATE_TRUNC('month', work_date)
-          `);
+          `));
           const laborCostSpark = (laborCostRows.rows as any[]).map(r => ({
             label: r.label,
             v: Math.round(parseFloat(r.total) || 0),
@@ -10847,11 +10858,13 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
             ? Math.round(((laborCostCurrentMonth - laborCostPriorMonth) / laborCostPriorMonth) * 1000) / 10
             : 0;
 
-          // Total labor cost all-time
-          const totalLaborCostRow = await db.execute(sql`
+          // Total labor cost within effective window
+          const totalLaborCostRow = await db.execute(sql.raw(`
             SELECT SUM(CAST(total_cost AS DECIMAL)) AS total FROM buildops_timesheets
-            WHERE (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
-          `);
+            WHERE work_date >= '${rangeStartIsoScalar}'
+              AND work_date <= '${rangeEndIsoScalar}'
+              AND (department_name NOT IN ('Bay Area', 'Sacramento') OR department_name IS NULL)
+          `));
           const totalLaborCost = Math.round(parseFloat((totalLaborCostRow.rows[0] as any)?.total) || 0);
 
           laborAnalytics = {
