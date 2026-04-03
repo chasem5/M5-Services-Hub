@@ -2382,11 +2382,11 @@ export default function AdminPage() {
                             defaultValue={u.revenueTarget != null ? String(u.revenueTarget) : ""}
                             placeholder="role default"
                             type="number"
-                            min={0}
+                            min={1}
                             onBlur={(e) => {
                               const raw = e.target.value.trim();
                               const val = raw === "" ? null : parseInt(raw, 10);
-                              if (isNaN(val as number) && raw !== "") return;
+                              if (raw !== "" && (isNaN(val as number) || (val as number) < 1)) return;
                               if (val !== (u.revenueTarget ?? null)) {
                                 updateRevenueTargetMutation.mutate({ id: u.id, revenueTarget: val });
                               }
