@@ -234,24 +234,6 @@ function BuildOpsPanel() {
     onError: (err: any) => toast({ title: "Employee sync failed", description: err.message, variant: "destructive" }),
   });
 
-  const { data: buildopsEmployeeList, isLoading: employeesLoading } = useQuery<any[]>({
-    queryKey: ["/api/buildops/employees"],
-    staleTime: 60 * 1000,
-  });
-
-  const updateEmployeeTypeMutation = useMutation({
-    mutationFn: async ({ id, employmentType }: { id: number; employmentType: string }) => {
-      const res = await apiRequest("PATCH", `/api/buildops/employees/${id}`, { employmentType });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/buildops/employees"] });
-      toast({ title: "Employment type updated" });
-    },
-    onError: (err: any) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
-  });
-
   const [diagResult, setDiagResult] = useState<any>(null);
   const diagnoseMutation = useMutation({
     mutationFn: async () => {
@@ -546,85 +528,6 @@ function BuildOpsPanel() {
                 {syncRepresentativesMutation.isPending ? "Syncing..." : "Sync Employees"}
               </Button>
             </div>
-            {/* ── Employee Capacity Type Management ── */}
-            {(employeesLoading || (buildopsEmployeeList && buildopsEmployeeList.length > 0)) && (
-              <div className="border rounded-lg p-4 space-y-3">
-                {/* Header row */}
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-sm font-medium flex items-center gap-2">
-                      <Users className="h-4 w-4 text-primary" />
-                      Capacity Type
-                    </h4>
-                    {/* Live summary pills */}
-                    {!employeesLoading && buildopsEmployeeList && (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-100">
-                          {buildopsEmployeeList.filter((e: any) => (e.employmentType ?? "full_time") === "full_time").length} full-time
-                        </Badge>
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-100">
-                          {buildopsEmployeeList.filter((e: any) => e.employmentType === "part_time").length} part-time
-                        </Badge>
-                        {buildopsEmployeeList.some((e: any) => e.employmentType === "exclude") && (
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
-                            {buildopsEmployeeList.filter((e: any) => e.employmentType === "exclude").length} excluded
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                    <strong>Full-time</strong> — counts toward 40h/week capacity.{" "}
-                    <strong>Part-time</strong> — shown in drill-downs, excluded from capacity math.{" "}
-                    <strong>Exclude</strong> — hidden from all staffing metrics entirely.
-                  </p>
-                </div>
-
-                {/* Employee rows */}
-                {employeesLoading ? (
-                  <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-9 w-full" />)}</div>
-                ) : (
-                  <div className="border rounded-md divide-y divide-muted overflow-hidden max-h-64 overflow-y-auto">
-                    {buildopsEmployeeList!.map((emp: any) => {
-                      const type: string = emp.employmentType ?? "full_time";
-                      const dotCls =
-                        type === "full_time" ? "bg-blue-500" :
-                        type === "part_time" ? "bg-amber-400" :
-                                               "bg-muted-foreground/40";
-                      return (
-                        <div key={emp.id} className="flex items-center gap-3 px-3 py-2 bg-card">
-                          <div className={`w-2 h-2 rounded-full shrink-0 ${dotCls}`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{emp.name}</p>
-                            {emp.title && <p className="text-xs text-muted-foreground truncate">{emp.title}</p>}
-                          </div>
-                          <Select
-                            value={type}
-                            onValueChange={(val) => updateEmployeeTypeMutation.mutate({ id: emp.id, employmentType: val })}
-                            disabled={updateEmployeeTypeMutation.isPending}
-                          >
-                            <SelectTrigger className="w-28 h-7 text-xs shrink-0" data-testid={`select-emp-type-${emp.id}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="full_time">Full-time</SelectItem>
-                              <SelectItem value="part_time">Part-time</SelectItem>
-                              <SelectItem value="exclude">Exclude</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Footer note */}
-                <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                  <Clock className="h-3 w-3 shrink-0" />
-                  Changes apply immediately to CEO dashboard capacity calculations.
-                </p>
-              </div>
-            )}
 
             <div className="border rounded-lg p-4 space-y-2">
               <h4 className="text-sm font-medium flex items-center gap-2">
@@ -1709,10 +1612,13 @@ function BuildOpsAuditPanel() {
   );
 }
 
-function UserRepRow({ user, onSave, isSaving }: {
+function UserRepRow({ user, onSave, isSaving, buildopsEmployee, onTypeChange, isTypeChanging }: {
   user: User;
   onSave: (userId: string, buildopsRepId: string | null) => void;
   isSaving: boolean;
+  buildopsEmployee: any | null;
+  onTypeChange: (empId: number, type: string) => void;
+  isTypeChanging: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [inputVal, setInputVal] = useState(user.buildopsRepId ?? "");
@@ -1732,6 +1638,8 @@ function UserRepRow({ user, onSave, isSaving }: {
     onSave(user.id, null);
     setEditing(false);
   };
+
+  const currentType: string = buildopsEmployee?.employmentType ?? "full_time";
 
   return (
     <tr className="hover:bg-muted/20 transition-colors">
@@ -1793,6 +1701,26 @@ function UserRepRow({ user, onSave, isSaving }: {
           )}
         </div>
       </td>
+      <td className="px-3 py-2">
+        {buildopsEmployee ? (
+          <Select
+            value={currentType}
+            onValueChange={(val) => onTypeChange(buildopsEmployee.id, val)}
+            disabled={isTypeChanging}
+          >
+            <SelectTrigger className="w-28 h-7 text-xs shrink-0" data-testid={`select-emp-type-${buildopsEmployee.id}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="full_time">Full-time</SelectItem>
+              <SelectItem value="part_time">Part-time</SelectItem>
+              <SelectItem value="exclude">Exclude</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <span className="text-xs text-muted-foreground italic">— no rep linked —</span>
+        )}
+      </td>
     </tr>
   );
 }
@@ -1802,6 +1730,24 @@ function AccountManagerMappingPanel() {
 
   const { data: allUsers = [], isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
+  });
+
+  const { data: buildopsEmployees = [] } = useQuery<any[]>({
+    queryKey: ["/api/buildops/employees"],
+    staleTime: 60 * 1000,
+  });
+
+  const updateEmployeeTypeMutation = useMutation({
+    mutationFn: async ({ id, employmentType }: { id: number; employmentType: string }) => {
+      const res = await apiRequest("PATCH", `/api/buildops/employees/${id}`, { employmentType });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/buildops/employees"] });
+      toast({ title: "Employment type updated" });
+    },
+    onError: (err: any) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
   });
 
   const autoMatchMutation = useMutation({
@@ -1831,16 +1777,24 @@ function AccountManagerMappingPanel() {
   });
 
   const linkedCount = allUsers.filter(u => u.buildopsRepId).length;
+  const fullTimeCount = buildopsEmployees.filter((e: any) => (e.employmentType ?? "full_time") === "full_time").length;
+  const partTimeCount = buildopsEmployees.filter((e: any) => e.employmentType === "part_time").length;
 
   return (
     <Card className="border-none shadow-sm bg-card">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <UserCheck className="h-4 w-4 text-primary" />
             <CardTitle className="text-base font-semibold">Account Manager Mapping</CardTitle>
             {allUsers.length > 0 && (
               <span className="text-xs text-muted-foreground">({linkedCount}/{allUsers.length} linked)</span>
+            )}
+            {buildopsEmployees.length > 0 && (
+              <>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-100">{fullTimeCount} full-time</Badge>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-100">{partTimeCount} part-time</Badge>
+              </>
             )}
           </div>
           <Button
@@ -1855,7 +1809,7 @@ function AccountManagerMappingPanel() {
           </Button>
         </div>
         <CardDescription className="text-xs">
-          Link each CRM user to their BuildOps rep ID. Paste the ID from BuildOps, or use Auto-Match to link by email automatically.
+          Link each CRM user to their BuildOps rep ID. Paste the ID from BuildOps, or use Auto-Match to link by email automatically. Set capacity type per user to control how they count toward staffing metrics.
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
@@ -1867,24 +1821,31 @@ function AccountManagerMappingPanel() {
           <p className="text-sm text-muted-foreground py-2">No CRM users found.</p>
         ) : (
           <div className="border rounded-md overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm min-w-[480px]">
+            <table className="w-full text-sm min-w-[560px]">
               <thead className="bg-muted/50">
                 <tr>
                   <th className="text-left font-semibold px-3 py-2">CRM User</th>
                   <th className="text-left font-semibold px-3 py-2 hidden sm:table-cell">Email</th>
                   <th className="text-left font-semibold px-3 py-2">BuildOps Rep ID</th>
                   <th className="w-[90px] px-3 py-2"></th>
+                  <th className="text-left font-semibold px-3 py-2">Capacity Type</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {allUsers.map(user => (
-                  <UserRepRow
-                    key={user.id}
-                    user={user}
-                    onSave={(userId, buildopsRepId) => linkRepMutation.mutate({ userId, buildopsRepId })}
-                    isSaving={linkRepMutation.isPending}
-                  />
-                ))}
+                {allUsers.map(user => {
+                  const emp = buildopsEmployees.find((e: any) => String(e.id) === user.buildopsRepId) ?? null;
+                  return (
+                    <UserRepRow
+                      key={user.id}
+                      user={user}
+                      onSave={(userId, buildopsRepId) => linkRepMutation.mutate({ userId, buildopsRepId })}
+                      isSaving={linkRepMutation.isPending}
+                      buildopsEmployee={emp}
+                      onTypeChange={(empId, type) => updateEmployeeTypeMutation.mutate({ id: empId, employmentType: type })}
+                      isTypeChanging={updateEmployeeTypeMutation.isPending}
+                    />
+                  );
+                })}
               </tbody>
             </table>
           </div>
