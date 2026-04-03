@@ -2,15 +2,16 @@
 type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/admin-redesign/BuildOpsAdminRedesign.tsx": () => import("../components/mockups/admin-redesign/BuildOpsAdminRedesign.tsx"),
+  "./components/mockups/ceo-color-scheme/CeoColorRedesign.tsx": () => import("../components/mockups/ceo-color-scheme/CeoColorRedesign.tsx"),
   "./components/mockups/company-tabs/FilesTab.tsx": () => import("../components/mockups/company-tabs/FilesTab.tsx"),
   "./components/mockups/company-tabs/HistoryTab.tsx": () => import("../components/mockups/company-tabs/HistoryTab.tsx"),
   "./components/mockups/company-tabs/IntelligenceTab.tsx": () => import("../components/mockups/company-tabs/IntelligenceTab.tsx"),
   "./components/mockups/company-tabs/OrganizationTab.tsx": () => import("../components/mockups/company-tabs/OrganizationTab.tsx"),
   "./components/mockups/company-tabs/OverviewTab.tsx": () => import("../components/mockups/company-tabs/OverviewTab.tsx"),
   "./components/mockups/company-tabs/RevenueTab.tsx": () => import("../components/mockups/company-tabs/RevenueTab.tsx"),
-  "./components/mockups/hiring-dashboard/HiringDecisionDashboard.tsx": () => import("../components/mockups/hiring-dashboard/HiringDecisionDashboard.tsx"),
+  "./components/mockups/slide-overs/BuildingPanel.tsx": () => import("../components/mockups/slide-overs/BuildingPanel.tsx"),
+  "./components/mockups/slide-overs/ContactPanel.tsx": () => import("../components/mockups/slide-overs/ContactPanel.tsx"),
   "./components/mockups/org-structure/SimpleTenant.tsx": () => import("../components/mockups/org-structure/SimpleTenant.tsx"),
   "./components/mockups/org-structure/TeamsLargeCorp.tsx": () => import("../components/mockups/org-structure/TeamsLargeCorp.tsx"),
-  "./components/mockups/slide-overs/BuildingPanel.tsx": () => import("../components/mockups/slide-overs/BuildingPanel.tsx"),
-  "./components/mockups/slide-overs/ContactPanel.tsx": () => import("../components/mockups/slide-overs/ContactPanel.tsx")
+  "./components/mockups/hiring-dashboard/HiringDecisionDashboard.tsx": () => import("../components/mockups/hiring-dashboard/HiringDecisionDashboard.tsx")
 };
