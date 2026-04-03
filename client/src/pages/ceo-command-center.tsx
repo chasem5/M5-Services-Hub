@@ -176,8 +176,8 @@ const CustomTooltip = ({ active, payload, label, format }: any) => {
   if (!active || !payload?.length) return null;
   const v = payload[0]?.value;
   return (
-    <div className="bg-white border border-gray-100 shadow-lg rounded-lg px-3 py-2 text-xs">
-      <p className="text-gray-400 mb-0.5">{label}</p>
+    <div className="bg-white border border-gray-200 shadow-lg rounded-lg px-3 py-2 text-xs">
+      <p className="text-gray-600 mb-0.5">{label}</p>
       <p className="font-bold text-gray-900">
         {format === "pct" ? `${v}%` : format === "m" ? `$${v}M` : fmtDollar(v)}
       </p>
@@ -484,7 +484,7 @@ function CEOCommandCenterInner() {
       const body = lines.slice(1).join(" ").replace(/\*\*/g, "");
       return (
         <div key={i} className="mb-4 last:mb-0">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-1">{heading}</p>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-gray-600 mb-1">{heading}</p>
           <p className="text-sm text-gray-700 leading-relaxed">{body}</p>
         </div>
       );
@@ -515,7 +515,7 @@ function CEOCommandCenterInner() {
             <h1 className="text-xl font-black tracking-tight leading-none" style={{ fontFamily: "'Archivo Black', sans-serif", color: "#111" }}>
               CEO Command Center
             </h1>
-            <p className="text-xs text-gray-400 mt-0.5">Executive intelligence — restricted access</p>
+            <p className="text-xs text-gray-600 mt-0.5">Executive intelligence — restricted access</p>
           </div>
         </div>
 
@@ -579,10 +579,10 @@ function CEOCommandCenterInner() {
             { label: "SA Contract Rev", icon: Repeat2, ...liveKpi.saContractRevenue, sparkData: sa?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: "SA-tagged invoice revenue" },
             { label: "AR Outstanding", icon: Percent, ...liveKpi.collectionsOutstanding, sparkData: ar?.monthly ?? FALLBACK_SPARK, fmt: "dollar", sparkNote: undefined },
           ].map(({ label, icon: Icon, value, change, up, sparkData, fmt, sparkNote }: any) => (
-            <div key={label} className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 pt-3.5 pb-0 overflow-hidden" data-testid={`kpi-${label.toLowerCase().replace(/\s+/g, '-')}`}>
+            <div key={label} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 pt-3.5 pb-0 overflow-hidden" data-testid={`kpi-${label.toLowerCase().replace(/\s+/g, '-')}`}>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{label}</span>
-                <Icon className="w-3.5 h-3.5 text-gray-300" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-600">{label}</span>
+                <Icon className="w-3.5 h-3.5 text-gray-500" />
               </div>
               <div className="text-2xl font-black text-gray-900 leading-tight" style={{ fontFamily: "'Archivo Black', sans-serif" }}>{value}</div>
               <div className={`flex items-center gap-1 mt-0.5 mb-1 text-xs font-semibold ${up ? "text-emerald-600" : "text-red-500"}`}>
@@ -590,7 +590,7 @@ function CEOCommandCenterInner() {
                 {change}
               </div>
               {sparkNote && (
-                <p className="text-[9px] text-gray-300 mb-1 leading-none">{sparkNote}</p>
+                <p className="text-[9px] text-gray-500 mb-1 leading-none">{sparkNote}</p>
               )}
               <div className="h-12 -mx-4">
                 <ResponsiveContainer width="100%" height="100%">
@@ -612,8 +612,8 @@ function CEOCommandCenterInner() {
         {/* ── Operational KPIs ─────────────────────────────────────────────── */}
         <div data-testid="section-ops-kpis">
           <div className="flex items-center gap-2 mb-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Health</p>
-            <span className="text-[10px] text-gray-300">— metrics that drive margin in service businesses</span>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600">Operational Health</p>
+            <span className="text-[10px] text-gray-500">— metrics that drive margin in service businesses</span>
           </div>
           <div className="grid grid-cols-5 gap-3">
             {([
@@ -688,7 +688,7 @@ function CEOCommandCenterInner() {
               return (
                 <div
                   key={k.label}
-                  className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3.5 cursor-default transition-shadow hover:shadow-md relative"
+                  className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 cursor-default transition-shadow hover:shadow-md relative"
                   data-testid={`ops-kpi-${k.label.toLowerCase().replace(/\s+/g, '-')}`}
                   onMouseEnter={() => setHoveredKpi(k.label)}
                   onMouseLeave={() => setHoveredKpi(null)}
@@ -699,10 +699,10 @@ function CEOCommandCenterInner() {
                     </div>
                     <span className={`text-[10px] font-semibold ${k.up ? "text-emerald-600" : "text-red-500"}`}>{k.change}</span>
                   </div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5 leading-tight">{k.label}</p>
-                  {k.sub && <p className="text-[9px] text-gray-300 mb-1 leading-tight">{k.sub}</p>}
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-0.5 leading-tight">{k.label}</p>
+                  {k.sub && <p className="text-[9px] text-gray-500 mb-1 leading-tight">{k.sub}</p>}
                   <p className="text-lg font-black text-gray-900 leading-none mb-1" style={{ fontFamily: "'Archivo Black', sans-serif" }}>{k.value}</p>
-                  <p className="text-[10px] text-gray-400 mb-2">Target: {k.target}</p>
+                  <p className="text-[10px] text-gray-600 mb-2">Target: {k.target}</p>
                   {/* Progress bar */}
                   <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div
@@ -727,23 +727,23 @@ function CEOCommandCenterInner() {
         </div>
 
         {/* ── Hero chart: Revenue trend ─────────────────────────────────────── */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5" data-testid="section-revenue-chart">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5" data-testid="section-revenue-chart">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">Revenue Trend</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-0.5">Revenue Trend</p>
               <p className="text-2xl font-black text-gray-900" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
                 {liveKpi.revenue.value}
                 <span className={`text-sm font-semibold ml-2 ${liveKpi.revenue.up ? "text-emerald-600" : "text-red-500"}`}>{liveKpi.revenue.change}</span>
               </p>
             </div>
-            <span className="text-xs text-gray-400 capitalize">{period} view</span>
+            <span className="text-xs text-gray-600 capitalize">{period} view</span>
           </div>
           <div className="h-48 relative">
             {!revenueHasData && !metricsLoading && (
               <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-white/80 rounded-lg">
-                <BarChart2 className="w-6 h-6 text-gray-300 mb-1.5" />
-                <p className="text-xs font-semibold text-gray-400">No invoice data for this period</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Sync BuildOps invoices to populate the revenue chart</p>
+                <BarChart2 className="w-6 h-6 text-gray-500 mb-1.5" />
+                <p className="text-xs font-semibold text-gray-600">No invoice data for this period</p>
+                <p className="text-[10px] text-gray-600 mt-0.5">Sync BuildOps invoices to populate the revenue chart</p>
               </div>
             )}
             <ResponsiveContainer width="100%" height="100%">
@@ -767,10 +767,10 @@ function CEOCommandCenterInner() {
 
         {/* ── Secondary charts ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-4">
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-pipeline-chart">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-testid="section-pipeline-chart">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Pipeline Value</p>
-              <BarChart2 className="w-3.5 h-3.5 text-gray-300" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600">Pipeline Value</p>
+              <BarChart2 className="w-3.5 h-3.5 text-gray-500" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
               {liveKpi.pipeline.value}
@@ -778,7 +778,7 @@ function CEOCommandCenterInner() {
             </p>
             <div className="h-28 mt-2 relative">
               {(!pipe?.monthly || !pipe.monthly.some(d => d.v > 0)) && !metricsLoading && (
-                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No pipeline data for period</div>
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-600">No pipeline data for period</div>
               )}
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={pipe?.monthly ?? FALLBACK_SPARK} margin={{ top: 2, right: 0, left: 0, bottom: 0 }} barSize={14}>
@@ -791,10 +791,10 @@ function CEOCommandCenterInner() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-winrate-chart">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-testid="section-winrate-chart">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Quote Conversion Rate</p>
-              <Target className="w-3.5 h-3.5 text-gray-300" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600">Quote Conversion Rate</p>
+              <Target className="w-3.5 h-3.5 text-gray-500" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
               {liveKpi.quoteConversionRate.value}
@@ -802,7 +802,7 @@ function CEOCommandCenterInner() {
             </p>
             <div className="h-28 mt-2 relative">
               {(!qcr?.monthly || !qcr.monthly.some(d => d.v > 0)) && !metricsLoading && (
-                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No conversion data for period</div>
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-600">No conversion data for period</div>
               )}
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={qcr?.monthly ?? FALLBACK_SPARK} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
@@ -817,13 +817,13 @@ function CEOCommandCenterInner() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4" data-testid="section-util-chart">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-testid="section-util-chart">
             <div className="flex items-center justify-between mb-1">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">AR Outstanding</p>
-                <p className="text-[9px] text-gray-400 normal-case">Balance from BuildOps payment data · Sparkline = billed per period</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600">AR Outstanding</p>
+                <p className="text-[9px] text-gray-600 normal-case">Balance from BuildOps payment data · Sparkline = billed per period</p>
               </div>
-              <Activity className="w-3.5 h-3.5 text-gray-300" />
+              <Activity className="w-3.5 h-3.5 text-gray-500" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
               {liveKpi.collectionsOutstanding.value}
@@ -831,7 +831,7 @@ function CEOCommandCenterInner() {
             </p>
             <div className="h-28 mt-2 relative">
               {(!ar?.monthly || ar.monthly.every(d => d.v === 0)) && !metricsLoading && (
-                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No AR data — invoices not synced</div>
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-600">No AR data — invoices not synced</div>
               )}
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={ar?.monthly ?? FALLBACK_SPARK} margin={{ top: 2, right: 0, left: 4, bottom: 0 }}>
@@ -849,8 +849,8 @@ function CEOCommandCenterInner() {
               </ResponsiveContainer>
             </div>
             {pipelineInvoiceSummary && pipelineInvoiceSummary.dealsInvoiced > 0 && (
-              <div className="mt-2 pt-2 border-t border-gray-100" data-testid="pipeline-invoice-coverage">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">Invoice Coverage — From Pipeline Deals</p>
+              <div className="mt-2 pt-2 border-t border-gray-200" data-testid="pipeline-invoice-coverage">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600 mb-1.5">Invoice Coverage — From Pipeline Deals</p>
                 <div className="flex items-center gap-2 text-[10px]">
                   <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">{pipelineInvoiceSummary.dealsInvoiced} deals invoiced</span>
                   <span className="text-gray-500">${Math.round(pipelineInvoiceSummary.invoicedTotal / 1000)}K billed</span>
@@ -868,10 +868,10 @@ function CEOCommandCenterInner() {
 
         {/* ── Margin + signal summary ───────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-4">
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 col-span-2" data-testid="section-margin-chart">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 col-span-2" data-testid="section-margin-chart">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">SA Contract Revenue</p>
-              <Repeat2 className="w-3.5 h-3.5 text-gray-300" />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600">SA Contract Revenue</p>
+              <Repeat2 className="w-3.5 h-3.5 text-gray-500" />
             </div>
             <p className="text-xl font-black text-gray-900 mb-0.5" style={{ fontFamily: "'Archivo Black', sans-serif" }}>
               {liveKpi.saContractRevenue.value}
@@ -879,7 +879,7 @@ function CEOCommandCenterInner() {
             </p>
             <div className="h-28 mt-2 relative">
               {(!sa?.monthly || sa.monthly.every(d => d.v === 0)) && !metricsLoading && (
-                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">No SA revenue data — sync agreements</div>
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-600">No SA revenue data — sync agreements</div>
               )}
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={(sa?.monthly ?? FALLBACK_SPARK)} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
@@ -893,8 +893,8 @@ function CEOCommandCenterInner() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col justify-between" data-testid="section-signal-summary">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Signal Summary</p>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col justify-between" data-testid="section-signal-summary">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-3">Signal Summary</p>
             <div className="space-y-3 flex-1">
               {[
                 { icon: AlertCircle, label: "Danger", count: redCount, color: "text-red-500", bg: "bg-red-50" },
@@ -1027,7 +1027,7 @@ function CEOCommandCenterInner() {
           ];
 
           return (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5" data-testid="section-crew-capacity">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5" data-testid="section-crew-capacity">
               {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -1035,8 +1035,8 @@ function CEOCommandCenterInner() {
                     <Users className="w-3.5 h-3.5" style={{ color: signalLevelColor(scores.overall) }} />
                   </div>
                   <span className="text-sm font-bold text-gray-800">Crew Capacity</span>
-                  <span className="ml-1 text-[10px] text-gray-400">— multi-signal hiring decision</span>
-                  <span className="ml-1 text-gray-300 cursor-default" title="Composite score from 5 signals: rolling utilization, forward booked weeks, OT rate, workload trend, and actual-vs-scheduled stress.">
+                  <span className="ml-1 text-[10px] text-gray-600">— multi-signal hiring decision</span>
+                  <span className="ml-1 text-gray-500 cursor-default" title="Composite score from 5 signals: rolling utilization, forward booked weeks, OT rate, workload trend, and actual-vs-scheduled stress.">
                     <Info className="w-3 h-3" />
                   </span>
                 </div>
@@ -1062,13 +1062,13 @@ function CEOCommandCenterInner() {
                     <ul className="space-y-1">
                       {reasons.map((r, i) => (
                         <li key={i} className="text-[11px] text-gray-600 flex gap-1.5">
-                          <span className="mt-0.5 flex-shrink-0 text-gray-400">•</span>
+                          <span className="mt-0.5 flex-shrink-0 text-gray-600">•</span>
                           <span>{r}</span>
                         </li>
                       ))}
                     </ul>
                     {persistenceWarn > 0 && (
-                      <p className="text-[10px] text-gray-400 mt-2 italic">
+                      <p className="text-[10px] text-gray-600 mt-2 italic">
                         {persistenceWarn >= hiringThresholds.weeksRequired
                           ? `Sustained: elevated for ${persistenceWarn} of last 4 weeks (threshold: ${hiringThresholds.weeksRequired})`
                           : `Spike detected: elevated for ${persistenceWarn} of last 4 weeks — monitoring (threshold: ${hiringThresholds.weeksRequired} to escalate)`}
@@ -1107,7 +1107,7 @@ function CEOCommandCenterInner() {
               </div>
 
               {/* ── 3. What Changed ── */}
-              <div className="border-t border-gray-100 pt-3 mb-3">
+              <div className="border-t border-gray-200 pt-3 mb-3">
                 <button
                   onClick={() => setShowWhatChanged(v => !v)}
                   className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700 transition-colors mb-2"
@@ -1125,7 +1125,7 @@ function CEOCommandCenterInner() {
                           <span className={`font-semibold w-14 ${utilDelta > 0 ? 'text-red-600' : utilDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
                             {utilDelta > 0 ? '+' : ''}{utilDelta}pp
                           </span>
-                          <span className="text-gray-400">{prevWeek?.utilPct}% → {currWeek?.utilPct}% (prior week → latest)</span>
+                          <span className="text-gray-600">{prevWeek?.utilPct}% → {currWeek?.utilPct}% (prior week → latest)</span>
                         </div>
                         {schedHrsDelta !== null && (
                           <div className="flex items-center gap-2 text-[11px]">
@@ -1133,7 +1133,7 @@ function CEOCommandCenterInner() {
                             <span className={`font-semibold w-14 ${schedHrsDelta > 0 ? 'text-amber-600' : schedHrsDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
                               {schedHrsDelta > 0 ? '+' : ''}{schedHrsDelta}h
                             </span>
-                            <span className="text-gray-400">{prevWeek?.scheduledHrs}h → {currWeek?.scheduledHrs}h vs prior week</span>
+                            <span className="text-gray-600">{prevWeek?.scheduledHrs}h → {currWeek?.scheduledHrs}h vs prior week</span>
                           </div>
                         )}
                         {fwdDelta !== null && (
@@ -1142,7 +1142,7 @@ function CEOCommandCenterInner() {
                             <span className={`font-semibold w-14 ${fwdDelta > 0 ? 'text-amber-600' : fwdDelta < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
                               {fwdDelta > 0 ? '+' : ''}{fwdDelta}wk
                             </span>
-                            <span className="text-gray-400">consecutive booked weeks vs prior 4-wk window</span>
+                            <span className="text-gray-600">consecutive booked weeks vs prior 4-wk window</span>
                           </div>
                         )}
                         {hasTimesheetHrs ? (
@@ -1151,25 +1151,25 @@ function CEOCommandCenterInner() {
                             <span className={`font-semibold w-14 ${overtimeRatePct >= hiringThresholds.otCritical ? 'text-red-600' : overtimeRatePct >= hiringThresholds.otWarn ? 'text-amber-600' : 'text-emerald-600'}`}>
                               {overtimeRatePct}%
                             </span>
-                            <span className="text-gray-400">rolling 30-day from timesheets (week-over-week OT delta requires 2+ timesheet imports)</span>
+                            <span className="text-gray-600">rolling 30-day from timesheets (week-over-week OT delta requires 2+ timesheet imports)</span>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 text-[11px]">
                             <span className="w-32 text-gray-500 flex-shrink-0">OT Rate</span>
-                            <span className="font-semibold w-14 text-gray-300">—</span>
-                            <span className="text-gray-300 italic">Upload a timesheet CSV to see OT rate</span>
+                            <span className="font-semibold w-14 text-gray-500">—</span>
+                            <span className="text-gray-500 italic">Upload a timesheet CSV to see OT rate</span>
                           </div>
                         )}
                       </>
                     ) : (
-                      <p className="text-[10px] text-gray-300 italic">Need at least 2 weeks of history for week-over-week deltas</p>
+                      <p className="text-[10px] text-gray-500 italic">Need at least 2 weeks of history for week-over-week deltas</p>
                     )}
                   </div>
                 )}
               </div>
 
               {/* ── 4. Weekly Chart + Gauge + Stats ── */}
-              <div className="grid grid-cols-3 gap-4 border-t border-gray-100 pt-4 mb-3">
+              <div className="grid grid-cols-3 gap-4 border-t border-gray-200 pt-4 mb-3">
                 {/* Gauge */}
                 <div className="flex flex-col items-center justify-start pt-1">
                   <div className="relative" style={{ width: 200, height: 112 }}>
@@ -1191,21 +1191,21 @@ function CEOCommandCenterInner() {
                       </text>
                     </svg>
                     <div className="absolute bottom-0 left-0 right-0 flex justify-between px-1">
-                      <span className="text-[9px] text-gray-400">0%</span>
-                      <span className="text-[9px] text-gray-400">100%</span>
+                      <span className="text-[9px] text-gray-600">0%</span>
+                      <span className="text-[9px] text-gray-600">100%</span>
                     </div>
                   </div>
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mt-2">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-gray-600 mt-2">
                     {hasTimesheetHrs ? 'Booked Load (4wk)' : '4-Wk Utilization'}
                   </p>
                   <span
-                    className={`inline-block text-[10px] font-semibold px-2.5 py-0.5 rounded-full mt-1.5 ${hasTimesheetHrs ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}
+                    className={`inline-block text-[10px] font-semibold px-2.5 py-0.5 rounded-full mt-1.5 ${hasTimesheetHrs ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-gray-100 text-gray-600 border border-gray-200'}`}
                     data-testid="badge-gauge-source"
                   >
                     {hasTimesheetHrs ? 'from timesheets' : 'from visit schedule'}
                   </span>
                   {hasTimesheetHrs && (
-                    <p className="text-[10px] mt-1 text-gray-400">{scheduledHrs4wk}h booked · {actualHrs4wk}h available</p>
+                    <p className="text-[10px] mt-1 text-gray-600">{scheduledHrs4wk}h booked · {actualHrs4wk}h available</p>
                   )}
                   {/* Active Techs + Hrs */}
                   <div className="flex items-center gap-2.5 mt-4" data-testid="staffing-stat-active-techs">
@@ -1214,7 +1214,7 @@ function CEOCommandCenterInner() {
                     </div>
                     <div>
                       <p className="text-sm font-bold text-gray-800 leading-none">{staffingLoading ? '—' : staffing?.techCount ?? '—'}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">Active Techs</p>
+                      <p className="text-[11px] text-gray-600 mt-0.5">Active Techs</p>
                       {(staffing?.partTimeTechCount ?? 0) > 0 && <p className="text-[10px] text-amber-500 mt-0.5">+{staffing!.partTimeTechCount} part-time</p>}
                     </div>
                   </div>
@@ -1224,7 +1224,7 @@ function CEOCommandCenterInner() {
                     </div>
                     <div>
                       <p className="text-sm font-bold text-gray-800 leading-none">{staffingLoading ? '—' : staffing?.avgHrsPerTechPerWeek != null ? `${staffing.avgHrsPerTechPerWeek}h` : '—'}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">Avg Hrs/Tech/Wk</p>
+                      <p className="text-[11px] text-gray-600 mt-0.5">Avg Hrs/Tech/Wk</p>
                     </div>
                   </div>
                 </div>
@@ -1244,29 +1244,29 @@ function CEOCommandCenterInner() {
                         {staffingLoading ? (
                           <div className="flex gap-1">{[0,1,2,3,4].map(i => <div key={i} className="w-9 h-10 rounded bg-gray-100 animate-pulse" />)}</div>
                         ) : nextFive.length === 0 ? (
-                          <p className="text-[10px] text-gray-300 italic">No upcoming visits synced</p>
+                          <p className="text-[10px] text-gray-500 italic">No upcoming visits synced</p>
                         ) : (
                           <>
                             <div className="flex gap-1">
                               {nextFive.map((w, i) => {
                                 const hasVisits = (w.visitCount ?? 0) > 0 || w.utilPct > 0;
                                 const barColor = !hasVisits ? '#e5e7eb' : w.utilPct >= 90 ? '#ef4444' : w.utilPct >= 70 ? '#f59e0b' : '#10b981';
-                                const textColor = !hasVisits ? 'text-gray-300' : w.utilPct >= 90 ? 'text-red-600' : w.utilPct >= 70 ? 'text-amber-600' : 'text-emerald-600';
+                                const textColor = !hasVisits ? 'text-gray-500' : w.utilPct >= 90 ? 'text-red-600' : w.utilPct >= 70 ? 'text-amber-600' : 'text-emerald-600';
                                 return (
                                   <div key={i} className="flex flex-col items-center gap-0.5 w-9" data-testid={`horizon-week-${i}`} title={`${w.label}: ${w.utilPct}% · ${w.scheduledHrs}h scheduled`}>
                                     <div className="w-full rounded-t-sm" style={{ height: 28, backgroundColor: '#f3f4f6', position: 'relative' }}>
                                       <div className="absolute bottom-0 left-0 right-0 rounded-t-sm transition-all" style={{ height: `${Math.min(w.utilPct, 100)}%`, backgroundColor: barColor, minHeight: hasVisits ? 3 : 0 }} />
                                     </div>
                                     <p className={`text-[9px] font-bold leading-none ${textColor}`}>{hasVisits ? `${w.utilPct}%` : '—'}</p>
-                                    <p className="text-[8px] text-gray-300 leading-none">{w.label}</p>
+                                    <p className="text-[8px] text-gray-500 leading-none">{w.label}</p>
                                   </div>
                                 );
                               })}
                             </div>
-                            <p className="text-[9px] text-gray-300 mt-1">{aboveThreshold} of {nextFive.length} wks above 70%{gapWeeks > 0 ? ` · ${gapWeeks} gap wk${gapWeeks > 1 ? 's' : ''}` : ''}</p>
+                            <p className="text-[9px] text-gray-500 mt-1">{aboveThreshold} of {nextFive.length} wks above 70%{gapWeeks > 0 ? ` · ${gapWeeks} gap wk${gapWeeks > 1 ? 's' : ''}` : ''}</p>
                           </>
                         )}
-                        <p className="text-[8px] text-gray-200 mt-0.5">
+                        <p className="text-[8px] text-gray-600 mt-0.5">
                           <span className="inline-block w-1.5 h-1.5 rounded-sm bg-gray-200 mr-1 align-middle" />gap
                           <span className="inline-block w-1.5 h-1.5 rounded-sm bg-emerald-400 ml-2 mr-1 align-middle" />&lt;70%
                           <span className="inline-block w-1.5 h-1.5 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />70–89%
@@ -1277,14 +1277,14 @@ function CEOCommandCenterInner() {
                   })()}
                   {/* Labor stats */}
                   {metrics?.labor?.hasData ? (
-                    <div className="border-t border-gray-100 pt-2 flex flex-col gap-2">
+                    <div className="border-t border-gray-200 pt-2 flex flex-col gap-2">
                       <div className="flex items-center gap-2" data-testid="labor-stat-ot-rate">
                         <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#f5910015' }}>
                           <Zap className="w-3.5 h-3.5" style={{ color: '#f59100' }} />
                         </div>
                         <div>
                           <p className="text-xs font-bold text-gray-800 leading-none">{overtimeRatePct}%</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">OT Rate (30d)</p>
+                          <p className="text-[10px] text-gray-600 mt-0.5">OT Rate (30d)</p>
                         </div>
                         {overtimeRatePct >= hiringThresholds.otCritical && (
                           <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-700">High</span>
@@ -1298,22 +1298,22 @@ function CEOCommandCenterInner() {
                           <Activity className="w-3.5 h-3.5" style={{ color: '#10b981' }} />
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-gray-800 leading-none">{actualHrs4wk}h <span className="text-gray-400 font-normal">/ {scheduledHrs4wk}h</span></p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">Actual vs Sched (4wk)</p>
+                          <p className="text-xs font-bold text-gray-800 leading-none">{actualHrs4wk}h <span className="text-gray-600 font-normal">/ {scheduledHrs4wk}h</span></p>
+                          <p className="text-[10px] text-gray-600 mt-0.5">Actual vs Sched (4wk)</p>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="border-t border-gray-100 pt-2">
-                      <p className="text-[10px] text-gray-300 italic">Upload a timesheet CSV to see labor analytics</p>
+                    <div className="border-t border-gray-200 pt-2">
+                      <p className="text-[10px] text-gray-500 italic">Upload a timesheet CSV to see labor analytics</p>
                     </div>
                   )}
                 </div>
 
                 {/* Weekly trend chart */}
                 <div className="flex flex-col gap-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">Weekly Utilization</p>
-                  <p className="text-[9px] text-gray-300 mb-1">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-0.5">Weekly Utilization</p>
+                  <p className="text-[9px] text-gray-500 mb-1">
                     <span className="inline-block w-2 h-2 rounded-sm bg-indigo-400 mr-1 align-middle" />past
                     <span className="inline-block w-2 h-2 rounded-sm bg-emerald-400 ml-2 mr-1 align-middle" />on track
                     <span className="inline-block w-2 h-2 rounded-sm bg-amber-400 ml-2 mr-1 align-middle" />watch
@@ -1324,7 +1324,7 @@ function CEOCommandCenterInner() {
                       <div className="h-24 bg-gray-50 rounded animate-pulse" />
                     ) : trendData.length === 0 ? (
                       <div className="h-24 flex flex-col items-center justify-center gap-1">
-                        <p className="text-[11px] text-gray-400">Sync visits to populate</p>
+                        <p className="text-[11px] text-gray-600">Sync visits to populate</p>
                       </div>
                     ) : (
                       <ResponsiveContainer width="100%" height={110}>
@@ -1368,7 +1368,7 @@ function CEOCommandCenterInner() {
                   </div>
 
                   {/* Tech Workload Drill-Down */}
-                  <div className="border-t border-gray-100 pt-2">
+                  <div className="border-t border-gray-200 pt-2">
                     <button
                       onClick={() => { setShowCrewDrilldown(!showCrewDrilldown); setCrewWeekOffset(0); }}
                       className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-indigo-500 hover:text-indigo-700 transition-colors"
@@ -1380,20 +1380,20 @@ function CEOCommandCenterInner() {
                     {showCrewDrilldown && (
                       <div className="mt-2">
                         <div className="flex items-center gap-2 mb-2">
-                          <button onClick={() => setCrewWeekOffset(o => o - 1)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400" data-testid="crew-week-prev">
+                          <button onClick={() => setCrewWeekOffset(o => o - 1)} className="p-0.5 rounded hover:bg-gray-100 text-gray-600" data-testid="crew-week-prev">
                             <ChevronLeft className="w-3.5 h-3.5" />
                           </button>
                           <span className="text-[10px] font-semibold text-gray-600">
                             {crewWeekOffset === 0 ? 'This Week' : crewWeekOffset > 0 ? `+${crewWeekOffset} wk${crewWeekOffset !== 1 ? 's' : ''}` : `${crewWeekOffset} wk${crewWeekOffset !== -1 ? 's' : ''}`}
                           </span>
-                          <button onClick={() => setCrewWeekOffset(o => o + 1)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400" data-testid="crew-week-next">
+                          <button onClick={() => setCrewWeekOffset(o => o + 1)} className="p-0.5 rounded hover:bg-gray-100 text-gray-600" data-testid="crew-week-next">
                             <ChevronRight className="w-3.5 h-3.5" />
                           </button>
                         </div>
                         {crewLoading ? (
                           <div className="h-20 bg-gray-50 rounded animate-pulse" />
                         ) : !crewByTech?.techs?.length ? (
-                          <p className="text-[10px] text-gray-400 italic">No visits scheduled this week</p>
+                          <p className="text-[10px] text-gray-600 italic">No visits scheduled this week</p>
                         ) : (
                           <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                             {crewByTech.techs.map(t => {
@@ -1416,10 +1416,10 @@ function CEOCommandCenterInner() {
                                         {t.otHrs > 0 && <span className="text-amber-500 ml-0.5">•&nbsp;{t.otHrs}&nbsp;OT</span>}
                                       </span>
                                     ) : (
-                                      <span className="text-gray-400" title="scheduled hours (no timesheet data)">{t.scheduledHrs}h <span className="text-[8px]">sched</span></span>
+                                      <span className="text-gray-600" title="scheduled hours (no timesheet data)">{t.scheduledHrs}h <span className="text-[8px]">sched</span></span>
                                     )}
                                   </div>
-                                  <div className="text-[10px] text-gray-400 w-6 text-right flex-shrink-0">{t.visitCount}v</div>
+                                  <div className="text-[10px] text-gray-600 w-6 text-right flex-shrink-0">{t.visitCount}v</div>
                                 </div>
                               );
                             })}
@@ -1431,10 +1431,10 @@ function CEOCommandCenterInner() {
 
                   {/* Labor Cost Spark */}
                   {metrics?.labor?.hasData && (metrics.labor.laborCostSpark?.length ?? 0) > 0 ? (
-                    <div className="border-t border-gray-100 pt-2">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                    <div className="border-t border-gray-200 pt-2">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-1">
                         Labor Cost (6mo)
-                        <span className="ml-2 font-normal normal-case text-gray-300">from timesheet import</span>
+                        <span className="ml-2 font-normal normal-case text-gray-500">from timesheet import</span>
                       </p>
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-bold text-gray-800">{fmtDollar(metrics.labor.laborCostCurrentMonth ?? 0)}</span>
@@ -1461,7 +1461,7 @@ function CEOCommandCenterInner() {
               </div>
 
               {/* ── 5. Settings Panel ── */}
-              <div className="border-t border-gray-100 pt-3 mt-3">
+              <div className="border-t border-gray-200 pt-3 mt-3">
                 <button
                   onClick={() => setShowHiringSettings(v => !v)}
                   className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700 transition-colors"
@@ -1509,7 +1509,7 @@ function CEOCommandCenterInner() {
               </div>
 
               {/* ── 6. Scenario Calculator ── */}
-              <div className="border-t border-gray-100 pt-3 mt-1">
+              <div className="border-t border-gray-200 pt-3 mt-1">
                 <button
                   onClick={() => setShowScenario(v => !v)}
                   className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700 transition-colors"
@@ -1520,7 +1520,7 @@ function CEOCommandCenterInner() {
                 </button>
                 {showScenario && (
                   <div className="mt-3" data-testid="scenario-calculator-panel">
-                    <p className="text-[10px] text-gray-400 mb-2">Projected utilization and status after applying each scenario. No data is saved.</p>
+                    <p className="text-[10px] text-gray-600 mb-2">Projected utilization and status after applying each scenario. No data is saved.</p>
                     <div className="flex flex-wrap gap-2">
                       {scenarios.map(s => {
                         const projected = applyScenario(rollingAvgUtilization, baseTechCount, s.deltaTechs, s.deltaWork);
@@ -1543,7 +1543,7 @@ function CEOCommandCenterInner() {
               </div>
 
               {/* ── 7. Supporting Indicators (Stubs) ── */}
-              <div className="border-t border-gray-100 pt-3 mt-1">
+              <div className="border-t border-gray-200 pt-3 mt-1">
                 <button
                   onClick={() => setShowStubs(v => !v)}
                   className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700 transition-colors"
@@ -1557,21 +1557,21 @@ function CEOCommandCenterInner() {
                   <div className="mt-3 grid grid-cols-3 gap-2" data-testid="supporting-indicators-panel">
                     {/* TODO: connect to real data source — sold-but-not-scheduled pipeline hours */}
                     <div className="border border-dashed border-gray-300 rounded-lg px-3 py-2 flex flex-col gap-1">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Sold, Not Scheduled</p>
-                      <p className="text-[11px] text-gray-300 italic">No data yet</p>
-                      <p className="text-[9px] text-gray-200">Hours sold but not yet placed on calendar. Future: connect to BuildOps job pipeline.</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600">Sold, Not Scheduled</p>
+                      <p className="text-[11px] text-gray-500 italic">No data yet</p>
+                      <p className="text-[9px] text-gray-600">Hours sold but not yet placed on calendar. Future: connect to BuildOps job pipeline.</p>
                     </div>
                     {/* TODO: connect to real data source — pipeline uplift toggle */}
                     <div className="border border-dashed border-gray-300 rounded-lg px-3 py-2 flex flex-col gap-1">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Pipeline Uplift</p>
-                      <p className="text-[11px] text-gray-300 italic">Stub toggle</p>
-                      <p className="text-[9px] text-gray-200">Adds a configurable % uplift to forward demand for scenario modeling. Future: read from CRM pipeline.</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600">Pipeline Uplift</p>
+                      <p className="text-[11px] text-gray-500 italic">Stub toggle</p>
+                      <p className="text-[9px] text-gray-600">Adds a configurable % uplift to forward demand for scenario modeling. Future: read from CRM pipeline.</p>
                     </div>
                     {/* TODO: connect to real data source — service vs project split from BuildOps job type */}
                     <div className="border border-dashed border-gray-300 rounded-lg px-3 py-2 flex flex-col gap-1">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Service / Project Split</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-600">Service / Project Split</p>
                       <p className="text-[11px] text-gray-600 font-semibold">~70% / 30%</p>
-                      <p className="text-[9px] text-gray-200">Mocked ratio. Future: read from BuildOps job type flag when reliably populated.</p>
+                      <p className="text-[9px] text-gray-600">Mocked ratio. Future: read from BuildOps job type flag when reliably populated.</p>
                     </div>
                   </div>
                 )}
@@ -1581,18 +1581,18 @@ function CEOCommandCenterInner() {
         })()}
 
         {/* ── Job Margin ────────────────────────────────────────────────────── */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5" data-testid="section-job-margin">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5" data-testid="section-job-margin">
           <div className="flex items-center gap-2 mb-4">
             <Percent className="w-4 h-4" style={{ color: PRIMARY }} />
             <span className="text-sm font-bold text-gray-800">Job Margin</span>
-            <span className="ml-1 text-[10px] text-gray-400">— avg gross margin % · 6-month trend</span>
+            <span className="ml-1 text-[10px] text-gray-600">— avg gross margin % · 6-month trend</span>
           </div>
           {jobMarginLoading ? (
             <div className="h-28 bg-gray-50 rounded animate-pulse" />
           ) : !jobMargin?.hasData ? (
             <div className="h-28 flex flex-col items-center justify-center gap-1">
-              <p className="text-[11px] text-gray-400">No job margin data yet</p>
-              <p className="text-[10px] text-gray-300">Upload a BuildOps Job Cost / Margin CSV to populate</p>
+              <p className="text-[11px] text-gray-600">No job margin data yet</p>
+              <p className="text-[10px] text-gray-500">Upload a BuildOps Job Cost / Margin CSV to populate</p>
             </div>
           ) : (
             <div className="flex gap-6">
@@ -1600,26 +1600,26 @@ function CEOCommandCenterInner() {
               <div className="flex flex-col gap-3 min-w-[130px]">
                 <div data-testid="job-margin-avg-pct">
                   <p className="text-2xl font-bold text-gray-900">{jobMargin.avgMarginPct?.toFixed(1)}%</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Avg Gross Margin</p>
-                  <p className="text-[10px] text-gray-300">{jobMargin.jobCount?.toLocaleString()} jobs analysed</p>
+                  <p className="text-[10px] text-gray-600 mt-0.5">Avg Gross Margin</p>
+                  <p className="text-[10px] text-gray-500">{jobMargin.jobCount?.toLocaleString()} jobs analysed</p>
                 </div>
                 {jobMargin.totalGrossProfit != null && (
                   <div data-testid="job-margin-gross-profit">
                     <p className="text-sm font-bold text-emerald-700">{fmtDollar(jobMargin.totalGrossProfit)}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Total Gross Profit</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">Total Gross Profit</p>
                   </div>
                 )}
                 {jobMargin.totalRevenue != null && (
                   <div data-testid="job-margin-total-revenue">
                     <p className="text-xs font-semibold text-gray-600">{fmtDollar(jobMargin.totalRevenue)}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Total Revenue</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">Total Revenue</p>
                   </div>
                 )}
               </div>
               {/* Sparkline */}
               {(jobMargin.monthly?.length ?? 0) > 0 && (
                 <div className="flex-1 flex flex-col gap-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Margin % (6mo)</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600">Margin % (6mo)</p>
                   <ResponsiveContainer width="100%" height={90}>
                     <AreaChart data={jobMargin.monthly} margin={{ top: 4, right: 0, left: -35, bottom: 0 }}>
                       <defs>
@@ -1651,12 +1651,12 @@ function CEOCommandCenterInner() {
         </div>
 
         {/* ── Team Performance ──────────────────────────────────────────────── */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm" data-testid="section-team-performance">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm" data-testid="section-team-performance">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4" style={{ color: PRIMARY }} />
               <span className="text-sm font-bold text-gray-800">Team Performance</span>
-              <span className="ml-1 text-[10px] text-gray-400">— revenue vs. target · activity · pipeline</span>
+              <span className="ml-1 text-[10px] text-gray-600">— revenue vs. target · activity · pipeline</span>
             </div>
             <div className="flex items-center gap-2">
               {(teamPerf ?? []).filter(m => m.status === "inactive").length > 0 && (
@@ -1678,13 +1678,13 @@ function CEOCommandCenterInner() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-50">
-                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">Member</th>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Status</th>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Revenue vs. Target</th>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Pipeline</th>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Win Rate</th>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Activity (MTD)</th>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 py-3">Last Active</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-600 px-5 py-3">Member</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-600 px-4 py-3">Status</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-600 px-4 py-3">Revenue vs. Target</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-600 px-4 py-3">Pipeline</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-600 px-4 py-3">Win Rate</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-600 px-4 py-3">Activity (MTD)</th>
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-600 px-4 py-3">Last Active</th>
                 </tr>
               </thead>
               <tbody>
@@ -1699,7 +1699,7 @@ function CEOCommandCenterInner() {
                   ))
                 ) : !teamPerf || teamPerf.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-sm text-gray-400">No team members found</td>
+                    <td colSpan={7} className="px-5 py-8 text-center text-sm text-gray-600">No team members found</td>
                   </tr>
                 ) : (
                   teamPerf.map((member, i) => {
@@ -1717,7 +1717,7 @@ function CEOCommandCenterInner() {
                             </div>
                             <div>
                               <p className="text-sm font-semibold text-gray-800">{member.name}</p>
-                              <p className="text-[10px] text-gray-400 capitalize">{member.role.replace(/_/g, " ")}</p>
+                              <p className="text-[10px] text-gray-600 capitalize">{member.role.replace(/_/g, " ")}</p>
                             </div>
                           </div>
                         </td>
@@ -1732,12 +1732,12 @@ function CEOCommandCenterInner() {
                             <div className="flex-1">
                               <div className="flex items-center justify-between mb-1">
                                 <span className="text-xs font-semibold text-gray-700">{fmtDollar(member.revenueMTD)}</span>
-                                <span className="text-[10px] text-gray-400">{Math.round(revPct)}%</span>
+                                <span className="text-[10px] text-gray-600">{Math.round(revPct)}%</span>
                               </div>
                               <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                                 <div className="h-full rounded-full" style={{ width: `${revPct}%`, backgroundColor: barColor }} />
                               </div>
-                              <p className="text-[10px] text-gray-400 mt-0.5">of {fmtDollar(member.revenueTarget)} target</p>
+                              <p className="text-[10px] text-gray-600 mt-0.5">of {fmtDollar(member.revenueTarget)} target</p>
                             </div>
                           </div>
                         </td>
@@ -1748,7 +1748,7 @@ function CEOCommandCenterInner() {
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-semibold text-gray-700">{member.winRate !== null ? `${member.winRate}%` : "—"}</span>
                             {member.winRateChange !== null && (
-                              <span className={`text-[10px] font-semibold ${member.winRateChange > 0 ? "text-emerald-600" : member.winRateChange < 0 ? "text-red-500" : "text-gray-400"}`}>
+                              <span className={`text-[10px] font-semibold ${member.winRateChange > 0 ? "text-emerald-600" : member.winRateChange < 0 ? "text-red-500" : "text-gray-600"}`}>
                                 {member.winRateChange > 0 ? `+${member.winRateChange}pp` : member.winRateChange < 0 ? `${member.winRateChange}pp` : "—"}
                               </span>
                             )}
@@ -1757,21 +1757,21 @@ function CEOCommandCenterInner() {
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                              <PhoneCall className="w-3 h-3 text-gray-300" />
+                              <PhoneCall className="w-3 h-3 text-gray-500" />
                               <span className="font-semibold text-gray-700">{member.callsMTD}</span>
                             </div>
                             <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                              <Calendar className="w-3 h-3 text-gray-300" />
+                              <Calendar className="w-3 h-3 text-gray-500" />
                               <span className="font-semibold text-gray-700">{member.meetingsMTD}</span>
                             </div>
                             <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                              <Mail className="w-3 h-3 text-gray-300" />
+                              <Mail className="w-3 h-3 text-gray-500" />
                               <span className="font-semibold text-gray-700">{member.proposalsMTD}</span>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3.5">
-                          <span className={`text-xs ${member.status === "inactive" ? "text-red-500 font-semibold" : member.status === "at_risk" ? "text-amber-600 font-semibold" : "text-gray-400"}`}>
+                          <span className={`text-xs ${member.status === "inactive" ? "text-red-500 font-semibold" : member.status === "at_risk" ? "text-amber-600 font-semibold" : "text-gray-600"}`}>
                             {member.lastActiveDisplay}
                           </span>
                         </td>
@@ -1788,7 +1788,7 @@ function CEOCommandCenterInner() {
         {showDetail && (
           <div ref={detailRef} className="space-y-5 animate-in fade-in slide-in-from-top-2 duration-200">
             <div data-testid="section-alerts">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Proactive Alerts</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-3">Proactive Alerts</p>
               <div className="space-y-2">
                 {ALERTS.map((alert, i) => {
                   const c = alertColors[alert.level];
@@ -1800,15 +1800,15 @@ function CEOCommandCenterInner() {
                         <span className="text-sm font-semibold text-gray-800">{alert.label}</span>
                         <span className="text-xs text-gray-500 ml-2">{alert.detail}</span>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" />
+                      <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm" data-testid="section-ai-summary">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm" data-testid="section-ai-summary">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
                 <div className="flex items-center gap-2">
                   <Bot className="w-4 h-4" style={{ color: PRIMARY }} />
                   <span className="text-sm font-bold text-gray-800">AI Executive Summary — {period.charAt(0).toUpperCase() + period.slice(1)} View</span>
@@ -1837,11 +1837,11 @@ function CEOCommandCenterInner() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col" style={{ minHeight: 400 }} data-testid="section-ai-chat">
-                <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col" style={{ minHeight: 400 }} data-testid="section-ai-chat">
+                <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-200">
                   <Bot className="w-4 h-4" style={{ color: PRIMARY }} />
                   <span className="text-sm font-bold text-gray-800">Ask the AI</span>
-                  <span className="ml-auto text-[10px] text-gray-400 font-medium">Data-grounded answers</span>
+                  <span className="ml-auto text-[10px] text-gray-600 font-medium">Data-grounded answers</span>
                 </div>
                 <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3" style={{ maxHeight: 320 }}>
                   {chatMessages.map((msg, i) => (
@@ -1852,7 +1852,7 @@ function CEOCommandCenterInner() {
                         </div>
                       )}
                       <div
-                        className={`max-w-[80%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${msg.role === "user" ? "text-white rounded-br-sm" : "bg-gray-50 text-gray-700 border border-gray-100 rounded-bl-sm"}`}
+                        className={`max-w-[80%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${msg.role === "user" ? "text-white rounded-br-sm" : "bg-gray-50 text-gray-700 border border-gray-200 rounded-bl-sm"}`}
                         style={msg.role === "user" ? { backgroundColor: PRIMARY } : {}}
                         data-testid={`chat-message-${msg.role}-${i}`}
                       >
@@ -1865,7 +1865,7 @@ function CEOCommandCenterInner() {
                       <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: PRIMARY }}>
                         <Bot className="w-3.5 h-3.5 text-white" />
                       </div>
-                      <div className="bg-gray-50 border border-gray-100 rounded-xl rounded-bl-sm px-3.5 py-2.5">
+                      <div className="bg-gray-50 border border-gray-200 rounded-xl rounded-bl-sm px-3.5 py-2.5">
                         <div className="flex gap-1 items-center h-4">
                           <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "0ms" }} />
                           <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "150ms" }} />
@@ -1876,7 +1876,7 @@ function CEOCommandCenterInner() {
                   )}
                   <div ref={chatEndRef} />
                 </div>
-                <div className="px-4 pb-4 pt-2 border-t border-gray-100">
+                <div className="px-4 pb-4 pt-2 border-t border-gray-200">
                   <div className="flex items-center gap-2">
                     <input
                       data-testid="input-chat-message"
@@ -1901,11 +1901,11 @@ function CEOCommandCenterInner() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col" data-testid="section-file-upload">
-                <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col" data-testid="section-file-upload">
+                <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-200">
                   <FileSpreadsheet className="w-4 h-4" style={{ color: PRIMARY }} />
                   <span className="text-sm font-bold text-gray-800">Data Upload</span>
-                  <span className="ml-auto text-[10px] text-gray-400 font-medium">Jobs, Visits, SA, Invoices, Timesheets, Job Margin all persisted · unrecognized CSVs logged</span>
+                  <span className="ml-auto text-[10px] text-gray-600 font-medium">Jobs, Visits, SA, Invoices, Timesheets, Job Margin all persisted · unrecognized CSVs logged</span>
                 </div>
                 <div className="px-5 py-4 flex-1 space-y-4">
                   <div
@@ -1921,9 +1921,9 @@ function CEOCommandCenterInner() {
                       </>
                     ) : (
                       <>
-                        <Upload className="w-6 h-6 text-gray-300" />
+                        <Upload className="w-6 h-6 text-gray-500" />
                         <p className="text-sm font-semibold text-gray-500">Drop Excel or CSV here</p>
-                        <p className="text-xs text-gray-400">.xlsx, .csv — max 25 MB · Jobs, Visits, Invoices, SAs, Timesheets, Job Margin auto-detected · others logged</p>
+                        <p className="text-xs text-gray-600">.xlsx, .csv — max 25 MB · Jobs, Visits, Invoices, SAs, Timesheets, Job Margin auto-detected · others logged</p>
                         <button data-testid="button-browse-files" className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-100 transition-all">
                           Browse files
                         </button>
@@ -1959,17 +1959,17 @@ function CEOCommandCenterInner() {
                   )}
 
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Uploaded ({uploadedFiles.length})</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">Uploaded ({uploadedFiles.length})</p>
                     <div className="space-y-2">
-                      {uploadedFiles.length === 0 && <p className="text-xs text-gray-400 text-center py-4">No files uploaded yet</p>}
+                      {uploadedFiles.length === 0 && <p className="text-xs text-gray-600 text-center py-4">No files uploaded yet</p>}
                       {uploadedFiles.map((file, i) => (
-                        <div key={i} className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-lg px-3.5 py-2.5" data-testid={`file-item-${i}`}>
+                        <div key={i} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-2.5" data-testid={`file-item-${i}`}>
                           <FileSpreadsheet className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-gray-700 truncate">{file.name}</p>
-                            <p className="text-[10px] text-gray-400">{file.size} · {file.uploadedAt}</p>
+                            <p className="text-[10px] text-gray-600">{file.size} · {file.uploadedAt}</p>
                           </div>
-                          <button data-testid={`button-remove-file-${i}`} onClick={() => setUploadedFiles(prev => prev.filter(f => f.name !== file.name))} className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0">
+                          <button data-testid={`button-remove-file-${i}`} onClick={() => setUploadedFiles(prev => prev.filter(f => f.name !== file.name))} className="text-gray-500 hover:text-red-400 transition-colors flex-shrink-0">
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
