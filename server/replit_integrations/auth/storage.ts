@@ -16,6 +16,15 @@ class AuthStorage implements IAuthStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
+    // Check if user exists and whether they are active.
+    // Soft-deleted (inactive) users must not have their record re-activated or
+    // updated via the OAuth flow — they should remain deactivated.
+    const existing = await this.getUser(userData.id as string);
+    if (existing && existing.isActive === false) {
+      // User is soft-deleted; return without modifying anything.
+      return existing;
+    }
+
     const [user] = await db
       .insert(users)
       .values(userData)

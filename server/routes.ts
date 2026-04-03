@@ -158,6 +158,7 @@ export async function registerRoutes(
   await storage.migrateIndustryOptions();
   await storage.migrateDashboardFilter();
   await storage.migrateEmailNotificationPreferences();
+  await storage.migrateUserIsActive();
   await storage.migrateBuildopsClientColumns();
   await storage.migrateBuildopsPropertyColumns();
   await storage.migrateBuildopsVisitsAndExtendedFields();

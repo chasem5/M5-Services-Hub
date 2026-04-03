@@ -1751,6 +1751,14 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async migrateUserIsActive(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true`);
+    } catch (e) {
+      console.error("migrateUserIsActive error:", e);
+    }
+  }
+
   async migrateBuildopsClientColumns(): Promise<void> {
     try {
       await db.execute(sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS buildops_status varchar`);
