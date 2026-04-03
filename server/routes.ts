@@ -10387,7 +10387,14 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         leadsSinceExpr = `created_at >= NOW() - INTERVAL '12 weeks'`;
         dateTruncExpr = `DATE_TRUNC('week', issued_date)`;
         labelExpr = `TO_CHAR(DATE_TRUNC('week', issued_date), 'Mon DD')`;
+      } else if (useDateRange) {
+        // Date-range mode: use exact rangeStart → rangeEnd as both bounds for sparklines
+        invoiceSinceExpr = `issued_date >= '${rangeStart.toISOString()}' AND issued_date <= '${rangeEnd.toISOString()}'`;
+        leadsSinceExpr = `created_at >= '${rangeStart.toISOString()}' AND created_at <= '${rangeEnd.toISOString()}'`;
+        dateTruncExpr = `DATE_TRUNC('month', issued_date)`;
+        labelExpr = `TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY')`;
       } else {
+        // Legacy mode: rolling 12-month sparkline context
         invoiceSinceExpr = `issued_date >= '${twelveMonthsAgo.toISOString()}' AND issued_date <= '${rangeEnd.toISOString()}'`;
         leadsSinceExpr = `created_at >= '${twelveMonthsAgo.toISOString()}' AND created_at <= '${rangeEnd.toISOString()}'`;
         dateTruncExpr = `DATE_TRUNC('month', issued_date)`;
@@ -10395,8 +10402,6 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }
 
       // ── Zero-fill helper: build complete bucket array for the selected period ──
-      // Generates full date-bucketed label array (30d / 12w / 12m) so charts
-      // always have the correct number of points even when no data exists.
       function buildBuckets(): { label: string; key: string }[] {
         const buckets: { label: string; key: string }[] = [];
         if (period === "daily") {
@@ -10404,14 +10409,13 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
             const d = new Date(now);
             d.setDate(d.getDate() - i);
             const label = d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
-            const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
+            const key = d.toISOString().slice(0, 10);
             buckets.push({ label, key });
           }
         } else if (period === "weekly") {
           for (let i = 11; i >= 0; i--) {
             const d = new Date(now);
             d.setDate(d.getDate() - i * 7);
-            // Snap to Monday for consistency
             const day = d.getDay();
             const diff = day === 0 ? -6 : 1 - day;
             d.setDate(d.getDate() + diff);
@@ -10419,7 +10423,21 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
             const key = d.toISOString().slice(0, 10);
             buckets.push({ label, key });
           }
+        } else if (useDateRange) {
+          // Date-range mode: generate one bucket per month from rangeStart to rangeEnd
+          const startY = rangeStart.getFullYear();
+          const startM = rangeStart.getMonth();
+          const endY = rangeEnd.getFullYear();
+          const endM = rangeEnd.getMonth();
+          const totalMonths = (endY - startY) * 12 + (endM - startM) + 1;
+          for (let i = 0; i < totalMonths; i++) {
+            const d = new Date(startY, startM + i, 1);
+            const label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            buckets.push({ label, key });
+          }
         } else {
+          // Legacy mode: rolling 12 months ending at bucketAnchor
           for (let i = 11; i >= 0; i--) {
             const d = new Date(bucketAnchor.getFullYear(), bucketAnchor.getMonth() - i, 1);
             const label = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
@@ -10655,6 +10673,10 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         arIssuedSinceExpr = `issued_date >= NOW() - INTERVAL '12 weeks'`;
         arIssuedTruncExpr = `DATE_TRUNC('week', issued_date)`;
         arIssuedLabelExpr = `TO_CHAR(DATE_TRUNC('week', issued_date), 'Mon DD')`;
+      } else if (useDateRange) {
+        arIssuedSinceExpr = `issued_date >= '${rangeStart.toISOString()}' AND issued_date <= '${rangeEnd.toISOString()}'`;
+        arIssuedTruncExpr = `DATE_TRUNC('month', issued_date)`;
+        arIssuedLabelExpr = `TO_CHAR(DATE_TRUNC('month', issued_date), 'Mon YY')`;
       } else {
         arIssuedSinceExpr = `issued_date >= '${twelveMonthsAgo.toISOString()}' AND issued_date <= '${rangeEnd.toISOString()}'`;
         arIssuedTruncExpr = `DATE_TRUNC('month', issued_date)`;
@@ -10735,8 +10757,8 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       `);
       const saAnnualTotal = parseFloat((saAnnualRows.rows[0] as any)?.annual_total) || 0;
       const saMonthlyRecurring = saAnnualTotal / 12;
-      // Use prior month revenue as denominator (current month is always incomplete)
-      const recurringPct = revPrev > 0 ? Math.round((saMonthlyRecurring / revPrev) * 100) : 0;
+      // Initial recurring %: use prior sparkline bucket as denominator (legacy mode baseline)
+      let recurringPct = revPrev > 0 ? Math.round((saMonthlyRecurring / revPrev) * 100) : 0;
 
       // ── Visits-based metrics within effective window ──────────────────────────
       const visitRows = await db.execute(sql.raw(`
@@ -10965,6 +10987,10 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         finalSaPrev = Math.round(parseFloat((priorSaRow.rows[0] as any)?.total) || 0);
         finalSaChangePct = finalSaPrev > 0 ? ((finalSaCurrent - finalSaPrev) / finalSaPrev) * 100 : 0;
         finalIsPeriodIncomplete = rangeEnd >= now;
+        // Recompute recurringPct using the actual period revenue as denominator
+        // Scale monthly SA recurring by number of months in the selected range
+        const saRecurringForRange = saMonthlyRecurring * rangeMonths;
+        recurringPct = finalRevCurrent > 0 ? Math.round((saRecurringForRange / finalRevCurrent) * 100) : 0;
       }
 
       res.json({
