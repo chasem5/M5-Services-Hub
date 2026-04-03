@@ -159,6 +159,7 @@ export async function registerRoutes(
   await storage.migrateDashboardFilter();
   await storage.migrateEmailNotificationPreferences();
   await storage.migrateUserIsActive();
+  await storage.migrateUserPerformanceColumns();
   await storage.migrateBuildopsClientColumns();
   await storage.migrateBuildopsPropertyColumns();
   await storage.migrateBuildopsVisitsAndExtendedFields();
@@ -442,6 +443,20 @@ export async function registerRoutes(
     const id = req.params.id as string;
     const { team } = z.object({ team: z.string().nullable() }).parse(req.body);
     const user = await storage.updateUserTeam(id, team);
+    res.json(user);
+  });
+
+  app.patch("/api/users/:id/revenue-target", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    const id = req.params.id as string;
+    const { revenueTarget } = z.object({ revenueTarget: z.number().int().positive().nullable() }).parse(req.body);
+    const user = await storage.updateUserRevenueTarget(id, revenueTarget);
+    res.json(user);
+  });
+
+  app.patch("/api/users/:id/hide-from-team-performance", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    const id = req.params.id as string;
+    const { hide } = z.object({ hide: z.boolean() }).parse(req.body);
+    const user = await storage.updateUserHideFromTeamPerformance(id, hide);
     res.json(user);
   });
 

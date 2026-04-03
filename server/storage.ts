@@ -141,6 +141,8 @@ export interface IStorage {
   listUsers(): Promise<User[]>;
   updateUserRole(id: string, role: string): Promise<User>;
   updateUserTeam(id: string, team: string | null): Promise<User>;
+  updateUserRevenueTarget(id: string, revenueTarget: number | null): Promise<User>;
+  updateUserHideFromTeamPerformance(id: string, hide: boolean): Promise<User>;
   deleteUser(id: string): Promise<void>;
 
   // Invites
@@ -262,6 +264,7 @@ export interface IStorage {
   migrateDashboardFilter(): Promise<void>;
   migrateEmailNotificationPreferences(): Promise<void>;
   migrateUserIsActive(): Promise<void>;
+  migrateUserPerformanceColumns(): Promise<void>;
   migrateBuildopsClientColumns(): Promise<void>;
   migrateBuildopsPropertyColumns(): Promise<void>;
   migrateBuildopsVisitsAndExtendedFields(): Promise<void>;
@@ -501,6 +504,24 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db
       .update(users)
       .set({ team: team || null, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async updateUserRevenueTarget(id: string, revenueTarget: number | null): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ revenueTarget: revenueTarget ?? null, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async updateUserHideFromTeamPerformance(id: string, hide: boolean): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ hideFromTeamPerformance: hide, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
     return user;
@@ -1450,12 +1471,11 @@ export class DatabaseStorage implements IStorage {
     const firstOfPriorMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
 
     const AVATAR_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#6366f1"];
-    // TODO: make these editable per user (requires schema change + settings UI)
     const REVENUE_TARGETS: Record<string, number> = {
       super_admin: 500000, admin: 500000, manager: 400000, member: 300000,
     };
 
-    const userList = await db.select().from(users).where(eq(users.isActive, true));
+    const userList = await db.select().from(users).where(and(eq(users.isActive, true), eq(users.hideFromTeamPerformance, false)));
 
     const stats = await Promise.all(userList.map(async (user) => {
       // Attribution filter:
@@ -1613,7 +1633,7 @@ export class DatabaseStorage implements IStorage {
         team: user.team ?? null,
         status,
         lastActiveDisplay,
-        revenueTarget: REVENUE_TARGETS[user.role] ?? 300000,
+        revenueTarget: user.revenueTarget ?? REVENUE_TARGETS[user.role] ?? 300000,
         revenueMTD,
         pipelineValue,
         winRate: winRateCurrent,
@@ -1757,6 +1777,15 @@ export class DatabaseStorage implements IStorage {
       await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true`);
     } catch (e) {
       console.error("migrateUserIsActive error:", e);
+    }
+  }
+
+  async migrateUserPerformanceColumns(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS revenue_target integer`);
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS hide_from_team_performance boolean NOT NULL DEFAULT false`);
+    } catch (e) {
+      console.error("migrateUserPerformanceColumns error:", e);
     }
   }
 

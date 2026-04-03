@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -2155,6 +2156,26 @@ export default function AdminPage() {
     onError: () => toast({ title: "Failed to update team", variant: "destructive" }),
   });
 
+  const updateRevenueTargetMutation = useMutation({
+    mutationFn: ({ id, revenueTarget }: { id: string; revenueTarget: number | null }) =>
+      apiRequest("PATCH", `/api/users/${id}/revenue-target`, { revenueTarget }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ceo/team-performance"] });
+    },
+    onError: () => toast({ title: "Failed to update revenue target", variant: "destructive" }),
+  });
+
+  const updateHideFromTeamPerfMutation = useMutation({
+    mutationFn: ({ id, hide }: { id: string; hide: boolean }) =>
+      apiRequest("PATCH", `/api/users/${id}/hide-from-team-performance`, { hide }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ceo/team-performance"] });
+    },
+    onError: () => toast({ title: "Failed to update team performance visibility", variant: "destructive" }),
+  });
+
   const removeUserMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/users/${id}`),
     onSuccess: () => {
@@ -2352,6 +2373,45 @@ export default function AdminPage() {
                         data-testid={`input-team-${u.id}`}
                       />
                     </div>
+                    {isSuperAdmin && (
+                      <div className="flex items-center gap-3 mt-1 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground">Target $:</span>
+                          <input
+                            key={`target-${u.id}-${u.revenueTarget}`}
+                            defaultValue={u.revenueTarget != null ? String(u.revenueTarget) : ""}
+                            placeholder="role default"
+                            type="number"
+                            min={0}
+                            onBlur={(e) => {
+                              const raw = e.target.value.trim();
+                              const val = raw === "" ? null : parseInt(raw, 10);
+                              if (isNaN(val as number) && raw !== "") return;
+                              if (val !== (u.revenueTarget ?? null)) {
+                                updateRevenueTargetMutation.mutate({ id: u.id, revenueTarget: val });
+                              }
+                            }}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                            className="text-[11px] font-medium text-foreground bg-transparent border-b border-dashed border-muted-foreground/30 focus:border-primary focus:outline-none px-0.5 w-24 placeholder:text-muted-foreground/50"
+                            data-testid={`input-revenue-target-${u.id}`}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Switch
+                            id={`team-perf-${u.id}`}
+                            className="h-4 w-7 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                            checked={!u.hideFromTeamPerformance}
+                            onCheckedChange={(checked) => {
+                              updateHideFromTeamPerfMutation.mutate({ id: u.id, hide: !checked });
+                            }}
+                            data-testid={`switch-team-perf-${u.id}`}
+                          />
+                          <label htmlFor={`team-perf-${u.id}`} className="text-[10px] text-muted-foreground cursor-pointer select-none">
+                            In team perf.
+                          </label>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Select

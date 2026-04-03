@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -41,6 +41,8 @@ export const users = pgTable("users", {
   emailNotifyAnnouncement: boolean("email_notify_announcement").default(true).notNull(),
   emailNotifyReminder: boolean("email_notify_reminder").default(true).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
+  revenueTarget: integer("revenue_target"),
+  hideFromTeamPerformance: boolean("hide_from_team_performance").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
