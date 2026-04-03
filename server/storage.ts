@@ -1503,10 +1503,10 @@ export class DatabaseStorage implements IStorage {
             eq(leads.stage, "lost"),
             sql`(${leads.lostAt} >= ${firstOfPriorMonth} AND ${leads.lostAt} < ${firstOfMonth}) OR (${leads.lostAt} IS NULL AND ${leads.updatedAt} >= ${firstOfPriorMonth} AND ${leads.updatedAt} < ${firstOfMonth})`,
           )),
-        // Calls logged MTD
+        // Calls logged MTD — from activity_logs where action='call'
         db.select({ count: sql<number>`count(*)` })
-          .from(leadNotes)
-          .where(and(eq(leadNotes.userId, user.id), eq(leadNotes.activityType, "call"), sql`${leadNotes.createdAt} >= ${firstOfMonth}`)),
+          .from(activityLogs)
+          .where(and(eq(activityLogs.userId, user.id), eq(activityLogs.action, "call"), sql`${activityLogs.createdAt} >= ${firstOfMonth}`)),
         // Meetings MTD (created by this user)
         db.select({ count: sql<number>`count(*)` })
           .from(meetings)
@@ -1515,10 +1515,10 @@ export class DatabaseStorage implements IStorage {
         db.select({ count: sql<number>`count(*)` })
           .from(proposals)
           .where(and(eq(proposals.createdBy, user.id), sql`${proposals.createdAt} >= ${firstOfMonth}`)),
-        // Last active: most recent lead note by this user
-        db.select({ maxAt: sql<string | null>`max(${leadNotes.createdAt})` })
-          .from(leadNotes)
-          .where(eq(leadNotes.userId, user.id)),
+        // Last active: most recent activity_log entry by this user
+        db.select({ maxAt: sql<string | null>`max(${activityLogs.createdAt})` })
+          .from(activityLogs)
+          .where(eq(activityLogs.userId, user.id)),
       ]);
 
       // Display name
@@ -1575,6 +1575,7 @@ export class DatabaseStorage implements IStorage {
 
       return {
         userId: user.id,
+        email: user.email ?? null,
         name: displayName,
         initials,
         avatarColor,

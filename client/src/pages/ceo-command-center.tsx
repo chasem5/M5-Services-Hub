@@ -127,6 +127,7 @@ const FALLBACK_SPARK: SparkPoint[] = Array.from({ length: 12 }, (_, i) => ({ lab
 type ActivityStatus = "active" | "at_risk" | "inactive";
 interface CeoTeamMember {
   userId: string;
+  email: string | null;
   name: string;
   initials: string;
   avatarColor: string;
