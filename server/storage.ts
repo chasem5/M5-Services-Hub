@@ -1485,7 +1485,7 @@ export class DatabaseStorage implements IStorage {
         db.select({ total: sql<string>`coalesce(sum(${leads.value}), 0)` })
           .from(leads)
           .leftJoin(clients, eq(leads.clientId, clients.id))
-          .where(and(isAttrib, sql`${leads.stage} NOT IN ('won', 'lost', 'canceled')`)),
+          .where(and(isAttrib, sql`${leads.stage} NOT IN ('won', 'lost')`)),
         // Won count this month
         db.select({ count: sql<number>`count(*)` })
           .from(leads)
