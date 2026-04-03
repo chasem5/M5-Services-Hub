@@ -406,6 +406,7 @@ export default function CEOCommandCenter() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 function CEOCommandCenterInner() {
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const [dateRange, setDateRange] = useState<DateRange>(getDefaultDateRange);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(SAMPLE_CONVERSATION);
