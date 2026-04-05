@@ -13,5 +13,6 @@ export const modules: ModuleMap = {
   "./components/mockups/org-structure/SimpleTenant.tsx": () => import("../components/mockups/org-structure/SimpleTenant.tsx"),
   "./components/mockups/org-structure/TeamsLargeCorp.tsx": () => import("../components/mockups/org-structure/TeamsLargeCorp.tsx"),
   "./components/mockups/slide-overs/BuildingPanel.tsx": () => import("../components/mockups/slide-overs/BuildingPanel.tsx"),
-  "./components/mockups/slide-overs/ContactPanel.tsx": () => import("../components/mockups/slide-overs/ContactPanel.tsx")
+  "./components/mockups/slide-overs/ContactPanel.tsx": () => import("../components/mockups/slide-overs/ContactPanel.tsx"),
+  "./components/mockups/weekly-report/WeeklyReport.tsx": () => import("../components/mockups/weekly-report/WeeklyReport.tsx")
 };
