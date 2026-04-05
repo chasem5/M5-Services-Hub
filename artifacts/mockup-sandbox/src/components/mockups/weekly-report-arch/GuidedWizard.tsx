@@ -130,16 +130,16 @@ export function GuidedWizard() {
                 
                 return (
                   <div key={step.id} className="flex flex-col items-center gap-2 group cursor-pointer" onClick={() => setCurrentStep(step.id)}>
-                    <div className={\`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300 bg-white
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300 bg-white
                       \${isCompleted ? 'border-2 border-blue-500 text-blue-600' : ''}
                       \${isCurrent ? 'border-2 border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-200' : ''}
                       \${!isCompleted && !isCurrent ? 'border-2 border-slate-200 text-slate-400' : ''}
-                    \`}>
+                    `}>
                       {isCompleted ? <CheckCircle2 className="h-5 w-5" /> : step.id}
                     </div>
-                    <span className={\`text-[11px] font-medium max-w-[80px] text-center leading-tight transition-colors duration-300
+                    <span className={`text-[11px] font-medium max-w-[80px] text-center leading-tight transition-colors duration-300
                       \${isCurrent ? 'text-blue-700' : isCompleted ? 'text-slate-600' : 'text-slate-400'}
-                    \`}>
+                    `}>
                       {step.title}
                     </span>
                   </div>
@@ -371,22 +371,22 @@ export function GuidedWizard() {
                     <p className="text-xs text-slate-700 font-medium truncate">{msg.highlightRef}</p>
                   </div>
                 )}
-                <div className={\`flex gap-3 \${isManager ? '' : 'flex-row-reverse'}\`}>
-                  <div className={\`h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 shadow-sm \${
+                <div className={`flex gap-3 \${isManager ? '' : 'flex-row-reverse'}`}>
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 shadow-sm \${
                     isManager ? 'bg-white text-indigo-700 border border-slate-200' : 'bg-blue-600 text-white'
-                  }\`}>
+                  }`}>
                     {msg.initials}
                   </div>
-                  <div className={\`flex flex-col gap-1 max-w-[75%] \${isManager ? 'items-start' : 'items-end'}\`}>
+                  <div className={`flex flex-col gap-1 max-w-[75%] \${isManager ? 'items-start' : 'items-end'}`}>
                     <div className="flex items-baseline gap-2">
                       <span className="text-xs font-medium text-slate-700">{msg.name}</span>
                       <span className="text-[10px] text-slate-400">{msg.time}</span>
                     </div>
-                    <div className={\`px-3.5 py-2.5 text-sm leading-relaxed shadow-sm \${
+                    <div className={`px-3.5 py-2.5 text-sm leading-relaxed shadow-sm \${
                       isManager
                         ? 'bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-tl-sm'
                         : 'bg-blue-600 text-white rounded-2xl rounded-tr-sm'
-                    }\`}>
+                    }`}>
                       {msg.text}
                     </div>
                   </div>
@@ -433,7 +433,7 @@ export function GuidedWizard() {
 function ActivityCard({ icon, label, value, sub, bg }: { icon: React.ReactNode, label: string, value: string, sub: string, bg: string }) {
   return (
     <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 hover:border-slate-200 transition-colors">
-      <div className={\`h-12 w-12 rounded-xl \${bg} flex items-center justify-center flex-shrink-0\`}>
+      <div className={`h-12 w-12 rounded-xl \${bg} flex items-center justify-center flex-shrink-0`}>
         {icon}
       </div>
       <div>
@@ -447,7 +447,7 @@ function ActivityCard({ icon, label, value, sub, bg }: { icon: React.ReactNode, 
 
 function CoachingPrompt({ id, title, message, expanded, onToggle }: { id: number, title: string, message: string, expanded: boolean, onToggle: () => void }) {
   return (
-    <div className={\`border rounded-xl transition-all duration-200 \${expanded ? 'border-blue-300 bg-blue-50/30 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}\`}>
+    <div className={`border rounded-xl transition-all duration-200 \${expanded ? 'border-blue-300 bg-blue-50/30 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
       <div 
         className="p-4 cursor-pointer flex items-start gap-4"
         onClick={onToggle}
@@ -455,7 +455,7 @@ function CoachingPrompt({ id, title, message, expanded, onToggle }: { id: number
         <div className="mt-0.5 flex-1">
           <div className="flex items-center justify-between mb-1.5">
             <h4 className="font-medium text-slate-900 text-sm">{title}</h4>
-            <div className={\`text-xs font-medium px-2 py-0.5 rounded-full transition-colors \${expanded ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}\`}>
+            <div className={`text-xs font-medium px-2 py-0.5 rounded-full transition-colors \${expanded ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
               {expanded ? 'Collapse' : 'Add Note'}
             </div>
           </div>
@@ -495,9 +495,9 @@ function HealthRow({ name, health, pipeline, flagged: initialFlagged }: { name: 
       <div className="w-12 flex justify-center">
         <button 
           onClick={() => setFlagged(!flagged)}
-          className={\`p-1.5 rounded-md transition-colors \${flagged ? 'text-amber-500 bg-amber-50 hover:bg-amber-100' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'}\`}
+          className={`p-1.5 rounded-md transition-colors \${flagged ? 'text-amber-500 bg-amber-50 hover:bg-amber-100' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'}`}
         >
-          <Flag className={\`h-4 w-4 \${flagged ? 'fill-current' : ''}\`} />
+          <Flag className={`h-4 w-4 \${flagged ? 'fill-current' : ''}`} />
         </button>
       </div>
     </div>
@@ -526,11 +526,11 @@ function HighlightedItem({ title, value, status, note }: { title: string, value:
       </button>
       
       <div className="flex items-center gap-3 mb-2 pr-8">
-        <Badge variant="secondary" className={\`text-[10px] uppercase tracking-wider px-2 py-0.5 \${
+        <Badge variant="secondary" className={`text-[10px] uppercase tracking-wider px-2 py-0.5 \${
           status === 'Win'
             ? 'bg-emerald-100 text-emerald-800'
             : 'bg-amber-100 text-amber-800'
-        }\`}>
+        }`}>
           {status}
         </Badge>
         <span className="text-sm font-semibold text-slate-700">{value}</span>
