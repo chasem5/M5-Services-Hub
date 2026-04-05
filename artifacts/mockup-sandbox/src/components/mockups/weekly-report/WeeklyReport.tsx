@@ -1,21 +1,29 @@
 import React, { useState } from 'react';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  Mail, 
-  FileText, 
-  Send, 
-  CheckSquare, 
-  Calendar as CalendarIcon, 
-  Target, 
-  Sparkles, 
-  TrendingUp, 
-  Search, 
-  X, 
-  ChevronDown, 
-  AlertCircle, 
+import {
+  ChevronLeft,
+  ChevronRight,
+  Mail,
+  Phone,
+  FileText,
+  Send,
+  CheckSquare,
+  Calendar as CalendarIcon,
+  Target,
+  Sparkles,
+  TrendingUp,
+  Search,
+  X,
+  ChevronDown,
+  AlertCircle,
   AlertTriangle,
-  Clock
+  Clock,
+  MessageSquare,
+  Bell,
+  Paperclip,
+  CornerUpLeft,
+  Activity,
+  Hash,
+  CheckCircle2,
 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -24,264 +32,426 @@ import { Input } from '../../ui/input';
 import { Textarea } from '../../ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
 
+const CHAT_MESSAGES = [
+  {
+    id: 1,
+    from: 'manager',
+    name: 'Dan Chen',
+    initials: 'DC',
+    time: 'Mon 9:12 AM',
+    text: "Sarah, I can see your note on the Beacon Capital pricing concern in the Spotlight. Have you pulled comparable quotes from similar accounts yet?",
+  },
+  {
+    id: 2,
+    from: 'am',
+    name: 'Sarah M.',
+    initials: 'SM',
+    time: 'Mon 9:34 AM',
+    text: "Not yet — wanted to loop you in first before I committed to anything. I can pull comps and get back to you by EOD today.",
+  },
+  {
+    id: 3,
+    from: 'manager',
+    name: 'Dan Chen',
+    initials: 'DC',
+    time: 'Mon 9:36 AM',
+    text: "Perfect. Also — great win on JLL Downtown! What was the turning point in that conversation?",
+    highlight: true,
+    highlightRef: "JLL Downtown Tower Maintenance Package",
+  },
+  {
+    id: 4,
+    from: 'am',
+    name: 'Sarah M.',
+    initials: 'SM',
+    time: 'Mon 9:51 AM',
+    text: "Honestly the site walk made a big difference. Once they saw we already knew the building they stopped shopping on price.",
+  },
+];
+
 export function WeeklyReport() {
   const [bdText, setBdText] = useState("Met with the facilities team at Beacon Capital. They are generally happy with our janitorial services but expressed some concern over weekend coverage. I promised to review staffing and follow up by Wednesday. Also had a good introductory call with the new property manager at 100 Main St.");
   const [quotesText, setQuotesText] = useState("");
   const [jobsText, setJobsText] = useState("");
   const [saText, setSaText] = useState("");
+  const [chatMessage, setChatMessage] = useState("");
+  const [messages, setMessages] = useState(CHAT_MESSAGES);
+  const [status, setStatus] = useState<'draft' | 'ready' | 'reviewed'>('draft');
 
-  const isFormValid = bdText.trim().length > 0 || quotesText.trim().length > 0 || jobsText.trim().length > 0 || saText.trim().length > 0;
+  const isFormValid = bdText.trim().length > 0;
+
+  const handleMarkReady = () => {
+    setStatus('ready');
+    setMessages(prev => [...prev, {
+      id: prev.length + 1,
+      from: 'system' as any,
+      name: 'System',
+      initials: '',
+      time: 'Just now',
+      text: "Sarah marked this report ready for review. Dan Chen has been notified.",
+    }]);
+  };
+
+  const handleSendMessage = () => {
+    if (!chatMessage.trim()) return;
+    setMessages(prev => [...prev, {
+      id: prev.length + 1,
+      from: 'am',
+      name: 'Sarah M.',
+      initials: 'SM',
+      time: 'Just now',
+      text: chatMessage.trim(),
+    }]);
+    setChatMessage("");
+  };
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] flex flex-col items-center pb-24 font-sans text-slate-900">
-      <div className="w-full max-w-5xl px-6 py-10 space-y-10">
-        
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Weekly Report</h1>
-              <Badge variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200">
-                Draft
-              </Badge>
-            </div>
-            <p className="text-slate-500 text-sm">Account Manager Coaching & Activity Review</p>
-          </div>
+    <div className="flex h-screen bg-[#f8f9fa] overflow-hidden font-sans text-slate-900">
 
-          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border shadow-sm">
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-slate-700">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm font-medium px-2">Week of Mar 31 – Apr 6, 2026</span>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-slate-700">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </header>
+      {/* ── Main Content Column ── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Activity Snapshot */}
-        <section>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <StatCard icon={<Mail className="h-4 w-4 text-blue-500" />} label="Emails Sent" value="24" trend="up" />
-            <StatCard icon={<FileText className="h-4 w-4 text-indigo-500" />} label="Quotes Created" value="7" />
-            <StatCard icon={<Send className="h-4 w-4 text-sky-500" />} label="Quotes Sent" value="4" />
-            <StatCard icon={<CheckSquare className="h-4 w-4 text-emerald-500" />} label="Tasks Completed" value="18 / 22" />
-            <StatCard icon={<CalendarIcon className="h-4 w-4 text-purple-500" />} label="Meetings Held" value="3" />
-            <StatCard icon={<Target className="h-4 w-4 text-amber-500" />} label="Deals" value="2 W | 1 L" />
-          </div>
-        </section>
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto pb-24">
+          <div className="max-w-3xl mx-auto px-6 py-8 space-y-10">
 
-        {/* AI Coaching */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 text-slate-800">
-            <Sparkles className="h-5 w-5 text-indigo-500" />
-            <h2 className="text-lg font-medium">Things to Think About</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <CoachingCard 
-              color="border-blue-400"
-              title="Quiet Quotes"
-              message="3 quotes went quiet this week — Beacon Capital, JLL Church, and Delta Star. Do you have a follow-up plan for each one?"
-            />
-            <CoachingCard 
-              color="border-emerald-400"
-              title="Win Pattern"
-              message="You closed 2 deals this week. What made those conversations click? How can you replicate that next week?"
-            />
-            <CoachingCard 
-              color="border-amber-400"
-              title="Task Backlog"
-              message="4 tasks are still open from last week. Which ones are blocking client progress vs. waiting on others?"
-            />
-            <CoachingCard 
-              color="border-purple-400"
-              title="Meeting Ratio"
-              message="3 meetings this week — are you getting enough face time with your top 5 accounts?"
-            />
-          </div>
-        </section>
-
-        {/* Customer Health */}
-        <section className="space-y-4">
-          <h2 className="text-lg font-medium text-slate-800">Customer Health Snapshot</h2>
-          <Card className="overflow-hidden shadow-sm border-slate-200">
-            <Table>
-              <TableHeader className="bg-slate-50 border-b border-slate-100">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="font-medium text-slate-500">Client</TableHead>
-                  <TableHead className="font-medium text-slate-500">Health</TableHead>
-                  <TableHead className="font-medium text-slate-500">Pipeline</TableHead>
-                  <TableHead className="font-medium text-slate-500 text-right">Last Contact</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell className="font-medium">Cushman and Wakefield</TableCell>
-                  <TableCell><HealthBadge status="At Risk" /></TableCell>
-                  <TableCell>$84,000</TableCell>
-                  <TableCell className="text-right text-slate-500 flex items-center justify-end gap-1"><Clock className="h-3 w-3" /> 12 days ago</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="font-medium">JLL Church</TableCell>
-                  <TableCell><HealthBadge status="Watch" /></TableCell>
-                  <TableCell>$660,000</TableCell>
-                  <TableCell className="text-right text-slate-500 flex items-center justify-end gap-1"><Clock className="h-3 w-3" /> 3 days ago</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="font-medium">Beacon Capital</TableCell>
-                  <TableCell><HealthBadge status="Healthy" /></TableCell>
-                  <TableCell>$212,550</TableCell>
-                  <TableCell className="text-right text-slate-500 flex items-center justify-end gap-1"><Clock className="h-3 w-3" /> 1 day ago</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="font-medium">Piedmont Office Realty</TableCell>
-                  <TableCell><HealthBadge status="Healthy" /></TableCell>
-                  <TableCell>$145,200</TableCell>
-                  <TableCell className="text-right text-slate-500 flex items-center justify-end gap-1"><Clock className="h-3 w-3" /> 4 days ago</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="font-medium">CBRE Downtown</TableCell>
-                  <TableCell><HealthBadge status="Healthy" /></TableCell>
-                  <TableCell>$95,000</TableCell>
-                  <TableCell className="text-right text-slate-500 flex items-center justify-end gap-1"><Clock className="h-3 w-3" /> 2 days ago</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </Card>
-        </section>
-
-        {/* Report Sections */}
-        <section className="space-y-6">
-          <h2 className="text-lg font-medium text-slate-800">Weekly Narrative</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <ReportSection 
-              title="BD & CSM" 
-              value={bdText} 
-              onChange={setBdText} 
-              placeholder="Describe your business development and customer success activities this week..." 
-            />
-            <ReportSection 
-              title="Quotes" 
-              value={quotesText} 
-              onChange={setQuotesText} 
-              placeholder="What quotes are active? Any updates on pending approvals?" 
-            />
-            <ReportSection 
-              title="Jobs" 
-              value={jobsText} 
-              onChange={setJobsText} 
-              placeholder="Summarize active jobs, any issues or milestones this week?" 
-            />
-            <ReportSection 
-              title="Service Agreements" 
-              value={saText} 
-              onChange={setSaText} 
-              placeholder="Any SA renewals, concerns, or new agreements this week?" 
-            />
-          </div>
-        </section>
-
-        {/* Spotlight Highlights */}
-        <section className="space-y-4">
-          <h2 className="text-lg font-medium text-slate-800">Spotlight Highlights</h2>
-          <Card className="shadow-sm border-slate-200">
-            <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50/50">
-              <CardDescription className="text-slate-500">Pin key quotes, deals, or items that need manager attention.</CardDescription>
-              <div className="relative mt-2">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                <Input placeholder="Search quotes & estimates..." className="pl-9 bg-white border-slate-200" />
+            {/* Header */}
+            <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Weekly Report</h1>
+                  {status === 'draft' && (
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200">Draft</Badge>
+                  )}
+                  {status === 'ready' && (
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200 gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Ready for Review
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-slate-400 text-sm">Sarah Mitchell · Account Manager</p>
               </div>
-            </CardHeader>
-            <CardContent className="pt-4 space-y-3">
-              <HighlightedItem 
-                title="JLL Downtown Tower Maintenance Package"
-                value="$95,375"
-                status="Win"
-                note="Client confirmed Q2 start. Great win for the team."
-              />
-              <HighlightedItem 
-                title="Beacon Capital Annual Janitorial"
-                value="$212,550"
-                status="Need Help"
-                note="Pricing concern. Need manager input on discount strategy."
-              />
-            </CardContent>
-          </Card>
-        </section>
+              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border shadow-sm">
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-slate-700">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm font-medium px-2">Mar 31 – Apr 6, 2026</span>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-slate-700">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </header>
 
-      </div>
+            {/* Activity Snapshot */}
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-slate-400" />
+                <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">This Week's Activity</h2>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <ActivityCard
+                  icon={<Mail className="h-4 w-4 text-blue-500" />}
+                  label="Emails"
+                  value="18"
+                  sub="logged this week"
+                  bg="bg-blue-50"
+                />
+                <ActivityCard
+                  icon={<Phone className="h-4 w-4 text-violet-500" />}
+                  label="Phone Calls"
+                  value="6"
+                  sub="logged this week"
+                  bg="bg-violet-50"
+                />
+                <ActivityCard
+                  icon={<Hash className="h-4 w-4 text-teal-500" />}
+                  label="Other Events"
+                  value="5"
+                  sub="site visits, notes, etc."
+                  bg="bg-teal-50"
+                />
+                <ActivityCard
+                  icon={<FileText className="h-4 w-4 text-indigo-500" />}
+                  label="Quotes"
+                  value="7 created · 4 sent"
+                  sub=""
+                  bg="bg-indigo-50"
+                />
+                <ActivityCard
+                  icon={<CheckSquare className="h-4 w-4 text-emerald-500" />}
+                  label="Tasks Done"
+                  value="18 / 22"
+                  sub="4 still open"
+                  bg="bg-emerald-50"
+                />
+                <ActivityCard
+                  icon={<Target className="h-4 w-4 text-amber-500" />}
+                  label="Deals"
+                  value="2 Won · 1 Lost"
+                  sub=""
+                  bg="bg-amber-50"
+                />
+              </div>
+            </section>
 
-      {/* Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-slate-200 p-4 shadow-[0_-4px_15px_-5px_rgba(0,0,0,0.05)] z-50">
-        <div className="max-w-5xl mx-auto flex items-center justify-between px-2">
-          <div className="text-sm text-slate-500 flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></div>
-            Auto-saved 2 min ago
+            {/* AI Coaching */}
+            <section className="space-y-4">
+              <div className="flex items-center gap-2 text-slate-800">
+                <Sparkles className="h-5 w-5 text-indigo-400" />
+                <h2 className="text-base font-medium">Things to Think About</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <CoachingCard color="border-blue-400" title="Quiet Quotes"
+                  message="3 quotes went quiet this week — Beacon Capital, JLL Church, and Delta Star. Do you have a follow-up plan for each one?" />
+                <CoachingCard color="border-emerald-400" title="Win Pattern"
+                  message="You closed 2 deals this week. What made those conversations click? How can you replicate that next week?" />
+                <CoachingCard color="border-amber-400" title="Task Backlog"
+                  message="4 tasks are still open from last week. Which ones are blocking client progress vs. waiting on others?" />
+                <CoachingCard color="border-purple-400" title="Client Outreach Mix"
+                  message="You logged 18 emails and 6 calls this week. Are your top accounts getting the right mix of touchpoints?" />
+              </div>
+            </section>
+
+            {/* Customer Health */}
+            <section className="space-y-3">
+              <h2 className="text-base font-medium text-slate-800">Customer Health Snapshot</h2>
+              <Card className="overflow-hidden shadow-sm border-slate-200">
+                <Table>
+                  <TableHeader className="bg-slate-50 border-b border-slate-100">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="font-medium text-slate-500 text-xs">Client</TableHead>
+                      <TableHead className="font-medium text-slate-500 text-xs">Health</TableHead>
+                      <TableHead className="font-medium text-slate-500 text-xs">Pipeline</TableHead>
+                      <TableHead className="font-medium text-slate-500 text-xs text-right">Last Contact</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[
+                      { name: 'Cushman and Wakefield', health: 'At Risk', pipeline: '$84,000', last: '12 days ago' },
+                      { name: 'JLL Church', health: 'Watch', pipeline: '$660,000', last: '3 days ago' },
+                      { name: 'Beacon Capital', health: 'Healthy', pipeline: '$212,550', last: '1 day ago' },
+                      { name: 'Piedmont Office Realty', health: 'Healthy', pipeline: '$145,200', last: '4 days ago' },
+                      { name: 'CBRE Downtown', health: 'Healthy', pipeline: '$95,000', last: '2 days ago' },
+                    ].map((row) => (
+                      <TableRow key={row.name} className="text-sm">
+                        <TableCell className="font-medium">{row.name}</TableCell>
+                        <TableCell><HealthBadge status={row.health as any} /></TableCell>
+                        <TableCell className="text-slate-600">{row.pipeline}</TableCell>
+                        <TableCell className="text-right text-slate-400 text-xs">{row.last}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Card>
+            </section>
+
+            {/* Report Sections */}
+            <section className="space-y-5">
+              <h2 className="text-base font-medium text-slate-800">Weekly Narrative</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <ReportSection title="BD & CSM" value={bdText} onChange={setBdText}
+                  placeholder="Describe your business development and customer success activities this week..." />
+                <ReportSection title="Quotes" value={quotesText} onChange={setQuotesText}
+                  placeholder="What quotes are active? Any updates on pending approvals?" />
+                <ReportSection title="Jobs" value={jobsText} onChange={setJobsText}
+                  placeholder="Summarize active jobs, any issues or milestones this week?" />
+                <ReportSection title="Service Agreements" value={saText} onChange={setSaText}
+                  placeholder="Any SA renewals, concerns, or new agreements this week?" />
+              </div>
+            </section>
+
+            {/* Spotlight */}
+            <section className="space-y-3">
+              <h2 className="text-base font-medium text-slate-800">Spotlight Highlights</h2>
+              <Card className="shadow-sm border-slate-200">
+                <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50/50">
+                  <CardDescription className="text-slate-400 text-xs">Pin key quotes, deals, or items that need manager attention.</CardDescription>
+                  <div className="relative mt-2">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input placeholder="Search quotes & estimates..." className="pl-9 bg-white border-slate-200 text-sm" />
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-3">
+                  <HighlightedItem title="JLL Downtown Tower Maintenance Package" value="$95,375" status="Win"
+                    note="Client confirmed Q2 start. Great win for the team." />
+                  <HighlightedItem title="Beacon Capital Annual Janitorial" value="$212,550" status="Need Help"
+                    note="Pricing concern. Need manager input on discount strategy." />
+                </CardContent>
+              </Card>
+            </section>
+
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="outline" className="border-slate-300 text-slate-700 bg-white hover:bg-slate-50">
-              Save Draft
-            </Button>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm" disabled={!isFormValid}>
-              Submit Report
-            </Button>
+        </div>
+
+        {/* Bottom Action Bar */}
+        <div className="bg-white/95 backdrop-blur-md border-t border-slate-200 px-6 py-3 shadow-[0_-4px_15px_-5px_rgba(0,0,0,0.05)]">
+          <div className="max-w-3xl mx-auto flex items-center justify-between">
+            <div className="text-xs text-slate-400 flex items-center gap-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Auto-saved 2 min ago
+            </div>
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" className="border-slate-200 text-slate-600 hover:bg-slate-50 text-xs">
+                Save Draft
+              </Button>
+              {status === 'draft' ? (
+                <Button
+                  size="sm"
+                  onClick={handleMarkReady}
+                  disabled={!isFormValid}
+                  className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5 text-xs"
+                >
+                  <Bell className="h-3.5 w-3.5" />
+                  Mark Ready for Review
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Manager notified
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* ── Chat Panel ── */}
+      <aside className="w-80 flex flex-col border-l border-slate-200 bg-white">
+        {/* Chat header */}
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-slate-400" />
+            <span className="text-sm font-medium text-slate-800">Report Discussion</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="h-2 w-2 rounded-full bg-emerald-400" />
+            <span className="text-xs text-slate-400">Dan online</span>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {messages.map((msg) => {
+            if ((msg as any).from === 'system') {
+              return (
+                <div key={msg.id} className="flex justify-center">
+                  <span className="text-xs text-slate-400 bg-slate-50 border border-slate-100 rounded-full px-3 py-1 text-center leading-relaxed">
+                    {msg.text}
+                  </span>
+                </div>
+              );
+            }
+            const isManager = msg.from === 'manager';
+            return (
+              <div key={msg.id} className="space-y-1">
+                {msg.highlight && (
+                  <div className="ml-8 mb-2 bg-blue-50 border border-blue-100 rounded-lg p-2.5">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <CornerUpLeft className="h-3 w-3 text-blue-400" />
+                      <span className="text-xs text-blue-500 font-medium">Referencing spotlight</span>
+                    </div>
+                    <p className="text-xs text-blue-700 font-medium">{msg.highlightRef}</p>
+                  </div>
+                )}
+                <div className={`flex gap-2.5 ${isManager ? '' : 'flex-row-reverse'}`}>
+                  <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 ${
+                    isManager ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'
+                  }`}>
+                    {msg.initials}
+                  </div>
+                  <div className={`flex flex-col gap-1 max-w-[78%] ${isManager ? 'items-start' : 'items-end'}`}>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xs font-medium text-slate-700">{msg.name}</span>
+                      <span className="text-[10px] text-slate-400">{msg.time}</span>
+                    </div>
+                    <div className={`rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                      isManager
+                        ? 'bg-slate-100 text-slate-800 rounded-tl-sm'
+                        : 'bg-blue-600 text-white rounded-tr-sm'
+                    }`}>
+                      {msg.text}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Message input */}
+        <div className="px-3 py-3 border-t border-slate-100 space-y-2">
+          <div className="text-xs text-slate-400 px-1">Reply as Sarah M.</div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1 relative">
+              <Textarea
+                value={chatMessage}
+                onChange={(e) => setChatMessage(e.target.value)}
+                placeholder="Add a comment..."
+                className="min-h-[60px] max-h-32 resize-none text-sm border-slate-200 pr-2 py-2 rounded-xl"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+              />
+            </div>
+            <Button
+              size="icon"
+              onClick={handleSendMessage}
+              className="h-9 w-9 rounded-xl bg-blue-600 hover:bg-blue-700 flex-shrink-0 mb-0.5"
+            >
+              <Send className="h-4 w-4 text-white" />
+            </Button>
+          </div>
+          <p className="text-[10px] text-slate-300 px-1">Press Enter to send · Shift+Enter for new line</p>
+        </div>
+      </aside>
     </div>
   );
 }
 
-// Subcomponents
+// ── Subcomponents ──
 
-function StatCard({ icon, label, value, trend }: { icon: React.ReactNode, label: string, value: string, trend?: 'up' | 'down' }) {
+function ActivityCard({ icon, label, value, sub, bg }: { icon: React.ReactNode, label: string, value: string, sub: string, bg: string }) {
   return (
-    <Card className="shadow-sm border-slate-200">
-      <CardContent className="p-4 flex flex-col items-center text-center gap-2">
-        <div className="h-8 w-8 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 mb-1">
-          {icon}
-        </div>
-        <div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</p>
-          <div className="flex items-center justify-center gap-1.5 mt-0.5">
-            <span className="text-xl font-semibold text-slate-900">{value}</span>
-            {trend === 'up' && <TrendingUp className="h-3 w-3 text-emerald-500" />}
-            {trend === 'down' && <TrendingDown className="h-3 w-3 text-rose-500" />}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-start gap-3`}>
+      <div className={`h-8 w-8 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
+        {icon}
+      </div>
+      <div>
+        <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide leading-none mb-1">{label}</p>
+        <p className="text-sm font-semibold text-slate-900 leading-snug">{value}</p>
+        {sub && <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>}
+      </div>
+    </div>
   );
 }
 
 function CoachingCard({ title, message, color }: { title: string, message: string, color: string }) {
   return (
     <Card className={`shadow-sm border-l-4 ${color} border-y-slate-200 border-r-slate-200 overflow-hidden`}>
-      <CardContent className="p-4 sm:p-5">
-        <h3 className="font-semibold text-slate-900 mb-1">{title}</h3>
-        <p className="text-sm text-slate-600 leading-relaxed">{message}</p>
+      <CardContent className="p-4">
+        <h3 className="font-semibold text-slate-900 text-sm mb-1">{title}</h3>
+        <p className="text-xs text-slate-600 leading-relaxed">{message}</p>
       </CardContent>
     </Card>
   );
 }
 
 function HealthBadge({ status }: { status: 'Healthy' | 'Watch' | 'At Risk' }) {
-  if (status === 'At Risk') {
-    return (
-      <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 gap-1 pr-2">
-        <AlertTriangle className="h-3 w-3" /> {status}
-      </Badge>
-    );
-  }
-  if (status === 'Watch') {
-    return (
-      <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 gap-1 pr-2">
-        <AlertCircle className="h-3 w-3" /> {status}
-      </Badge>
-    );
-  }
+  if (status === 'At Risk') return (
+    <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 gap-1 pr-2 text-xs">
+      <AlertTriangle className="h-3 w-3" /> {status}
+    </Badge>
+  );
+  if (status === 'Watch') return (
+    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 gap-1 pr-2 text-xs">
+      <AlertCircle className="h-3 w-3" /> {status}
+    </Badge>
+  );
   return (
-    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 gap-1 pr-2 font-normal">
+    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 gap-1 pr-2 text-xs font-normal">
       <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {status}
     </Badge>
   );
@@ -289,20 +459,19 @@ function HealthBadge({ status }: { status: 'Healthy' | 'Watch' | 'At Risk' }) {
 
 function ReportSection({ title, value, onChange, placeholder }: { title: string, value: string, onChange: (v: string) => void, placeholder: string }) {
   const maxLength = 500;
-  
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <div className="flex justify-between items-end">
         <label className="text-sm font-medium text-slate-700">{title}</label>
-        <span className={`text-xs ${value.length > maxLength ? 'text-rose-500' : 'text-slate-400'}`}>
+        <span className={`text-xs ${value.length > maxLength ? 'text-rose-500' : 'text-slate-300'}`}>
           {value.length} / {maxLength}
         </span>
       </div>
-      <Textarea 
+      <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="min-h-[140px] resize-none border-slate-200 focus:border-blue-400 focus:ring-blue-100 placeholder:text-slate-300 text-sm leading-relaxed"
+        className="min-h-[120px] resize-none border-slate-200 focus:border-blue-400 focus:ring-blue-100 placeholder:text-slate-300 text-sm leading-relaxed"
       />
     </div>
   );
@@ -310,30 +479,26 @@ function ReportSection({ title, value, onChange, placeholder }: { title: string,
 
 function HighlightedItem({ title, value, status, note }: { title: string, value: string, status: 'Win' | 'Need Help', note: string }) {
   return (
-    <div className="group relative bg-white border border-slate-200 rounded-lg p-3 sm:p-4 hover:border-slate-300 transition-colors">
-      <button className="absolute right-2 top-2 p-1.5 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-rose-500 hover:bg-rose-50 rounded-md transition-all">
-        <X className="h-4 w-4" />
+    <div className="group relative bg-white border border-slate-200 rounded-lg p-3 hover:border-slate-300 transition-colors">
+      <button className="absolute right-2 top-2 p-1 text-slate-300 opacity-0 group-hover:opacity-100 hover:text-rose-500 hover:bg-rose-50 rounded transition-all">
+        <X className="h-3.5 w-3.5" />
       </button>
-      
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pr-8">
-        <div>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h4 className="font-medium text-slate-900">{title}</h4>
-            <span className="text-slate-500 font-medium">{value}</span>
-            <Badge 
-              variant="secondary" 
-              className={`text-xs cursor-pointer flex items-center gap-1 ${
-                status === 'Win' 
-                  ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-200' 
-                  : 'bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200'
-              }`}
-            >
-              {status} <ChevronDown className="h-3 w-3 opacity-70" />
+      <div className="flex items-start gap-2 pr-6">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            <h4 className="font-medium text-slate-900 text-sm">{title}</h4>
+            <span className="text-slate-400 text-sm">{value}</span>
+            <Badge variant="secondary" className={`text-xs cursor-pointer flex items-center gap-1 ${
+              status === 'Win'
+                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-200'
+                : 'bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200'
+            }`}>
+              {status} <ChevronDown className="h-3 w-3 opacity-60" />
             </Badge>
           </div>
-          <div className="text-sm text-slate-600 bg-slate-50 p-2.5 rounded-md border border-slate-100 mt-2">
-            <span className="font-medium text-slate-700">Note:</span> {note}
-          </div>
+          <p className="text-xs text-slate-500 bg-slate-50 px-2.5 py-2 rounded-md border border-slate-100">
+            {note}
+          </p>
         </div>
       </div>
     </div>
