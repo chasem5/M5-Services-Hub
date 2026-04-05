@@ -24,6 +24,12 @@ import {
   Activity,
   Hash,
   CheckCircle2,
+  DollarSign,
+  Users,
+  BarChart2,
+  ArrowUpRight,
+  RefreshCw,
+  Flame,
 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -164,11 +170,11 @@ export function WeeklyReport() {
                   bg="bg-violet-50"
                 />
                 <ActivityCard
-                  icon={<Hash className="h-4 w-4 text-teal-500" />}
-                  label="Other Events"
-                  value="5"
-                  sub="site visits, notes, etc."
-                  bg="bg-teal-50"
+                  icon={<Users className="h-4 w-4 text-sky-500" />}
+                  label="Accounts Touched"
+                  value="14"
+                  sub="unique clients"
+                  bg="bg-sky-50"
                 />
                 <ActivityCard
                   icon={<FileText className="h-4 w-4 text-indigo-500" />}
@@ -191,6 +197,112 @@ export function WeeklyReport() {
                   sub=""
                   bg="bg-amber-50"
                 />
+                <ActivityCard
+                  icon={<DollarSign className="h-4 w-4 text-green-600" />}
+                  label="Revenue Closed"
+                  value="$95,375"
+                  sub="this week"
+                  bg="bg-green-50"
+                />
+                <ActivityCard
+                  icon={<BarChart2 className="h-4 w-4 text-orange-500" />}
+                  label="Active Proposals"
+                  value="$382,550"
+                  sub="11 open proposals"
+                  bg="bg-orange-50"
+                />
+                <ActivityCard
+                  icon={<Hash className="h-4 w-4 text-teal-500" />}
+                  label="Other Events"
+                  value="5"
+                  sub="site visits, notes, etc."
+                  bg="bg-teal-50"
+                />
+              </div>
+            </section>
+
+            {/* Revenue Snapshot */}
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-slate-400" />
+                <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Revenue Snapshot</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Month-to-date */}
+                <Card className="shadow-sm border-slate-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-1">April Closed</p>
+                        <p className="text-xl font-bold text-slate-900">$95,375</p>
+                      </div>
+                      <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                        <ArrowUpRight className="h-4 w-4 text-emerald-600" />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Monthly Goal</span>
+                        <span className="font-medium text-slate-700">$200,000</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: '48%' }} />
+                      </div>
+                      <p className="text-[11px] text-slate-400">48% · 24 days left</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Quarter-to-date */}
+                <Card className="shadow-sm border-slate-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-1">Q2 Closed</p>
+                        <p className="text-xl font-bold text-slate-900">$312,000</p>
+                      </div>
+                      <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <BarChart2 className="h-4 w-4 text-blue-600" />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Quarter Goal</span>
+                        <span className="font-medium text-slate-700">$650,000</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full" style={{ width: '48%' }} />
+                      </div>
+                      <p className="text-[11px] text-slate-400">48% · 86 days left</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Recurring MRR */}
+                <Card className="shadow-sm border-slate-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-1">Recurring MRR</p>
+                        <p className="text-xl font-bold text-slate-900">$18,200</p>
+                      </div>
+                      <div className="h-8 w-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                        <RefreshCw className="h-4 w-4 text-violet-600" />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Active SAs</span>
+                        <span className="font-medium text-slate-700">7 agreements</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 px-1.5 py-0">
+                          2 renewing in 30d
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </section>
 
@@ -221,27 +333,71 @@ export function WeeklyReport() {
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="font-medium text-slate-500 text-xs">Client</TableHead>
                       <TableHead className="font-medium text-slate-500 text-xs">Health</TableHead>
+                      <TableHead className="font-medium text-slate-500 text-xs">MRR</TableHead>
+                      <TableHead className="font-medium text-slate-500 text-xs">Open Quotes</TableHead>
                       <TableHead className="font-medium text-slate-500 text-xs">Pipeline</TableHead>
                       <TableHead className="font-medium text-slate-500 text-xs text-right">Last Contact</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {[
-                      { name: 'Cushman and Wakefield', health: 'At Risk', pipeline: '$84,000', last: '12 days ago' },
-                      { name: 'JLL Church', health: 'Watch', pipeline: '$660,000', last: '3 days ago' },
-                      { name: 'Beacon Capital', health: 'Healthy', pipeline: '$212,550', last: '1 day ago' },
-                      { name: 'Piedmont Office Realty', health: 'Healthy', pipeline: '$145,200', last: '4 days ago' },
-                      { name: 'CBRE Downtown', health: 'Healthy', pipeline: '$95,000', last: '2 days ago' },
+                      { name: 'Cushman and Wakefield', health: 'At Risk', mrr: '$4,200', openQuotes: 3, pipeline: '$84,000', last: '12 days ago' },
+                      { name: 'JLL Church', health: 'Watch', mrr: '$2,800', openQuotes: 5, pipeline: '$660,000', last: '3 days ago' },
+                      { name: 'Beacon Capital', health: 'Healthy', mrr: '$6,500', openQuotes: 2, pipeline: '$212,550', last: '1 day ago' },
+                      { name: 'Piedmont Office Realty', health: 'Healthy', mrr: '$3,100', openQuotes: 1, pipeline: '$145,200', last: '4 days ago' },
+                      { name: 'CBRE Downtown', health: 'Healthy', mrr: '$1,600', openQuotes: 0, pipeline: '$95,000', last: '2 days ago' },
                     ].map((row) => (
                       <TableRow key={row.name} className="text-sm">
                         <TableCell className="font-medium">{row.name}</TableCell>
                         <TableCell><HealthBadge status={row.health as any} /></TableCell>
+                        <TableCell className="text-slate-600 font-medium">{row.mrr}</TableCell>
+                        <TableCell>
+                          {row.openQuotes > 0
+                            ? <span className="text-xs font-medium text-indigo-600">{row.openQuotes} open</span>
+                            : <span className="text-xs text-slate-300">—</span>
+                          }
+                        </TableCell>
                         <TableCell className="text-slate-600">{row.pipeline}</TableCell>
                         <TableCell className="text-right text-slate-400 text-xs">{row.last}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+              </Card>
+            </section>
+
+            {/* Proposal Aging */}
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-medium text-slate-800">Proposal Aging</h2>
+                <span className="text-xs text-slate-400">11 open proposals · avg. 14 days</span>
+              </div>
+              <Card className="shadow-sm border-slate-200">
+                <CardContent className="p-4 space-y-3">
+                  {[
+                    { client: 'Beacon Capital', title: 'Annual Janitorial Agreement', value: '$212,550', days: 36, status: 'hot' },
+                    { client: 'JLL Church', title: 'Bathroom Project', value: '$28,400', days: 21, status: 'warm' },
+                    { client: 'Cushman and Wakefield', title: 'Clear Debris from Roof', value: '$8,700', days: 19, status: 'warm' },
+                    { client: 'Delta Star Inc.', title: 'Landscaping Clean Up', value: '$4,200', days: 12, status: 'new' },
+                    { client: 'Patelco Credit Union', title: 'Branch Refresh', value: '$31,600', days: 9, status: 'new' },
+                  ].map((p) => (
+                    <div key={p.title} className="flex items-center gap-3">
+                      <AgingDot days={p.days} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-sm font-medium text-slate-800 truncate">{p.title}</span>
+                          <span className="text-xs text-slate-400 shrink-0">{p.client}</span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-semibold text-slate-800">{p.value}</div>
+                        <div className={`text-[11px] ${p.days > 30 ? 'text-rose-500' : p.days > 15 ? 'text-amber-500' : 'text-slate-400'}`}>
+                          {p.days}d out
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
               </Card>
             </section>
 
@@ -454,6 +610,18 @@ function HealthBadge({ status }: { status: 'Healthy' | 'Watch' | 'At Risk' }) {
     <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 gap-1 pr-2 text-xs font-normal">
       <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {status}
     </Badge>
+  );
+}
+
+function AgingDot({ days }: { days: number }) {
+  if (days > 30) return (
+    <div className="h-2.5 w-2.5 rounded-full bg-rose-500 shrink-0 mt-0.5" />
+  );
+  if (days > 15) return (
+    <div className="h-2.5 w-2.5 rounded-full bg-amber-400 shrink-0 mt-0.5" />
+  );
+  return (
+    <div className="h-2.5 w-2.5 rounded-full bg-slate-200 shrink-0 mt-0.5" />
   );
 }
 
