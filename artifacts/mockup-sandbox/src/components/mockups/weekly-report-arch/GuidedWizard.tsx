@@ -121,7 +121,7 @@ export function GuidedWizard() {
               <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-[2px] bg-slate-100 -z-10 rounded-full"></div>
               <div 
                 className="absolute left-0 top-1/2 -translate-y-1/2 h-[2px] bg-blue-500 -z-10 rounded-full transition-all duration-300"
-                style={{ width: \`\${((currentStep - 1) / (STEPS.length - 1)) * 100}%\` }}
+                style={{ width: ((currentStep - 1) / (STEPS.length - 1)) * 100 + '%' }}
               ></div>
               
               {STEPS.map((step) => {

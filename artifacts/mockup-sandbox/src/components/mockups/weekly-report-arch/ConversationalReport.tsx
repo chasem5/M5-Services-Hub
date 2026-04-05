@@ -16,12 +16,12 @@ import {
   Activity,
   ChevronRight
 } from 'lucide-react';
-import { Button } from '../../../ui/button';
-import { Badge } from '../../../ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../ui/card';
-import { Textarea } from '../../../ui/textarea';
-import { ScrollArea } from '../../../ui/scroll-area';
-import { Avatar, AvatarFallback, AvatarImage } from '../../../ui/avatar';
+import { Button } from '../../ui/button';
+import { Badge } from '../../ui/badge';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../ui/card';
+import { Textarea } from '../../ui/textarea';
+import { ScrollArea } from '../../ui/scroll-area';
+import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
 
 const PRELOADED_MESSAGES = [
   {
