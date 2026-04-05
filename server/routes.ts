@@ -36,6 +36,8 @@ import {
   insertPortfolioContactSchema,
   insertAiFeedbackSchema,
   insertActionPlanSchema,
+  insertWeeklyReportSpotlightSchema,
+  insertWeeklyReportMessageSchema,
   ONBOARDING_ITEM_KEYS,
   ONBOARDING_TOTAL_ITEMS,
 } from "@shared/schema";
@@ -169,6 +171,7 @@ export async function registerRoutes(
   await storage.migrateParentClientColumn();
   await storage.migrateClientOnboardingChecklist();
   await storage.migrateLeadLossColumns();
+  await storage.migrateWeeklyReportTables();
   // Multi-board task system: create tables, add columns, backfill data
   await storage.migrateTaskBoards();
   await storage.migrateEmailMessageColumns();
@@ -11322,6 +11325,276 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
       }
       await storage.deleteActionPlan(id);
       res.sendStatus(204);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Weekly Report Routes ────────────────────────────────────────────────
+
+  // Helper: get Monday of week containing given date
+  function getWeekStart(d: Date): Date {
+    const day = d.getDay(); // 0=Sun
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(d.getDate() + diff);
+    return monday;
+  }
+
+  // GET /api/weekly-report?weekStart=YYYY-MM-DD  — get or create report for the current user
+  app.get("/api/weekly-report", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const weekStartParam = req.query.weekStart as string | undefined;
+      const weekStart = weekStartParam ? new Date(weekStartParam) : getWeekStart(new Date());
+      weekStart.setHours(0, 0, 0, 0);
+      const report = await storage.getOrCreateWeeklyReport(userId, weekStart);
+      res.json(report);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PATCH /api/weekly-report/:id  — save text fields
+  app.patch("/api/weekly-report/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = parseInt(req.params.id);
+      const report = await storage.getWeeklyReport(id);
+      if (!report) return res.status(404).json({ message: "Not found" });
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "Not authenticated" });
+      const isManager = SUPER_ROLES.includes(user.role) || user.role === "manager";
+      if (report.userId !== userId && !isManager) return res.status(403).json({ message: "Forbidden" });
+      const allowed = z.object({
+        bdText: z.string().optional(),
+        quotesText: z.string().optional(),
+        jobsText: z.string().optional(),
+        saText: z.string().optional(),
+      });
+      const data = allowed.parse(req.body);
+      const updated = await storage.updateWeeklyReport(id, data);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/weekly-report/:id/mark-ready  — AM marks as ready for manager review
+  app.post("/api/weekly-report/:id/mark-ready", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = parseInt(req.params.id);
+      const report = await storage.getWeeklyReport(id);
+      if (!report) return res.status(404).json({ message: "Not found" });
+      if (report.userId !== userId) return res.status(403).json({ message: "Forbidden" });
+      const updated = await storage.markWeeklyReportReady(id);
+      // Notify managers/admins via in-app announcement
+      const allUsers = await storage.listUsers();
+      const managers = allUsers.filter((u) => SUPER_ROLES.includes(u.role) || u.role === "manager");
+      const reporter = allUsers.find((u) => u.id === userId);
+      const reporterName = reporter ? `${reporter.firstName ?? ""} ${reporter.lastName ?? ""}`.trim() || "Your AM" : "Your AM";
+      if (managers.length > 0) {
+        try {
+          await storage.createAnnouncement({
+            title: "Weekly Report Ready",
+            body: `${reporterName}'s weekly report is ready for review.`,
+            type: "info",
+            createdBy: userId,
+            targetUserIds: managers.map((m) => m.id),
+          });
+          for (const mgr of managers) {
+            await sendPushNotification(mgr.id, {
+              title: "Weekly Report Ready",
+              body: `${reporterName}'s weekly report is ready for review.`,
+              url: "/weekly-report/team",
+            });
+          }
+        } catch (_e) {
+          // non-fatal
+        }
+      }
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/weekly-report/activity?weekStart=YYYY-MM-DD
+  app.get("/api/weekly-report/activity", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const weekStartParam = req.query.weekStart as string | undefined;
+      const weekStart = weekStartParam ? new Date(weekStartParam) : getWeekStart(new Date());
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 7);
+      const data = await storage.getWeeklyReportActivity(userId, weekStart, weekEnd);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/weekly-report/customer-health
+  app.get("/api/weekly-report/customer-health", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const data = await storage.getWeeklyReportCustomerHealth(userId);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/weekly-report/coaching  — AI-generated coaching prompts
+  app.post("/api/weekly-report/coaching", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { activity, customerHealth } = req.body;
+      const user = await storage.getUser(userId);
+      const userName = user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || "the AM" : "the AM";
+
+      const activitySummary = activity
+        ? `Emails: ${activity.emailCount}, Calls: ${activity.callCount}, Other: ${activity.otherCount}, Quotes Created: ${activity.quotesCreated}, Quotes Sent: ${activity.quotesSent}, Tasks Done: ${activity.tasksDone}, Deals Won: ${activity.dealsWon}, Deals Lost: ${activity.dealsLost}, Revenue Closed: $${Math.round(activity.revenueClosedWeek).toLocaleString()}, Active Proposals: ${activity.activeProposals} ($${Math.round(activity.activeProposalsValue).toLocaleString()}), MTD Revenue: $${Math.round(activity.mtdRevenue).toLocaleString()} / Goal $${Math.round(activity.monthlyGoal).toLocaleString()}`
+        : "No activity data provided.";
+
+      const healthSummary = Array.isArray(customerHealth) && customerHealth.length > 0
+        ? customerHealth
+            .slice(0, 10)
+            .map((c: any) => `${c.name}: ${c.healthStatus} (MRR $${Math.round(c.mrr)}, ${c.openQuotes} open quotes)`)
+            .join("; ")
+        : "No customer health data.";
+
+      const prompt = `You are an AM (Account Manager) coach for a building services / facility solutions company. Review the following weekly metrics for ${userName} and provide 4 specific, actionable coaching items. Each item should be concise (2-3 sentences), direct, and reference the actual numbers.
+
+Activity this week:
+${activitySummary}
+
+Customer health snapshot:
+${healthSummary}
+
+Return a JSON array of exactly 4 objects, each with:
+- "title": a short label (5-8 words)
+- "message": the coaching insight (2-3 sentences)
+- "type": one of "win", "focus", "risk", "tip"
+
+JSON only, no markdown.`;
+
+      const { openai: openaiClient } = await import("./openai");
+      const completion = await openaiClient.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 800,
+        response_format: { type: "json_object" },
+      });
+
+      const raw = completion.choices[0]?.message?.content ?? "{}";
+      let coaching: any[] = [];
+      try {
+        const parsed = JSON.parse(raw);
+        coaching = Array.isArray(parsed) ? parsed : (parsed.items ?? parsed.coaching ?? parsed.data ?? []);
+      } catch {
+        coaching = [];
+      }
+      res.json({ coaching });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message, coaching: [] });
+    }
+  });
+
+  // GET /api/weekly-report/:id/spotlights
+  app.get("/api/weekly-report/:id/spotlights", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const spotlights = await storage.getWeeklyReportSpotlights(id);
+      res.json(spotlights);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/weekly-report/:id/spotlights
+  app.post("/api/weekly-report/:id/spotlights", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const reportId = parseInt(req.params.id);
+      const report = await storage.getWeeklyReport(reportId);
+      if (!report) return res.status(404).json({ message: "Not found" });
+      if (report.userId !== userId) return res.status(403).json({ message: "Forbidden" });
+      const data = insertWeeklyReportSpotlightSchema.parse({ ...req.body, reportId });
+      const spotlight = await storage.addWeeklyReportSpotlight(data);
+      res.status(201).json(spotlight);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // DELETE /api/weekly-report/:id/spotlights/:spotlightId
+  app.delete("/api/weekly-report/:id/spotlights/:spotlightId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const reportId = parseInt(req.params.id);
+      const spotlightId = parseInt(req.params.spotlightId);
+      const report = await storage.getWeeklyReport(reportId);
+      if (!report) return res.status(404).json({ message: "Not found" });
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "Not authenticated" });
+      const isManager = SUPER_ROLES.includes(user.role) || user.role === "manager";
+      if (report.userId !== userId && !isManager) return res.status(403).json({ message: "Forbidden" });
+      await storage.deleteWeeklyReportSpotlight(spotlightId, reportId);
+      res.sendStatus(204);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/weekly-report/:id/messages
+  app.get("/api/weekly-report/:id/messages", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const messages = await storage.getWeeklyReportMessages(id);
+      res.json(messages);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/weekly-report/:id/messages
+  app.post("/api/weekly-report/:id/messages", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const reportId = parseInt(req.params.id);
+      const report = await storage.getWeeklyReport(reportId);
+      if (!report) return res.status(404).json({ message: "Not found" });
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "Not authenticated" });
+      const isManager = SUPER_ROLES.includes(user.role) || user.role === "manager";
+      if (report.userId !== userId && !isManager) return res.status(403).json({ message: "Forbidden" });
+      const role = isManager && report.userId !== userId ? "manager" : "am";
+      const data = insertWeeklyReportMessageSchema.parse({ ...req.body, reportId, userId, role });
+      const message = await storage.createWeeklyReportMessage(data);
+      res.status(201).json(message);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // GET /api/weekly-report/team?weekStart=YYYY-MM-DD  — manager/admin view
+  app.get("/api/weekly-report/team", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ message: "Not authenticated" });
+      const isManager = SUPER_ROLES.includes(user.role) || user.role === "manager";
+      if (!isManager) return res.status(403).json({ message: "Forbidden" });
+      const weekStartParam = req.query.weekStart as string | undefined;
+      const weekStart = weekStartParam ? new Date(weekStartParam) : getWeekStart(new Date());
+      weekStart.setHours(0, 0, 0, 0);
+      const reports = await storage.getTeamWeeklyReports(weekStart);
+      res.json(reports);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

@@ -13,6 +13,7 @@ import {
   Sparkles,
   ScrollText,
   Lock,
+  ClipboardList,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -178,6 +179,27 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Coaching</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.startsWith("/weekly-report")}
+                  tooltip="Weekly Report"
+                  className={location.startsWith("/weekly-report") ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                >
+                  <Link href="/weekly-report" data-testid="link-weekly-report" onClick={() => isMobile && setOpenMobile(false)}>
+                    <ClipboardList className={`h-4 w-4 shrink-0 ${location.startsWith("/weekly-report") ? "text-primary" : ""}`} />
+                    <span className="group-data-[collapsible=icon]:hidden">Weekly Report</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
         <SidebarGroup>
           <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Intelligence</SidebarGroupLabel>

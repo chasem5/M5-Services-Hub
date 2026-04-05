@@ -23,6 +23,8 @@ import Announcements from "@/pages/announcements";
 import CustomerReport from "@/pages/customer-report";
 import CompanyIntelligence from "@/pages/company-intelligence";
 import CEOCommandCenter from "@/pages/ceo-command-center";
+import WeeklyReport from "@/pages/weekly-report";
+import WeeklyReportTeam from "@/pages/weekly-report-team";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function TabRedirect({ tab }: { tab: string }) {
@@ -57,6 +59,8 @@ function ProtectedRouter() {
           <Route path="/reports/customer-intelligence" component={CustomerReport} />
           <Route path="/company-intelligence" component={CompanyIntelligence} />
           <Route path="/ceo" component={CEOCommandCenter} />
+          <Route path="/weekly-report/team" component={WeeklyReportTeam} />
+          <Route path="/weekly-report" component={WeeklyReport} />
           <Route path="/reports/revenue-analytics">
             {() => <TabRedirect tab="revenue" />}
           </Route>

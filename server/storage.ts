@@ -53,6 +53,15 @@ import {
   ONBOARDING_TOTAL_ITEMS,
   aiFeedback,
   actionPlans,
+  weeklyReports,
+  weeklyReportSpotlights,
+  weeklyReportMessages,
+  type WeeklyReport,
+  type InsertWeeklyReport,
+  type WeeklyReportSpotlight,
+  type InsertWeeklyReportSpotlight,
+  type WeeklyReportMessage,
+  type InsertWeeklyReportMessage,
   type ActionPlan,
   type InsertActionPlan,
   type BuildopsSyncLog,
@@ -4125,6 +4134,395 @@ export class DatabaseStorage implements IStorage {
       // Clients with neither get no entry (will be "Unclassified")
     }
     return result;
+  }
+
+  // ─── Weekly Report Migrations ────────────────────────────────────────────
+
+  async migrateWeeklyReportTables(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS weekly_reports (
+          id serial PRIMARY KEY,
+          user_id varchar NOT NULL REFERENCES users(id),
+          week_start timestamp NOT NULL,
+          status varchar NOT NULL DEFAULT 'draft',
+          marked_ready_at timestamp,
+          bd_text text DEFAULT '',
+          quotes_text text DEFAULT '',
+          jobs_text text DEFAULT '',
+          sa_text text DEFAULT '',
+          created_at timestamp DEFAULT now() NOT NULL,
+          updated_at timestamp DEFAULT now() NOT NULL,
+          UNIQUE(user_id, week_start)
+        )
+      `);
+    } catch (e) {
+      console.error("migrateWeeklyReportTables: weekly_reports error:", e);
+    }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS weekly_report_spotlights (
+          id serial PRIMARY KEY,
+          report_id integer NOT NULL REFERENCES weekly_reports(id) ON DELETE CASCADE,
+          estimate_id integer REFERENCES estimates(id),
+          lead_id integer REFERENCES leads(id),
+          title varchar NOT NULL,
+          value varchar,
+          tag varchar NOT NULL DEFAULT 'win',
+          note text DEFAULT ''
+        )
+      `);
+    } catch (e) {
+      console.error("migrateWeeklyReportTables: weekly_report_spotlights error:", e);
+    }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS weekly_report_messages (
+          id serial PRIMARY KEY,
+          report_id integer NOT NULL REFERENCES weekly_reports(id) ON DELETE CASCADE,
+          user_id varchar NOT NULL REFERENCES users(id),
+          role varchar NOT NULL,
+          text text NOT NULL,
+          spotlight_ref text,
+          created_at timestamp DEFAULT now() NOT NULL
+        )
+      `);
+    } catch (e) {
+      console.error("migrateWeeklyReportTables: weekly_report_messages error:", e);
+    }
+  }
+
+  // ─── Weekly Report CRUD ──────────────────────────────────────────────────
+
+  async getOrCreateWeeklyReport(userId: string, weekStart: Date): Promise<WeeklyReport> {
+    const [existing] = await db
+      .select()
+      .from(weeklyReports)
+      .where(and(eq(weeklyReports.userId, userId), eq(weeklyReports.weekStart, weekStart)));
+    if (existing) return existing;
+    const [created] = await db
+      .insert(weeklyReports)
+      .values({ userId, weekStart, status: "draft" })
+      .returning();
+    return created;
+  }
+
+  async getWeeklyReport(id: number): Promise<WeeklyReport | undefined> {
+    const [report] = await db.select().from(weeklyReports).where(eq(weeklyReports.id, id));
+    return report;
+  }
+
+  async updateWeeklyReport(id: number, data: Partial<InsertWeeklyReport>): Promise<WeeklyReport> {
+    const [updated] = await db
+      .update(weeklyReports)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(weeklyReports.id, id))
+      .returning();
+    return updated;
+  }
+
+  async markWeeklyReportReady(id: number): Promise<WeeklyReport> {
+    const [updated] = await db
+      .update(weeklyReports)
+      .set({ status: "ready", markedReadyAt: new Date(), updatedAt: new Date() })
+      .where(eq(weeklyReports.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getTeamWeeklyReports(weekStart: Date): Promise<(WeeklyReport & { user: User | null })[]> {
+    const rows = await db.select().from(weeklyReports).where(eq(weeklyReports.weekStart, weekStart));
+    const userIds = [...new Set(rows.map((r) => r.userId))];
+    const userList = userIds.length > 0 ? await db.select().from(users).where(inArray(users.id, userIds)) : [];
+    const userMap = new Map(userList.map((u) => [u.id, u]));
+    return rows.map((r) => ({ ...r, user: userMap.get(r.userId) ?? null }));
+  }
+
+  // ─── Spotlights ──────────────────────────────────────────────────────────
+
+  async getWeeklyReportSpotlights(reportId: number): Promise<WeeklyReportSpotlight[]> {
+    return db.select().from(weeklyReportSpotlights).where(eq(weeklyReportSpotlights.reportId, reportId));
+  }
+
+  async addWeeklyReportSpotlight(data: InsertWeeklyReportSpotlight): Promise<WeeklyReportSpotlight> {
+    const [created] = await db.insert(weeklyReportSpotlights).values(data).returning();
+    return created;
+  }
+
+  async deleteWeeklyReportSpotlight(id: number, reportId: number): Promise<void> {
+    await db
+      .delete(weeklyReportSpotlights)
+      .where(and(eq(weeklyReportSpotlights.id, id), eq(weeklyReportSpotlights.reportId, reportId)));
+  }
+
+  // ─── Messages ────────────────────────────────────────────────────────────
+
+  async getWeeklyReportMessages(reportId: number): Promise<WeeklyReportMessage[]> {
+    return db
+      .select()
+      .from(weeklyReportMessages)
+      .where(eq(weeklyReportMessages.reportId, reportId))
+      .orderBy(weeklyReportMessages.createdAt);
+  }
+
+  async createWeeklyReportMessage(data: InsertWeeklyReportMessage): Promise<WeeklyReportMessage> {
+    const [created] = await db.insert(weeklyReportMessages).values(data).returning();
+    return created;
+  }
+
+  // ─── Weekly Report Activity (computed from existing tables) ──────────────
+
+  async getWeeklyReportActivity(userId: string, weekStart: Date, weekEnd: Date) {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
+    const quarterStart = new Date(now.getFullYear(), quarterMonth, 1);
+
+    // Emails sent/received this week
+    const [emailRow] = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM email_messages
+      WHERE user_id = ${userId}
+        AND received_at >= ${weekStart} AND received_at < ${weekEnd}
+    `);
+    const emailCount = Number((emailRow as any)?.cnt ?? 0);
+
+    // Calls (lead notes with activity_type = 'call')
+    const [callRow] = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM lead_notes
+      WHERE user_id = ${userId}
+        AND activity_type = 'call'
+        AND created_at >= ${weekStart} AND created_at < ${weekEnd}
+    `);
+    const callCount = Number((callRow as any)?.cnt ?? 0);
+
+    // Other activities (non-call lead notes)
+    const [otherRow] = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM lead_notes
+      WHERE user_id = ${userId}
+        AND (activity_type IS NULL OR activity_type != 'call')
+        AND created_at >= ${weekStart} AND created_at < ${weekEnd}
+    `);
+    const otherCount = Number((otherRow as any)?.cnt ?? 0);
+
+    // Quotes created this week (estimates)
+    const [quotesCreatedRow] = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM estimates
+      WHERE created_by = ${userId}
+        AND created_at >= ${weekStart} AND created_at < ${weekEnd}
+    `);
+    const quotesCreated = Number((quotesCreatedRow as any)?.cnt ?? 0);
+
+    // Quotes sent (status = 'sent', updated in week)
+    const [quotesSentRow] = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM estimates
+      WHERE created_by = ${userId}
+        AND status = 'sent'
+        AND updated_at >= ${weekStart} AND updated_at < ${weekEnd}
+    `);
+    const quotesSent = Number((quotesSentRow as any)?.cnt ?? 0);
+
+    // Tasks completed this week
+    const [tasksDoneRow] = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM tasks
+      WHERE assigned_to = ${userId}
+        AND status = 'done'
+        AND updated_at >= ${weekStart} AND updated_at < ${weekEnd}
+    `);
+    const tasksDone = Number((tasksDoneRow as any)?.cnt ?? 0);
+
+    // Deals won this week
+    const wonLeadsRows = await db.execute(sql`
+      SELECT id, value FROM leads
+      WHERE assigned_to = ${userId}
+        AND won_at >= ${weekStart} AND won_at < ${weekEnd}
+    `);
+    const dealsWon = Array.isArray(wonLeadsRows) ? wonLeadsRows.length : 0;
+    const revenueClosedWeek = Array.isArray(wonLeadsRows)
+      ? wonLeadsRows.reduce((sum: number, r: any) => sum + Number(r.value ?? 0), 0)
+      : 0;
+
+    // Deals lost this week
+    const [lostRow] = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM leads
+      WHERE assigned_to = ${userId}
+        AND lost_at >= ${weekStart} AND lost_at < ${weekEnd}
+    `);
+    const dealsLost = Number((lostRow as any)?.cnt ?? 0);
+
+    // Active proposals (open pipeline)
+    const activeProposalsRows = await db.execute(sql`
+      SELECT id, COALESCE(buildops_quote_total, value) AS deal_value FROM leads
+      WHERE assigned_to = ${userId}
+        AND won_at IS NULL AND lost_at IS NULL
+        AND stage NOT IN ('closed_won', 'closed_lost', 'canceled', 'expired')
+    `);
+    const activeProposals = Array.isArray(activeProposalsRows) ? activeProposalsRows.length : 0;
+    const activeProposalsValue = Array.isArray(activeProposalsRows)
+      ? activeProposalsRows.reduce((sum: number, r: any) => sum + Number(r.deal_value ?? 0), 0)
+      : 0;
+
+    // Accounts touched this week (distinct client_id from email_messages)
+    const [touchedRow] = await db.execute(sql`
+      SELECT COUNT(DISTINCT client_id)::int AS cnt FROM email_messages
+      WHERE user_id = ${userId}
+        AND received_at >= ${weekStart} AND received_at < ${weekEnd}
+        AND client_id IS NOT NULL
+    `);
+    const accountsTouched = Number((touchedRow as any)?.cnt ?? 0);
+
+    // MTD revenue (won deals from start of month)
+    const [mtdRow] = await db.execute(sql`
+      SELECT COALESCE(SUM(value), 0)::numeric AS total FROM leads
+      WHERE assigned_to = ${userId}
+        AND won_at >= ${monthStart} AND won_at < ${now}
+    `);
+    const mtdRevenue = Number((mtdRow as any)?.total ?? 0);
+
+    // QTD revenue (won deals from start of quarter)
+    const [qtdRow] = await db.execute(sql`
+      SELECT COALESCE(SUM(value), 0)::numeric AS total FROM leads
+      WHERE assigned_to = ${userId}
+        AND won_at >= ${quarterStart} AND won_at < ${now}
+    `);
+    const qtdRevenue = Number((qtdRow as any)?.total ?? 0);
+
+    // User monthly goal
+    const [userRow] = await db.select({ revenueTarget: users.revenueTarget }).from(users).where(eq(users.id, userId));
+    const monthlyGoal = Number(userRow?.revenueTarget ?? 0);
+    const quarterlyGoal = monthlyGoal * 3;
+
+    // MRR from buildops service agreements (active, clients where this user is account manager)
+    const mrrRows = await db.execute(sql`
+      SELECT ba.annual_contract_value, ba.contract_value, ba.frequency
+      FROM buildops_agreements ba
+      JOIN clients c ON c.id = ba.client_id
+      WHERE c.account_manager_user_id = ${userId}
+        AND LOWER(ba.status) = 'active'
+        AND ba.annual_contract_value IS NOT NULL
+    `);
+    let mrr = 0;
+    if (Array.isArray(mrrRows)) {
+      for (const row of mrrRows as any[]) {
+        const acv = Number(row.annual_contract_value ?? 0);
+        if (acv > 0) {
+          mrr += acv / 12;
+        } else {
+          const cv = Number(row.contract_value ?? 0);
+          const freq = (row.frequency ?? "").toLowerCase();
+          if (freq === "monthly") mrr += cv;
+          else if (freq === "quarterly") mrr += cv / 3;
+          else if (freq === "annual" || freq === "annually") mrr += cv / 12;
+        }
+      }
+    }
+
+    // Proposal aging (active proposals grouped by age bucket)
+    const proposalAgingRows = await db.execute(sql`
+      SELECT
+        id,
+        title,
+        COALESCE(buildops_quote_total, value) AS value,
+        created_at,
+        EXTRACT(DAY FROM (NOW() - created_at))::int AS age_days
+      FROM leads
+      WHERE assigned_to = ${userId}
+        AND won_at IS NULL AND lost_at IS NULL
+        AND stage NOT IN ('closed_won', 'closed_lost', 'canceled', 'expired')
+      ORDER BY created_at ASC
+    `);
+    const proposalAging = Array.isArray(proposalAgingRows)
+      ? (proposalAgingRows as any[]).map((r) => ({
+          id: r.id,
+          title: r.title,
+          value: Number(r.value ?? 0),
+          ageDays: Number(r.age_days ?? 0),
+          bucket:
+            r.age_days <= 14
+              ? "0-14d"
+              : r.age_days <= 30
+              ? "15-30d"
+              : r.age_days <= 60
+              ? "31-60d"
+              : "60d+",
+        }))
+      : [];
+
+    return {
+      emailCount,
+      callCount,
+      otherCount,
+      quotesCreated,
+      quotesSent,
+      tasksDone,
+      dealsWon,
+      dealsLost,
+      revenueClosedWeek,
+      activeProposals,
+      activeProposalsValue,
+      accountsTouched,
+      mtdRevenue,
+      qtdRevenue,
+      monthlyGoal,
+      quarterlyGoal,
+      mrr,
+      proposalAging,
+    };
+  }
+
+  // ─── Weekly Report Customer Health ───────────────────────────────────────
+
+  async getWeeklyReportCustomerHealth(userId: string) {
+    const clientRows = await db.execute(sql`
+      SELECT
+        c.id,
+        c.name,
+        c.tier,
+        c.health_score,
+        c.health_status,
+        (
+          SELECT MAX(em.received_at)
+          FROM email_messages em
+          WHERE em.client_id = c.id
+        ) AS last_contact,
+        (
+          SELECT COUNT(*)::int
+          FROM leads l
+          WHERE l.client_id = c.id
+            AND l.assigned_to = ${userId}
+            AND l.won_at IS NULL AND l.lost_at IS NULL
+            AND l.stage NOT IN ('closed_won','closed_lost','canceled','expired')
+        ) AS open_quotes,
+        (
+          SELECT COALESCE(SUM(
+            CASE
+              WHEN LOWER(ba.frequency) = 'monthly' THEN ba.contract_value::numeric
+              WHEN LOWER(ba.frequency) = 'quarterly' THEN ba.contract_value::numeric / 3
+              WHEN LOWER(ba.frequency) IN ('annual','annually') THEN ba.contract_value::numeric / 12
+              WHEN ba.annual_contract_value IS NOT NULL THEN ba.annual_contract_value::numeric / 12
+              ELSE 0
+            END
+          ), 0)
+          FROM buildops_agreements ba
+          WHERE ba.client_id = c.id AND LOWER(ba.status) = 'active'
+        ) AS mrr
+      FROM clients c
+      WHERE c.account_manager_user_id = ${userId}
+        AND c.is_active = true
+      ORDER BY c.name ASC
+    `);
+
+    return Array.isArray(clientRows)
+      ? (clientRows as any[]).map((r) => ({
+          id: r.id,
+          name: r.name,
+          tier: r.tier,
+          healthScore: Number(r.health_score ?? 0),
+          healthStatus: r.health_status ?? "unknown",
+          lastContact: r.last_contact ? new Date(r.last_contact) : null,
+          openQuotes: Number(r.open_quotes ?? 0),
+          mrr: Number(r.mrr ?? 0),
+        }))
+      : [];
   }
 
   // Action Plans

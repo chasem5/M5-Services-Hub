@@ -1046,3 +1046,58 @@ export const dataImportLog = pgTable("data_import_log", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 export type DataImportLog = typeof dataImportLog.$inferSelect;
+
+// ─── Weekly Reports (AM Coaching Tool) ──────────────────────────────────────
+
+export const weeklyReports = pgTable("weekly_reports", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  weekStart: timestamp("week_start").notNull(),
+  status: varchar("status").notNull().default("draft"),
+  markedReadyAt: timestamp("marked_ready_at"),
+  bdText: text("bd_text").default(""),
+  quotesText: text("quotes_text").default(""),
+  jobsText: text("jobs_text").default(""),
+  saText: text("sa_text").default(""),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const weeklyReportSpotlights = pgTable("weekly_report_spotlights", {
+  id: serial("id").primaryKey(),
+  reportId: integer("report_id").references(() => weeklyReports.id, { onDelete: "cascade" }).notNull(),
+  estimateId: integer("estimate_id").references(() => estimates.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  title: varchar("title").notNull(),
+  value: varchar("value"),
+  tag: varchar("tag").notNull().default("win"),
+  note: text("note").default(""),
+});
+
+export const weeklyReportMessages = pgTable("weekly_report_messages", {
+  id: serial("id").primaryKey(),
+  reportId: integer("report_id").references(() => weeklyReports.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  role: varchar("role").notNull(),
+  text: text("text").notNull(),
+  spotlightRef: text("spotlight_ref"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertWeeklyReportSchema = createInsertSchema(weeklyReports).omit({ id: true, createdAt: true, updatedAt: true, markedReadyAt: true });
+export const insertWeeklyReportSpotlightSchema = createInsertSchema(weeklyReportSpotlights).omit({ id: true }).extend({
+  estimateId: z.number().optional().nullable(),
+  leadId: z.number().optional().nullable(),
+  value: z.string().optional().nullable(),
+  note: z.string().optional().nullable(),
+});
+export const insertWeeklyReportMessageSchema = createInsertSchema(weeklyReportMessages).omit({ id: true, createdAt: true }).extend({
+  spotlightRef: z.string().optional().nullable(),
+});
+
+export type WeeklyReport = typeof weeklyReports.$inferSelect;
+export type InsertWeeklyReport = z.infer<typeof insertWeeklyReportSchema>;
+export type WeeklyReportSpotlight = typeof weeklyReportSpotlights.$inferSelect;
+export type InsertWeeklyReportSpotlight = z.infer<typeof insertWeeklyReportSpotlightSchema>;
+export type WeeklyReportMessage = typeof weeklyReportMessages.$inferSelect;
+export type InsertWeeklyReportMessage = z.infer<typeof insertWeeklyReportMessageSchema>;
