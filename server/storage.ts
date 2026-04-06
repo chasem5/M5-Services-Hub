@@ -152,6 +152,7 @@ export interface IStorage {
   updateUserTeam(id: string, team: string | null): Promise<User>;
   updateUserRevenueTarget(id: string, revenueTarget: number | null): Promise<User>;
   updateUserHideFromTeamPerformance(id: string, hide: boolean): Promise<User>;
+  updateUserManager(id: string, managerUserId: string | null): Promise<User>;
   deleteUser(id: string): Promise<void>;
 
   // Invites
@@ -531,6 +532,15 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db
       .update(users)
       .set({ hideFromTeamPerformance: hide, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async updateUserManager(id: string, managerUserId: string | null): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ managerUserId: managerUserId as any, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
     return user;
@@ -4139,6 +4149,11 @@ export class DatabaseStorage implements IStorage {
   // ─── Weekly Report Migrations ────────────────────────────────────────────
 
   async migrateWeeklyReportTables(): Promise<void> {
+    try {
+      await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS manager_user_id varchar`);
+    } catch (e) {
+      console.error("migrateWeeklyReportTables: users manager_user_id error:", e);
+    }
     try {
       await db.execute(sql`
         ALTER TABLE announcements ADD COLUMN IF NOT EXISTS action_url varchar

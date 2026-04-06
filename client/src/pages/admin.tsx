@@ -2176,6 +2176,17 @@ export default function AdminPage() {
     onError: () => toast({ title: "Failed to update team performance visibility", variant: "destructive" }),
   });
 
+  const updateManagerMutation = useMutation({
+    mutationFn: ({ id, managerUserId }: { id: string; managerUserId: string | null }) =>
+      apiRequest("PATCH", `/api/users/${id}/manager`, { managerUserId }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/org-chart"] });
+      toast({ title: "Manager updated" });
+    },
+    onError: () => toast({ title: "Failed to update manager", variant: "destructive" }),
+  });
+
   const removeUserMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/users/${id}`),
     onSuccess: () => {
@@ -2315,6 +2326,12 @@ export default function AdminPage() {
             <TabsTrigger value="buildops" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-buildops">
               <Zap className="h-4 w-4" />
               BuildOps
+            </TabsTrigger>
+          )}
+          {isSuperAdmin && (
+            <TabsTrigger value="orgchart" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-orgchart">
+              <GitBranch className="h-4 w-4" />
+              Org Chart
             </TabsTrigger>
           )}
         </TabsList>
@@ -3128,6 +3145,97 @@ export default function AdminPage() {
             </AccordionItem>
 
           </Accordion>
+        </TabsContent>
+
+        <TabsContent value="orgchart" className="pt-4">
+          <div className="space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Reporting Structure</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Set who each person reports to. This is independent of system role — two admins can still have a manager relationship.
+                </p>
+              </div>
+            </div>
+
+            {usersLoading ? (
+              <div className="space-y-3">
+                {[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {users.map((u) => {
+                  const displayName = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || u.id;
+                  const currentManagerId = (u as any).managerUserId ?? null;
+                  const currentManager = users.find(x => x.id === currentManagerId);
+                  const managerName = currentManager
+                    ? ([currentManager.firstName, currentManager.lastName].filter(Boolean).join(" ") || currentManager.email || currentManager.id)
+                    : null;
+                  const eligibleManagers = users.filter(x => x.id !== u.id);
+
+                  return (
+                    <div
+                      key={u.id}
+                      data-testid={`card-orgchart-${u.id}`}
+                      className="flex items-center justify-between bg-card border border-border rounded-xl px-5 py-4 gap-4"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar className="h-9 w-9 shrink-0">
+                          {u.profileImageUrl && <AvatarImage src={u.profileImageUrl} />}
+                          <AvatarFallback className="text-xs">
+                            {[u.firstName?.[0], u.lastName?.[0]].filter(Boolean).join("") || u.email?.[0]?.toUpperCase() || "?"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{displayName}</p>
+                          <p className="text-xs text-muted-foreground capitalize">{u.role}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-xs text-muted-foreground hidden sm:block">Reports to:</span>
+                        <Select
+                          value={currentManagerId ?? "__none__"}
+                          onValueChange={(val) =>
+                            updateManagerMutation.mutate({ id: u.id, managerUserId: val === "__none__" ? null : val })
+                          }
+                        >
+                          <SelectTrigger
+                            data-testid={`select-manager-${u.id}`}
+                            className="h-8 text-xs w-44"
+                          >
+                            <SelectValue placeholder="No manager">
+                              {managerName ?? "No manager"}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">
+                              <span className="text-muted-foreground">No manager</span>
+                            </SelectItem>
+                            {eligibleManagers.map(m => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {[m.firstName, m.lastName].filter(Boolean).join(" ") || m.email || m.id}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {users.length > 0 && (
+              <div className="bg-muted/40 border border-border rounded-lg p-4 text-sm text-muted-foreground flex items-start gap-2">
+                <GitBranch className="h-4 w-4 shrink-0 mt-0.5 text-primary/60" />
+                <p>
+                  Manager relationships control who receives Weekly Report notifications and can review reports in the Team view.
+                  A user with any role (including Admin) can be set as a direct report of another user.
+                </p>
+              </div>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
 

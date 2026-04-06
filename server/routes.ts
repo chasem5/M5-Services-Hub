@@ -463,6 +463,26 @@ export async function registerRoutes(
     res.json(user);
   });
 
+  app.patch("/api/users/:id/manager", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    const id = req.params.id as string;
+    const { managerUserId } = z.object({ managerUserId: z.string().nullable() }).parse(req.body);
+    const user = await storage.updateUserManager(id, managerUserId);
+    res.json(user);
+  });
+
+  app.get("/api/org-chart", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (_req, res) => {
+    const allUsers = await storage.listUsers();
+    res.json(allUsers.map((u) => ({
+      id: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: u.email,
+      role: u.role,
+      profileImageUrl: u.profileImageUrl,
+      managerUserId: (u as any).managerUserId ?? null,
+    })));
+  });
+
   app.delete("/api/users/:id", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const id = req.params.id as string;
     await storage.deleteUser(id);

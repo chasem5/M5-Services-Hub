@@ -60,7 +60,7 @@ type Message = {
 };
 
 function ReportCard({ report }: { report: TeamReport }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(report.status === "ready");
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMsg, setChatMsg] = useState("");
   const { toast } = useToast();

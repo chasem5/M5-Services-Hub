@@ -43,6 +43,7 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true).notNull(),
   revenueTarget: integer("revenue_target"),
   hideFromTeamPerformance: boolean("hide_from_team_performance").default(false).notNull(),
+  managerUserId: varchar("manager_user_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
