@@ -16,7 +16,9 @@ import {
   Sparkles,
   Wand2,
   Loader2,
+  ArrowRight,
 } from "lucide-react";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -369,6 +371,21 @@ export default function Announcements() {
                           {formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}
                         </span>
                       </div>
+                      {(a as any).actionUrl && (
+                        <div className="mt-2">
+                          <Link href={(a as any).actionUrl}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
+                              data-testid={`btn-announcement-action-${a.id}`}
+                            >
+                              Review Report
+                              <ArrowRight className="h-3 w-3" />
+                            </Button>
+                          </Link>
+                        </div>
+                      )}
                     </div>
                     {!a.isRead && (
                       <Button

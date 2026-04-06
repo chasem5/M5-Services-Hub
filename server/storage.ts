@@ -4141,6 +4141,13 @@ export class DatabaseStorage implements IStorage {
   async migrateWeeklyReportTables(): Promise<void> {
     try {
       await db.execute(sql`
+        ALTER TABLE announcements ADD COLUMN IF NOT EXISTS action_url varchar
+      `);
+    } catch (e) {
+      console.error("migrateWeeklyReportTables: announcements action_url error:", e);
+    }
+    try {
+      await db.execute(sql`
         CREATE TABLE IF NOT EXISTS weekly_reports (
           id serial PRIMARY KEY,
           user_id varchar NOT NULL REFERENCES users(id),

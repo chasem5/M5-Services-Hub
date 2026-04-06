@@ -11399,10 +11399,11 @@ Rules: suggestedClientIds must be numeric IDs from the list above. If suggestedT
         try {
           await storage.createAnnouncement({
             title: "Weekly Report Ready",
-            body: `${reporterName}'s weekly report is ready for review.`,
-            type: "info",
+            message: `${reporterName}'s weekly report is ready for review.`,
+            type: "announcement",
             createdBy: userId,
             targetUserIds: managers.map((m) => m.id),
+            actionUrl: "/weekly-report/team",
           });
           for (const mgr of managers) {
             await sendPushNotification(mgr.id, {

@@ -443,6 +443,7 @@ export const announcements = pgTable("announcements", {
   targetUserIds: text("target_user_ids").array(),
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  actionUrl: varchar("action_url"),
 });
 
 export const announcementReads = pgTable("announcement_reads", {
