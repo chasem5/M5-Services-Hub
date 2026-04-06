@@ -1085,6 +1085,16 @@ export const weeklyReportMessages = pgTable("weekly_report_messages", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const weeklyReportActions = pgTable("weekly_report_actions", {
+  id: serial("id").primaryKey(),
+  reportId: integer("report_id").references(() => weeklyReports.id, { onDelete: "cascade" }).notNull(),
+  text: text("text").notNull(),
+  isDone: boolean("is_done").default(false).notNull(),
+  aiGenerated: boolean("ai_generated").default(false).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertWeeklyReportSchema = createInsertSchema(weeklyReports).omit({ id: true, createdAt: true, updatedAt: true, markedReadyAt: true });
 export const insertWeeklyReportSpotlightSchema = createInsertSchema(weeklyReportSpotlights).omit({ id: true }).extend({
   estimateId: z.number().optional().nullable(),
@@ -1095,6 +1105,7 @@ export const insertWeeklyReportSpotlightSchema = createInsertSchema(weeklyReport
 export const insertWeeklyReportMessageSchema = createInsertSchema(weeklyReportMessages).omit({ id: true, createdAt: true }).extend({
   spotlightRef: z.string().optional().nullable(),
 });
+export const insertWeeklyReportActionSchema = createInsertSchema(weeklyReportActions).omit({ id: true, createdAt: true });
 
 export type WeeklyReport = typeof weeklyReports.$inferSelect;
 export type InsertWeeklyReport = z.infer<typeof insertWeeklyReportSchema>;
@@ -1102,3 +1113,5 @@ export type WeeklyReportSpotlight = typeof weeklyReportSpotlights.$inferSelect;
 export type InsertWeeklyReportSpotlight = z.infer<typeof insertWeeklyReportSpotlightSchema>;
 export type WeeklyReportMessage = typeof weeklyReportMessages.$inferSelect;
 export type InsertWeeklyReportMessage = z.infer<typeof insertWeeklyReportMessageSchema>;
+export type WeeklyReportAction = typeof weeklyReportActions.$inferSelect;
+export type InsertWeeklyReportAction = z.infer<typeof insertWeeklyReportActionSchema>;

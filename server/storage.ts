@@ -56,12 +56,15 @@ import {
   weeklyReports,
   weeklyReportSpotlights,
   weeklyReportMessages,
+  weeklyReportActions,
   type WeeklyReport,
   type InsertWeeklyReport,
   type WeeklyReportSpotlight,
   type InsertWeeklyReportSpotlight,
   type WeeklyReportMessage,
   type InsertWeeklyReportMessage,
+  type WeeklyReportAction,
+  type InsertWeeklyReportAction,
   type ActionPlan,
   type InsertActionPlan,
   type BuildopsSyncLog,
@@ -4212,6 +4215,21 @@ export class DatabaseStorage implements IStorage {
     } catch (e) {
       console.error("migrateWeeklyReportTables: weekly_report_messages error:", e);
     }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS weekly_report_actions (
+          id serial PRIMARY KEY,
+          report_id integer NOT NULL REFERENCES weekly_reports(id) ON DELETE CASCADE,
+          text text NOT NULL,
+          is_done boolean NOT NULL DEFAULT false,
+          ai_generated boolean NOT NULL DEFAULT false,
+          sort_order integer NOT NULL DEFAULT 0,
+          created_at timestamp DEFAULT now() NOT NULL
+        )
+      `);
+    } catch (e) {
+      console.error("migrateWeeklyReportTables: weekly_report_actions error:", e);
+    }
   }
 
   // ─── Weekly Report CRUD ──────────────────────────────────────────────────
@@ -4290,6 +4308,36 @@ export class DatabaseStorage implements IStorage {
   async createWeeklyReportMessage(data: InsertWeeklyReportMessage): Promise<WeeklyReportMessage> {
     const [created] = await db.insert(weeklyReportMessages).values(data).returning();
     return created;
+  }
+
+  // ─── Actions ─────────────────────────────────────────────────────────────
+
+  async getWeeklyReportActions(reportId: number): Promise<WeeklyReportAction[]> {
+    return db
+      .select()
+      .from(weeklyReportActions)
+      .where(eq(weeklyReportActions.reportId, reportId))
+      .orderBy(weeklyReportActions.sortOrder, weeklyReportActions.createdAt);
+  }
+
+  async createWeeklyReportAction(data: InsertWeeklyReportAction): Promise<WeeklyReportAction> {
+    const [created] = await db.insert(weeklyReportActions).values(data).returning();
+    return created;
+  }
+
+  async updateWeeklyReportAction(id: number, data: Partial<Pick<WeeklyReportAction, "text" | "isDone" | "sortOrder">>): Promise<WeeklyReportAction> {
+    const [updated] = await db
+      .update(weeklyReportActions)
+      .set(data)
+      .where(eq(weeklyReportActions.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteWeeklyReportAction(id: number, reportId: number): Promise<void> {
+    await db
+      .delete(weeklyReportActions)
+      .where(and(eq(weeklyReportActions.id, id), eq(weeklyReportActions.reportId, reportId)));
   }
 
   // ─── Weekly Report Activity (computed from existing tables) ──────────────

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { format, addWeeks, subWeeks } from "date-fns";
 import {
   ChevronLeft,
@@ -11,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   User,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,12 +61,13 @@ type Message = {
   createdAt: string;
 };
 
-function ReportCard({ report }: { report: TeamReport }) {
+function ReportCard({ report, weekKey }: { report: TeamReport; weekKey: string }) {
   const [expanded, setExpanded] = useState(report.status === "ready");
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMsg, setChatMsg] = useState("");
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [, navigate] = useLocation();
 
   const userName = report.user
     ? `${report.user.firstName ?? ""} ${report.user.lastName ?? ""}`.trim() || report.user.email || "Unknown"
@@ -138,6 +141,19 @@ function ReportCard({ report }: { report: TeamReport }) {
               <><Clock className="h-3 w-3 mr-1" />Draft</>
             )}
           </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-muted-foreground hover:text-primary gap-1"
+            data-testid={`btn-view-full-report-${report.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/weekly-report?userId=${report.userId}&weekStart=${weekKey}`);
+            }}
+          >
+            <ExternalLink className="h-3 w-3" />
+            <span className="hidden sm:inline">Full Report</span>
+          </Button>
           <button
             className="text-muted-foreground hover:text-primary transition-colors"
             data-testid={`btn-chat-${report.id}`}
@@ -367,7 +383,7 @@ export default function WeeklyReportTeamPage() {
       ) : (
         <div className="space-y-4">
           {filtered.map((report) => (
-            <ReportCard key={report.id} report={report} />
+            <ReportCard key={report.id} report={report} weekKey={weekKey} />
           ))}
         </div>
       )}
