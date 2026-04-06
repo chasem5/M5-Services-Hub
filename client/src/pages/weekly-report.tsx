@@ -96,7 +96,6 @@ type CustomerHealth = {
   id: number;
   name: string;
   tier: string | null;
-  healthScore: number;
   healthStatus: string;
   lastContact: string | null;
   openQuotes: number;
@@ -141,6 +140,12 @@ type WeeklyReport = {
   jobsText?: string;
   saText?: string;
 };
+
+async function fetchJson(url: string) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+  return r.json();
+}
 
 const BUCKET_COLORS: Record<string, string> = {
   "0-14d": "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300",
@@ -193,7 +198,7 @@ export default function WeeklyReportPage() {
   // Fetch report
   const { data: report } = useQuery<WeeklyReport>({
     queryKey: ["/api/weekly-report", weekKey],
-    queryFn: () => fetch(`/api/weekly-report?weekStart=${weekKey}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/weekly-report?weekStart=${weekKey}`),
   });
 
   // Sync narrative state when report loads
@@ -211,7 +216,7 @@ export default function WeeklyReportPage() {
   // Fetch activity data
   const { data: activity, isLoading: activityLoading } = useQuery<ActivityData>({
     queryKey: ["/api/weekly-report/activity", weekKey],
-    queryFn: () => fetch(`/api/weekly-report/activity?weekStart=${weekKey}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/weekly-report/activity?weekStart=${weekKey}`),
   });
 
   // Fetch customer health
@@ -222,14 +227,14 @@ export default function WeeklyReportPage() {
   // Fetch spotlights
   const { data: spotlights = [] } = useQuery<Spotlight[]>({
     queryKey: ["/api/weekly-report", report?.id, "spotlights"],
-    queryFn: () => fetch(`/api/weekly-report/${report!.id}/spotlights`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/weekly-report/${report!.id}/spotlights`),
     enabled: !!report?.id,
   });
 
   // Fetch messages
   const { data: messages = [], refetch: refetchMessages } = useQuery<Message[]>({
     queryKey: ["/api/weekly-report", report?.id, "messages"],
-    queryFn: () => fetch(`/api/weekly-report/${report!.id}/messages`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/weekly-report/${report!.id}/messages`),
     enabled: !!report?.id && chatOpen,
     refetchInterval: chatOpen ? 20000 : false,
   });
@@ -609,7 +614,7 @@ export default function WeeklyReportPage() {
           )}
 
           {/* ── Proposal Aging ───────────────────────────────────────── */}
-          {activity && activity.proposalAging.length > 0 && (
+          {(activity?.proposalAging?.length ?? 0) > 0 && (
             <section>
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                 Proposal Aging

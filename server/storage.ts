@@ -4273,118 +4273,124 @@ export class DatabaseStorage implements IStorage {
   // ─── Weekly Report Activity (computed from existing tables) ──────────────
 
   async getWeeklyReportActivity(userId: string, weekStart: Date, weekEnd: Date) {
+    // Helper: safely extract rows from db.execute() which returns a QueryResult object
+    function pgRows(result: any): any[] {
+      if (Array.isArray(result)) return result;
+      if (result && Array.isArray((result as any).rows)) return (result as any).rows;
+      return [];
+    }
+    function pgFirst(result: any): any {
+      return pgRows(result)[0];
+    }
+
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
     const quarterStart = new Date(now.getFullYear(), quarterMonth, 1);
 
     // Emails sent/received this week
-    const [emailRow] = await db.execute(sql`
+    const emailRow = pgFirst(await db.execute(sql`
       SELECT COUNT(*)::int AS cnt FROM email_messages
       WHERE user_id = ${userId}
         AND received_at >= ${weekStart} AND received_at < ${weekEnd}
-    `);
-    const emailCount = Number((emailRow as any)?.cnt ?? 0);
+    `));
+    const emailCount = Number(emailRow?.cnt ?? 0);
 
     // Calls (lead notes with activity_type = 'call')
-    const [callRow] = await db.execute(sql`
+    const callRow = pgFirst(await db.execute(sql`
       SELECT COUNT(*)::int AS cnt FROM lead_notes
       WHERE user_id = ${userId}
         AND activity_type = 'call'
         AND created_at >= ${weekStart} AND created_at < ${weekEnd}
-    `);
-    const callCount = Number((callRow as any)?.cnt ?? 0);
+    `));
+    const callCount = Number(callRow?.cnt ?? 0);
 
     // Other activities (non-call lead notes)
-    const [otherRow] = await db.execute(sql`
+    const otherRow = pgFirst(await db.execute(sql`
       SELECT COUNT(*)::int AS cnt FROM lead_notes
       WHERE user_id = ${userId}
         AND (activity_type IS NULL OR activity_type != 'call')
         AND created_at >= ${weekStart} AND created_at < ${weekEnd}
-    `);
-    const otherCount = Number((otherRow as any)?.cnt ?? 0);
+    `));
+    const otherCount = Number(otherRow?.cnt ?? 0);
 
     // Quotes created this week (estimates)
-    const [quotesCreatedRow] = await db.execute(sql`
+    const quotesCreatedRow = pgFirst(await db.execute(sql`
       SELECT COUNT(*)::int AS cnt FROM estimates
       WHERE created_by = ${userId}
         AND created_at >= ${weekStart} AND created_at < ${weekEnd}
-    `);
-    const quotesCreated = Number((quotesCreatedRow as any)?.cnt ?? 0);
+    `));
+    const quotesCreated = Number(quotesCreatedRow?.cnt ?? 0);
 
     // Quotes sent (status = 'sent', updated in week)
-    const [quotesSentRow] = await db.execute(sql`
+    const quotesSentRow = pgFirst(await db.execute(sql`
       SELECT COUNT(*)::int AS cnt FROM estimates
       WHERE created_by = ${userId}
         AND status = 'sent'
         AND updated_at >= ${weekStart} AND updated_at < ${weekEnd}
-    `);
-    const quotesSent = Number((quotesSentRow as any)?.cnt ?? 0);
+    `));
+    const quotesSent = Number(quotesSentRow?.cnt ?? 0);
 
     // Tasks completed this week
-    const [tasksDoneRow] = await db.execute(sql`
+    const tasksDoneRow = pgFirst(await db.execute(sql`
       SELECT COUNT(*)::int AS cnt FROM tasks
       WHERE assigned_to = ${userId}
         AND status = 'done'
         AND updated_at >= ${weekStart} AND updated_at < ${weekEnd}
-    `);
-    const tasksDone = Number((tasksDoneRow as any)?.cnt ?? 0);
+    `));
+    const tasksDone = Number(tasksDoneRow?.cnt ?? 0);
 
     // Deals won this week
-    const wonLeadsRows = await db.execute(sql`
+    const wonRows = pgRows(await db.execute(sql`
       SELECT id, value FROM leads
       WHERE assigned_to = ${userId}
         AND won_at >= ${weekStart} AND won_at < ${weekEnd}
-    `);
-    const dealsWon = Array.isArray(wonLeadsRows) ? wonLeadsRows.length : 0;
-    const revenueClosedWeek = Array.isArray(wonLeadsRows)
-      ? wonLeadsRows.reduce((sum: number, r: any) => sum + Number(r.value ?? 0), 0)
-      : 0;
+    `));
+    const dealsWon = wonRows.length;
+    const revenueClosedWeek = wonRows.reduce((sum: number, r: any) => sum + Number(r.value ?? 0), 0);
 
     // Deals lost this week
-    const [lostRow] = await db.execute(sql`
+    const lostRow = pgFirst(await db.execute(sql`
       SELECT COUNT(*)::int AS cnt FROM leads
       WHERE assigned_to = ${userId}
         AND lost_at >= ${weekStart} AND lost_at < ${weekEnd}
-    `);
-    const dealsLost = Number((lostRow as any)?.cnt ?? 0);
+    `));
+    const dealsLost = Number(lostRow?.cnt ?? 0);
 
     // Active proposals (open pipeline)
-    const activeProposalsRows = await db.execute(sql`
+    const activeRows = pgRows(await db.execute(sql`
       SELECT id, COALESCE(buildops_quote_total, value) AS deal_value FROM leads
       WHERE assigned_to = ${userId}
         AND won_at IS NULL AND lost_at IS NULL
         AND stage NOT IN ('closed_won', 'closed_lost', 'canceled', 'expired')
-    `);
-    const activeProposals = Array.isArray(activeProposalsRows) ? activeProposalsRows.length : 0;
-    const activeProposalsValue = Array.isArray(activeProposalsRows)
-      ? activeProposalsRows.reduce((sum: number, r: any) => sum + Number(r.deal_value ?? 0), 0)
-      : 0;
+    `));
+    const activeProposals = activeRows.length;
+    const activeProposalsValue = activeRows.reduce((sum: number, r: any) => sum + Number(r.deal_value ?? 0), 0);
 
     // Accounts touched this week (distinct client_id from email_messages)
-    const [touchedRow] = await db.execute(sql`
+    const touchedRow = pgFirst(await db.execute(sql`
       SELECT COUNT(DISTINCT client_id)::int AS cnt FROM email_messages
       WHERE user_id = ${userId}
         AND received_at >= ${weekStart} AND received_at < ${weekEnd}
         AND client_id IS NOT NULL
-    `);
-    const accountsTouched = Number((touchedRow as any)?.cnt ?? 0);
+    `));
+    const accountsTouched = Number(touchedRow?.cnt ?? 0);
 
     // MTD revenue (won deals from start of month)
-    const [mtdRow] = await db.execute(sql`
+    const mtdRow = pgFirst(await db.execute(sql`
       SELECT COALESCE(SUM(value), 0)::numeric AS total FROM leads
       WHERE assigned_to = ${userId}
         AND won_at >= ${monthStart} AND won_at < ${now}
-    `);
-    const mtdRevenue = Number((mtdRow as any)?.total ?? 0);
+    `));
+    const mtdRevenue = Number(mtdRow?.total ?? 0);
 
     // QTD revenue (won deals from start of quarter)
-    const [qtdRow] = await db.execute(sql`
+    const qtdRow = pgFirst(await db.execute(sql`
       SELECT COALESCE(SUM(value), 0)::numeric AS total FROM leads
       WHERE assigned_to = ${userId}
         AND won_at >= ${quarterStart} AND won_at < ${now}
-    `);
-    const qtdRevenue = Number((qtdRow as any)?.total ?? 0);
+    `));
+    const qtdRevenue = Number(qtdRow?.total ?? 0);
 
     // User monthly goal
     const [userRow] = await db.select({ revenueTarget: users.revenueTarget }).from(users).where(eq(users.id, userId));
@@ -4392,32 +4398,30 @@ export class DatabaseStorage implements IStorage {
     const quarterlyGoal = monthlyGoal * 3;
 
     // MRR from buildops service agreements (active, clients where this user is account manager)
-    const mrrRows = await db.execute(sql`
+    const mrrRows = pgRows(await db.execute(sql`
       SELECT ba.annual_contract_value, ba.contract_value, ba.frequency
       FROM buildops_agreements ba
       JOIN clients c ON c.id = ba.client_id
       WHERE c.account_manager_user_id = ${userId}
         AND LOWER(ba.status) = 'active'
         AND ba.annual_contract_value IS NOT NULL
-    `);
+    `));
     let mrr = 0;
-    if (Array.isArray(mrrRows)) {
-      for (const row of mrrRows as any[]) {
-        const acv = Number(row.annual_contract_value ?? 0);
-        if (acv > 0) {
-          mrr += acv / 12;
-        } else {
-          const cv = Number(row.contract_value ?? 0);
-          const freq = (row.frequency ?? "").toLowerCase();
-          if (freq === "monthly") mrr += cv;
-          else if (freq === "quarterly") mrr += cv / 3;
-          else if (freq === "annual" || freq === "annually") mrr += cv / 12;
-        }
+    for (const row of mrrRows as any[]) {
+      const acv = Number(row.annual_contract_value ?? 0);
+      if (acv > 0) {
+        mrr += acv / 12;
+      } else {
+        const cv = Number(row.contract_value ?? 0);
+        const freq = (row.frequency ?? "").toLowerCase();
+        if (freq === "monthly") mrr += cv;
+        else if (freq === "quarterly") mrr += cv / 3;
+        else if (freq === "annual" || freq === "annually") mrr += cv / 12;
       }
     }
 
     // Proposal aging (active proposals grouped by age bucket)
-    const proposalAgingRows = await db.execute(sql`
+    const agingRows = pgRows(await db.execute(sql`
       SELECT
         id,
         title,
@@ -4429,23 +4433,21 @@ export class DatabaseStorage implements IStorage {
         AND won_at IS NULL AND lost_at IS NULL
         AND stage NOT IN ('closed_won', 'closed_lost', 'canceled', 'expired')
       ORDER BY created_at ASC
-    `);
-    const proposalAging = Array.isArray(proposalAgingRows)
-      ? (proposalAgingRows as any[]).map((r) => ({
-          id: r.id,
-          title: r.title,
-          value: Number(r.value ?? 0),
-          ageDays: Number(r.age_days ?? 0),
-          bucket:
-            r.age_days <= 14
-              ? "0-14d"
-              : r.age_days <= 30
-              ? "15-30d"
-              : r.age_days <= 60
-              ? "31-60d"
-              : "60d+",
-        }))
-      : [];
+    `));
+    const proposalAging = (agingRows as any[]).map((r) => ({
+      id: r.id,
+      title: r.title,
+      value: Number(r.value ?? 0),
+      ageDays: Number(r.age_days ?? 0),
+      bucket:
+        r.age_days <= 14
+          ? "0-14d"
+          : r.age_days <= 30
+          ? "15-30d"
+          : r.age_days <= 60
+          ? "31-60d"
+          : "60d+",
+    }));
 
     return {
       emailCount,
@@ -4472,13 +4474,18 @@ export class DatabaseStorage implements IStorage {
   // ─── Weekly Report Customer Health ───────────────────────────────────────
 
   async getWeeklyReportCustomerHealth(userId: string) {
-    const clientRows = await db.execute(sql`
+    function pgRows(result: any): any[] {
+      if (Array.isArray(result)) return result;
+      if (result && Array.isArray((result as any).rows)) return (result as any).rows;
+      return [];
+    }
+
+    const clientRows = pgRows(await db.execute(sql`
       SELECT
         c.id,
         c.name,
         c.tier,
-        c.health_score,
-        c.health_status,
+        c.health_override,
         (
           SELECT MAX(em.received_at)
           FROM email_messages em
@@ -4507,22 +4514,18 @@ export class DatabaseStorage implements IStorage {
         ) AS mrr
       FROM clients c
       WHERE c.account_manager_user_id = ${userId}
-        AND c.is_active = true
       ORDER BY c.name ASC
-    `);
+    `));
 
-    return Array.isArray(clientRows)
-      ? (clientRows as any[]).map((r) => ({
-          id: r.id,
-          name: r.name,
-          tier: r.tier,
-          healthScore: Number(r.health_score ?? 0),
-          healthStatus: r.health_status ?? "unknown",
-          lastContact: r.last_contact ? new Date(r.last_contact) : null,
-          openQuotes: Number(r.open_quotes ?? 0),
-          mrr: Number(r.mrr ?? 0),
-        }))
-      : [];
+    return (clientRows as any[]).map((r) => ({
+      id: r.id,
+      name: r.name,
+      tier: r.tier,
+      healthStatus: r.health_override ?? "unknown",
+      lastContact: r.last_contact ? new Date(r.last_contact) : null,
+      openQuotes: Number(r.open_quotes ?? 0),
+      mrr: Number(r.mrr ?? 0),
+    }));
   }
 
   // Action Plans
