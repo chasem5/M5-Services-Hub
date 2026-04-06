@@ -108,7 +108,7 @@ function ReportCard({ report, weekKey }: { report: TeamReport; weekKey: string }
     >
       {/* Header row */}
       <div
-        className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors"
+        className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center gap-3">
@@ -165,7 +165,7 @@ function ReportCard({ report, weekKey }: { report: TeamReport; weekKey: string }
 
       {/* Expanded: narrative sections */}
       {expanded && (
-        <div className="border-t border-border px-5 py-4 space-y-4">
+        <div className="border-t border-border px-4 sm:px-5 py-4 space-y-4">
           {!hasNarrative ? (
             <p className="text-sm text-muted-foreground italic">No narrative added yet.</p>
           ) : (
@@ -203,7 +203,7 @@ function ReportCard({ report, weekKey }: { report: TeamReport; weekKey: string }
 
       {/* Chat panel */}
       {chatOpen && (
-        <div className="border-t border-border px-5 py-4 space-y-3">
+        <div className="border-t border-border px-4 sm:px-5 py-4 space-y-3">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             Chat
           </p>
@@ -282,11 +282,11 @@ export default function WeeklyReportTeamPage() {
   const draftCount = reports.filter((r) => r.status === "draft").length;
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
+    <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Team Weekly Reports</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Team Weekly Reports</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {format(weekStart, "MMM d")} – {format(addWeeks(weekStart, 1), "MMM d, yyyy")}
           </p>
@@ -320,7 +320,7 @@ export default function WeeklyReportTeamPage() {
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div
           data-testid="stat-total-reports"
           className="bg-card border border-border rounded-lg p-4 text-center"
@@ -345,7 +345,7 @@ export default function WeeklyReportTeamPage() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {(["all", "ready", "draft"] as const).map((status) => (
           <Button
             key={status}

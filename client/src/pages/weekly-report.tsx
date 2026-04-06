@@ -452,25 +452,27 @@ export default function WeeklyReportPage() {
   return (
     <div className="flex h-full min-h-screen bg-background">
       {/* Main content */}
-      <div className={`flex-1 overflow-y-auto transition-all ${chatOpen ? "mr-80" : ""}`}>
-        <div className="max-w-5xl mx-auto p-6 pb-24 space-y-8">
+      <div className={`flex-1 overflow-y-auto transition-all ${chatOpen ? "sm:mr-80" : ""}`}>
+        <div className="max-w-5xl mx-auto p-4 sm:p-6 pb-28 sm:pb-24 space-y-6 sm:space-y-8">
 
           {/* ── Manager View Banner ──────────────────────────────────── */}
           {isManagerView && (
-            <div className="flex items-center gap-3 bg-primary/8 border border-primary/20 rounded-xl px-4 py-3">
-              <Eye className="h-4 w-4 text-primary flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-primary">Manager View — Read Only</p>
-                <p className="text-xs text-muted-foreground">
-                  Week of {format(weekStart, "MMM d, yyyy")}
-                </p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-primary/8 border border-primary/20 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2 flex-1">
+                <Eye className="h-4 w-4 text-primary flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-primary">Manager View — Read Only</p>
+                  <p className="text-xs text-muted-foreground">
+                    Week of {format(weekStart, "MMM d, yyyy")}
+                  </p>
+                </div>
               </div>
               <Button
                 variant="outline"
                 size="sm"
                 data-testid="btn-back-to-team"
                 onClick={() => navigate("/weekly-report/team")}
-                className="flex-shrink-0"
+                className="w-full sm:w-auto"
               >
                 <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
                 Back to Team View
@@ -479,16 +481,16 @@ export default function WeeklyReportPage() {
           )}
 
           {/* ── Header ──────────────────────────────────────────────── */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">
                 {isManagerView && amFirstName ? `${amFirstName}'s Weekly Report` : "Weekly Report"}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {format(weekStart, "MMM d")} – {format(addWeeks(weekStart, 1), "MMM d, yyyy")}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
               {/* Week navigation — hidden in manager view (week is fixed from URL) */}
               {!isManagerView && (
                 <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
@@ -554,7 +556,7 @@ export default function WeeklyReportPage() {
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
               Activity Snapshot
             </h2>
-            <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
               {actCards.map((card) => {
                 const Icon = card.icon;
                 return (
@@ -847,8 +849,8 @@ export default function WeeklyReportPage() {
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                 Customer Health
               </h2>
-              <div className="bg-card border border-border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="bg-card border border-border rounded-lg overflow-hidden overflow-x-auto">
+                <table className="w-full min-w-[520px] text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/40">
                       <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Account</th>
@@ -890,8 +892,8 @@ export default function WeeklyReportPage() {
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                 Proposal Aging
               </h2>
-              <div className="bg-card border border-border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="bg-card border border-border rounded-lg overflow-hidden overflow-x-auto">
+                <table className="w-full min-w-[380px] text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/40">
                       <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Proposal</th>
@@ -1021,15 +1023,15 @@ export default function WeeklyReportPage() {
 
         {/* ── Sticky Bottom Bar — only in AM's own view ──────────────── */}
         {!isReady && !isManagerView && (
-          <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur border-t border-border p-4 flex items-center justify-end gap-3 z-20">
-            <span className="text-sm text-muted-foreground">
+          <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur border-t border-border px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 z-20">
+            <span className="text-sm text-muted-foreground hidden sm:block">
               Ready to submit for review?
             </span>
             <Button
               data-testid="btn-mark-ready"
               onClick={() => markReadyMut.mutate()}
               disabled={markReadyMut.isPending || !report?.id}
-              className="bg-primary hover:bg-primary/90"
+              className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
             >
               {markReadyMut.isPending ? (
                 "Submitting…"
@@ -1043,7 +1045,7 @@ export default function WeeklyReportPage() {
 
       {/* ── Chat Panel ───────────────────────────────────────────────── */}
       {chatOpen && (
-        <div className="fixed top-0 right-0 h-full w-80 bg-background border-l border-border flex flex-col z-30 shadow-xl">
+        <div className="fixed top-0 right-0 h-full w-full sm:w-80 bg-background border-l border-border flex flex-col z-30 shadow-xl">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4 text-primary" />
