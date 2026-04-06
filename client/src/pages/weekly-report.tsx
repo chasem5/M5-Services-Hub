@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearch, useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format, addWeeks, subWeeks } from "date-fns";
@@ -196,12 +197,14 @@ export default function WeeklyReportPage() {
   const qc = useQueryClient();
   const search = useSearch();
   const [, navigate] = useLocation();
+  const { user: authUser } = useAuth();
 
   // Parse manager-view params from URL
   const searchParams = new URLSearchParams(search);
   const viewUserId = searchParams.get("userId") || null;
   const viewWeekStartParam = searchParams.get("weekStart") || null;
-  const isManagerView = !!viewUserId;
+  // Manager view: only when viewing someone else's report via URL params
+  const isManagerView = !!viewUserId && viewUserId !== (authUser?.id ?? null);
 
   // Week state: lock to URL param when in manager view, otherwise local
   const [weekStart, setWeekStart] = useState<Date>(() => {
@@ -719,6 +722,125 @@ export default function WeeklyReportPage() {
             </section>
           )}
 
+          {/* ── Action Items ─────────────────────────────────────────── */}
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                  Action Items
+                </h2>
+                {actions.length > 0 && (
+                  <Badge variant="outline" className="text-xs h-5">
+                    {actions.filter((a) => a.isDone).length}/{actions.length}
+                  </Badge>
+                )}
+              </div>
+              {/* AI Generate — only available to AM on their own report */}
+              {!isManagerView && report?.id && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="btn-ai-generate-actions"
+                  onClick={generateAiActions}
+                  disabled={aiActionsLoading}
+                >
+                  {aiActionsLoading ? (
+                    <><Sparkles className="h-3.5 w-3.5 mr-1.5 animate-spin" />Generating…</>
+                  ) : (
+                    <><Sparkles className="h-3.5 w-3.5 mr-1.5" />AI Generate</>
+                  )}
+                </Button>
+              )}
+            </div>
+
+            {actions.length === 0 && (
+              <div className="bg-card border border-dashed border-border rounded-lg p-5 text-center text-sm text-muted-foreground mb-3">
+                {isManagerView
+                  ? "No action items added by AM yet."
+                  : "No action items yet. Add one below or use AI Generate."}
+              </div>
+            )}
+
+            {actions.length > 0 && (
+              <div className="bg-card border border-border rounded-lg overflow-hidden mb-3">
+                {actions.map((action, i) => (
+                  <div
+                    key={action.id}
+                    data-testid={`row-action-${action.id}`}
+                    className={`flex items-start gap-3 px-4 py-3 ${i < actions.length - 1 ? "border-b border-border" : ""} ${action.isDone ? "bg-muted/20" : ""}`}
+                  >
+                    {/* Checkbox — interactive for AM, read-only indicator for manager */}
+                    {isManagerView ? (
+                      <span
+                        className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border flex items-center justify-center ${
+                          action.isDone ? "bg-primary border-primary text-primary-foreground" : "border-border"
+                        }`}
+                      >
+                        {action.isDone && <CheckCircle className="h-3 w-3" />}
+                      </span>
+                    ) : (
+                      <button
+                        data-testid={`btn-toggle-action-${action.id}`}
+                        onClick={() => toggleActionMut.mutate({ id: action.id, isDone: !action.isDone })}
+                        className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+                          action.isDone
+                            ? "bg-primary border-primary text-primary-foreground"
+                            : "border-border hover:border-primary"
+                        }`}
+                      >
+                        {action.isDone && <CheckCircle className="h-3 w-3" />}
+                      </button>
+                    )}
+                    <span className={`flex-1 text-sm leading-relaxed ${action.isDone ? "line-through text-muted-foreground" : "text-foreground"}`}>
+                      {action.text}
+                      {action.aiGenerated && (
+                        <span className="ml-2 inline-flex items-center gap-1 text-xs text-purple-500">
+                          <Sparkles className="h-3 w-3" />AI
+                        </span>
+                      )}
+                    </span>
+                    {/* Delete — only available to AM on their own report */}
+                    {!isManagerView && (
+                      <button
+                        data-testid={`btn-delete-action-${action.id}`}
+                        onClick={() => deleteActionMut.mutate(action.id)}
+                        className="flex-shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add action item input — only for AM on their own report, not in manager view */}
+            {!isManagerView && report?.id && (
+              <div className="flex gap-2">
+                <Input
+                  data-testid="input-new-action"
+                  placeholder="Add an action item…"
+                  value={newActionText}
+                  onChange={(e) => setNewActionText(e.target.value)}
+                  className="flex-1 text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newActionText.trim() && !addActionMut.isPending) {
+                      addActionMut.mutate(newActionText.trim());
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  data-testid="btn-add-action"
+                  disabled={!newActionText.trim() || addActionMut.isPending}
+                  onClick={() => { if (newActionText.trim()) addActionMut.mutate(newActionText.trim()); }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </section>
+
           {/* ── Customer Health ──────────────────────────────────────── */}
           {customerHealth.length > 0 && (
             <section>
@@ -891,125 +1013,6 @@ export default function WeeklyReportPage() {
                     {s.note && <p className="text-xs text-muted-foreground mt-1">{s.note}</p>}
                   </div>
                 ))}
-              </div>
-            )}
-          </section>
-
-          {/* ── Action Items ─────────────────────────────────────────── */}
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                  Action Items
-                </h2>
-                {actions.length > 0 && (
-                  <Badge variant="outline" className="text-xs h-5">
-                    {actions.filter((a) => a.isDone).length}/{actions.length}
-                  </Badge>
-                )}
-              </div>
-              {/* AI Generate — only available to AM on their own report */}
-              {!isManagerView && report?.id && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid="btn-ai-generate-actions"
-                  onClick={generateAiActions}
-                  disabled={aiActionsLoading}
-                >
-                  {aiActionsLoading ? (
-                    <><Sparkles className="h-3.5 w-3.5 mr-1.5 animate-spin" />Generating…</>
-                  ) : (
-                    <><Sparkles className="h-3.5 w-3.5 mr-1.5" />AI Generate</>
-                  )}
-                </Button>
-              )}
-            </div>
-
-            {actions.length === 0 && (
-              <div className="bg-card border border-dashed border-border rounded-lg p-5 text-center text-sm text-muted-foreground mb-3">
-                {isManagerView
-                  ? "No action items added by AM yet."
-                  : "No action items yet. Add one below or use AI Generate."}
-              </div>
-            )}
-
-            {actions.length > 0 && (
-              <div className="bg-card border border-border rounded-lg overflow-hidden mb-3">
-                {actions.map((action, i) => (
-                  <div
-                    key={action.id}
-                    data-testid={`row-action-${action.id}`}
-                    className={`flex items-start gap-3 px-4 py-3 ${i < actions.length - 1 ? "border-b border-border" : ""} ${action.isDone ? "bg-muted/20" : ""}`}
-                  >
-                    {/* Checkbox — interactive for AM, read-only indicator for manager */}
-                    {isManagerView ? (
-                      <span
-                        className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border flex items-center justify-center ${
-                          action.isDone ? "bg-primary border-primary text-primary-foreground" : "border-border"
-                        }`}
-                      >
-                        {action.isDone && <CheckCircle className="h-3 w-3" />}
-                      </span>
-                    ) : (
-                      <button
-                        data-testid={`btn-toggle-action-${action.id}`}
-                        onClick={() => toggleActionMut.mutate({ id: action.id, isDone: !action.isDone })}
-                        className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border flex items-center justify-center transition-colors ${
-                          action.isDone
-                            ? "bg-primary border-primary text-primary-foreground"
-                            : "border-border hover:border-primary"
-                        }`}
-                      >
-                        {action.isDone && <CheckCircle className="h-3 w-3" />}
-                      </button>
-                    )}
-                    <span className={`flex-1 text-sm leading-relaxed ${action.isDone ? "line-through text-muted-foreground" : "text-foreground"}`}>
-                      {action.text}
-                      {action.aiGenerated && (
-                        <span className="ml-2 inline-flex items-center gap-1 text-xs text-purple-500">
-                          <Sparkles className="h-3 w-3" />AI
-                        </span>
-                      )}
-                    </span>
-                    {/* Delete — only available to AM on their own report */}
-                    {!isManagerView && (
-                      <button
-                        data-testid={`btn-delete-action-${action.id}`}
-                        onClick={() => deleteActionMut.mutate(action.id)}
-                        className="flex-shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Add action item input — only for AM on their own report, not in manager view */}
-            {!isManagerView && report?.id && (
-              <div className="flex gap-2">
-                <Input
-                  data-testid="input-new-action"
-                  placeholder="Add an action item…"
-                  value={newActionText}
-                  onChange={(e) => setNewActionText(e.target.value)}
-                  className="flex-1 text-sm"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newActionText.trim() && !addActionMut.isPending) {
-                      addActionMut.mutate(newActionText.trim());
-                    }
-                  }}
-                />
-                <Button
-                  size="sm"
-                  data-testid="btn-add-action"
-                  disabled={!newActionText.trim() || addActionMut.isPending}
-                  onClick={() => { if (newActionText.trim()) addActionMut.mutate(newActionText.trim()); }}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
               </div>
             )}
           </section>
