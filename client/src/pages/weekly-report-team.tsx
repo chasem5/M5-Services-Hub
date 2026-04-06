@@ -141,19 +141,6 @@ function ReportCard({ report, weekKey }: { report: TeamReport; weekKey: string }
               <><Clock className="h-3 w-3 mr-1" />Draft</>
             )}
           </Badge>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-muted-foreground hover:text-primary gap-1"
-            data-testid={`btn-view-full-report-${report.id}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              navigate(`/weekly-report?userId=${report.userId}&weekStart=${weekKey}`);
-            }}
-          >
-            <ExternalLink className="h-3 w-3" />
-            <span className="hidden sm:inline">Full Report</span>
-          </Button>
           <button
             className="text-muted-foreground hover:text-primary transition-colors"
             data-testid={`btn-chat-${report.id}`}
@@ -199,6 +186,18 @@ function ReportCard({ report, weekKey }: { report: TeamReport; weekKey: string }
               })}
             </div>
           )}
+          <div className="flex justify-end pt-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5"
+              data-testid={`btn-view-full-report-${report.id}`}
+              onClick={() => navigate(`/weekly-report?userId=${report.userId}&weekStart=${weekKey}`)}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              View Full Report →
+            </Button>
+          </div>
         </div>
       )}
 

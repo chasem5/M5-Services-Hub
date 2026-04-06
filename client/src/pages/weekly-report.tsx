@@ -231,6 +231,16 @@ export default function WeeklyReportPage() {
   // Build URL-suffix with optional userId for manager-view API calls
   const userSuffix = viewUserId ? `&userId=${viewUserId}` : "";
 
+  // Fetch AM user info when in manager view (to show name in header)
+  type DirUser = { id: string; firstName: string | null; lastName: string | null; email: string; role: string };
+  const { data: dirUsers = [] } = useQuery<DirUser[]>({
+    queryKey: ["/api/users/directory"],
+    queryFn: () => fetchJson("/api/users/directory"),
+    enabled: isManagerView,
+  });
+  const amUser = isManagerView && viewUserId ? dirUsers.find((u) => u.id === viewUserId) : null;
+  const amFirstName = amUser?.firstName ?? null;
+
   // Fetch report
   const { data: report } = useQuery<WeeklyReport>({
     queryKey: ["/api/weekly-report", weekKey, viewUserId],
@@ -400,7 +410,7 @@ export default function WeeklyReportPage() {
       const res = await fetch(`/api/weekly-report/${report.id}/ai-actions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ activity, customerHealth, spotlights }),
+        body: JSON.stringify({ activity, customerHealth, spotlights, coaching }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed");
@@ -468,7 +478,9 @@ export default function WeeklyReportPage() {
           {/* ── Header ──────────────────────────────────────────────── */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Weekly Report</h1>
+              <h1 className="text-2xl font-bold text-foreground">
+                {isManagerView && amFirstName ? `${amFirstName}'s Weekly Report` : "Weekly Report"}
+              </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {format(weekStart, "MMM d")} – {format(addWeeks(weekStart, 1), "MMM d, yyyy")}
               </p>
@@ -513,22 +525,24 @@ export default function WeeklyReportPage() {
                   <><Clock className="h-3 w-3 mr-1" />Draft</>
                 )}
               </Badge>
-              {/* Chat toggle */}
-              <Button
-                variant="outline"
-                size="sm"
-                data-testid="btn-toggle-chat"
-                onClick={() => setChatOpen(!chatOpen)}
-                className="relative"
-              >
-                <MessageCircle className="h-4 w-4 mr-1" />
-                Chat
-                {messages.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs rounded-full h-4 w-4 flex items-center justify-center">
-                    {messages.length > 9 ? "9+" : messages.length}
-                  </span>
-                )}
-              </Button>
+              {/* Chat toggle — hidden in manager view */}
+              {!isManagerView && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="btn-toggle-chat"
+                  onClick={() => setChatOpen(!chatOpen)}
+                  className="relative"
+                >
+                  <MessageCircle className="h-4 w-4 mr-1" />
+                  Chat
+                  {messages.length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs rounded-full h-4 w-4 flex items-center justify-center">
+                      {messages.length > 9 ? "9+" : messages.length}
+                    </span>
+                  )}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -894,13 +908,14 @@ export default function WeeklyReportPage() {
                   </Badge>
                 )}
               </div>
-              {isManagerView && (
+              {/* AI Generate — only available to AM on their own report */}
+              {!isManagerView && report?.id && (
                 <Button
                   variant="outline"
                   size="sm"
                   data-testid="btn-ai-generate-actions"
                   onClick={generateAiActions}
-                  disabled={aiActionsLoading || !report?.id}
+                  disabled={aiActionsLoading}
                 >
                   {aiActionsLoading ? (
                     <><Sparkles className="h-3.5 w-3.5 mr-1.5 animate-spin" />Generating…</>
@@ -914,8 +929,8 @@ export default function WeeklyReportPage() {
             {actions.length === 0 && (
               <div className="bg-card border border-dashed border-border rounded-lg p-5 text-center text-sm text-muted-foreground mb-3">
                 {isManagerView
-                  ? "No action items yet. Use AI Generate to create follow-up items, or add manually below."
-                  : "No action items assigned yet."}
+                  ? "No action items added by AM yet."
+                  : "No action items yet. Add one below or use AI Generate."}
               </div>
             )}
 
@@ -927,17 +942,28 @@ export default function WeeklyReportPage() {
                     data-testid={`row-action-${action.id}`}
                     className={`flex items-start gap-3 px-4 py-3 ${i < actions.length - 1 ? "border-b border-border" : ""} ${action.isDone ? "bg-muted/20" : ""}`}
                   >
-                    <button
-                      data-testid={`btn-toggle-action-${action.id}`}
-                      onClick={() => toggleActionMut.mutate({ id: action.id, isDone: !action.isDone })}
-                      className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border flex items-center justify-center transition-colors ${
-                        action.isDone
-                          ? "bg-primary border-primary text-primary-foreground"
-                          : "border-border hover:border-primary"
-                      }`}
-                    >
-                      {action.isDone && <CheckCircle className="h-3 w-3" />}
-                    </button>
+                    {/* Checkbox — interactive for AM, read-only indicator for manager */}
+                    {isManagerView ? (
+                      <span
+                        className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border flex items-center justify-center ${
+                          action.isDone ? "bg-primary border-primary text-primary-foreground" : "border-border"
+                        }`}
+                      >
+                        {action.isDone && <CheckCircle className="h-3 w-3" />}
+                      </span>
+                    ) : (
+                      <button
+                        data-testid={`btn-toggle-action-${action.id}`}
+                        onClick={() => toggleActionMut.mutate({ id: action.id, isDone: !action.isDone })}
+                        className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+                          action.isDone
+                            ? "bg-primary border-primary text-primary-foreground"
+                            : "border-border hover:border-primary"
+                        }`}
+                      >
+                        {action.isDone && <CheckCircle className="h-3 w-3" />}
+                      </button>
+                    )}
                     <span className={`flex-1 text-sm leading-relaxed ${action.isDone ? "line-through text-muted-foreground" : "text-foreground"}`}>
                       {action.text}
                       {action.aiGenerated && (
@@ -946,20 +972,23 @@ export default function WeeklyReportPage() {
                         </span>
                       )}
                     </span>
-                    <button
-                      data-testid={`btn-delete-action-${action.id}`}
-                      onClick={() => deleteActionMut.mutate(action.id)}
-                      className="flex-shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {/* Delete — only available to AM on their own report */}
+                    {!isManagerView && (
+                      <button
+                        data-testid={`btn-delete-action-${action.id}`}
+                        onClick={() => deleteActionMut.mutate(action.id)}
+                        className="flex-shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Add action item input (available to both AM and manager) */}
-            {report?.id && (
+            {/* Add action item input — only for AM on their own report, not in manager view */}
+            {!isManagerView && report?.id && (
               <div className="flex gap-2">
                 <Input
                   data-testid="input-new-action"

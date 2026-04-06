@@ -4325,11 +4325,11 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateWeeklyReportAction(id: number, data: Partial<Pick<WeeklyReportAction, "text" | "isDone" | "sortOrder">>): Promise<WeeklyReportAction> {
+  async updateWeeklyReportAction(id: number, reportId: number, data: Partial<Pick<WeeklyReportAction, "text" | "isDone" | "sortOrder">>): Promise<WeeklyReportAction> {
     const [updated] = await db
       .update(weeklyReportActions)
       .set(data)
-      .where(eq(weeklyReportActions.id, id))
+      .where(and(eq(weeklyReportActions.id, id), eq(weeklyReportActions.reportId, reportId)))
       .returning();
     return updated;
   }

@@ -11680,7 +11680,8 @@ JSON only, no markdown.`;
         sortOrder: z.number().optional(),
       });
       const data = allowed.parse(req.body);
-      const updated = await storage.updateWeeklyReportAction(actionId, data);
+      const updated = await storage.updateWeeklyReportAction(actionId, reportId, data);
+      if (!updated) return res.status(404).json({ message: "Action not found in this report" });
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -11706,7 +11707,7 @@ JSON only, no markdown.`;
     }
   });
 
-  // POST /api/weekly-report/:id/ai-actions  — AI-generated action items for manager
+  // POST /api/weekly-report/:id/ai-actions  — AI-generated action items (AM can generate for their own report)
   app.post("/api/weekly-report/:id/ai-actions", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -11716,9 +11717,10 @@ JSON only, no markdown.`;
       const user = await storage.getUser(userId);
       if (!user) return res.status(401).json({ message: "Not authenticated" });
       const isManager = SUPER_ROLES.includes(user.role) || user.role === "manager";
-      if (!isManager) return res.status(403).json({ message: "Forbidden — managers only" });
+      // AM can generate for their own report; manager can generate for any report
+      if (report.userId !== userId && !isManager) return res.status(403).json({ message: "Forbidden" });
 
-      const { activity, customerHealth, spotlights } = req.body;
+      const { activity, customerHealth, spotlights, coaching } = req.body;
       const amUser = await storage.getUser(report.userId);
       const amName = amUser ? `${amUser.firstName ?? ""} ${amUser.lastName ?? ""}`.trim() || "the AM" : "the AM";
 
@@ -11734,6 +11736,10 @@ JSON only, no markdown.`;
         ? spotlights.map((s: any) => `[${s.tag}] ${s.title}${s.value ? ` (${s.value})` : ""}${s.note ? `: ${s.note}` : ""}`).join("; ")
         : "No spotlights.";
 
+      const coachingSummary = Array.isArray(coaching) && coaching.length > 0
+        ? coaching.map((c: any) => `[${c.type}] ${c.title}: ${c.message}`).join("; ")
+        : "No coaching items.";
+
       const narrativeSummary = [
         report.bdText ? `BD: ${report.bdText}` : null,
         report.quotesText ? `Quotes: ${report.quotesText}` : null,
@@ -11741,7 +11747,7 @@ JSON only, no markdown.`;
         report.saText ? `SA: ${report.saText}` : null,
       ].filter(Boolean).join("\n") || "No narrative.";
 
-      const prompt = `You are a sales manager reviewing ${amName}'s weekly report. Based on the data below, generate 4-6 specific, actionable follow-up action items you want this AM to complete next week. Each item should be concrete and measurable.
+      const prompt = `You are reviewing ${amName}'s weekly performance report. Based on the data below, generate 4-6 specific, actionable follow-up action items for next week. Each item should be concrete and measurable.
 
 Activity:
 ${activitySummary}
@@ -11751,6 +11757,9 @@ ${healthSummary}
 
 Spotlights (wins/needs):
 ${spotlightSummary}
+
+AI Coaching focus areas:
+${coachingSummary}
 
 Narrative:
 ${narrativeSummary}
