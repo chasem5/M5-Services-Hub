@@ -14,6 +14,7 @@ import {
   ScrollText,
   Lock,
   ClipboardList,
+  Calculator,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -194,6 +195,27 @@ export function AppSidebar() {
                   <Link href="/weekly-report" data-testid="link-weekly-report" onClick={() => isMobile && setOpenMobile(false)}>
                     <ClipboardList className={`h-4 w-4 shrink-0 ${location.startsWith("/weekly-report") ? "text-primary" : ""}`} />
                     <span className="group-data-[collapsible=icon]:hidden">Weekly Report</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Estimating</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.startsWith("/estimating")}
+                  tooltip="Estimating & Quoting"
+                  className={location.startsWith("/estimating") ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
+                >
+                  <Link href="/estimating" data-testid="link-estimating" onClick={() => isMobile && setOpenMobile(false)}>
+                    <Calculator className={`h-4 w-4 shrink-0 ${location.startsWith("/estimating") ? "text-primary" : ""}`} />
+                    <span className="group-data-[collapsible=icon]:hidden">Estimating &amp; Quoting</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

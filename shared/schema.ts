@@ -1114,4 +1114,168 @@ export type InsertWeeklyReportSpotlight = z.infer<typeof insertWeeklyReportSpotl
 export type WeeklyReportMessage = typeof weeklyReportMessages.$inferSelect;
 export type InsertWeeklyReportMessage = z.infer<typeof insertWeeklyReportMessageSchema>;
 export type WeeklyReportAction = typeof weeklyReportActions.$inferSelect;
+
+// ─── Opportunities / AI Estimating Workspace (Task #121) ─────────────────────
+
+export const opportunities = pgTable("opportunities", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 500 }).notNull(),
+  clientId: integer("client_id").references(() => clients.id),
+  buildingId: integer("building_id").references(() => contactBuildings.id),
+  serviceLines: text("service_lines").array().notNull().default([]),
+  scopeOfWork: text("scope_of_work"),
+  mode: varchar("mode", { length: 20 }).notNull().default("estimate"),
+  status: varchar("status", { length: 30 }).notNull().default("draft"),
+  buildopsQuoteId: varchar("buildops_quote_id", { length: 100 }),
+  buildopsPropertyId: varchar("buildops_property_id", { length: 100 }),
+  createdBy: integer("created_by").references(() => users.id),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvalNote: text("approval_note"),
+  rejectionNote: text("rejection_note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const opportunitySections = pgTable("opportunity_sections", {
+  id: serial("id").primaryKey(),
+  opportunityId: integer("opportunity_id").references(() => opportunities.id, { onDelete: "cascade" }).notNull(),
+  name: varchar("name", { length: 300 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const workspaceLines = pgTable("workspace_lines", {
+  id: serial("id").primaryKey(),
+  opportunityId: integer("opportunity_id").references(() => opportunities.id, { onDelete: "cascade" }).notNull(),
+  sectionId: integer("section_id").references(() => opportunitySections.id, { onDelete: "set null" }),
+  description: varchar("description", { length: 500 }).notNull(),
+  lineType: varchar("line_type", { length: 50 }).notNull().default("labor"),
+  baseLaborHours: decimal("base_labor_hours", { precision: 10, scale: 2 }).notNull().default("0"),
+  baseMaterialCost: decimal("base_material_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  laborBufferPct: decimal("labor_buffer_pct", { precision: 5, scale: 2 }).notNull().default("0"),
+  materialWastePct: decimal("material_waste_pct", { precision: 5, scale: 2 }).notNull().default("0"),
+  difficultyPct: decimal("difficulty_pct", { precision: 5, scale: 2 }).notNull().default("0"),
+  marginPct: decimal("margin_pct", { precision: 5, scale: 2 }).notNull().default("30"),
+  overrideFlag: boolean("override_flag").notNull().default(false),
+  warnings: jsonb("warnings").notNull().default([]),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const btlFees = pgTable("btl_fees", {
+  id: serial("id").primaryKey(),
+  opportunityId: integer("opportunity_id").references(() => opportunities.id, { onDelete: "cascade" }).notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+  feeType: varchar("fee_type", { length: 10 }).notNull().default("pct"),
+  value: decimal("value", { precision: 10, scale: 4 }).notNull().default("0"),
+  enabled: boolean("enabled").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const aiRecommendations = pgTable("ai_recommendations", {
+  id: serial("id").primaryKey(),
+  opportunityId: integer("opportunity_id").references(() => opportunities.id, { onDelete: "cascade" }).notNull(),
+  type: varchar("type", { length: 50 }).notNull(),
+  content: jsonb("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const syncRuns = pgTable("sync_runs", {
+  id: serial("id").primaryKey(),
+  opportunityId: integer("opportunity_id").references(() => opportunities.id, { onDelete: "cascade" }).notNull(),
+  versionLabel: varchar("version_label", { length: 100 }),
+  buildopsQuoteId: varchar("buildops_quote_id", { length: 100 }),
+  buildopsQuoteNumber: varchar("buildops_quote_number", { length: 100 }),
+  payload: jsonb("payload"),
+  status: varchar("status", { length: 30 }).notNull().default("success"),
+  errorMessage: text("error_message"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const bufferRules = pgTable("buffer_rules", {
+  id: serial("id").primaryKey(),
+  defaultLaborBufferPct: decimal("default_labor_buffer_pct", { precision: 5, scale: 2 }).notNull().default("10"),
+  defaultMaterialWastePct: decimal("default_material_waste_pct", { precision: 5, scale: 2 }).notNull().default("5"),
+  defaultMarginPct: decimal("default_margin_pct", { precision: 5, scale: 2 }).notNull().default("30"),
+  laborRate: decimal("labor_rate", { precision: 8, scale: 2 }).notNull().default("95"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedBy: integer("updated_by").references(() => users.id),
+});
+
+export const approvalRules = pgTable("approval_rules", {
+  id: serial("id").primaryKey(),
+  minMarginPct: decimal("min_margin_pct", { precision: 5, scale: 2 }).notNull().default("25"),
+  requireApprovalOnOverride: boolean("require_approval_on_override").notNull().default(true),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedBy: integer("updated_by").references(() => users.id),
+});
+
+export const workspaceCatalogItems = pgTable("workspace_catalog_items", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 300 }).notNull(),
+  serviceLine: varchar("service_line", { length: 100 }),
+  lineType: varchar("line_type", { length: 50 }).notNull().default("labor"),
+  typicalLaborHoursMin: decimal("typical_labor_hours_min", { precision: 8, scale: 2 }),
+  typicalLaborHoursMax: decimal("typical_labor_hours_max", { precision: 8, scale: 2 }),
+  typicalMaterialCostMin: decimal("typical_material_cost_min", { precision: 12, scale: 2 }),
+  typicalMaterialCostMax: decimal("typical_material_cost_max", { precision: 12, scale: 2 }),
+  defaultLaborBufferPct: decimal("default_labor_buffer_pct", { precision: 5, scale: 2 }),
+  defaultMaterialWastePct: decimal("default_material_waste_pct", { precision: 5, scale: 2 }),
+  defaultMarginPct: decimal("default_margin_pct", { precision: 5, scale: 2 }),
+  companionItems: text("companion_items").array().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertOpportunitySchema = createInsertSchema(opportunities).omit({ id: true, createdAt: true, updatedAt: true, approvedBy: true, approvalNote: true, rejectionNote: true, buildopsQuoteId: true, buildopsPropertyId: true }).extend({
+  clientId: z.number().optional().nullable(),
+  buildingId: z.number().optional().nullable(),
+  serviceLines: z.array(z.string()).optional(),
+  scopeOfWork: z.string().optional().nullable(),
+  createdBy: z.number().optional().nullable(),
+});
+export const insertOpportunitySectionSchema = createInsertSchema(opportunitySections).omit({ id: true, createdAt: true });
+export const insertWorkspaceLineSchema = createInsertSchema(workspaceLines).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  sectionId: z.number().optional().nullable(),
+  warnings: z.array(z.string()).optional(),
+});
+export const insertBtlFeeSchema = createInsertSchema(btlFees).omit({ id: true });
+export const insertSyncRunSchema = createInsertSchema(syncRuns).omit({ id: true, createdAt: true }).extend({
+  versionLabel: z.string().optional().nullable(),
+  buildopsQuoteId: z.string().optional().nullable(),
+  buildopsQuoteNumber: z.string().optional().nullable(),
+  errorMessage: z.string().optional().nullable(),
+  createdBy: z.number().optional().nullable(),
+});
+export const insertWorkspaceCatalogItemSchema = createInsertSchema(workspaceCatalogItems).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  serviceLine: z.string().optional().nullable(),
+  typicalLaborHoursMin: z.string().optional().nullable(),
+  typicalLaborHoursMax: z.string().optional().nullable(),
+  typicalMaterialCostMin: z.string().optional().nullable(),
+  typicalMaterialCostMax: z.string().optional().nullable(),
+  defaultLaborBufferPct: z.string().optional().nullable(),
+  defaultMaterialWastePct: z.string().optional().nullable(),
+  defaultMarginPct: z.string().optional().nullable(),
+  companionItems: z.array(z.string()).optional().nullable(),
+});
+
+export type Opportunity = typeof opportunities.$inferSelect;
+export type InsertOpportunity = z.infer<typeof insertOpportunitySchema>;
+export type OpportunitySection = typeof opportunitySections.$inferSelect;
+export type InsertOpportunitySection = z.infer<typeof insertOpportunitySectionSchema>;
+export type WorkspaceLine = typeof workspaceLines.$inferSelect;
+export type InsertWorkspaceLine = z.infer<typeof insertWorkspaceLineSchema>;
+export type BtlFee = typeof btlFees.$inferSelect;
+export type InsertBtlFee = z.infer<typeof insertBtlFeeSchema>;
+export const insertAiRecommendationSchema = createInsertSchema(aiRecommendations).omit({ id: true, createdAt: true });
+export type InsertAiRecommendation = z.infer<typeof insertAiRecommendationSchema>;
+export type AiRecommendation = typeof aiRecommendations.$inferSelect;
+export type SyncRun = typeof syncRuns.$inferSelect;
+export type InsertSyncRun = z.infer<typeof insertSyncRunSchema>;
+export type BufferRule = typeof bufferRules.$inferSelect;
+export type ApprovalRule = typeof approvalRules.$inferSelect;
+export type WorkspaceCatalogItem = typeof workspaceCatalogItems.$inferSelect;
+export type InsertWorkspaceCatalogItem = z.infer<typeof insertWorkspaceCatalogItemSchema>;
 export type InsertWeeklyReportAction = z.infer<typeof insertWeeklyReportActionSchema>;

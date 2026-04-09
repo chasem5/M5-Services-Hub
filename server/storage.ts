@@ -145,6 +145,30 @@ import {
   type InsertPushSubscription,
   type ClientOnboardingChecklist,
   type InsertClientOnboardingChecklist,
+  opportunities,
+  opportunitySections,
+  workspaceLines,
+  btlFees,
+  aiRecommendations,
+  syncRuns,
+  bufferRules,
+  approvalRules,
+  workspaceCatalogItems,
+  type Opportunity,
+  type InsertOpportunity,
+  type OpportunitySection,
+  type InsertOpportunitySection,
+  type WorkspaceLine,
+  type InsertWorkspaceLine,
+  type BtlFee,
+  type InsertBtlFee,
+  type AiRecommendation,
+  type InsertAiRecommendation,
+  type SyncRun,
+  type InsertSyncRun,
+  type BufferRule,
+  type ApprovalRule,
+  type WorkspaceCatalogItem,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -4644,6 +4668,159 @@ export class DatabaseStorage implements IStorage {
     await db.delete(actionPlans).where(eq(actionPlans.id, id));
   }
 
+  // ── Opportunities ──────────────────────────────────────────────────────────
+
+  async listOpportunities(filters?: { clientId?: number; status?: string }): Promise<Opportunity[]> {
+    let query = db.select().from(opportunities).orderBy(desc(opportunities.updatedAt));
+    const conditions = [];
+    if (filters?.clientId) conditions.push(eq(opportunities.clientId, filters.clientId));
+    if (filters?.status) conditions.push(eq(opportunities.status, filters.status));
+    if (conditions.length) return db.select().from(opportunities).where(and(...conditions)).orderBy(desc(opportunities.updatedAt));
+    return query;
+  }
+
+  async getOpportunity(id: number): Promise<Opportunity | undefined> {
+    const [opp] = await db.select().from(opportunities).where(eq(opportunities.id, id));
+    return opp;
+  }
+
+  async createOpportunity(data: InsertOpportunity): Promise<Opportunity> {
+    const [opp] = await db.insert(opportunities).values({
+      ...data,
+      clientId: data.clientId ?? null,
+      buildingId: data.buildingId ?? null,
+      serviceLines: data.serviceLines ?? [],
+      createdBy: data.createdBy ?? null,
+    }).returning();
+    return opp;
+  }
+
+  async updateOpportunity(id: number, data: Partial<InsertOpportunity>): Promise<Opportunity> {
+    const [opp] = await db.update(opportunities).set({ ...data, updatedAt: new Date() }).where(eq(opportunities.id, id)).returning();
+    return opp;
+  }
+
+  async deleteOpportunity(id: number): Promise<void> {
+    await db.delete(opportunities).where(eq(opportunities.id, id));
+  }
+
+  // ── Opportunity Sections ───────────────────────────────────────────────────
+
+  async listOpportunitySections(opportunityId: number): Promise<OpportunitySection[]> {
+    return db.select().from(opportunitySections).where(eq(opportunitySections.opportunityId, opportunityId)).orderBy(opportunitySections.sortOrder);
+  }
+
+  async createOpportunitySection(data: InsertOpportunitySection): Promise<OpportunitySection> {
+    const [sec] = await db.insert(opportunitySections).values(data).returning();
+    return sec;
+  }
+
+  async updateOpportunitySection(id: number, data: Partial<InsertOpportunitySection>): Promise<OpportunitySection> {
+    const [sec] = await db.update(opportunitySections).set(data).where(eq(opportunitySections.id, id)).returning();
+    return sec;
+  }
+
+  async deleteOpportunitySection(id: number): Promise<void> {
+    await db.delete(opportunitySections).where(eq(opportunitySections.id, id));
+  }
+
+  // ── Workspace Lines ────────────────────────────────────────────────────────
+
+  async listWorkspaceLines(opportunityId: number): Promise<WorkspaceLine[]> {
+    return db.select().from(workspaceLines).where(eq(workspaceLines.opportunityId, opportunityId)).orderBy(workspaceLines.sortOrder);
+  }
+
+  async createWorkspaceLine(data: InsertWorkspaceLine): Promise<WorkspaceLine> {
+    const [line] = await db.insert(workspaceLines).values({
+      ...data,
+      sectionId: data.sectionId ?? null,
+    }).returning();
+    return line;
+  }
+
+  async updateWorkspaceLine(id: number, data: Partial<InsertWorkspaceLine>): Promise<WorkspaceLine> {
+    const [line] = await db.update(workspaceLines).set({ ...data, updatedAt: new Date() }).where(eq(workspaceLines.id, id)).returning();
+    return line;
+  }
+
+  async deleteWorkspaceLine(id: number): Promise<void> {
+    await db.delete(workspaceLines).where(eq(workspaceLines.id, id));
+  }
+
+  // ── BTL Fees ───────────────────────────────────────────────────────────────
+
+  async listBtlFees(opportunityId: number): Promise<BtlFee[]> {
+    return db.select().from(btlFees).where(eq(btlFees.opportunityId, opportunityId)).orderBy(btlFees.sortOrder);
+  }
+
+  async upsertBtlFees(opportunityId: number, fees: InsertBtlFee[]): Promise<BtlFee[]> {
+    await db.delete(btlFees).where(eq(btlFees.opportunityId, opportunityId));
+    if (!fees.length) return [];
+    return db.insert(btlFees).values(fees.map((f, i) => ({ ...f, opportunityId, sortOrder: i }))).returning();
+  }
+
+  // ── AI Recommendations ─────────────────────────────────────────────────────
+
+  async listAiRecommendations(opportunityId: number): Promise<AiRecommendation[]> {
+    return db.select().from(aiRecommendations).where(eq(aiRecommendations.opportunityId, opportunityId)).orderBy(desc(aiRecommendations.createdAt));
+  }
+
+  async createAiRecommendation(data: InsertAiRecommendation): Promise<AiRecommendation> {
+    const [rec] = await db.insert(aiRecommendations).values(data).returning();
+    return rec;
+  }
+
+  // ── Sync Runs ──────────────────────────────────────────────────────────────
+
+  async listSyncRuns(opportunityId: number): Promise<SyncRun[]> {
+    return db.select().from(syncRuns).where(eq(syncRuns.opportunityId, opportunityId)).orderBy(desc(syncRuns.createdAt));
+  }
+
+  async createSyncRun(data: InsertSyncRun): Promise<SyncRun> {
+    const [run] = await db.insert(syncRuns).values({
+      ...data,
+      versionLabel: data.versionLabel ?? null,
+      buildopsQuoteId: data.buildopsQuoteId ?? null,
+      buildopsQuoteNumber: data.buildopsQuoteNumber ?? null,
+      errorMessage: data.errorMessage ?? null,
+      createdBy: data.createdBy ?? null,
+      payload: data.payload ?? null,
+    }).returning();
+    return run;
+  }
+
+  // ── Buffer / Approval Rules ────────────────────────────────────────────────
+
+  async getBufferRules(): Promise<BufferRule | undefined> {
+    const [rule] = await db.select().from(bufferRules).where(eq(bufferRules.id, 1));
+    return rule;
+  }
+
+  async updateBufferRules(data: Partial<BufferRule>): Promise<BufferRule> {
+    const [rule] = await db.update(bufferRules).set({ ...data, updatedAt: new Date() }).where(eq(bufferRules.id, 1)).returning();
+    return rule;
+  }
+
+  async getApprovalRules(): Promise<ApprovalRule | undefined> {
+    const [rule] = await db.select().from(approvalRules).where(eq(approvalRules.id, 1));
+    return rule;
+  }
+
+  async updateApprovalRules(data: Partial<ApprovalRule>): Promise<ApprovalRule> {
+    const [rule] = await db.update(approvalRules).set({ ...data, updatedAt: new Date() }).where(eq(approvalRules.id, 1)).returning();
+    return rule;
+  }
+
+  // ── Catalog Items ──────────────────────────────────────────────────────────
+
+  async listWorkspaceCatalogItems(serviceLine?: string): Promise<WorkspaceCatalogItem[]> {
+    if (serviceLine) {
+      return db.select().from(workspaceCatalogItems).where(eq(workspaceCatalogItems.serviceLine, serviceLine)).orderBy(workspaceCatalogItems.name);
+    }
+    return db.select().from(workspaceCatalogItems).orderBy(workspaceCatalogItems.serviceLine, workspaceCatalogItems.name);
+  }
+
 }
+
 
 export const storage = new DatabaseStorage();

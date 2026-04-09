@@ -41,6 +41,11 @@ import {
   insertWeeklyReportActionSchema,
   ONBOARDING_ITEM_KEYS,
   ONBOARDING_TOTAL_ITEMS,
+  insertOpportunitySchema,
+  insertOpportunitySectionSchema,
+  insertWorkspaceLineSchema,
+  insertBtlFeeSchema,
+  insertSyncRunSchema,
 } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
@@ -11805,6 +11810,294 @@ JSON only, no markdown.`;
       weekStart.setHours(0, 0, 0, 0);
       const reports = await storage.getTeamWeeklyReports(weekStart);
       res.json(reports);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Estimating & Quoting ─────────────────────────────────────────────────
+
+  app.get("/api/opportunities", isAuthenticated, async (req: any, res) => {
+    try {
+      const clientId = req.query.clientId ? parseInt(req.query.clientId as string) : undefined;
+      const status = req.query.status as string | undefined;
+      const opps = await storage.listOpportunities({ clientId, status });
+      res.json(opps);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/opportunities", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const data = insertOpportunitySchema.parse({ ...req.body, createdBy: userId ? undefined : null });
+      const opp = await storage.createOpportunity(data);
+      res.status(201).json(opp);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/opportunities/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const opp = await storage.getOpportunity(parseInt(req.params.id));
+      if (!opp) return res.status(404).json({ message: "Not found" });
+      res.json(opp);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/opportunities/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const opp = await storage.updateOpportunity(parseInt(req.params.id), req.body);
+      res.json(opp);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/opportunities/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteOpportunity(parseInt(req.params.id));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Sections
+  app.get("/api/opportunities/:id/sections", isAuthenticated, async (req: any, res) => {
+    try {
+      const sections = await storage.listOpportunitySections(parseInt(req.params.id));
+      res.json(sections);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/opportunities/:id/sections", isAuthenticated, async (req: any, res) => {
+    try {
+      const data = insertOpportunitySectionSchema.parse({ ...req.body, opportunityId: parseInt(req.params.id) });
+      const sec = await storage.createOpportunitySection(data);
+      res.status(201).json(sec);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/sections/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const sec = await storage.updateOpportunitySection(parseInt(req.params.id), req.body);
+      res.json(sec);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/sections/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteOpportunitySection(parseInt(req.params.id));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Workspace Lines
+  app.get("/api/opportunities/:id/lines", isAuthenticated, async (req: any, res) => {
+    try {
+      const lines = await storage.listWorkspaceLines(parseInt(req.params.id));
+      res.json(lines);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/opportunities/:id/lines", isAuthenticated, async (req: any, res) => {
+    try {
+      const data = insertWorkspaceLineSchema.parse({ ...req.body, opportunityId: parseInt(req.params.id) });
+      const line = await storage.createWorkspaceLine(data);
+      res.status(201).json(line);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/lines/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const line = await storage.updateWorkspaceLine(parseInt(req.params.id), req.body);
+      res.json(line);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/lines/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteWorkspaceLine(parseInt(req.params.id));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // BTL Fees
+  app.get("/api/opportunities/:id/btl-fees", isAuthenticated, async (req: any, res) => {
+    try {
+      const fees = await storage.listBtlFees(parseInt(req.params.id));
+      res.json(fees);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/opportunities/:id/btl-fees", isAuthenticated, async (req: any, res) => {
+    try {
+      const fees = (req.body.fees ?? []).map((f: any) => insertBtlFeeSchema.parse({ ...f, opportunityId: parseInt(req.params.id) }));
+      const result = await storage.upsertBtlFees(parseInt(req.params.id), fees);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // AI Recommendations
+  app.get("/api/opportunities/:id/ai-recs", isAuthenticated, async (req: any, res) => {
+    try {
+      const recs = await storage.listAiRecommendations(parseInt(req.params.id));
+      res.json(recs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/opportunities/:id/ai-analyze", isAuthenticated, async (req: any, res) => {
+    try {
+      const opp = await storage.getOpportunity(parseInt(req.params.id));
+      if (!opp) return res.status(404).json({ message: "Not found" });
+      const lines = await storage.listWorkspaceLines(parseInt(req.params.id));
+      const bufferRules = await storage.getBufferRules();
+
+      const systemPrompt = `You are an expert commercial facilities estimating assistant for a building engineering & facility solutions company. Analyze the estimate and provide actionable recommendations to improve accuracy, margin, and competitiveness.
+
+Return a JSON object with this structure:
+{
+  "scopeRisks": [{"issue": string, "recommendation": string, "severity": "low"|"medium"|"high"}],
+  "marginInsights": {"currentMarginPct": number, "assessment": string, "suggestion": string},
+  "missingItems": [{"item": string, "reason": string, "estimatedImpact": string}],
+  "competitiveness": {"score": number, "notes": string}
+}`;
+
+      const userMsg = `Opportunity: ${opp.name}
+Mode: ${opp.mode}
+Scope: ${opp.scopeOfWork || "(none provided)"}
+Line items (${lines.length}):
+${lines.map(l => `- ${l.description} | type:${l.lineType} | labor_hrs:${l.baseLaborHours} | material:$${l.baseMaterialCost} | margin:${l.marginPct}%`).join("\n")}
+Default labor rate: $${bufferRules?.laborRate ?? 95}/hr
+Default margin target: ${bufferRules?.defaultMarginPct ?? 30}%`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMsg },
+        ],
+      });
+
+      const content = JSON.parse(completion.choices[0].message.content || "{}");
+      const rec = await storage.createAiRecommendation({
+        opportunityId: parseInt(req.params.id),
+        type: "full_analysis",
+        content,
+      });
+      res.json({ recommendation: rec, analysis: content });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Sync Runs
+  app.get("/api/opportunities/:id/sync-runs", isAuthenticated, async (req: any, res) => {
+    try {
+      const runs = await storage.listSyncRuns(parseInt(req.params.id));
+      res.json(runs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/opportunities/:id/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const opportunityId = parseInt(req.params.id);
+      const opp = await storage.getOpportunity(opportunityId);
+      if (!opp) return res.status(404).json({ message: "Not found" });
+      const lines = await storage.listWorkspaceLines(opportunityId);
+      const fees = await storage.listBtlFees(opportunityId);
+      const payload = { opportunity: opp, lines, fees, syncedAt: new Date().toISOString() };
+      const run = await storage.createSyncRun(insertSyncRunSchema.parse({
+        opportunityId,
+        versionLabel: req.body.versionLabel ?? null,
+        payload,
+        status: "success",
+        createdBy: null,
+      }));
+      if (opp.status === "draft") {
+        await storage.updateOpportunity(opportunityId, { status: "in_review" });
+      }
+      res.json({ run, payload });
+    } catch (err: any) {
+      const run = await storage.createSyncRun({
+        opportunityId: parseInt(req.params.id),
+        status: "error",
+        errorMessage: err.message,
+        payload: null,
+        versionLabel: null,
+        buildopsQuoteId: null,
+        buildopsQuoteNumber: null,
+        createdBy: null,
+      });
+      res.status(500).json({ message: err.message, run });
+    }
+  });
+
+  // Buffer / Approval Rules
+  app.get("/api/estimating/buffer-rules", isAuthenticated, async (_req, res) => {
+    try {
+      const rules = await storage.getBufferRules();
+      res.json(rules ?? {});
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/estimating/buffer-rules", isAuthenticated, async (req: any, res) => {
+    try {
+      const rules = await storage.updateBufferRules(req.body);
+      res.json(rules);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/estimating/approval-rules", isAuthenticated, async (_req, res) => {
+    try {
+      const rules = await storage.getApprovalRules();
+      res.json(rules ?? {});
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Catalog Items
+  app.get("/api/estimating/catalog", isAuthenticated, async (req: any, res) => {
+    try {
+      const serviceLine = req.query.serviceLine as string | undefined;
+      const items = await storage.listWorkspaceCatalogItems(serviceLine);
+      res.json(items);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
