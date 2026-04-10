@@ -104,7 +104,7 @@ export default function EstimatingList() {
   });
 
   const { data: buildings = [] } = useQuery<any[]>({
-    queryKey: form.clientId ? ["/api/contact-buildings", { clientId: form.clientId }] : ["/api/contact-buildings"],
+    queryKey: ["/api/contact-buildings"],
     enabled: showCreate,
   });
 
@@ -172,6 +172,8 @@ export default function EstimatingList() {
     setForm((f) => ({ ...f, serviceLines: f.serviceLines.filter((x) => x !== sl) }));
   }
 
+  function noneToEmpty(val: string) { return val === "__none__" ? "" : val; }
+
   function handleSubmit() {
     const payload: Record<string, any> = {
       name: form.name.trim(),
@@ -179,20 +181,26 @@ export default function EstimatingList() {
       serviceLines: form.serviceLines,
       scopeOfWork: form.scopeOfWork || null,
       internalNotes: form.internalNotes || null,
-      jobType: form.jobType || null,
+      jobType: noneToEmpty(form.jobType) || null,
       customerPo: form.customerPo || null,
     };
-    if (form.clientId) payload.clientId = parseInt(form.clientId);
-    if (form.buildingId) payload.buildingId = parseInt(form.buildingId);
-    if (form.projectManagerId) payload.projectManagerId = form.projectManagerId;
-    if (form.accountManagerId) payload.accountManagerId = form.accountManagerId;
-    if (form.soldById) payload.soldById = form.soldById;
+    const cid = noneToEmpty(form.clientId);
+    const bid = noneToEmpty(form.buildingId);
+    const pm = noneToEmpty(form.projectManagerId);
+    const am = noneToEmpty(form.accountManagerId);
+    const sb = noneToEmpty(form.soldById);
+    if (cid) payload.clientId = parseInt(cid);
+    if (bid) payload.buildingId = parseInt(bid);
+    if (pm) payload.projectManagerId = pm;
+    if (am) payload.accountManagerId = am;
+    if (sb) payload.soldById = sb;
     createMut.mutate(payload);
   }
 
   // Filter buildings by selected client
-  const filteredBuildings = form.clientId
-    ? buildings.filter((b: any) => String(b.clientId) === form.clientId || String(b.client_id) === form.clientId)
+  const activeClientId = noneToEmpty(form.clientId);
+  const filteredBuildings = activeClientId
+    ? buildings.filter((b: any) => String(b.clientId) === activeClientId || String(b.client_id) === activeClientId)
     : buildings;
 
   return (
@@ -374,7 +382,7 @@ export default function EstimatingList() {
                     <SelectValue placeholder="Select customer..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No customer</SelectItem>
+                    <SelectItem value="__none__">No customer</SelectItem>
                     {clients.map((c: any) => (
                       <SelectItem key={c.id} value={String(c.id)}>
                         {c.name || c.companyName || `Client #${c.id}`}
@@ -394,7 +402,7 @@ export default function EstimatingList() {
                     <SelectValue placeholder="Select property..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No property</SelectItem>
+                    <SelectItem value="__none__">No property</SelectItem>
                     {filteredBuildings.map((b: any) => (
                       <SelectItem key={b.id} value={String(b.id)}>
                         {b.name || b.buildingName || b.address || `Property #${b.id}`}
@@ -414,7 +422,7 @@ export default function EstimatingList() {
                     <SelectValue placeholder="Select job type..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {JOB_TYPES.map((jt) => (
                       <SelectItem key={jt} value={jt}>{jt}</SelectItem>
                     ))}
@@ -513,7 +521,7 @@ export default function EstimatingList() {
                     <SelectValue placeholder="Select..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
+                    <SelectItem value="__none__">Unassigned</SelectItem>
                     {teamUsers.map((u: any) => (
                       <SelectItem key={u.id} value={String(u.id)}>
                         {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email || u.id}
@@ -529,7 +537,7 @@ export default function EstimatingList() {
                     <SelectValue placeholder="Select..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
+                    <SelectItem value="__none__">Unassigned</SelectItem>
                     {teamUsers.map((u: any) => (
                       <SelectItem key={u.id} value={String(u.id)}>
                         {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email || u.id}
@@ -545,7 +553,7 @@ export default function EstimatingList() {
                     <SelectValue placeholder="Select..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
+                    <SelectItem value="__none__">Unassigned</SelectItem>
                     {teamUsers.map((u: any) => (
                       <SelectItem key={u.id} value={String(u.id)}>
                         {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email || u.id}
