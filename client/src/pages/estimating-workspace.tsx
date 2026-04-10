@@ -20,9 +20,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   ArrowLeft, Plus, Trash2, Sparkles, Send, RefreshCw, ChevronDown, ChevronUp,
-  CheckCircle2, AlertCircle, Loader2, Clock, Info,
+  CheckCircle2, AlertCircle, Loader2, Clock, Info, BookOpen, Search, Database,
 } from "lucide-react";
-import type { Opportunity, WorkspaceLine, BtlFee, AiRecommendation } from "@shared/schema";
+import type { Opportunity, WorkspaceLine, BtlFee, AiRecommendation, WorkspaceCatalogItem } from "@shared/schema";
 
 const LINE_TYPES = ["labor", "material", "equipment", "subcontract", "fee"];
 
@@ -208,6 +208,9 @@ export default function EstimatingWorkspace() {
   const [approvalNote, setApprovalNote] = useState("");
   const [laborRate, setLaborRate] = useState(95);
   const [pendingLineUpdates, setPendingLineUpdates] = useState<Record<number, any>>({});
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogTypeFilter, setCatalogTypeFilter] = useState<string>("all");
 
   const { data: opp, isLoading: oppLoading } = useQuery<Opportunity>({
     queryKey: ["/api/opportunities", oppId],
@@ -247,6 +250,17 @@ export default function EstimatingWorkspace() {
     queryKey: ["/api/estimating/buffer-rules"],
   });
 
+  const { data: catalogItems = [], isLoading: catalogLoading, refetch: refetchCatalog } = useQuery<WorkspaceCatalogItem[]>({
+    queryKey: ["/api/estimating/catalog", catalogSearch, catalogTypeFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (catalogSearch) params.set("search", catalogSearch);
+      const res = await fetch(`/api/estimating/catalog?${params}`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: showCatalog,
+  });
+
   useEffect(() => {
     if (bufferRules?.laborRate) setLaborRate(parseFloat(bufferRules.laborRate));
   }, [bufferRules]);
@@ -281,6 +295,42 @@ export default function EstimatingWorkspace() {
   const deleteLineMut = useMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/lines/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/opportunities", oppId, "lines"] }),
+  });
+
+  const addFromCatalogMut = useMutation({
+    mutationFn: (item: WorkspaceCatalogItem) => {
+      const unitCost = parseFloat(item.unitCost as unknown as string) || 0;
+      const lineType = item.lineType ?? "material";
+      return apiRequest("POST", `/api/opportunities/${oppId}/lines`, {
+        description: item.name,
+        lineType,
+        baseLaborHours: lineType === "labor" ? "1" : "0",
+        baseMaterialCost: String(unitCost),
+        laborBufferPct: item.defaultLaborBufferPct ?? bufferRules?.defaultLaborBufferPct ?? "10",
+        materialWastePct: item.defaultMaterialWastePct ?? bufferRules?.defaultMaterialWastePct ?? "5",
+        difficultyPct: "0",
+        marginPct: item.defaultMarginPct ?? bufferRules?.defaultMarginPct ?? "30",
+        buildopsItemId: item.buildopsItemId ?? null,
+        unitPrice: item.unitPrice ?? null,
+        quantity: "1",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities", oppId, "lines"] });
+      setShowCatalog(false);
+      toast({ title: "Line added from catalog" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const syncCatalogMut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/estimating/catalog/sync", {}),
+    onSuccess: async (res) => {
+      const data = await res.json();
+      await refetchCatalog();
+      toast({ title: `Catalog synced from BuildOps`, description: `${data.created} new, ${data.updated} updated (${data.total} total items)` });
+    },
+    onError: (e: any) => toast({ title: "Sync failed", description: e.message, variant: "destructive" }),
   });
 
   const upsertBtlFeesMut = useMutation({
@@ -475,13 +525,21 @@ export default function EstimatingWorkspace() {
                   </div>
                 </div>
                 <Button
+                  data-testid="button-browse-catalog"
+                  size="sm" variant="outline"
+                  className="gap-1.5 text-xs h-7"
+                  onClick={() => setShowCatalog(true)}
+                >
+                  <BookOpen className="h-3.5 w-3.5" /> Catalog
+                </Button>
+                <Button
                   data-testid="button-add-line"
                   size="sm" variant="outline"
                   className="gap-1.5 text-xs h-7"
                   disabled={addLineMut.isPending}
                   onClick={() => addLineMut.mutate()}
                 >
-                  <Plus className="h-3.5 w-3.5" /> Add Line
+                  <Plus className="h-3.5 w-3.5" /> Blank Line
                 </Button>
               </div>
             </div>
@@ -704,6 +762,127 @@ export default function EstimatingWorkspace() {
           </div>
         </div>
       </div>
+
+      {/* Catalog Picker Dialog */}
+      <Dialog open={showCatalog} onOpenChange={(v) => { setShowCatalog(v); if (!v) { setCatalogSearch(""); setCatalogTypeFilter("all"); } }}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2">
+                <Database className="h-4 w-4 text-blue-500" /> BuildOps Item Catalog
+              </DialogTitle>
+              <Button
+                data-testid="button-sync-catalog"
+                size="sm" variant="outline"
+                className="gap-1.5 text-xs h-7"
+                disabled={syncCatalogMut.isPending}
+                onClick={() => syncCatalogMut.mutate()}
+              >
+                {syncCatalogMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                Sync from BuildOps
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {/* Search + Filter bar */}
+          <div className="px-4 py-3 border-b shrink-0 flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                data-testid="input-catalog-search"
+                placeholder="Search items..."
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                className="pl-8 h-8 text-sm"
+              />
+            </div>
+            <Select value={catalogTypeFilter} onValueChange={setCatalogTypeFilter}>
+              <SelectTrigger data-testid="select-catalog-type-filter" className="h-8 w-32 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="material">Material</SelectItem>
+                <SelectItem value="labor">Labor</SelectItem>
+                <SelectItem value="fee">Fee</SelectItem>
+                <SelectItem value="equipment">Equipment</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Items list */}
+          <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
+            {catalogLoading ? (
+              <div className="space-y-2 py-4">
+                {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+              </div>
+            ) : catalogItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <Database className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                <p className="text-sm text-muted-foreground font-medium">No items in catalog</p>
+                <p className="text-xs text-muted-foreground mt-1">Click "Sync from BuildOps" to import your pricebook</p>
+              </div>
+            ) : (
+              (() => {
+                const filtered = catalogTypeFilter === "all"
+                  ? catalogItems
+                  : catalogItems.filter((item) => item.lineType === catalogTypeFilter);
+                return filtered.length === 0 ? (
+                  <div className="text-center py-10 text-sm text-muted-foreground">No items match that filter</div>
+                ) : (
+                  filtered.map((item) => {
+                    const unitCost = parseFloat(item.unitCost as unknown as string) || 0;
+                    const unitPrice = parseFloat(item.unitPrice as unknown as string) || 0;
+                    const hasBuildops = !!item.buildopsItemId;
+                    const typeColors: Record<string, string> = {
+                      material: "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400",
+                      labor:    "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400",
+                      fee:      "bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400",
+                      equipment:"bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400",
+                    };
+                    return (
+                      <button
+                        key={item.id}
+                        data-testid={`catalog-item-${item.id}`}
+                        type="button"
+                        disabled={addFromCatalogMut.isPending || !item.isActive}
+                        onClick={() => addFromCatalogMut.mutate(item)}
+                        className={`w-full text-left px-3 py-2.5 rounded-lg border bg-card hover:border-primary/40 hover:bg-muted/30 transition-all flex items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-foreground">{item.name}</span>
+                            {hasBuildops && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-medium">BuildOps</span>
+                            )}
+                            {!item.isActive && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">Inactive</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${typeColors[item.lineType] ?? "bg-gray-100 text-gray-600"}`}>
+                              {item.lineType}
+                            </span>
+                            {unitCost > 0 && <span className="text-xs text-muted-foreground">Cost: ${unitCost.toFixed(2)}</span>}
+                            {unitPrice > 0 && <span className="text-xs text-muted-foreground">Price: ${unitPrice.toFixed(2)}</span>}
+                            {item.buildopsCode && <span className="text-xs text-muted-foreground font-mono">{item.buildopsCode}</span>}
+                          </div>
+                        </div>
+                        <Plus className="h-4 w-4 text-muted-foreground group-hover:text-primary shrink-0 transition-colors" />
+                      </button>
+                    );
+                  })
+                );
+              })()
+            )}
+          </div>
+
+          <div className="px-5 py-3 border-t shrink-0 flex justify-between items-center text-xs text-muted-foreground">
+            <span>{catalogItems.length} items in catalog</span>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowCatalog(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Submit Dialog */}
       <Dialog open={syncOpen} onOpenChange={setSyncOpen}>

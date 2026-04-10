@@ -1165,6 +1165,9 @@ export const workspaceLines = pgTable("workspace_lines", {
   overrideFlag: boolean("override_flag").notNull().default(false),
   warnings: jsonb("warnings").notNull().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
+  buildopsItemId: varchar("buildops_item_id", { length: 100 }),
+  unitPrice: decimal("unit_price", { precision: 12, scale: 4 }),
+  quantity: decimal("quantity", { precision: 10, scale: 4 }).notNull().default("1"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1231,6 +1234,15 @@ export const workspaceCatalogItems = pgTable("workspace_catalog_items", {
   defaultMaterialWastePct: decimal("default_material_waste_pct", { precision: 5, scale: 2 }),
   defaultMarginPct: decimal("default_margin_pct", { precision: 5, scale: 2 }),
   companionItems: text("companion_items").array().default([]),
+  // BuildOps pricebook sync fields
+  buildopsItemId: varchar("buildops_item_id", { length: 100 }),
+  unitPrice: decimal("unit_price", { precision: 12, scale: 4 }),
+  unitCost: decimal("unit_cost", { precision: 12, scale: 4 }),
+  isActive: boolean("is_active").notNull().default(true),
+  buildopsItemType: varchar("buildops_item_type", { length: 50 }),
+  buildopsCode: varchar("buildops_code", { length: 100 }),
+  buildopsSku: varchar("buildops_sku", { length: 100 }),
+  syncedAt: timestamp("synced_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

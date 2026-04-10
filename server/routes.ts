@@ -12097,8 +12097,37 @@ Default margin target: ${bufferRules?.defaultMarginPct ?? 30}%`;
   app.get("/api/estimating/catalog", isAuthenticated, async (req: any, res) => {
     try {
       const serviceLine = req.query.serviceLine as string | undefined;
-      const items = await storage.listWorkspaceCatalogItems(serviceLine);
+      const search = req.query.search as string | undefined;
+      const items = await storage.listWorkspaceCatalogItems(serviceLine, search);
       res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Sync BuildOps Products → Catalog
+  app.post("/api/estimating/catalog/sync", isAuthenticated, async (_req: any, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.status(400).json({ message: "BuildOps credentials not configured. Set them in Settings → Integrations." });
+
+      const { getProducts } = await import("./buildops");
+      const products = await getProducts(creds.clientId, creds.clientSecret, creds.tenantId);
+
+      const mapped = products.map((p) => ({
+        buildopsItemId: p.id,
+        name: p.name,
+        description: p.description ?? null,
+        buildopsItemType: p.type ?? null,
+        unitCost: p.unitCost ?? 0,
+        unitPrice: p.unitPrice ?? 0,
+        isActive: p.isActive ?? true,
+        code: p.code ?? null,
+        sku: p.sku ?? null,
+      }));
+
+      const { created, updated } = await storage.syncBuildOpsProductsToCatalog(mapped);
+      res.json({ created, updated, total: products.length, syncedAt: new Date().toISOString() });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

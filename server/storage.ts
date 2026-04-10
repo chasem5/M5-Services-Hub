@@ -4866,6 +4866,29 @@ export class DatabaseStorage implements IStorage {
     } catch (e: any) {
       console.error("migrateEstimatingTables: workspace_catalog_items error:", e.message);
     }
+    // Add new columns to workspace_catalog_items (for BuildOps pricebook sync)
+    const catalogNewCols = [
+      "ALTER TABLE workspace_catalog_items ADD COLUMN IF NOT EXISTS buildops_item_id varchar(100)",
+      "ALTER TABLE workspace_catalog_items ADD COLUMN IF NOT EXISTS unit_price decimal(12,4)",
+      "ALTER TABLE workspace_catalog_items ADD COLUMN IF NOT EXISTS unit_cost decimal(12,4)",
+      "ALTER TABLE workspace_catalog_items ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true",
+      "ALTER TABLE workspace_catalog_items ADD COLUMN IF NOT EXISTS buildops_item_type varchar(50)",
+      "ALTER TABLE workspace_catalog_items ADD COLUMN IF NOT EXISTS buildops_code varchar(100)",
+      "ALTER TABLE workspace_catalog_items ADD COLUMN IF NOT EXISTS buildops_sku varchar(100)",
+      "ALTER TABLE workspace_catalog_items ADD COLUMN IF NOT EXISTS synced_at timestamp",
+    ];
+    for (const stmt of catalogNewCols) {
+      try { await db.execute(sql.raw(stmt)); } catch { /* ok */ }
+    }
+    // Add new columns to workspace_lines (for BuildOps item tracking)
+    const lineNewCols = [
+      "ALTER TABLE workspace_lines ADD COLUMN IF NOT EXISTS buildops_item_id varchar(100)",
+      "ALTER TABLE workspace_lines ADD COLUMN IF NOT EXISTS unit_price decimal(12,4)",
+      "ALTER TABLE workspace_lines ADD COLUMN IF NOT EXISTS quantity decimal(10,4) NOT NULL DEFAULT 1",
+    ];
+    for (const stmt of lineNewCols) {
+      try { await db.execute(sql.raw(stmt)); } catch { /* ok */ }
+    }
   }
 
   // ── Opportunities ──────────────────────────────────────────────────────────
@@ -5013,11 +5036,66 @@ export class DatabaseStorage implements IStorage {
 
   // ── Catalog Items ──────────────────────────────────────────────────────────
 
-  async listWorkspaceCatalogItems(serviceLine?: string): Promise<WorkspaceCatalogItem[]> {
-    if (serviceLine) {
-      return db.select().from(workspaceCatalogItems).where(eq(workspaceCatalogItems.serviceLine, serviceLine)).orderBy(workspaceCatalogItems.name);
+  async listWorkspaceCatalogItems(serviceLine?: string, search?: string): Promise<WorkspaceCatalogItem[]> {
+    let q = db.select().from(workspaceCatalogItems).$dynamic();
+    const conditions = [];
+    if (serviceLine) conditions.push(eq(workspaceCatalogItems.serviceLine, serviceLine));
+    if (search) conditions.push(sql`lower(${workspaceCatalogItems.name}) LIKE ${'%' + search.toLowerCase() + '%'}`);
+    if (conditions.length > 0) q = q.where(and(...conditions));
+    return q.orderBy(workspaceCatalogItems.isActive.desc(), workspaceCatalogItems.name);
+  }
+
+  async syncBuildOpsProductsToCatalog(products: Array<{
+    buildopsItemId: string;
+    name: string;
+    description?: string | null;
+    buildopsItemType?: string | null;
+    unitCost?: number;
+    unitPrice?: number;
+    isActive?: boolean;
+    code?: string | null;
+    sku?: string | null;
+  }>): Promise<{ created: number; updated: number }> {
+    let created = 0;
+    let updated = 0;
+    const now = new Date();
+
+    for (const p of products) {
+      const lineType = p.buildopsItemType === "Fee" ? "fee" : "material";
+      const [existing] = await db.select().from(workspaceCatalogItems)
+        .where(eq(workspaceCatalogItems.buildopsItemId, p.buildopsItemId));
+
+      if (existing) {
+        await db.update(workspaceCatalogItems).set({
+          name: p.name,
+          buildopsItemType: p.buildopsItemType ?? null,
+          unitCost: p.unitCost != null ? String(p.unitCost) : null,
+          unitPrice: p.unitPrice != null ? String(p.unitPrice) : null,
+          isActive: p.isActive ?? true,
+          buildopsCode: p.code ?? null,
+          buildopsSku: p.sku ?? null,
+          lineType,
+          syncedAt: now,
+          updatedAt: now,
+        }).where(eq(workspaceCatalogItems.id, existing.id));
+        updated++;
+      } else {
+        await db.insert(workspaceCatalogItems).values({
+          name: p.name,
+          buildopsItemId: p.buildopsItemId,
+          buildopsItemType: p.buildopsItemType ?? null,
+          unitCost: p.unitCost != null ? String(p.unitCost) : null,
+          unitPrice: p.unitPrice != null ? String(p.unitPrice) : null,
+          isActive: p.isActive ?? true,
+          buildopsCode: p.code ?? null,
+          buildopsSku: p.sku ?? null,
+          lineType,
+          syncedAt: now,
+        });
+        created++;
+      }
     }
-    return db.select().from(workspaceCatalogItems).orderBy(workspaceCatalogItems.serviceLine, workspaceCatalogItems.name);
+    return { created, updated };
   }
 
 }

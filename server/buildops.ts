@@ -915,6 +915,57 @@ export async function getInvoices(
   return allInvoices;
 }
 
+// ── Products (Pricebook / Item Catalog) ──────────────────────────────────────
+
+export interface BuildOpsProduct {
+  id: string;
+  name: string;
+  description?: string | null;
+  type?: string | null;
+  isActive?: boolean;
+  unitCost?: number;
+  unitPrice?: number;
+  markupValue?: number;
+  markupType?: string | null;
+  code?: string | null;
+  sku?: string | null;
+  category?: string | null;
+  subCategory?: string | null;
+  unitOfMeasureId?: string | null;
+}
+
+export async function getProducts(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+): Promise<BuildOpsProduct[]> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+
+  const all: BuildOpsProduct[] = [];
+  let page = 1;
+  const PAGE_SIZE = 100;
+
+  while (true) {
+    const res = await fetch(
+      `${BASE_URL}/v1/products?page=${page}&page_size=${PAGE_SIZE}`,
+      { headers }
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as any).message ?? `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const items: BuildOpsProduct[] = data.items ?? data ?? [];
+    all.push(...items);
+    const totalCount = data.totalCount ?? items.length;
+    if (all.length >= totalCount || items.length < PAGE_SIZE) break;
+    page++;
+  }
+
+  return all;
+}
+
 export async function getAllServiceAgreements(
   clientId: string,
   clientSecret: string,
