@@ -4668,6 +4668,206 @@ export class DatabaseStorage implements IStorage {
     await db.delete(actionPlans).where(eq(actionPlans.id, id));
   }
 
+  // ── Estimating Tables Migration ────────────────────────────────────────────
+
+  async migrateEstimatingTables(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS opportunities (
+          id serial PRIMARY KEY,
+          name varchar(500) NOT NULL,
+          client_id integer REFERENCES clients(id),
+          building_id integer REFERENCES contact_buildings(id),
+          service_lines text[] NOT NULL DEFAULT '{}',
+          scope_of_work text,
+          mode varchar(20) NOT NULL DEFAULT 'estimate',
+          status varchar(30) NOT NULL DEFAULT 'draft',
+          buildops_quote_id varchar(100),
+          buildops_property_id varchar(100),
+          created_by varchar REFERENCES users(id),
+          approved_by varchar REFERENCES users(id),
+          approval_note text,
+          rejection_note text,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+    } catch (e: any) {
+      console.error("migrateEstimatingTables: opportunities error:", e.message);
+    }
+    // Add new columns if table already existed
+    try { await db.execute(sql`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS project_manager_id varchar REFERENCES users(id)`); } catch { /* ok */ }
+    try { await db.execute(sql`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS account_manager_id varchar REFERENCES users(id)`); } catch { /* ok */ }
+    try { await db.execute(sql`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS sold_by_id varchar REFERENCES users(id)`); } catch { /* ok */ }
+    try { await db.execute(sql`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS job_type varchar(100)`); } catch { /* ok */ }
+    try { await db.execute(sql`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS customer_po varchar(100)`); } catch { /* ok */ }
+    try { await db.execute(sql`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS internal_notes text`); } catch { /* ok */ }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS opportunity_sections (
+          id serial PRIMARY KEY,
+          opportunity_id integer NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+          name varchar(300) NOT NULL,
+          sort_order integer NOT NULL DEFAULT 0,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+    } catch (e: any) {
+      console.error("migrateEstimatingTables: opportunity_sections error:", e.message);
+    }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS workspace_lines (
+          id serial PRIMARY KEY,
+          opportunity_id integer NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+          section_id integer REFERENCES opportunity_sections(id) ON DELETE SET NULL,
+          description varchar(500) NOT NULL,
+          line_type varchar(50) NOT NULL DEFAULT 'labor',
+          base_labor_hours decimal(10,2) NOT NULL DEFAULT 0,
+          base_material_cost decimal(12,2) NOT NULL DEFAULT 0,
+          labor_buffer_pct decimal(5,2) NOT NULL DEFAULT 0,
+          material_waste_pct decimal(5,2) NOT NULL DEFAULT 0,
+          difficulty_pct decimal(5,2) NOT NULL DEFAULT 0,
+          margin_pct decimal(5,2) NOT NULL DEFAULT 30,
+          override_flag boolean NOT NULL DEFAULT false,
+          warnings jsonb NOT NULL DEFAULT '[]',
+          sort_order integer NOT NULL DEFAULT 0,
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+    } catch (e: any) {
+      console.error("migrateEstimatingTables: workspace_lines error:", e.message);
+    }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS btl_fees (
+          id serial PRIMARY KEY,
+          opportunity_id integer NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+          name varchar(200) NOT NULL,
+          fee_type varchar(10) NOT NULL DEFAULT 'pct',
+          value decimal(10,4) NOT NULL DEFAULT 0,
+          enabled boolean NOT NULL DEFAULT true,
+          sort_order integer NOT NULL DEFAULT 0
+        )
+      `);
+    } catch (e: any) {
+      console.error("migrateEstimatingTables: btl_fees error:", e.message);
+    }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS ai_recommendations (
+          id serial PRIMARY KEY,
+          opportunity_id integer NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+          type varchar(50) NOT NULL,
+          content jsonb NOT NULL,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+    } catch (e: any) {
+      console.error("migrateEstimatingTables: ai_recommendations error:", e.message);
+    }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS sync_runs (
+          id serial PRIMARY KEY,
+          opportunity_id integer NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+          version_label varchar(100),
+          buildops_quote_id varchar(100),
+          buildops_quote_number varchar(100),
+          payload jsonb,
+          status varchar(30) NOT NULL DEFAULT 'success',
+          error_message text,
+          created_by varchar REFERENCES users(id),
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+    } catch (e: any) {
+      console.error("migrateEstimatingTables: sync_runs error:", e.message);
+    }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS buffer_rules (
+          id serial PRIMARY KEY,
+          default_labor_buffer_pct decimal(5,2) NOT NULL DEFAULT 10,
+          default_material_waste_pct decimal(5,2) NOT NULL DEFAULT 5,
+          default_margin_pct decimal(5,2) NOT NULL DEFAULT 30,
+          labor_rate decimal(8,2) NOT NULL DEFAULT 95,
+          updated_at timestamp NOT NULL DEFAULT now(),
+          updated_by varchar REFERENCES users(id)
+        )
+      `);
+      await db.execute(sql`INSERT INTO buffer_rules (id) VALUES (1) ON CONFLICT (id) DO NOTHING`);
+    } catch (e: any) {
+      console.error("migrateEstimatingTables: buffer_rules error:", e.message);
+    }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS approval_rules (
+          id serial PRIMARY KEY,
+          min_margin_pct decimal(5,2) NOT NULL DEFAULT 25,
+          require_approval_on_override boolean NOT NULL DEFAULT true,
+          updated_at timestamp NOT NULL DEFAULT now(),
+          updated_by varchar REFERENCES users(id)
+        )
+      `);
+      await db.execute(sql`INSERT INTO approval_rules (id) VALUES (1) ON CONFLICT (id) DO NOTHING`);
+    } catch (e: any) {
+      console.error("migrateEstimatingTables: approval_rules error:", e.message);
+    }
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS workspace_catalog_items (
+          id serial PRIMARY KEY,
+          name varchar(300) NOT NULL,
+          service_line varchar(100),
+          line_type varchar(50) NOT NULL DEFAULT 'labor',
+          typical_labor_hours_min decimal(8,2),
+          typical_labor_hours_max decimal(8,2),
+          typical_material_cost_min decimal(12,2),
+          typical_material_cost_max decimal(12,2),
+          default_labor_buffer_pct decimal(5,2),
+          default_material_waste_pct decimal(5,2),
+          default_margin_pct decimal(5,2),
+          companion_items text[] DEFAULT '{}',
+          created_at timestamp NOT NULL DEFAULT now(),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      // Seed catalog items if empty
+      const countResult = await db.execute(sql`SELECT COUNT(*) as cnt FROM workspace_catalog_items`);
+      const cnt = parseInt((countResult.rows[0] as any).cnt, 10);
+      if (cnt === 0) {
+        const items = [
+          ['RTU Removal & Disposal','HVAC','labor',12,20,null,null,15,35],
+          ['Rooftop Unit Supply & Install (3-5 ton)','HVAC','material',null,null,7500,12000,10,35],
+          ['Air Handling Unit Replacement','HVAC','material',null,null,5000,18000,10,32],
+          ['Refrigerant Line Set','HVAC','material',null,null,300,800,5,35],
+          ['Crane Lift & Rigging','HVAC','equipment',null,null,800,2500,0,25],
+          ['Air Balancing & Commissioning','HVAC','labor',4,16,null,null,5,30],
+          ['Panel Removal (100-200A)','Electrical','labor',8,16,null,null,10,32],
+          ['Main Panel Supply & Install (200-400A)','Electrical','material',null,null,2800,6500,10,32],
+          ['Lighting Retrofit — Per Fixture','Electrical','labor',0.5,1.5,null,null,5,35],
+          ['Emergency Generator Install','Electrical','material',null,null,15000,45000,15,30],
+          ['Rough-In Labor (per floor)','Plumbing','labor',16,40,null,null,15,30],
+          ['Water Heater — Commercial (50-80gal)','Plumbing','material',null,null,1200,2800,5,30],
+          ['Backflow Preventer','Plumbing','material',null,null,280,600,5,30],
+          ['Project Management','General','labor',20,60,null,null,0,40],
+          ['Dumpster & Site Cleanup','General','fee',null,null,500,1500,0,15],
+          ['Permit & Inspection Fee','General','fee',null,null,200,1500,0,0],
+        ];
+        for (const item of items) {
+          await db.execute(sql`
+            INSERT INTO workspace_catalog_items (name, service_line, line_type, typical_labor_hours_min, typical_labor_hours_max, typical_material_cost_min, typical_material_cost_max, default_labor_buffer_pct, default_margin_pct)
+            VALUES (${item[0]}, ${item[1]}, ${item[2]}, ${item[3]}, ${item[4]}, ${item[5]}, ${item[6]}, ${item[7]}, ${item[8]})
+          `);
+        }
+      }
+    } catch (e: any) {
+      console.error("migrateEstimatingTables: workspace_catalog_items error:", e.message);
+    }
+  }
+
   // ── Opportunities ──────────────────────────────────────────────────────────
 
   async listOpportunities(filters?: { clientId?: number; status?: string }): Promise<Opportunity[]> {

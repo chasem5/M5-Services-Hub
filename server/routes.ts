@@ -178,6 +178,7 @@ export async function registerRoutes(
   await storage.migrateClientOnboardingChecklist();
   await storage.migrateLeadLossColumns();
   await storage.migrateWeeklyReportTables();
+  await storage.migrateEstimatingTables();
   // Multi-board task system: create tables, add columns, backfill data
   await storage.migrateTaskBoards();
   await storage.migrateEmailMessageColumns();
@@ -11830,8 +11831,8 @@ JSON only, no markdown.`;
 
   app.post("/api/opportunities", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const data = insertOpportunitySchema.parse({ ...req.body, createdBy: userId ? undefined : null });
+      const userId = req.user.claims.sub as string;
+      const data = insertOpportunitySchema.parse({ ...req.body, createdBy: userId ?? null });
       const opp = await storage.createOpportunity(data);
       res.status(201).json(opp);
     } catch (err: any) {

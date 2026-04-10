@@ -15,10 +15,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import {
   Plus, Search, FileText, DollarSign, Clock, CheckCircle2, XCircle, AlertCircle,
-  TrendingUp, ChevronRight, Pencil, Trash2,
+  TrendingUp, ChevronRight, Pencil, Trash2, X,
 } from "lucide-react";
 import type { Opportunity } from "@shared/schema";
 
@@ -34,6 +36,17 @@ const MODE_CONFIG: Record<string, { label: string; color: string }> = {
   estimate: { label: "Estimate", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
   quote:    { label: "Quote",    color: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400" },
 };
+
+const PRESET_SERVICE_LINES = [
+  "HVAC", "Electrical", "Plumbing", "Fire & Life Safety", "Building Automation",
+  "Mechanical", "Energy", "Janitorial", "Landscaping", "Roofing", "Painting",
+  "Security", "Pest Control", "Elevator", "General",
+];
+
+const JOB_TYPES = [
+  "Service", "Project", "Construction", "Maintenance", "Inspection", "Emergency",
+  "Capital Improvement", "Retrofit", "Other",
+];
 
 function StatusBadge({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status] ?? { label: status, color: "bg-gray-100 text-gray-700", icon: null };
@@ -53,10 +66,23 @@ function ModeBadge({ mode }: { mode: string }) {
   );
 }
 
-const SERVICE_LINE_OPTIONS = [
-  "HVAC", "Electrical", "Plumbing", "Fire & Life Safety", "Building Automation",
-  "Mechanical", "Energy", "Janitorial", "Landscaping", "General",
-];
+function emptyForm() {
+  return {
+    name: "",
+    mode: "estimate",
+    clientId: "",
+    buildingId: "",
+    serviceLines: [] as string[],
+    customServiceLine: "",
+    projectManagerId: "",
+    accountManagerId: "",
+    soldById: "",
+    jobType: "",
+    customerPo: "",
+    internalNotes: "",
+    scopeOfWork: "",
+  };
+}
 
 export default function EstimatingList() {
   const [, navigate] = useLocation();
@@ -67,12 +93,24 @@ export default function EstimatingList() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Opportunity | null>(null);
-  const [form, setForm] = useState({
-    name: "", mode: "estimate", scopeOfWork: "", serviceLines: [] as string[],
-  });
+  const [form, setForm] = useState(emptyForm());
 
   const { data: opps = [], isLoading } = useQuery<Opportunity[]>({
     queryKey: ["/api/opportunities"],
+  });
+
+  const { data: clients = [] } = useQuery<any[]>({
+    queryKey: ["/api/clients"],
+  });
+
+  const { data: buildings = [] } = useQuery<any[]>({
+    queryKey: form.clientId ? ["/api/contact-buildings", { clientId: form.clientId }] : ["/api/contact-buildings"],
+    enabled: showCreate,
+  });
+
+  const { data: teamUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+    enabled: showCreate,
   });
 
   const createMut = useMutation({
@@ -81,7 +119,7 @@ export default function EstimatingList() {
       const opp = await res.json();
       await queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
       setShowCreate(false);
-      setForm({ name: "", mode: "estimate", scopeOfWork: "", serviceLines: [] });
+      setForm(emptyForm());
       toast({ title: "Opportunity created" });
       navigate(`/estimating/${opp.id}`);
     },
@@ -119,6 +157,43 @@ export default function EstimatingList() {
         : [...f.serviceLines, sl],
     }));
   }
+
+  function addCustomServiceLine() {
+    const val = form.customServiceLine.trim();
+    if (!val) return;
+    if (!form.serviceLines.includes(val)) {
+      setForm((f) => ({ ...f, serviceLines: [...f.serviceLines, val], customServiceLine: "" }));
+    } else {
+      setForm((f) => ({ ...f, customServiceLine: "" }));
+    }
+  }
+
+  function removeServiceLine(sl: string) {
+    setForm((f) => ({ ...f, serviceLines: f.serviceLines.filter((x) => x !== sl) }));
+  }
+
+  function handleSubmit() {
+    const payload: Record<string, any> = {
+      name: form.name.trim(),
+      mode: form.mode,
+      serviceLines: form.serviceLines,
+      scopeOfWork: form.scopeOfWork || null,
+      internalNotes: form.internalNotes || null,
+      jobType: form.jobType || null,
+      customerPo: form.customerPo || null,
+    };
+    if (form.clientId) payload.clientId = parseInt(form.clientId);
+    if (form.buildingId) payload.buildingId = parseInt(form.buildingId);
+    if (form.projectManagerId) payload.projectManagerId = form.projectManagerId;
+    if (form.accountManagerId) payload.accountManagerId = form.accountManagerId;
+    if (form.soldById) payload.soldById = form.soldById;
+    createMut.mutate(payload);
+  }
+
+  // Filter buildings by selected client
+  const filteredBuildings = form.clientId
+    ? buildings.filter((b: any) => String(b.clientId) === form.clientId || String(b.client_id) === form.clientId)
+    : buildings;
 
   return (
     <div className="flex flex-col h-full">
@@ -251,70 +326,275 @@ export default function EstimatingList() {
         )}
       </div>
 
-      {/* Create Dialog */}
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="sm:max-w-lg">
+      {/* Create Dialog — BuildOps-style quote creation flow */}
+      <Dialog open={showCreate} onOpenChange={(v) => { setShowCreate(v); if (!v) setForm(emptyForm()); }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Opportunity</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Name *</Label>
-              <Input
-                data-testid="input-opportunity-name"
-                placeholder="e.g. HVAC Replacement — 123 Main St"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              />
+
+          <div className="space-y-5 py-1">
+            {/* Row 1: Name + Mode */}
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_160px] gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="opp-name">Opportunity Name *</Label>
+                <Input
+                  id="opp-name"
+                  data-testid="input-opportunity-name"
+                  placeholder="e.g. HVAC Replacement — 123 Main St"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select value={form.mode} onValueChange={(v) => setForm((f) => ({ ...f, mode: v }))}>
+                  <SelectTrigger data-testid="select-opportunity-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="estimate">Estimate</SelectItem>
+                    <SelectItem value="quote">Quote</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Mode</Label>
-              <Select value={form.mode} onValueChange={(v) => setForm((f) => ({ ...f, mode: v }))}>
-                <SelectTrigger data-testid="select-opportunity-mode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="estimate">Estimate (internal costing)</SelectItem>
-                  <SelectItem value="quote">Quote (customer-facing)</SelectItem>
-                </SelectContent>
-              </Select>
+
+            <Separator />
+
+            {/* Row 2: Customer + Property */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Customer</Label>
+                <Select
+                  value={form.clientId}
+                  onValueChange={(v) => setForm((f) => ({ ...f, clientId: v, buildingId: "" }))}
+                >
+                  <SelectTrigger data-testid="select-opportunity-client">
+                    <SelectValue placeholder="Select customer..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">No customer</SelectItem>
+                    {clients.map((c: any) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name || c.companyName || `Client #${c.id}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Property / Location</Label>
+                <Select
+                  value={form.buildingId}
+                  onValueChange={(v) => setForm((f) => ({ ...f, buildingId: v }))}
+                  disabled={!form.clientId && filteredBuildings.length === 0}
+                >
+                  <SelectTrigger data-testid="select-opportunity-building">
+                    <SelectValue placeholder="Select property..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">No property</SelectItem>
+                    {filteredBuildings.map((b: any) => (
+                      <SelectItem key={b.id} value={String(b.id)}>
+                        {b.name || b.buildingName || b.address || `Property #${b.id}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Scope of Work</Label>
-              <Input
-                data-testid="input-opportunity-scope"
-                placeholder="Brief description of work..."
-                value={form.scopeOfWork}
-                onChange={(e) => setForm((f) => ({ ...f, scopeOfWork: e.target.value }))}
-              />
+
+            {/* Row 3: Job Type + Customer PO */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Job Type</Label>
+                <Select value={form.jobType} onValueChange={(v) => setForm((f) => ({ ...f, jobType: v }))}>
+                  <SelectTrigger data-testid="select-opportunity-job-type">
+                    <SelectValue placeholder="Select job type..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {JOB_TYPES.map((jt) => (
+                      <SelectItem key={jt} value={jt}>{jt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="opp-customer-po">Customer PO</Label>
+                <Input
+                  id="opp-customer-po"
+                  data-testid="input-opportunity-customer-po"
+                  placeholder="PO number (optional)"
+                  value={form.customerPo}
+                  onChange={(e) => setForm((f) => ({ ...f, customerPo: e.target.value }))}
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Service Lines</Label>
-              <div className="flex flex-wrap gap-2">
-                {SERVICE_LINE_OPTIONS.map((sl) => (
+
+            <Separator />
+
+            {/* Row 4: Service Lines */}
+            <div className="space-y-2">
+              <Label>Department / Service Lines</Label>
+              {/* Selected chips */}
+              {form.serviceLines.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pb-1">
+                  {form.serviceLines.map((sl) => (
+                    <span
+                      key={sl}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-primary text-primary-foreground"
+                    >
+                      {sl}
+                      <button
+                        type="button"
+                        data-testid={`remove-service-line-${sl.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+                        onClick={() => removeServiceLine(sl)}
+                        className="hover:opacity-70 transition-opacity ml-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Preset chips */}
+              <div className="flex flex-wrap gap-1.5">
+                {PRESET_SERVICE_LINES.map((sl) => (
                   <button
                     key={sl}
-                    data-testid={`toggle-service-line-${sl.toLowerCase().replace(/\s+/g, '-')}`}
+                    data-testid={`toggle-service-line-${sl.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
                     type="button"
+                    disabled={form.serviceLines.includes(sl)}
                     onClick={() => toggleServiceLine(sl)}
                     className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                       form.serviceLines.includes(sl)
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted text-muted-foreground border-border hover:border-primary/50"
+                        ? "opacity-40 cursor-default bg-primary/10 border-primary/20 text-primary"
+                        : "bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
                     }`}
                   >
                     {sl}
                   </button>
                 ))}
               </div>
+              {/* Custom service line */}
+              <div className="flex gap-2 mt-1">
+                <Input
+                  data-testid="input-custom-service-line"
+                  placeholder="Add custom service line..."
+                  value={form.customServiceLine}
+                  onChange={(e) => setForm((f) => ({ ...f, customServiceLine: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomServiceLine(); } }}
+                  className="h-8 text-sm"
+                />
+                <Button
+                  data-testid="button-add-custom-service-line"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0"
+                  onClick={addCustomServiceLine}
+                  disabled={!form.customServiceLine.trim()}
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Row 5: Managers */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>Project Manager</Label>
+                <Select value={form.projectManagerId} onValueChange={(v) => setForm((f) => ({ ...f, projectManagerId: v }))}>
+                  <SelectTrigger data-testid="select-opportunity-project-manager">
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Unassigned</SelectItem>
+                    {teamUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email || u.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Account Manager</Label>
+                <Select value={form.accountManagerId} onValueChange={(v) => setForm((f) => ({ ...f, accountManagerId: v }))}>
+                  <SelectTrigger data-testid="select-opportunity-account-manager">
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Unassigned</SelectItem>
+                    {teamUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email || u.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Sold By</Label>
+                <Select value={form.soldById} onValueChange={(v) => setForm((f) => ({ ...f, soldById: v }))}>
+                  <SelectTrigger data-testid="select-opportunity-sold-by">
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Unassigned</SelectItem>
+                    {teamUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email || u.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Row 6: Scope + Notes */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="opp-scope">Scope of Work</Label>
+                <Textarea
+                  id="opp-scope"
+                  data-testid="textarea-opportunity-scope"
+                  placeholder="Brief description of work to be performed..."
+                  value={form.scopeOfWork}
+                  onChange={(e) => setForm((f) => ({ ...f, scopeOfWork: e.target.value }))}
+                  className="resize-none"
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="opp-notes">Internal Notes</Label>
+                <Textarea
+                  id="opp-notes"
+                  data-testid="textarea-opportunity-notes"
+                  placeholder="Internal notes (not visible to customer)..."
+                  value={form.internalNotes}
+                  onChange={(e) => setForm((f) => ({ ...f, internalNotes: e.target.value }))}
+                  className="resize-none"
+                  rows={3}
+                />
+              </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setShowCreate(false); setForm(emptyForm()); }}>
+              Cancel
+            </Button>
             <Button
               data-testid="button-create-opportunity-submit"
               disabled={!form.name.trim() || createMut.isPending}
-              onClick={() => createMut.mutate(form)}
+              onClick={handleSubmit}
             >
               {createMut.isPending ? "Creating..." : "Create & Open Workspace"}
             </Button>
