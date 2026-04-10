@@ -1032,3 +1032,50 @@ export async function getServiceAgreements(
   }
   return all;
 }
+
+// ── Job Types ──────────────────────────────────────────────────────────────────
+export interface BuildOpsJobType {
+  id: string;
+  name: string;
+}
+
+export async function getJobTypes(
+  clientId: string,
+  clientSecret: string,
+  tenantId: string,
+): Promise<BuildOpsJobType[]> {
+  const token = await getToken(clientId, clientSecret);
+  const headers = buildOpsHeaders(token, tenantId);
+
+  // Try common BuildOps endpoints for job types
+  const candidates = [
+    `${BASE_URL}/v1/job-types?page=1&limit=200`,
+    `${BASE_URL}/v1/jobTypes?page=1&limit=200`,
+    `${BASE_URL}/v1/settings/job-types`,
+  ];
+
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { headers });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const items: any[] = (
+        Array.isArray(data.items) ? data.items :
+        Array.isArray(data.data) ? data.data :
+        Array.isArray(data.results) ? data.results :
+        Array.isArray(data) ? data : []
+      );
+      if (items.length > 0) {
+        return items.map((jt: any) => ({
+          id: String(jt.id ?? jt.name),
+          name: String(jt.name ?? jt.label ?? jt.jobTypeName ?? jt.id),
+        })).filter((jt) => jt.name);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  // If no endpoint works, return empty so the frontend can fall back to defaults
+  return [];
+}

@@ -113,6 +113,16 @@ export default function EstimatingList() {
     enabled: showCreate,
   });
 
+  const { data: buildopsJobTypes = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/estimating/job-types"],
+    enabled: showCreate,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const jobTypeOptions = buildopsJobTypes.length > 0
+    ? buildopsJobTypes.map((jt) => jt.name)
+    : JOB_TYPES;
+
   const createMut = useMutation({
     mutationFn: (body: any) => apiRequest("POST", "/api/opportunities", body),
     onSuccess: async (res) => {
@@ -423,7 +433,7 @@ export default function EstimatingList() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">None</SelectItem>
-                    {JOB_TYPES.map((jt) => (
+                    {jobTypeOptions.map((jt) => (
                       <SelectItem key={jt} value={jt}>{jt}</SelectItem>
                     ))}
                   </SelectContent>

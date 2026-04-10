@@ -12158,6 +12158,19 @@ Write 2–4 concise sentences describing the scope of work. Be specific but prof
     }
   });
 
+  // BuildOps Job Types
+  app.get("/api/estimating/job-types", isAuthenticated, async (_req: any, res) => {
+    try {
+      const creds = await getBuildOpsCreds();
+      if (!creds) return res.json([]);
+      const { getJobTypes } = await import("./buildops");
+      const types = await getJobTypes(creds.clientId, creds.clientSecret, creds.tenantId);
+      res.json(types);
+    } catch (err: any) {
+      res.json([]);
+    }
+  });
+
   // Sync BuildOps Products → Catalog
   app.post("/api/estimating/catalog/sync", isAuthenticated, async (_req: any, res) => {
     try {
