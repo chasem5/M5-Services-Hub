@@ -21,7 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   ArrowLeft, Plus, Trash2, Sparkles, Send, RefreshCw, ChevronDown, ChevronUp,
   CheckCircle2, AlertCircle, Loader2, Clock, Info, BookOpen, Search, Database,
-  FileText, Wand2,
+  FileText, Wand2, User, Building2, Phone, Mail, MapPin, ExternalLink, Hash,
 } from "lucide-react";
 import type { Opportunity, WorkspaceLine, BtlFee, AiRecommendation, WorkspaceCatalogItem } from "@shared/schema";
 
@@ -214,6 +214,7 @@ export default function EstimatingWorkspace() {
   const [catalogTypeFilter, setCatalogTypeFilter] = useState<string>("all");
   const [scopeText, setScopeText] = useState<string | null>(null);
   const [scopeSaving, setScopeSaving] = useState(false);
+  const [customerPanelOpen, setCustomerPanelOpen] = useState(true);
 
   const { data: opp, isLoading: oppLoading } = useQuery<Opportunity>({
     queryKey: ["/api/opportunities", oppId],
@@ -251,6 +252,27 @@ export default function EstimatingWorkspace() {
 
   const { data: bufferRules } = useQuery<any>({
     queryKey: ["/api/estimating/buffer-rules"],
+  });
+
+  const { data: clientData } = useQuery<any>({
+    queryKey: ["/api/clients", opp?.clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${opp!.clientId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!opp?.clientId,
+  });
+
+  const { data: buildingData } = useQuery<any>({
+    queryKey: ["/api/contact-buildings", opp?.buildingId],
+    queryFn: async () => {
+      const res = await fetch(`/api/contact-buildings`, { credentials: "include" });
+      if (!res.ok) return null;
+      const all = await res.json();
+      return all.find((b: any) => b.id === opp!.buildingId) ?? null;
+    },
+    enabled: !!opp?.buildingId,
   });
 
   const { data: catalogItems = [], isLoading: catalogLoading, refetch: refetchCatalog } = useQuery<WorkspaceCatalogItem[]>({
@@ -744,8 +766,141 @@ export default function EstimatingWorkspace() {
             </div>
           </div>
 
-          {/* Right: AI Panel */}
+          {/* Right: Customer Info + AI Panel */}
           <div className="p-4 sm:p-6 space-y-4 bg-muted/20 overflow-auto">
+
+            {/* Customer Info Card */}
+            <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
+              <button
+                data-testid="button-toggle-customer-panel"
+                type="button"
+                onClick={() => setCustomerPanelOpen((v) => !v)}
+                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/30 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm font-semibold">
+                    {clientData?.name || clientData?.companyName || (opp?.clientId ? "Customer" : "No Customer")}
+                  </span>
+                </div>
+                {customerPanelOpen
+                  ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                  : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                }
+              </button>
+
+              {customerPanelOpen && (
+                <div className="border-t px-3 py-3 space-y-3 text-xs">
+                  {!opp?.clientId ? (
+                    <p className="text-muted-foreground italic">No customer linked to this opportunity.</p>
+                  ) : clientData ? (
+                    <>
+                      {/* Customer core info */}
+                      <div className="space-y-1.5">
+                        <a
+                          href={`/clients/${clientData.id}`}
+                          data-testid="link-customer-detail"
+                          className="font-semibold text-sm text-foreground hover:text-primary flex items-center gap-1 transition-colors"
+                          target="_blank" rel="noreferrer"
+                        >
+                          {clientData.name || clientData.companyName}
+                          <ExternalLink className="h-3 w-3 opacity-50" />
+                        </a>
+                        {clientData.customerType && (
+                          <span className="inline-block px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] font-medium">
+                            {clientData.customerType}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Contact details */}
+                      <div className="space-y-1">
+                        {(clientData.phonePrimary || clientData.phone) && (
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <Phone className="h-3 w-3 shrink-0" />
+                            <a href={`tel:${clientData.phonePrimary || clientData.phone}`} className="hover:text-foreground transition-colors">
+                              {clientData.phonePrimary || clientData.phone}
+                            </a>
+                          </div>
+                        )}
+                        {clientData.email && (
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <Mail className="h-3 w-3 shrink-0" />
+                            <a href={`mailto:${clientData.email}`} className="hover:text-foreground transition-colors truncate">
+                              {clientData.email}
+                            </a>
+                          </div>
+                        )}
+                        {(clientData.address || clientData.billingAddress) && (
+                          <div className="flex items-start gap-1.5 text-muted-foreground">
+                            <MapPin className="h-3 w-3 shrink-0 mt-0.5" />
+                            <span>{clientData.address || clientData.billingAddress}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Property */}
+                      {buildingData && (
+                        <div className="pt-1 border-t space-y-1">
+                          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Property</p>
+                          <div className="flex items-center gap-1.5">
+                            <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                            <span className="font-medium text-foreground">
+                              {buildingData.name || buildingData.buildingName || "Property"}
+                            </span>
+                          </div>
+                          {(buildingData.address || buildingData.streetAddress) && (
+                            <div className="flex items-start gap-1.5 text-muted-foreground">
+                              <MapPin className="h-3 w-3 shrink-0 mt-0.5" />
+                              <span>
+                                {[buildingData.address || buildingData.streetAddress, buildingData.city, buildingData.state, buildingData.zip]
+                                  .filter(Boolean).join(", ")}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Quote details from opportunity */}
+                      <div className="pt-1 border-t space-y-1.5">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Quote Details</p>
+                        {opp?.customerPo && (
+                          <div className="flex items-center gap-1.5">
+                            <Hash className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-muted-foreground">PO:</span>
+                            <span className="font-medium font-mono">{opp.customerPo}</span>
+                          </div>
+                        )}
+                        {opp?.jobType && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-muted-foreground">Job type:</span>
+                            <span className="font-medium">{opp.jobType}</span>
+                          </div>
+                        )}
+                        {Array.isArray(opp?.serviceLines) && opp.serviceLines.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-muted-foreground">Service lines:</span>
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {(opp.serviceLines as string[]).map((sl) => (
+                                <span key={sl} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">{sl}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 text-muted-foreground py-1">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Loading customer…
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-purple-500" />
               <h2 className="text-sm font-semibold">AI Insights</h2>
