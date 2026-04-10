@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   ArrowLeft, Plus, Trash2, Sparkles, Send, RefreshCw, ChevronDown, ChevronUp,
   CheckCircle2, AlertCircle, Loader2, Clock, Info, BookOpen, Search, Database,
+  FileText, Wand2,
 } from "lucide-react";
 import type { Opportunity, WorkspaceLine, BtlFee, AiRecommendation, WorkspaceCatalogItem } from "@shared/schema";
 
@@ -211,6 +212,8 @@ export default function EstimatingWorkspace() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogTypeFilter, setCatalogTypeFilter] = useState<string>("all");
+  const [scopeText, setScopeText] = useState<string | null>(null);
+  const [scopeSaving, setScopeSaving] = useState(false);
 
   const { data: opp, isLoading: oppLoading } = useQuery<Opportunity>({
     queryKey: ["/api/opportunities", oppId],
@@ -264,6 +267,29 @@ export default function EstimatingWorkspace() {
   useEffect(() => {
     if (bufferRules?.laborRate) setLaborRate(parseFloat(bufferRules.laborRate));
   }, [bufferRules]);
+
+  useEffect(() => {
+    if (opp && scopeText === null) setScopeText(opp.scopeOfWork ?? "");
+  }, [opp]);
+
+  const saveScopeMut = useMutation({
+    mutationFn: (text: string) => apiRequest("PATCH", `/api/opportunities/${oppId}`, { scopeOfWork: text || null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities", oppId] });
+      setScopeSaving(false);
+    },
+    onError: () => setScopeSaving(false),
+  });
+
+  const aiScopeMut = useMutation({
+    mutationFn: ({ mode }: { mode: "generate" | "improve" }) =>
+      apiRequest("POST", `/api/opportunities/${oppId}/ai-scope`, { mode, existing: scopeText }),
+    onSuccess: async (res) => {
+      const data = await res.json();
+      if (data.scope) setScopeText(data.scope);
+    },
+    onError: (e: any) => toast({ title: "AI scope failed", description: e.message, variant: "destructive" }),
+  });
 
   const updateOppMut = useMutation({
     mutationFn: (data: any) => apiRequest("PATCH", `/api/opportunities/${oppId}`, data),
@@ -463,9 +489,6 @@ export default function EstimatingWorkspace() {
                 {opp.mode}
               </span>
             </div>
-            {opp.scopeOfWork && (
-              <p className="text-xs text-muted-foreground truncate mt-0.5">{opp.scopeOfWork}</p>
-            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Button
@@ -654,6 +677,70 @@ export default function EstimatingWorkspace() {
                 <span>Total</span>
                 <span data-testid="text-grand-total" className="font-mono text-green-600">${fmt(total)}</span>
               </div>
+            </div>
+
+            {/* Scope of Work */}
+            <Separator />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <h2 className="text-sm font-semibold">Scope of Work</h2>
+                  {scopeSaving && <span className="text-[10px] text-muted-foreground">Saving…</span>}
+                  {saveScopeMut.isSuccess && !scopeSaving && (
+                    <span className="text-[10px] text-green-600 flex items-center gap-0.5">
+                      <CheckCircle2 className="h-3 w-3" /> Saved
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    data-testid="button-ai-improve-scope"
+                    size="sm" variant="outline"
+                    className="gap-1.5 text-xs h-7"
+                    disabled={aiScopeMut.isPending || !scopeText?.trim()}
+                    onClick={() => aiScopeMut.mutate({ mode: "improve" })}
+                  >
+                    {aiScopeMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3 text-purple-500" />}
+                    Improve
+                  </Button>
+                  <Button
+                    data-testid="button-ai-generate-scope"
+                    size="sm" variant="outline"
+                    className="gap-1.5 text-xs h-7"
+                    disabled={aiScopeMut.isPending}
+                    onClick={() => aiScopeMut.mutate({ mode: "generate" })}
+                  >
+                    {aiScopeMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-purple-500" />}
+                    Generate
+                  </Button>
+                </div>
+              </div>
+
+              {aiScopeMut.isPending && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-500" />
+                  AI is writing scope of work…
+                </div>
+              )}
+
+              <Textarea
+                data-testid="textarea-scope-of-work"
+                placeholder="Describe the scope of work to be performed. This will appear on the customer-facing quote or estimate. Use 'Generate' to create one from your line items, or 'Improve' to polish existing text."
+                value={scopeText ?? ""}
+                onChange={(e) => setScopeText(e.target.value)}
+                onBlur={() => {
+                  if (scopeText !== (opp?.scopeOfWork ?? "")) {
+                    setScopeSaving(true);
+                    saveScopeMut.mutate(scopeText ?? "");
+                  }
+                }}
+                className="resize-none text-sm min-h-[120px]"
+                rows={5}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Scope saves automatically when you click away. Use AI to generate from line items or refine your existing text.
+              </p>
             </div>
           </div>
 

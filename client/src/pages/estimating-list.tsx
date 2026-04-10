@@ -566,32 +566,18 @@ export default function EstimatingList() {
 
             <Separator />
 
-            {/* Row 6: Scope + Notes */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="opp-scope">Scope of Work</Label>
-                <Textarea
-                  id="opp-scope"
-                  data-testid="textarea-opportunity-scope"
-                  placeholder="Brief description of work to be performed..."
-                  value={form.scopeOfWork}
-                  onChange={(e) => setForm((f) => ({ ...f, scopeOfWork: e.target.value }))}
-                  className="resize-none"
-                  rows={3}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="opp-notes">Internal Notes</Label>
-                <Textarea
-                  id="opp-notes"
-                  data-testid="textarea-opportunity-notes"
-                  placeholder="Internal notes (not visible to customer)..."
-                  value={form.internalNotes}
-                  onChange={(e) => setForm((f) => ({ ...f, internalNotes: e.target.value }))}
-                  className="resize-none"
-                  rows={3}
-                />
-              </div>
+            {/* Row 6: Notes */}
+            <div className="space-y-1.5">
+              <Label htmlFor="opp-notes">Internal Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+              <Textarea
+                id="opp-notes"
+                data-testid="textarea-opportunity-notes"
+                placeholder="Internal notes visible only to your team (scope of work can be added after the site walk)..."
+                value={form.internalNotes}
+                onChange={(e) => setForm((f) => ({ ...f, internalNotes: e.target.value }))}
+                className="resize-none"
+                rows={2}
+              />
             </div>
           </div>
 

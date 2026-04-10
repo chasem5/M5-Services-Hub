@@ -12020,6 +12020,59 @@ Default margin target: ${bufferRules?.defaultMarginPct ?? 30}%`;
     }
   });
 
+  // AI Scope Generation
+  app.post("/api/opportunities/:id/ai-scope", isAuthenticated, async (req: any, res) => {
+    try {
+      const opp = await storage.getOpportunity(parseInt(req.params.id));
+      if (!opp) return res.status(404).json({ message: "Not found" });
+      const lines = await storage.listWorkspaceLines(parseInt(req.params.id));
+      const mode = req.body.mode ?? "generate"; // "generate" | "improve"
+      const existing = req.body.existing ?? "";
+
+      const systemPrompt = `You are a professional technical writer specializing in commercial facilities and building engineering proposals. Write clear, concise, and professional scope of work descriptions suitable for customer-facing quotes and proposals. Use plain language that describes what will be done, not internal estimating details. Focus on deliverables, locations, and standards. Do not include pricing. Return only the scope text with no preamble.`;
+
+      const serviceLines = Array.isArray(opp.serviceLines) ? opp.serviceLines.join(", ") : (opp.serviceLines ?? "");
+
+      const userMsg = mode === "improve"
+        ? `Improve and expand this existing scope of work for a ${opp.mode} estimate. Make it more professional and detailed while preserving the intent.
+
+Existing scope:
+${existing}
+
+Context:
+- Job name: ${opp.name}
+- Job type: ${opp.jobType ?? "Not specified"}
+- Service areas: ${serviceLines || "Not specified"}
+- Line items included:
+${lines.slice(0, 15).map(l => `  • ${l.description}`).join("\n") || "  (none yet)"}
+
+Return a polished scope of work paragraph (or short paragraphs). Do not use bullet points.`
+        : `Write a professional scope of work for a ${opp.mode} estimate with the following details:
+
+- Job name: ${opp.name}
+- Job type: ${opp.jobType ?? "Not specified"}
+- Service areas: ${serviceLines || "Not specified"}
+- Line items included:
+${lines.slice(0, 15).map(l => `  • ${l.description}`).join("\n") || "  (none yet)"}
+- Customer PO: ${opp.customerPo ?? "N/A"}
+
+Write 2–4 concise sentences describing the scope of work. Be specific but professional. Do not include pricing or internal notes.`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMsg },
+        ],
+      });
+
+      const scopeText = completion.choices[0].message.content?.trim() ?? "";
+      res.json({ scope: scopeText });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Sync Runs
   app.get("/api/opportunities/:id/sync-runs", isAuthenticated, async (req: any, res) => {
     try {
