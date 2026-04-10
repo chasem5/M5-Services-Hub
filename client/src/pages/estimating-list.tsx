@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -20,9 +20,102 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
   Plus, Search, FileText, DollarSign, Clock, CheckCircle2, XCircle, AlertCircle,
-  TrendingUp, ChevronRight, Pencil, Trash2, X,
+  TrendingUp, ChevronRight, Pencil, Trash2, X, ChevronDown, ChevronsUpDown,
 } from "lucide-react";
 import type { Opportunity } from "@shared/schema";
+
+// ── Searchable combobox ────────────────────────────────────────────────────────
+interface ComboOption { value: string; label: string; sub?: string }
+
+function SearchableCombo({
+  value, onValueChange, options, placeholder, testId, disabled,
+}: {
+  value: string;
+  onValueChange: (v: string) => void;
+  options: ComboOption[];
+  placeholder?: string;
+  testId?: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handle(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch("");
+      }
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 10);
+  }, [open]);
+
+  const selectedLabel = options.find((o) => o.value === value)?.label ?? "";
+  const q = search.toLowerCase();
+  const filtered = q
+    ? options.filter((o) => o.label.toLowerCase().includes(q) || (o.sub ?? "").toLowerCase().includes(q))
+    : options;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        data-testid={testId}
+        disabled={disabled}
+        onClick={() => { if (!disabled) { setOpen((v) => !v); setSearch(""); } }}
+        className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className={selectedLabel ? "text-foreground truncate" : "text-muted-foreground"}>
+          {selectedLabel || placeholder || "Select…"}
+        </span>
+        <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50 ml-2" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md">
+          <div className="p-2 border-b">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                ref={inputRef}
+                placeholder="Search…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-7 h-7 text-xs"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          </div>
+          <div className="max-h-52 overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-center text-muted-foreground">No results</div>
+            ) : (
+              filtered.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => { onValueChange(o.value); setOpen(false); setSearch(""); }}
+                  className={`w-full text-left px-3 py-1.5 text-sm flex flex-col hover:bg-accent hover:text-accent-foreground transition-colors ${o.value === value ? "bg-accent/40 font-medium" : ""}`}
+                >
+                  <span>{o.label}</span>
+                  {o.sub && <span className="text-xs text-muted-foreground">{o.sub}</span>}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   draft:     { label: "Draft",     color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",  icon: <FileText className="h-3 w-3" /> },
@@ -384,42 +477,36 @@ export default function EstimatingList() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Customer</Label>
-                <Select
+                <SearchableCombo
+                  testId="select-opportunity-client"
                   value={form.clientId}
                   onValueChange={(v) => setForm((f) => ({ ...f, clientId: v, buildingId: "" }))}
-                >
-                  <SelectTrigger data-testid="select-opportunity-client">
-                    <SelectValue placeholder="Select customer..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">No customer</SelectItem>
-                    {clients.map((c: any) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name || c.companyName || `Client #${c.id}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Select customer..."
+                  options={[
+                    { value: "__none__", label: "No customer" },
+                    ...clients.map((c: any) => ({
+                      value: String(c.id),
+                      label: c.name || c.companyName || `Client #${c.id}`,
+                    })),
+                  ]}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Property / Location</Label>
-                <Select
+                <SearchableCombo
+                  testId="select-opportunity-building"
                   value={form.buildingId}
                   onValueChange={(v) => setForm((f) => ({ ...f, buildingId: v }))}
+                  placeholder="Select property..."
                   disabled={!form.clientId && filteredBuildings.length === 0}
-                >
-                  <SelectTrigger data-testid="select-opportunity-building">
-                    <SelectValue placeholder="Select property..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">No property</SelectItem>
-                    {filteredBuildings.map((b: any) => (
-                      <SelectItem key={b.id} value={String(b.id)}>
-                        {b.name || b.buildingName || b.address || `Property #${b.id}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  options={[
+                    { value: "__none__", label: "No property" },
+                    ...filteredBuildings.map((b: any) => ({
+                      value: String(b.id),
+                      label: b.name || b.buildingName || b.address || `Property #${b.id}`,
+                    })),
+                  ]}
+                />
               </div>
             </div>
 
@@ -427,17 +514,16 @@ export default function EstimatingList() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Job Type</Label>
-                <Select value={form.jobType} onValueChange={(v) => setForm((f) => ({ ...f, jobType: v }))}>
-                  <SelectTrigger data-testid="select-opportunity-job-type">
-                    <SelectValue placeholder="Select job type..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {jobTypeOptions.map((jt) => (
-                      <SelectItem key={jt} value={jt}>{jt}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableCombo
+                  testId="select-opportunity-job-type"
+                  value={form.jobType}
+                  onValueChange={(v) => setForm((f) => ({ ...f, jobType: v }))}
+                  placeholder="Select job type..."
+                  options={[
+                    { value: "__none__", label: "None" },
+                    ...jobTypeOptions.map((jt) => ({ value: jt, label: jt })),
+                  ]}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="opp-customer-po">Customer PO</Label>
@@ -524,54 +610,29 @@ export default function EstimatingList() {
 
             {/* Row 5: Managers */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label>Project Manager</Label>
-                <Select value={form.projectManagerId} onValueChange={(v) => setForm((f) => ({ ...f, projectManagerId: v }))}>
-                  <SelectTrigger data-testid="select-opportunity-project-manager">
-                    <SelectValue placeholder="Select..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Unassigned</SelectItem>
-                    {teamUsers.map((u: any) => (
-                      <SelectItem key={u.id} value={String(u.id)}>
-                        {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email || u.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Account Manager</Label>
-                <Select value={form.accountManagerId} onValueChange={(v) => setForm((f) => ({ ...f, accountManagerId: v }))}>
-                  <SelectTrigger data-testid="select-opportunity-account-manager">
-                    <SelectValue placeholder="Select..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Unassigned</SelectItem>
-                    {teamUsers.map((u: any) => (
-                      <SelectItem key={u.id} value={String(u.id)}>
-                        {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email || u.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Sold By</Label>
-                <Select value={form.soldById} onValueChange={(v) => setForm((f) => ({ ...f, soldById: v }))}>
-                  <SelectTrigger data-testid="select-opportunity-sold-by">
-                    <SelectValue placeholder="Select..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Unassigned</SelectItem>
-                    {teamUsers.map((u: any) => (
-                      <SelectItem key={u.id} value={String(u.id)}>
-                        {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email || u.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {([
+                { key: "projectManagerId", label: "Project Manager", testId: "select-opportunity-project-manager" },
+                { key: "accountManagerId", label: "Account Manager", testId: "select-opportunity-account-manager" },
+                { key: "soldById",         label: "Sold By",         testId: "select-opportunity-sold-by" },
+              ] as { key: "projectManagerId" | "accountManagerId" | "soldById"; label: string; testId: string }[]).map(({ key, label, testId }) => (
+                <div key={key} className="space-y-1.5">
+                  <Label>{label}</Label>
+                  <SearchableCombo
+                    testId={testId}
+                    value={form[key]}
+                    onValueChange={(v) => setForm((f) => ({ ...f, [key]: v }))}
+                    placeholder="Select..."
+                    options={[
+                      { value: "__none__", label: "Unassigned" },
+                      ...teamUsers.map((u: any) => ({
+                        value: String(u.id),
+                        label: u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : (u.email || String(u.id)),
+                        sub: u.firstName && u.lastName ? u.email : undefined,
+                      })),
+                    ]}
+                  />
+                </div>
+              ))}
             </div>
 
             <Separator />
