@@ -4,7 +4,7 @@ import { Plus, Target, Users, Building2, CheckSquare, CreditCard, Phone, Calenda
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { cn, SERVICE_TYPE_OPTIONS } from "@/lib/utils";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -51,14 +51,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-
-const SERVICE_TYPE_OPTIONS = [
-  { value: "building_engineering", label: "Building Engineering", color: "bg-blue-100 text-blue-700 border-blue-200" },
-  { value: "facility_solutions", label: "Facility Solutions", color: "bg-purple-100 text-purple-700 border-purple-200" },
-  { value: "janitorial", label: "Janitorial", color: "bg-green-100 text-green-700 border-green-200" },
-  { value: "special_projects", label: "Special Projects", color: "bg-orange-100 text-orange-700 border-orange-200" },
-  { value: "property_assessment", label: "Property Assessment", color: "bg-teal-100 text-teal-700 border-teal-200" },
-] as const;
 
 const TIER_OPTIONS = ["$", "$$", "$$$", "$$$$"] as const;
 

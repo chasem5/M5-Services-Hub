@@ -12,6 +12,7 @@ import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ClientContact, ContactBuilding, Lead } from "@shared/schema";
+import { formatCurrency } from "@/lib/utils";
 
 const RED = "#BE1916";
 
@@ -57,11 +58,6 @@ interface ContactPanelProps {
   onClose: () => void;
   onOpenBuilding?: (buildingId: number) => void;
   onEdit?: (contact: ClientContact) => void;
-}
-
-function fmt(n: number | string | null | undefined) {
-  if (!n) return "$0";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(n));
 }
 
 const stageLabels: Record<string, string> = {
@@ -444,7 +440,7 @@ export function ContactPanel({ contactId, onClose, onOpenBuilding, onEdit }: Con
                             </span>
                           </div>
                           {d.value && Number(d.value) > 0 && (
-                            <div className="text-xs text-gray-400 mt-0.5">{fmt(d.value)}</div>
+                            <div className="text-xs text-gray-400 mt-0.5">{formatCurrency(d.value)}</div>
                           )}
                         </div>
                       </div>

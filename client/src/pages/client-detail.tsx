@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { cn } from "@/lib/utils";
+import { cn, STAGE_LABELS } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation, useSearch } from "wouter";
 import { 
@@ -3074,10 +3074,7 @@ export default function ClientDetail() {
                 won: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
                 lost: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
               };
-              const stageLabels: Record<string, string> = {
-                met_introduced: "Met / Introduced", new_lead: "Reached Out", in_conversation: "In Conversation",
-                qualified: "Ready for Proposal", proposal_sent: "Proposal Sent", won: "Won", lost: "Lost",
-              };
+              const stageLabels = STAGE_LABELS;
               const fmtVal = (v: string | null | undefined) => {
                 const n = parseFloat(v ?? "0");
                 if (!n) return null;

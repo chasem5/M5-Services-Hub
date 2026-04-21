@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { MapPin, Building, Briefcase, Info } from "lucide-react";
 import type { ContactBuilding, ClientOffice, Lead, Client } from "@shared/schema";
+import { STAGE_COLORS_HEX } from "@/lib/utils";
 
 // Fix Leaflet icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -49,15 +50,7 @@ function ChangeView({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
   return null;
 }
 
-const STAGE_COLORS: Record<string, string> = {
-  met_introduced: "#94a3b8", // slate
-  new_lead: "#3b82f6", // blue
-  in_conversation: "#6366f1", // indigo
-  qualified: "#8b5cf6", // violet
-  proposal_sent: "#a855f7", // purple
-  won: "#10b981", // emerald
-  lost: "#ef4444", // red
-};
+const STAGE_COLORS = STAGE_COLORS_HEX;
 
 export function MapView() {
   const [stageFilter, setStageFilter] = useState<string>("all");

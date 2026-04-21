@@ -12,6 +12,8 @@ import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ContactBuilding, ClientContact, Lead, BuildopsJob } from "@shared/schema";
+import { formatCurrency } from "@/lib/utils";
+import { TierBadge } from "@/components/TierBadge";
 
 interface BuildopsData {
   building: ContactBuilding;
@@ -24,11 +26,6 @@ interface BuildingPanelProps {
   buildingId: number | null;
   onClose: () => void;
   onOpenContact?: (contactId: number) => void;
-}
-
-function fmt(n: number | string | null | undefined) {
-  if (!n) return "$0";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(n));
 }
 
 const quoteStatusConfig: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
@@ -55,20 +52,6 @@ function getJobStatus(status: string | null) {
 function getQuoteStatus(stage: string | null) {
   if (!stage) return quoteStatusConfig.draft;
   return quoteStatusConfig[stage] ?? quoteStatusConfig.draft;
-}
-
-function TierBadge({ tier }: { tier: string | null | undefined }) {
-  if (!tier) return null;
-  const c: Record<string, string> = {
-    A: "bg-emerald-100 text-emerald-700",
-    B: "bg-blue-100 text-blue-700",
-    C: "bg-gray-100 text-gray-600",
-  };
-  return (
-    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${c[tier] ?? "bg-gray-100 text-gray-600"}`}>
-      {tier}
-    </span>
-  );
 }
 
 function ContactAvatar({ contact, size = 9 }: { contact: ClientContact; size?: number }) {
@@ -218,8 +201,8 @@ export function BuildingPanel({ buildingId, onClose, onOpenContact }: BuildingPa
               {/* Mini stats */}
               <div className="grid grid-cols-3 gap-2 mt-4">
                 {[
-                  { label: "Open Quotes", value: openQuotesValue > 0 ? fmt(openQuotesValue) : "–", color: "text-blue-600" },
-                  { label: "Job Revenue", value: totalJobRevenue > 0 ? fmt(totalJobRevenue) : "–", color: "text-emerald-600" },
+                  { label: "Open Quotes", value: openQuotesValue > 0 ? formatCurrency(openQuotesValue) : "–", color: "text-blue-600" },
+                  { label: "Job Revenue", value: totalJobRevenue > 0 ? formatCurrency(totalJobRevenue) : "–", color: "text-emerald-600" },
                   { label: "Contacts", value: String(contacts.length), color: "text-gray-800" },
                 ].map(s => (
                   <div key={s.label} className="bg-gray-50 rounded-lg p-2.5 text-center">
@@ -357,7 +340,7 @@ export function BuildingPanel({ buildingId, onClose, onOpenContact }: BuildingPa
                               )}
                             </div>
                             <div className="text-sm font-bold text-gray-900 flex-shrink-0">
-                              {Number(q.value) > 0 ? fmt(q.value) : <span className="text-gray-400 text-xs font-normal">TBD</span>}
+                              {Number(q.value) > 0 ? formatCurrency(q.value) : <span className="text-gray-400 text-xs font-normal">TBD</span>}
                             </div>
                           </div>
                         );
@@ -386,7 +369,7 @@ export function BuildingPanel({ buildingId, onClose, onOpenContact }: BuildingPa
                               </div>
                             </div>
                             <div className="text-sm font-bold text-gray-900 flex-shrink-0">
-                              {Number(j.totalAmount) > 0 ? fmt(j.totalAmount) : <span className="text-gray-400 text-xs font-normal">–</span>}
+                              {Number(j.totalAmount) > 0 ? formatCurrency(j.totalAmount) : <span className="text-gray-400 text-xs font-normal">–</span>}
                             </div>
                           </div>
                         );
@@ -394,7 +377,7 @@ export function BuildingPanel({ buildingId, onClose, onOpenContact }: BuildingPa
                       {totalJobRevenue > 0 && (
                         <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
                           <span>Total shown</span>
-                          <span className="font-semibold text-gray-800">{fmt(totalJobRevenue)}</span>
+                          <span className="font-semibold text-gray-800">{formatCurrency(totalJobRevenue)}</span>
                         </div>
                       )}
                     </div>

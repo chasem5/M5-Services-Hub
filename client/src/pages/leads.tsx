@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { formatDistanceToNow, differenceInDays, format } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn, SERVICE_TYPE_OPTIONS } from "@/lib/utils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   DndContext, 
@@ -250,14 +250,6 @@ function getConfidenceBarColor(score: number) {
   if (score >= 40) return "bg-yellow-500";
   return "bg-red-500";
 }
-
-const SERVICE_TYPE_OPTIONS = [
-  { value: "building_engineering", label: "Building Engineering", color: "bg-blue-100 text-blue-700 border-blue-200" },
-  { value: "facility_solutions", label: "Facility Solutions", color: "bg-purple-100 text-purple-700 border-purple-200" },
-  { value: "janitorial", label: "Janitorial", color: "bg-green-100 text-green-700 border-green-200" },
-  { value: "special_projects", label: "Special Projects", color: "bg-orange-100 text-orange-700 border-orange-200" },
-  { value: "property_assessment", label: "Property Assessment", color: "bg-teal-100 text-teal-700 border-teal-200" },
-] as const;
 
 function getServiceTypeLabel(value: string | null | undefined) {
   if (!value) return null;
