@@ -42,7 +42,7 @@ import { useState, useEffect } from "react";
 import { formatDistanceToNow, format, parseISO, differenceInDays } from "date-fns";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency, formatShortCurrency, STAGE_LABELS } from "@/lib/utils";
 import type { ActivityLog, Task, Client, ClientContact, Lead } from "@shared/schema";
 import {
   BarChart,
@@ -143,15 +143,6 @@ const ESTIMATE_LABELS: Record<string, string> = {
   rejected: "Rejected",
 };
 
-const formatCurrency = (value: string | number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(value));
-
-const formatShortCurrency = (value: number) => {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
-  return `$${value}`;
-};
-
 const monthLabel = (yearMonth: string) => {
   try {
     return format(parseISO(`${yearMonth}-01`), "MMM");
@@ -160,15 +151,7 @@ const monthLabel = (yearMonth: string) => {
   }
 };
 
-const stageLabels: Record<string, string> = {
-  met_introduced: "Met / Introduced",
-  new_lead: "Reached Out",
-  in_conversation: "In Conversation",
-  qualified: "Ready for Proposal",
-  proposal_sent: "Proposal Sent",
-  won: "Won",
-  lost: "Lost",
-};
+const stageLabels = STAGE_LABELS;
 
 export default function Dashboard() {
   const { user } = useAuth();

@@ -4,7 +4,7 @@ import { Plus, Target, Users, Building2, CheckSquare, CreditCard, Phone, Calenda
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { cn, SERVICE_TYPE_OPTIONS } from "@/lib/utils";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -36,8 +36,23 @@ import { SearchableSelect } from "@/components/SearchableSelect";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatPhoneNumber } from "@/lib/phone";
-import type { Client, ClientContact, Lead, PipelineStage, User } from "@shared/schema";
+import type { Client, ClientContact, ContactBuilding, Lead, PipelineStage, User } from "@shared/schema";
+import { insertLeadSchema, type InsertLead } from "@shared/schema";
 import { CardScannerDialog } from "@/components/CardScannerDialog";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+
+const TIER_OPTIONS = ["$", "$$", "$$$", "$$$$"] as const;
 
 export type ActiveDialog = "deal" | "contact" | "company" | "task" | "activity" | "spend" | null;
 
@@ -173,34 +188,74 @@ function AddDealDialog({
   users: User[];
 }) {
   const { toast } = useToast();
-  const [title, setTitle] = useState("");
-  const [clientId, setClientId] = useState("");
-  const [contactId, setContactId] = useState("");
-  const [stage, setStage] = useState("");
-  const [serviceType, setServiceType] = useState("");
-  const [value, setValue] = useState("");
+  const [formServiceTypes, setFormServiceTypes] = useState<string[]>([]);
+  const [valueType, setValueType] = useState<"fixed" | "potential">("fixed");
+  const [valueTier, setValueTier] = useState<string | null>(null);
+  const [confidenceStatus, setConfidenceStatus] = useState<string | null>(null);
+  const [tagInput, setTagInput] = useState("");
+  const [formTags, setFormTags] = useState<string[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+
+  const form = useForm<InsertLead>({
+    resolver: zodResolver(insertLeadSchema),
+    defaultValues: {
+      title: "",
+      clientId: undefined,
+      buildingId: null,
+      stage: stages[0]?.slug ?? "met_introduced",
+      valueType: "fixed",
+      value: "0",
+      valueTier: null,
+      tier: null,
+      confidenceScore: 50,
+      tags: [],
+      notes: "",
+      assignedTo: undefined,
+      contractType: "one_time",
+      recurringFrequency: null,
+      contractStartDate: null,
+      renewalDate: null,
+    },
+  });
+
+  const { data: buildingsForClient = [] } = useQuery<ContactBuilding[]>({
+    queryKey: ["/api/clients", selectedClientId, "all-buildings"],
+    enabled: !!selectedClientId,
+  });
+
+  const { data: dealTags = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/deal-tags"],
+  });
+
+  const contactsForClient = selectedClientId
+    ? allContacts.filter(c => c.clientId === selectedClientId)
+    : [];
+
+  const addTag = (val: string) => {
+    const t = val.trim().toLowerCase();
+    if (t && !formTags.includes(t)) setFormTags(prev => [...prev, t]);
+    setTagInput("");
+  };
+  const removeTag = (t: string) => setFormTags(prev => prev.filter(x => x !== t));
 
   const reset = () => {
-    setTitle(""); setClientId(""); setContactId(""); setStage(""); setServiceType(""); setValue("");
+    form.reset({ title: "", clientId: undefined, buildingId: null, stage: stages[0]?.slug ?? "met_introduced", valueType: "fixed", value: "0", valueTier: null, tier: null, confidenceScore: 50, tags: [], notes: "", assignedTo: undefined, contractType: "one_time", recurringFrequency: null, contractStartDate: null, renewalDate: null });
+    setFormServiceTypes([]);
+    setValueType("fixed");
+    setValueTier(null);
+    setConfidenceStatus(null);
+    setTagInput("");
+    setFormTags([]);
+    setSelectedClientId(null);
   };
 
-  const clientOptions = clients.map(c => ({ value: String(c.id), label: c.name }));
-  const contactOptions = (clientId
-    ? allContacts.filter(c => c.clientId === parseInt(clientId))
-    : allContacts
-  ).map(c => ({ value: String(c.id), label: c.name, sublabel: c.title ?? undefined }));
-  const stageOptions = stages.map(s => ({ value: s.slug, label: s.label }));
-
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (data: InsertLead) => {
       const res = await apiRequest("POST", "/api/leads", {
-        title: title.trim(),
-        clientId: clientId ? parseInt(clientId) : undefined,
-        contactId: contactId ? parseInt(contactId) : null,
-        stage: stage || (stages[0]?.slug ?? "met_introduced"),
-        serviceType: serviceType || null,
-        value: value || "0",
-        valueType: "fixed",
+        ...data,
+        tags: formTags,
+        confidenceStatus,
+        serviceTypes: formServiceTypes,
       });
       return res.json();
     },
@@ -215,100 +270,403 @@ function AddDealDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { reset(); onClose(); } }}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Deal</DialogTitle>
           <DialogDescription>Create a new sales opportunity in the pipeline.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 py-2">
-          <div>
-            <Label className="text-sm font-medium">Deal Title <span className="text-destructive">*</span></Label>
-            <Input
-              className="mt-1.5"
-              placeholder="e.g. HVAC Maintenance Contract"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              data-testid="input-quick-deal-title"
-            />
-          </div>
-          <div>
-            <Label className="text-sm font-medium">Company</Label>
-            <div className="mt-1.5">
-              <SearchableSelect
-                options={[{ value: "", label: "No company" }, ...clientOptions]}
-                value={clientId}
-                onChange={(v) => { setClientId(v); setContactId(""); }}
-                placeholder="Select company..."
-                searchPlaceholder="Search companies..."
-                data-testid="select-quick-deal-client"
-              />
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-4 py-2">
+
+            {/* Title */}
+            <FormField control={form.control} name="title" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Title <span className="text-destructive">*</span></FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g. HVAC Maintenance Contract" {...field} data-testid="input-quick-deal-title" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            {/* Company */}
+            <FormField control={form.control} name="clientId" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Company</FormLabel>
+                <FormControl>
+                  <SearchableSelect
+                    options={clients.map(c => ({ value: c.id.toString(), label: c.name }))}
+                    value={field.value?.toString() ?? ""}
+                    onChange={(val) => {
+                      const id = parseInt(val);
+                      field.onChange(id || undefined);
+                      setSelectedClientId(id || null);
+                      form.setValue("buildingId", null);
+                      form.setValue("contactId", null);
+                    }}
+                    placeholder="Select company..."
+                    searchPlaceholder="Search companies..."
+                    data-testid="select-quick-deal-client"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            {/* Contact (shown only when company selected and has contacts) */}
+            {selectedClientId && contactsForClient.length > 0 && (
+              <FormField control={form.control} name="contactId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Contact (Optional)</FormLabel>
+                  <Select
+                    onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                    value={field.value != null ? String(field.value) : "none"}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-quick-deal-contact">
+                        <SelectValue placeholder="No specific contact" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">No specific contact</SelectItem>
+                      {contactsForClient.map(c => (
+                        <SelectItem key={c.id} value={c.id.toString()}>
+                          {c.name}{c.title ? ` · ${c.title}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+
+            {/* Services */}
+            <div className="space-y-2">
+              <Label>Services (Optional)</Label>
+              <div className="flex flex-wrap gap-2">
+                {SERVICE_TYPE_OPTIONS.map((opt) => {
+                  const selected = formServiceTypes.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setFormServiceTypes(prev => selected ? prev.filter(s => s !== opt.value) : [...prev, opt.value])}
+                      className={`inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${selected ? opt.color + " border-transparent" : "bg-muted/30 text-muted-foreground border-border/50 hover:border-border"}`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          <div>
-            <Label className="text-sm font-medium">Contact</Label>
-            <div className="mt-1.5">
-              <SearchableSelect
-                options={[{ value: "", label: "No contact" }, ...contactOptions]}
-                value={contactId}
-                onChange={setContactId}
-                placeholder="Select contact..."
-                searchPlaceholder="Search contacts..."
-                data-testid="select-quick-deal-contact"
-              />
+
+            {/* Building (shown only when company selected and has buildings) */}
+            {selectedClientId && buildingsForClient.length > 0 && (
+              <FormField control={form.control} name="buildingId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Building (Optional)</FormLabel>
+                  <Select
+                    onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                    value={field.value != null ? String(field.value) : "none"}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-quick-deal-building">
+                        <SelectValue placeholder="No specific building" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">No specific building</SelectItem>
+                      {buildingsForClient.map(b => (
+                        <SelectItem key={b.id} value={b.id.toString()}>
+                          <span className="flex items-center gap-2">
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            {b.name}{b.address ? ` · ${b.address}` : ""}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+
+            {/* Stage */}
+            <FormField control={form.control} name="stage" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Stage</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger data-testid="select-quick-deal-stage">
+                      <SelectValue placeholder="Select stage" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {stages.map(s => (
+                      <SelectItem key={s.id} value={s.slug}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            {/* Contract Type */}
+            <div className="space-y-4 rounded-lg border p-3 bg-muted/30">
+              <FormField control={form.control} name="contractType" render={({ field }) => (
+                <FormItem className="space-y-3">
+                  <FormLabel>Contract Type</FormLabel>
+                  <FormControl>
+                    <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">
+                      <button
+                        type="button"
+                        onClick={() => { field.onChange("one_time"); form.setValue("recurringFrequency", null); form.setValue("contractStartDate", null); form.setValue("renewalDate", null); }}
+                        className={`px-3 py-1 text-sm rounded font-medium transition-colors ${field.value === "one_time" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                      >
+                        One-Time
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => field.onChange("recurring")}
+                        className={`px-3 py-1 text-sm rounded font-medium transition-colors ${field.value === "recurring" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                      >
+                        Recurring
+                      </button>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              {form.watch("contractType") === "recurring" && (
+                <div className="grid gap-4 pt-2">
+                  <FormField control={form.control} name="recurringFrequency" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Frequency</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select frequency" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="monthly">Monthly</SelectItem>
+                          <SelectItem value="quarterly">Quarterly</SelectItem>
+                          <SelectItem value="annual">Annual</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField control={form.control} name="contractStartDate" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Date</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                            onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : null)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="renewalDate" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Renewal Date</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            value={field.value ? new Date(field.value).toISOString().split('T')[0] : ""}
+                            onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : null)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-sm font-medium">Stage</Label>
-              <Select value={stage} onValueChange={setStage}>
-                <SelectTrigger className="mt-1.5" data-testid="select-quick-deal-stage">
-                  <SelectValue placeholder="Select stage..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {stageOptions.map(s => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+
+            {/* Value */}
+            <div className="space-y-2">
+              <Label>Value</Label>
+              <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">
+                <button
+                  type="button"
+                  onClick={() => { setValueType("fixed"); form.setValue("valueType", "fixed"); form.setValue("valueTier", null); setValueTier(null); }}
+                  className={`px-3 py-1 text-sm rounded font-medium transition-colors ${valueType === "fixed" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                >
+                  Price
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setValueType("potential"); form.setValue("valueType", "potential"); form.setValue("value", "0"); }}
+                  className={`px-3 py-1 text-sm rounded font-medium transition-colors ${valueType === "potential" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+                >
+                  Potential
+                </button>
+              </div>
+              {valueType === "fixed" ? (
+                <FormField control={form.control} name="value" render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                        <Input type="number" step="0.01" className="pl-6" {...field} data-testid="input-quick-deal-value" />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              ) : (
+                <div className="flex gap-2">
+                  {TIER_OPTIONS.map(tier => (
+                    <button
+                      key={tier}
+                      type="button"
+                      onClick={() => { setValueTier(tier); form.setValue("valueTier", tier as any); }}
+                      className={`flex-1 py-2 text-sm font-bold rounded-md border transition-colors ${valueTier === tier ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+                    >
+                      {tier}
+                    </button>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
-            <div>
-              <Label className="text-sm font-medium">Value ($)</Label>
-              <Input
-                className="mt-1.5"
-                type="number"
-                placeholder="0"
-                value={value}
-                onChange={e => setValue(e.target.value)}
-                data-testid="input-quick-deal-value"
-              />
+
+            {/* Confidence Status */}
+            <div className="space-y-3">
+              <Label>Confidence Status</Label>
+              <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">
+                <button type="button" onClick={() => setConfidenceStatus("undecided")}
+                  className={`px-3 py-1 text-sm rounded font-medium transition-colors ${confidenceStatus === "undecided" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                  Undecided
+                </button>
+                <button type="button" onClick={() => setConfidenceStatus("needs_work")}
+                  className={`px-3 py-1 text-sm rounded font-medium transition-colors ${confidenceStatus === "needs_work" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                  Needs Work
+                </button>
+                <button type="button" onClick={() => setConfidenceStatus(null)}
+                  className={`px-3 py-1 text-sm rounded font-medium transition-colors ${confidenceStatus === null ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}>
+                  Set Score
+                </button>
+              </div>
             </div>
-          </div>
-          <div>
-            <Label className="text-sm font-medium">Service Type</Label>
-            <Select value={serviceType} onValueChange={setServiceType}>
-              <SelectTrigger className="mt-1.5" data-testid="select-quick-deal-service">
-                <SelectValue placeholder="Select service type..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="building_engineering">Building Engineering</SelectItem>
-                <SelectItem value="facility_solutions">Facility Solutions</SelectItem>
-                <SelectItem value="janitorial">Janitorial</SelectItem>
-                <SelectItem value="special_projects">Special Projects</SelectItem>
-                <SelectItem value="property_assessment">Property Assessment</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onClose(); }}>Cancel</Button>
-          <Button
-            onClick={() => mutation.mutate()}
-            disabled={!title.trim() || mutation.isPending}
-            data-testid="button-quick-deal-submit"
-          >
-            {mutation.isPending ? "Adding..." : "Add Deal"}
-          </Button>
-        </DialogFooter>
+
+            {!confidenceStatus && (
+              <FormField control={form.control} name="confidenceScore" render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-center justify-between">
+                    <FormLabel>Confidence Score</FormLabel>
+                    <span className="text-sm font-bold">{field.value ?? 50}%</span>
+                  </div>
+                  <FormControl>
+                    <Slider min={0} max={100} step={5} value={[field.value ?? 50]} onValueChange={([v]) => field.onChange(v)} />
+                  </FormControl>
+                </FormItem>
+              )} />
+            )}
+
+            {/* Lead Tier */}
+            <FormField control={form.control} name="tier" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Lead Tier</FormLabel>
+                <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
+                  <FormControl>
+                    <SelectTrigger data-testid="select-quick-deal-tier">
+                      <SelectValue placeholder="No Tier" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">No Tier</SelectItem>
+                    <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
+                    <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
+                    <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            {/* Tags */}
+            <div className="space-y-2">
+              <Label>Tags</Label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    placeholder="Add a tag and press Enter"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagInput); }
+                    }}
+                    list="quick-deal-tags-list"
+                  />
+                  <datalist id="quick-deal-tags-list">
+                    {dealTags.map(t => <option key={t.id} value={t.name} />)}
+                  </datalist>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={() => addTag(tagInput)}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              {formTags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {formTags.map(tag => (
+                    <Badge key={tag} variant="secondary" className="gap-1 pl-2 pr-1">
+                      {tag}
+                      <button type="button" onClick={() => removeTag(tag)} className="rounded-sm hover:bg-muted p-0.5">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Assigned To */}
+            <FormField control={form.control} name="assignedTo" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Assigned To</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value || undefined}>
+                  <FormControl>
+                    <SelectTrigger data-testid="select-quick-deal-assignee">
+                      <SelectValue placeholder="Select team member" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {users.map(u => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.firstName} {u.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            {/* Notes */}
+            <FormField control={form.control} name="notes" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Notes</FormLabel>
+                <FormControl>
+                  <Textarea placeholder="Additional details..." className="resize-none" {...field} value={field.value || ""} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => { reset(); onClose(); }}>Cancel</Button>
+              <Button type="submit" disabled={mutation.isPending} data-testid="button-quick-deal-submit">
+                {mutation.isPending ? "Adding..." : "Add Deal"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
