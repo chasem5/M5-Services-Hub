@@ -161,6 +161,7 @@ import {
   type IndustryOption,
   ONBOARDING_ITEM_KEYS,
   ONBOARDING_ITEM_LABELS,
+  ONBOARDING_MILESTONES,
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { OrgChart } from "@/components/OrgChart";
@@ -1273,6 +1274,9 @@ export default function ClientDetail() {
   const [activeTab, setActiveTab] = useState("overview");
   const [clientIndustryCustomMode, setClientIndustryCustomMode] = useState(false);
   const { data: industryOptionsList } = useQuery<IndustryOption[]>({ queryKey: ["/api/industry-options"] });
+  const { data: adminSettings = {} } = useQuery<Record<string, string>>({ queryKey: ["/api/admin-settings"] });
+  const healthyThreshold = parseInt(adminSettings["health.threshold.healthy"] ?? "70", 10);
+  const watchThreshold = parseInt(adminSettings["health.threshold.watch"] ?? "40", 10);
   const industryOptionLabels = industryOptionsList?.map(o => o.label) ?? [];
   const [highlightedContactId, setHighlightedContactId] = useState<number | null>(null);
   const urlInitializedRef = useRef(false);
@@ -1357,6 +1361,8 @@ export default function ClientDetail() {
   const [dragOverOfficeId, setDragOverOfficeId] = useState<number | "unassigned" | null>(null);
   const [orgChartView, setOrgChartView] = useState<"people" | "portfolio">("people");
   const [onboardingChecklistOpen, setOnboardingChecklistOpen] = useState(true);
+  const [qualNotes, setQualNotes] = useState("");
+  const [qualOpen, setQualOpen] = useState(false);
   const [editingOverviewNotes, setEditingOverviewNotes] = useState(false);
   const [overviewNotesValue, setOverviewNotesValue] = useState("");
   const [editingOfficeNotes, setEditingOfficeNotes] = useState<number | null>(null);
@@ -1519,6 +1525,43 @@ export default function ClientDetail() {
 
   const { data: onboardingItems = [] } = useQuery<Array<{ id: number; clientId: number; itemKey: string; isCompleted: boolean; completedAt: string | null; updatedAt: string }>>({
     queryKey: ["/api/clients", clientId, "onboarding-checklist"],
+  });
+
+  const { data: onboardingMilestones = [] } = useQuery<Array<{ id: number; clientId: number; milestoneKey: string; status: string; completedAt: string | null; notes: string | null; saOutcome: string | null }>>({
+    queryKey: ["/api/clients", clientId, "onboarding-milestones"],
+    enabled: !!clientId,
+  });
+
+  const { data: qualificationReviews = [] } = useQuery<Array<{ id: number; clientId: number; recommendation: string; partnershipScore: string; revenuePotential: string; marginQuality: string; milestoneCompletion: string; reviewedById: string | null; notes: string | null; overriddenRecommendation: string | null; createdAt: string }>>({
+    queryKey: ["/api/clients", clientId, "qualification-reviews"],
+    enabled: !!clientId,
+  });
+
+  const updateMilestoneMutation = useMutation({
+    mutationFn: async ({ milestoneKey, updates }: { milestoneKey: string; updates: Record<string, unknown> }) => {
+      const res = await apiRequest("PATCH", `/api/clients/${clientId}/onboarding-milestones/${milestoneKey}`, updates);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "onboarding-milestones"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to update milestone", variant: "destructive" });
+    },
+  });
+
+  const createQualificationReviewMutation = useMutation({
+    mutationFn: async (notes: string) => {
+      const res = await apiRequest("POST", `/api/clients/${clientId}/qualification-reviews`, { notes });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "qualification-reviews"] });
+      toast({ title: "Qualification review completed" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create qualification review", variant: "destructive" });
+    },
   });
 
   const toggleOnboardingItemMutation = useMutation({
@@ -2422,6 +2465,166 @@ export default function ClientDetail() {
           </Dialog>
 
           <TabsContent value="overview" className="m-0 space-y-5">
+            {/* ── Health Score Panel ── */}
+            {(() => {
+              const phase = client.customerPhase;
+              const score = client.healthScore;
+              const trend = client.healthTrend;
+              const updatedAt = client.healthScoreUpdatedAt;
+
+              // healthScoreBreakdown is jsonb (unknown) — cast to our known shape
+              type BreakdownComp = { score: number; weight: number; weighted: number; buildingBaseline?: boolean; label?: string };
+              type BreakdownShape = { components?: Record<string, BreakdownComp> };
+              const breakdownRaw = client.healthScoreBreakdown as BreakdownShape | null;
+              const breakdownComponents = breakdownRaw?.components ?? null;
+
+              if (phase === null || phase === undefined) return null;
+
+              const trendArrow = trend === "rising" ? "↑" : trend === "declining" ? "↓" : "→";
+              const trendColor = trend === "rising" ? "text-green-600 dark:text-green-400" : trend === "declining" ? "text-red-500 dark:text-red-400" : "text-muted-foreground";
+
+              let bandBg = "";
+              let bandLabel = "";
+              let bandTextClass = "";
+              if (score !== null && score !== undefined) {
+                if (score >= healthyThreshold) { bandBg = "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800"; bandLabel = "Healthy"; bandTextClass = "text-green-700 dark:text-green-400"; }
+                else if (score >= watchThreshold) { bandBg = "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"; bandLabel = "Watch"; bandTextClass = "text-amber-700 dark:text-amber-400"; }
+                else { bandBg = "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"; bandLabel = "At Risk"; bandTextClass = "text-red-700 dark:text-red-400"; }
+              }
+
+              if (phase === 1) {
+                const completedCount = onboardingMilestones.filter(m => m.status === "complete").length;
+                const totalMilestones = ONBOARDING_MILESTONES.length;
+                const milestonePct = totalMilestones > 0 ? Math.round((completedCount / totalMilestones) * 100) : 0;
+                const latestReview = qualificationReviews.length > 0 ? qualificationReviews[qualificationReviews.length - 1] : null;
+                const finalRecommendation = latestReview?.overriddenRecommendation ?? latestReview?.recommendation;
+                return (
+                  <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-4 space-y-3" data-testid="health-panel-phase1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">Onboarding Progress</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800">Phase 1</span>
+                      </div>
+                      <span className="text-xs font-medium text-blue-700 dark:text-blue-400" data-testid="text-milestone-progress">{completedCount}/{totalMilestones} complete</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-blue-100 dark:bg-blue-900/40 overflow-hidden" data-testid="bar-milestone-progress">
+                      <div className="h-full rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${milestonePct}%` }} />
+                    </div>
+                    <div className="space-y-1">
+                      {ONBOARDING_MILESTONES.map(m => {
+                        const record = onboardingMilestones.find(r => r.milestoneKey === m.key);
+                        const st = record?.status ?? "pending";
+                        const isComplete = st === "complete";
+                        const isOverdue = st === "overdue";
+                        return (
+                          <div key={m.key} className="flex items-center gap-2" data-testid={`milestone-row-${m.key}`}>
+                            <div className={`h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center shrink-0 ${isComplete ? "bg-blue-500 border-blue-500" : isOverdue ? "border-red-400 bg-red-50 dark:bg-red-950/20" : "border-blue-200 dark:border-blue-700"}`}>
+                              {isComplete && <svg className="h-2 w-2 text-white" fill="none" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </div>
+                            <span className={`text-xs ${isComplete ? "line-through text-muted-foreground" : isOverdue ? "text-red-600 dark:text-red-400 font-medium" : "text-blue-700 dark:text-blue-300"}`}>{m.label}</span>
+                            <span className="text-[10px] text-muted-foreground ml-auto">Day {m.targetDayEnd}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {finalRecommendation && (
+                      <div className={`mt-2 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${finalRecommendation === "invest_more" ? "border-green-200 bg-green-50 text-green-700 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800" : finalRecommendation === "nurture" ? "border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800" : "border-red-200 bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400 dark:border-red-800"}`} data-testid="qualification-recommendation-badge">
+                        {finalRecommendation === "invest_more" ? "✓ Invest More" : finalRecommendation === "nurture" ? "⟳ Nurture" : "↓ Deprioritize"}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              if (score === null || score === undefined) {
+                return (
+                  <div className="rounded-xl border border-border/50 bg-muted/30 p-4" data-testid="health-panel-unscored">
+                    <span className="text-sm font-semibold text-muted-foreground">Health Score</span>
+                    <p className="text-xs text-muted-foreground mt-1">No score yet — will be computed during the next nightly run.</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className={`rounded-xl border p-4 ${bandBg}`} data-testid="health-panel">
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Health Score</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`text-3xl font-bold ${bandTextClass}`} data-testid="health-score-value">{score}</span>
+                          <span className={`text-xl font-bold ${trendColor}`} title={`Trend: ${trend ?? "flat"}`} data-testid="health-trend-arrow">{trendArrow}</span>
+                          <span className={`text-sm font-semibold ${bandTextClass}`}>{bandLabel}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {phase === 2 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-700 border border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800">
+                          Building Baseline
+                        </span>
+                      )}
+                      {updatedAt && (
+                        <span className="text-[11px] text-muted-foreground">
+                          Updated {new Date(updatedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {breakdownComponents && Object.keys(breakdownComponents).length > 0 && (() => {
+                    const compEntries = Object.entries(breakdownComponents) as [string, { label?: string; score: number; weight?: number; weighted?: number; buildingBaseline?: boolean }][];
+                    const sorted = [...compEntries].sort((a, b) => b[1].score - a[1].score);
+                    const strongest = sorted[0];
+                    const weakest = sorted[sorted.length - 1];
+                    let explanationCopy = "";
+                    if (strongest && weakest && strongest[0] !== weakest[0]) {
+                      const strongLabel = strongest[1].label ?? strongest[0];
+                      const weakLabel = weakest[1].label ?? weakest[0];
+                      const weakScore = weakest[1].score;
+                      const scoreGap = strongest[1].score - weakScore;
+                      explanationCopy = scoreGap >= 10
+                        ? `${strongLabel} is your strongest signal, but ${weakLabel} is dragging the score down (${weakScore}/100).`
+                        : `${strongLabel} and other signals are broadly consistent.`;
+                    }
+                    return (
+                      <>
+                        {explanationCopy && (
+                          <p className="text-xs text-muted-foreground italic mb-3" data-testid="text-health-explanation">{explanationCopy}</p>
+                        )}
+                        <div className="rounded-lg border border-border/40 overflow-hidden" data-testid="health-breakdown-table">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-muted/40">
+                                <th className="text-left py-1.5 px-3 font-semibold text-muted-foreground">Component</th>
+                                <th className="text-right py-1.5 px-3 font-semibold text-muted-foreground">Score</th>
+                                <th className="text-right py-1.5 px-3 font-semibold text-muted-foreground">Weight</th>
+                                <th className="text-right py-1.5 px-3 font-semibold text-muted-foreground">Contribution</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {compEntries.map(([key, comp]) => (
+                                <tr key={key} className="border-t border-border/20">
+                                  <td className="py-1.5 px-3 text-foreground/80">
+                                    <span>{comp.label ?? key}</span>
+                                    {comp.buildingBaseline && (
+                                      <span className="ml-1.5 text-[10px] text-purple-600 dark:text-purple-400 italic">(building baseline)</span>
+                                    )}
+                                  </td>
+                                  <td className="py-1.5 px-3 text-right font-medium">{comp.score}</td>
+                                  <td className="py-1.5 px-3 text-right text-muted-foreground">{Math.round((comp.weight ?? 0) * 100)}%</td>
+                                  <td className="py-1.5 px-3 text-right font-semibold">{comp.weighted?.toFixed(1)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              );
+            })()}
+
             {/* ── Company Notes (amber sticky-note) ── */}
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
               <StickyNote className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
@@ -2890,69 +3093,166 @@ export default function ClientDetail() {
                 </Card>
               </div>
 
-              {/* Right: Onboarding Checklist + Offices Preview + Recent Activity */}
+              {/* Right: Onboarding Milestones + Qualification Review + Offices Preview + Recent Activity */}
               <div className="lg:col-span-2 space-y-6">
-                {/* Onboarding Checklist — for clients with a won deal or active BuildOps status */}
-                {(leads && leads.some(l => l.stage === "won") || (client && client.buildopsStatus === "active")) && (() => {
-                  const ONBOARDING_ITEMS = ONBOARDING_ITEM_KEYS.map(key => ({ key, label: ONBOARDING_ITEM_LABELS[key] }));
-                  const completedCount = ONBOARDING_ITEMS.filter(item => {
-                    const record = onboardingItems.find(r => r.itemKey === item.key);
-                    return record?.isCompleted;
-                  }).length;
-                  const total = ONBOARDING_ITEMS.length;
+                {/* 7-Milestone Onboarding Card — Phase 1 clients */}
+                {client && client.customerPhase === 1 && (() => {
+                  const completedCount = onboardingMilestones.filter(m => m.status === "complete").length;
+                  const total = ONBOARDING_MILESTONES.length;
                   const pct = Math.round((completedCount / total) * 100);
+                  const daysSince = client.createdAt ? Math.floor((Date.now() - new Date(client.createdAt).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                  const latestReview = qualificationReviews.length > 0 ? qualificationReviews[qualificationReviews.length - 1] : null;
                   return (
-                    <Card className="shadow-sm border-border/40 bg-card" data-testid="card-onboarding-checklist">
-                      <CardHeader className="pb-3 cursor-pointer select-none" onClick={() => setOnboardingChecklistOpen(o => !o)}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <ClipboardList className="h-4 w-4 text-primary shrink-0" />
-                            <CardTitle className="text-base font-semibold">Onboarding</CardTitle>
+                    <>
+                      <Card className="shadow-sm border-border/40 bg-card" data-testid="card-onboarding-milestones">
+                        <CardHeader className="pb-3 cursor-pointer select-none" onClick={() => setOnboardingChecklistOpen(o => !o)}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <ClipboardList className="h-4 w-4 text-primary shrink-0" />
+                              <CardTitle className="text-base font-semibold">Onboarding Milestones</CardTitle>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-medium text-muted-foreground" data-testid="text-onboarding-milestones-progress">
+                                {completedCount}/{total} complete
+                              </span>
+                              {onboardingChecklistOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs font-medium text-muted-foreground" data-testid="text-onboarding-progress">
-                              {completedCount} of {total} complete
-                            </span>
-                            {onboardingChecklistOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                          <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden" data-testid="bar-onboarding-milestones-progress">
+                            <div className="h-full rounded-full transition-all duration-300 bg-primary" style={{ width: `${pct}%` }} />
                           </div>
-                        </div>
-                        <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden" data-testid="bar-onboarding-progress">
-                          <div
-                            className="h-full rounded-full transition-all duration-300 bg-primary"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </CardHeader>
-                      {onboardingChecklistOpen && (
-                        <CardContent className="pt-0 pb-4 space-y-1">
-                          {ONBOARDING_ITEMS.map(item => {
-                            const record = onboardingItems.find(r => r.itemKey === item.key);
-                            const isChecked = record?.isCompleted ?? false;
-                            return (
-                              <div
-                                key={item.key}
-                                className={`flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer transition-colors select-none ${isChecked ? "text-muted-foreground" : "hover:bg-muted/60"}`}
-                                onClick={() => {
-                                  if (!toggleOnboardingItemMutation.isPending) {
-                                    toggleOnboardingItemMutation.mutate({ itemKey: item.key, isCompleted: !isChecked });
-                                  }
-                                }}
-                                data-testid={`toggle-onboarding-${item.key}`}
-                              >
-                                <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${isChecked ? "bg-primary border-primary" : "border-input"}`}>
-                                  {isChecked && (
-                                    <svg className="h-2.5 w-2.5 text-primary-foreground" fill="none" viewBox="0 0 12 12">
-                                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    </svg>
+                        </CardHeader>
+                        {onboardingChecklistOpen && (
+                          <CardContent className="pt-0 pb-4 space-y-2">
+                            {completedCount === 0 && (
+                              <div className="flex items-start gap-2 px-2 py-2.5 rounded-md bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 mb-2" data-testid="banner-onboarding-start">
+                                <svg className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                                <p className="text-xs text-blue-700 dark:text-blue-300">Onboarding plan created. Start with the intro meeting — check off the first milestone when done.</p>
+                              </div>
+                            )}
+                            {ONBOARDING_MILESTONES.map(m => {
+                              const record = onboardingMilestones.find(r => r.milestoneKey === m.key);
+                              const st = record?.status ?? "pending";
+                              const isComplete = st === "complete";
+                              const isOverdue = st === "overdue";
+                              const isAuto = m.completionType === "auto";
+                              return (
+                                <div key={m.key} className="space-y-1.5">
+                                  <div
+                                    className={`flex items-center gap-3 px-2 py-2 rounded-md transition-colors select-none ${isAuto ? "cursor-default" : isComplete ? "text-muted-foreground" : "hover:bg-muted/60 cursor-pointer"}`}
+                                    onClick={() => {
+                                      if (!isAuto && !updateMilestoneMutation.isPending) {
+                                        updateMilestoneMutation.mutate({ milestoneKey: m.key, updates: { status: isComplete ? "pending" : "complete" } });
+                                      }
+                                    }}
+                                    data-testid={`toggle-milestone-${m.key}`}
+                                  >
+                                    <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isComplete ? "bg-primary border-primary" : isOverdue ? "border-red-400" : "border-input"}`}>
+                                      {isComplete && <svg className="h-2.5 w-2.5 text-primary-foreground" fill="none" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <span className={`text-sm ${isComplete ? "line-through text-muted-foreground" : isOverdue ? "text-red-600 dark:text-red-400 font-medium" : "font-medium"}`}>{m.label}</span>
+                                      {isAuto && <span className="ml-1.5 text-[10px] text-muted-foreground">(auto)</span>}
+                                    </div>
+                                    <span className={`text-[10px] shrink-0 ${isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>Day {m.targetDayEnd}</span>
+                                  </div>
+                                  {/* SA Outcome dropdown for milestone 7 */}
+                                  {m.key === "sa_discussed" && isComplete && (
+                                    <div className="ml-9 flex items-center gap-2">
+                                      <span className="text-xs text-muted-foreground">SA Outcome:</span>
+                                      <select
+                                        className="text-xs border border-input rounded px-2 py-1 bg-background text-foreground"
+                                        value={record?.saOutcome ?? ""}
+                                        onChange={e => updateMilestoneMutation.mutate({ milestoneKey: m.key, updates: { saOutcome: e.target.value || null } })}
+                                        data-testid="select-sa-outcome"
+                                      >
+                                        <option value="">-- Select --</option>
+                                        <option value="interested">Interested</option>
+                                        <option value="not_interested">Not Interested</option>
+                                        <option value="follow_up">Follow Up</option>
+                                      </select>
+                                    </div>
                                   )}
                                 </div>
-                                <span className={`text-sm ${isChecked ? "line-through" : "font-medium"}`}>{item.label}</span>
+                              );
+                            })}
+                          </CardContent>
+                        )}
+                      </Card>
+
+                      {/* Qualification Review Panel — day 90+ */}
+                      {daysSince >= 90 && (
+                        <Card className="shadow-sm border-border/40 bg-card" data-testid="card-qualification-review">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-base font-semibold">90-Day Qualification Review</CardTitle>
+                              {!latestReview && (
+                                <button
+                                  className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 transition-colors disabled:opacity-60"
+                                  onClick={() => setQualOpen(o => !o)}
+                                  disabled={createQualificationReviewMutation.isPending}
+                                  data-testid="button-run-qualification"
+                                >
+                                  Run Review
+                                </button>
+                              )}
+                            </div>
+                          </CardHeader>
+                          <CardContent className="pt-0 space-y-4">
+                            {latestReview ? (
+                              <div className="space-y-3">
+                                <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${latestReview.overriddenRecommendation === "invest_more" || (!latestReview.overriddenRecommendation && latestReview.recommendation === "invest_more") ? "border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800" : latestReview.overriddenRecommendation === "nurture" || (!latestReview.overriddenRecommendation && latestReview.recommendation === "nurture") ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800" : "border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-800"}`}>
+                                  <div className="flex-1">
+                                    <div className="text-xs text-muted-foreground font-medium mb-0.5">Recommendation</div>
+                                    <div className="text-sm font-bold capitalize" data-testid="text-qual-recommendation">{(latestReview.overriddenRecommendation ?? latestReview.recommendation).replace("_", " ")}</div>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                  <div className="rounded border border-border/60 px-2 py-2">
+                                    <div className="text-muted-foreground mb-0.5">Partnership</div>
+                                    <div className="font-semibold capitalize" data-testid="text-qual-partnership">{latestReview.partnershipScore}</div>
+                                  </div>
+                                  <div className="rounded border border-border/60 px-2 py-2">
+                                    <div className="text-muted-foreground mb-0.5">Revenue</div>
+                                    <div className="font-semibold capitalize" data-testid="text-qual-revenue">{latestReview.revenuePotential}</div>
+                                  </div>
+                                  <div className="rounded border border-border/60 px-2 py-2">
+                                    <div className="text-muted-foreground mb-0.5">Margin</div>
+                                    <div className="font-semibold capitalize" data-testid="text-qual-margin">{latestReview.marginQuality}</div>
+                                  </div>
+                                </div>
+                                {latestReview.notes && <p className="text-xs text-muted-foreground">{latestReview.notes}</p>}
+                                <div className="text-[10px] text-muted-foreground">Reviewed {latestReview.createdAt ? format(new Date(latestReview.createdAt), "MMM d, yyyy") : ""}</div>
                               </div>
-                            );
-                          })}
-                        </CardContent>
+                            ) : (
+                              <>
+                                <p className="text-sm text-muted-foreground">Day 90 has passed. Run the qualification review to determine next steps for this account.</p>
+                                {qualOpen && (
+                                  <div className="space-y-2">
+                                    <textarea
+                                      className="w-full text-sm border border-input rounded-md px-3 py-2 bg-background text-foreground resize-none"
+                                      rows={3}
+                                      placeholder="Notes (optional)..."
+                                      value={qualNotes}
+                                      onChange={e => setQualNotes(e.target.value)}
+                                      data-testid="input-qual-notes"
+                                    />
+                                    <button
+                                      className="w-full text-sm bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 transition-colors disabled:opacity-60"
+                                      onClick={() => createQualificationReviewMutation.mutate(qualNotes)}
+                                      disabled={createQualificationReviewMutation.isPending}
+                                      data-testid="button-confirm-qualification"
+                                    >
+                                      {createQualificationReviewMutation.isPending ? "Running…" : "Confirm Review"}
+                                    </button>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </CardContent>
+                        </Card>
                       )}
-                    </Card>
+                    </>
                   );
                 })()}
 

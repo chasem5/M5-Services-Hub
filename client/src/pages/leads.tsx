@@ -555,6 +555,7 @@ function KanbanColumn({
   onToggleSelect,
   isBuildopsTab = false,
   invoiceStatusMap = {},
+  clientHealthMap = {},
 }: { 
   stage: PipelineStage;
   sc: any;
@@ -581,6 +582,7 @@ function KanbanColumn({
   onToggleSelect: (id: number) => void;
   isBuildopsTab?: boolean;
   invoiceStatusMap?: Record<number, any>;
+  clientHealthMap?: Record<number, number | null>;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.slug,
@@ -645,6 +647,7 @@ function KanbanColumn({
                 onToggleSelect={onToggleSelect}
                 isBuildopsTab={isBuildopsTab}
                 invoiceStatus={invoiceStatusMap[lead.id] ?? null}
+                clientHealthScore={lead.clientId ? (clientHealthMap[lead.clientId] ?? null) : null}
               />
             ))}
         </div>
@@ -675,6 +678,7 @@ function LeadCard({
   onToggleSelect,
   isBuildopsTab = false,
   invoiceStatus,
+  clientHealthScore,
 }: { 
   lead: Lead; 
   formatCurrency: (v: string | number) => string;
@@ -697,6 +701,7 @@ function LeadCard({
   onToggleSelect?: (id: number) => void;
   isBuildopsTab?: boolean;
   invoiceStatus?: { invoicedTotal: number; outstandingTotal: number; paidTotal: number; invoiceCount: number; paymentStatus: string } | null;
+  clientHealthScore?: number | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: lead.id,
@@ -959,6 +964,19 @@ function LeadCard({
                     Renews {new Date(lead.renewalDate).toLocaleDateString()}
                   </span>
                 )}
+              </div>
+            )}
+
+            {clientHealthScore !== null && clientHealthScore !== undefined && (
+              <div className="flex items-center justify-between border-t border-border/30 pt-1.5 mt-0.5" data-testid={`badge-client-health-${lead.id}`}>
+                <span className="text-[9px] text-muted-foreground font-medium uppercase tracking-wider">Account Health</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  clientHealthScore >= 70 ? "bg-green-100 text-green-700" :
+                  clientHealthScore >= 40 ? "bg-amber-100 text-amber-700" :
+                  "bg-red-100 text-red-700"
+                }`}>
+                  {clientHealthScore}
+                </span>
               </div>
             )}
           </CardContent>
@@ -1883,6 +1901,12 @@ export default function Leads() {
     return clients?.find((c) => c.id === clientId)?.name || "Unknown Client";
   };
 
+  const clientHealthMap = useMemo(() => {
+    const map: Record<number, number | null> = {};
+    clients?.forEach(c => { map[c.id] = c.healthScore ?? null; });
+    return map;
+  }, [clients]);
+
   const getUserName = (userId: string | null) => {
     if (!userId) return "Unassigned";
     const user = users?.find((u) => u.id === userId);
@@ -2363,6 +2387,7 @@ export default function Leads() {
                               onToggleSelect={toggleSelectId}
                               isBuildopsTab={sourceTab === "buildops"}
                               invoiceStatusMap={invoiceStatusMap}
+                              clientHealthMap={clientHealthMap}
                             />
                           );
                         })}
@@ -2417,6 +2442,7 @@ export default function Leads() {
                               onToggleSelect={toggleSelectId}
                               isBuildopsTab={sourceTab === "buildops"}
                               invoiceStatusMap={invoiceStatusMap}
+                              clientHealthMap={clientHealthMap}
                             />
                           );
                         })}

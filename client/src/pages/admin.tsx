@@ -63,6 +63,7 @@ import {
   MapPin,
   Database,
   GitMerge,
+  Activity,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -2027,6 +2028,17 @@ export default function AdminPage() {
   const [cancelInviteId, setCancelInviteId] = useState<number | null>(null);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [savedPermission, setSavedPermission] = useState<string | null>(null);
+
+  // Health Score Config state
+  const [hsWeights, setHsWeights] = useState<Record<string, number>>({ jobFrequency: 25, recency: 15, revenue: 25, emailEngagement: 10, quoteAcceptance: 15, margin: 10 });
+  const [hsEnabled, setHsEnabled] = useState<Record<string, boolean>>({ jobFrequency: true, recency: true, revenue: true, emailEngagement: true, quoteAcceptance: true, margin: true });
+  const [hsHealthyThreshold, setHsHealthyThreshold] = useState(70);
+  const [hsWatchThreshold, setHsWatchThreshold] = useState(40);
+  const [hsTrendSensitivity, setHsTrendSensitivity] = useState(5);
+  const [hsSettingsLoaded, setHsSettingsLoaded] = useState(false);
+  const [isSavingHs, setIsSavingHs] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [recalcResult, setRecalcResult] = useState<{ updated: number; errors: number; completedAt: string } | null>(null);
   const [savedLabel, setSavedLabel] = useState<string | null>(null);
   const [roleLabelEdits, setRoleLabelEdits] = useState<Record<string, string>>({});
   const [showAddRole, setShowAddRole] = useState(false);
@@ -2041,6 +2053,22 @@ export default function AdminPage() {
   const isSuperAdmin = myPerms?.isSuperAdmin ?? false;
   const { data: buildopsVerifiedSetting } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
   const isBuildopsVerifiedForPanel = buildopsVerifiedSetting?.value === "true";
+
+  const { data: adminSettings } = useQuery<Record<string, string>>({ queryKey: ["/api/admin-settings"] });
+  const { data: lastRecalcData } = useQuery<{ lastRecalcAt: string | null }>({ queryKey: ["/api/admin/last-recalc"] });
+
+  useEffect(() => {
+    if (adminSettings && !hsSettingsLoaded) {
+      const w = (k: string, def: number) => Math.round(parseFloat(adminSettings[`health.weight.${k}`] ?? String(def / 100)) * 100);
+      const e = (k: string) => adminSettings[`health.enabled.${k}`] !== "false";
+      setHsWeights({ jobFrequency: w("jobFrequency", 25), recency: w("recency", 15), revenue: w("revenue", 25), emailEngagement: w("emailEngagement", 10), quoteAcceptance: w("quoteAcceptance", 15), margin: w("margin", 10) });
+      setHsEnabled({ jobFrequency: e("jobFrequency"), recency: e("recency"), revenue: e("revenue"), emailEngagement: e("emailEngagement"), quoteAcceptance: e("quoteAcceptance"), margin: e("margin") });
+      setHsHealthyThreshold(parseInt(adminSettings["health.threshold.healthy"] ?? "70", 10));
+      setHsWatchThreshold(parseInt(adminSettings["health.threshold.watch"] ?? "40", 10));
+      setHsTrendSensitivity(parseInt(adminSettings["health.trend.sensitivity"] ?? "5", 10));
+      setHsSettingsLoaded(true);
+    }
+  }, [adminSettings, hsSettingsLoaded]);
 
   if (currentUser && currentUser.role !== "admin" && currentUser.role !== "super_admin") {
     setLocation("/");
@@ -2332,6 +2360,12 @@ export default function AdminPage() {
             <TabsTrigger value="orgchart" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-orgchart">
               <GitBranch className="h-4 w-4" />
               Org Chart
+            </TabsTrigger>
+          )}
+          {(isSuperAdmin || (myPerms?.role === "admin")) && (
+            <TabsTrigger value="health-score" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-health-score">
+              <Activity className="h-4 w-4" />
+              Health Score
             </TabsTrigger>
           )}
         </TabsList>
@@ -3236,6 +3270,288 @@ export default function AdminPage() {
               </div>
             )}
           </div>
+        </TabsContent>
+
+        <TabsContent value="health-score" className="pt-4">
+          {(() => {
+            const COMPONENTS = [
+              { key: "jobFrequency", label: "Job Frequency" },
+              { key: "recency", label: "Recency" },
+              { key: "revenue", label: "Revenue" },
+              { key: "emailEngagement", label: "Email Engagement" },
+              { key: "quoteAcceptance", label: "Quote Acceptance" },
+              { key: "margin", label: "Margin" },
+            ] as const;
+
+            const enabledKeys = COMPONENTS.filter(c => hsEnabled[c.key]).map(c => c.key);
+            const weightSum = enabledKeys.reduce((s, k) => s + (hsWeights[k] ?? 0), 0);
+            const weightsValid = Math.abs(weightSum - 100) < 1 && enabledKeys.length > 0;
+
+            const handleWeightChange = (key: string, val: number) => {
+              setHsWeights(prev => ({ ...prev, [key]: val }));
+            };
+
+            const handleToggle = (key: string, newEnabled: boolean) => {
+              const newEnabledState = { ...hsEnabled, [key]: newEnabled };
+              setHsEnabled(newEnabledState);
+              if (!newEnabled) {
+                const activeKeys = COMPONENTS.filter(c => newEnabledState[c.key]).map(c => c.key);
+                if (activeKeys.length > 0) {
+                  const totalActive = activeKeys.reduce((s, k) => s + (hsWeights[k] ?? 0), 0);
+                  const disabledWeight = hsWeights[key] ?? 0;
+                  const newWeights = { ...hsWeights };
+                  if (totalActive > 0) {
+                    for (const k of activeKeys) {
+                      newWeights[k] = Math.round(((hsWeights[k] ?? 0) / totalActive) * (totalActive + disabledWeight));
+                    }
+                  }
+                  newWeights[key] = 0;
+                  setHsWeights(newWeights);
+                }
+              }
+            };
+
+            const handleReset = () => {
+              setHsWeights({ jobFrequency: 25, recency: 15, revenue: 25, emailEngagement: 10, quoteAcceptance: 15, margin: 10 });
+              setHsEnabled({ jobFrequency: true, recency: true, revenue: true, emailEngagement: true, quoteAcceptance: true, margin: true });
+              setHsHealthyThreshold(70);
+              setHsWatchThreshold(40);
+              setHsTrendSensitivity(5);
+            };
+
+            const handleSave = async () => {
+              setIsSavingHs(true);
+              try {
+                const putSetting = (k: string, v: string) =>
+                  apiRequest("PUT", `/api/admin-settings/${encodeURIComponent(k)}`, { value: v });
+                await Promise.all([
+                  ...COMPONENTS.map(c => putSetting(`health.weight.${c.key}`, String((hsWeights[c.key] ?? 0) / 100))),
+                  ...COMPONENTS.map(c => putSetting(`health.enabled.${c.key}`, hsEnabled[c.key] ? "true" : "false")),
+                  putSetting("health.threshold.healthy", String(hsHealthyThreshold)),
+                  putSetting("health.threshold.watch", String(hsWatchThreshold)),
+                  putSetting("health.trend.sensitivity", String(hsTrendSensitivity)),
+                ]);
+                queryClient.invalidateQueries({ queryKey: ["/api/admin-settings"] });
+                toast({ title: "Health score settings saved" });
+              } catch {
+                toast({ title: "Failed to save settings", variant: "destructive" });
+              } finally {
+                setIsSavingHs(false);
+              }
+            };
+
+            const handleRecalculate = async () => {
+              setIsRecalculating(true);
+              setRecalcResult(null);
+              try {
+                const res = await apiRequest("POST", "/api/admin/recalculate-health-scores", {});
+                const data = await res.json();
+                setRecalcResult(data);
+                queryClient.invalidateQueries({ queryKey: ["/api/admin/last-recalc"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+                toast({ title: `Health scores updated for ${data.updated} accounts` });
+              } catch {
+                toast({ title: "Recalculation failed", variant: "destructive" });
+              } finally {
+                setIsRecalculating(false);
+              }
+            };
+
+            return (
+              <div className="space-y-6 max-w-2xl">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">Health Score Configuration</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Adjust how health scores are computed across your accounts.</p>
+                  </div>
+                  <button onClick={handleReset} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors" data-testid="button-hs-reset-defaults">
+                    Reset to defaults
+                  </button>
+                </div>
+
+                {/* Component Weights */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-semibold">Component Weights</CardTitle>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${weightsValid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`} data-testid="text-weight-sum">
+                        {weightSum}% of 100%
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Active component weights must sum to 100%.</p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {COMPONENTS.map(({ key, label }) => (
+                      <div key={key} className={`space-y-1 ${!hsEnabled[key] ? "opacity-40" : ""}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{label}</span>
+                          <span className="text-sm font-semibold tabular-nums" data-testid={`text-weight-${key}`}>{hsWeights[key] ?? 0}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={hsWeights[key] ?? 0}
+                          onChange={e => handleWeightChange(key, parseInt(e.target.value))}
+                          disabled={!hsEnabled[key]}
+                          className="w-full accent-primary"
+                          data-testid={`slider-weight-${key}`}
+                        />
+                      </div>
+                    ))}
+                    {!weightsValid && (
+                      <p className="text-xs text-red-600 dark:text-red-400" data-testid="text-weight-error">
+                        Active weights must sum to exactly 100% before saving.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Component Toggles */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Component Toggles</CardTitle>
+                    <p className="text-xs text-muted-foreground">Disable components to exclude them from score calculations. Weights will redistribute automatically.</p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {COMPONENTS.map(({ key, label }) => (
+                      <div key={key} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{label}</span>
+                          <Switch
+                            checked={hsEnabled[key]}
+                            onCheckedChange={v => handleToggle(key, v)}
+                            data-testid={`switch-enable-${key}`}
+                          />
+                        </div>
+                        {!hsEnabled[key] && (
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400">Disabling this component redistributes its weight to remaining active components proportionally.</p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                {/* Score Thresholds */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Score Thresholds</CardTitle>
+                    <p className="text-xs text-muted-foreground">Define the score bands for Healthy, Watch, and At Risk accounts.</p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Healthy above</label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={hsHealthyThreshold}
+                          onChange={e => setHsHealthyThreshold(parseInt(e.target.value) || 70)}
+                          className="h-8 text-sm"
+                          data-testid="input-threshold-healthy"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Watch above</label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={hsWatchThreshold}
+                          onChange={e => setHsWatchThreshold(parseInt(e.target.value) || 40)}
+                          className="h-8 text-sm"
+                          data-testid="input-threshold-watch"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">At Risk (auto)</label>
+                        <div className="h-8 rounded-md border border-input bg-muted/50 px-3 flex items-center text-sm text-muted-foreground" data-testid="text-threshold-atrisk">
+                          Below {hsWatchThreshold}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Live preview */}
+                    <div className="flex gap-2 mt-1">
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700`}>Healthy ≥ {hsHealthyThreshold}</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700`}>Watch {hsWatchThreshold}–{hsHealthyThreshold - 1}</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700`}>At Risk &lt; {hsWatchThreshold}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Trend Sensitivity */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Trend Sensitivity</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={hsTrendSensitivity}
+                        onChange={e => setHsTrendSensitivity(parseInt(e.target.value) || 5)}
+                        className="h-8 text-sm w-24"
+                        data-testid="input-trend-sensitivity"
+                      />
+                      <span className="text-sm text-muted-foreground">points needed to show as rising ↑ or declining ↓</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Scores that change less than this amount are shown as flat (→).</p>
+                  </CardContent>
+                </Card>
+
+                {/* Save button */}
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSavingHs || !weightsValid}
+                    data-testid="button-hs-save"
+                  >
+                    {isSavingHs ? "Saving…" : "Save Settings"}
+                  </Button>
+                </div>
+
+                {/* Recalculation */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Recalculation</CardTitle>
+                    <p className="text-xs text-muted-foreground">Run an immediate health score recalculation for all accounts (nightly runs also do this automatically).</p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {lastRecalcData?.lastRecalcAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Last run: {new Date(lastRecalcData.lastRecalcAt).toLocaleString()}
+                      </p>
+                    )}
+                    <Button
+                      variant="outline"
+                      onClick={handleRecalculate}
+                      disabled={isRecalculating}
+                      data-testid="button-recalculate-health"
+                    >
+                      {isRecalculating ? "Recalculating…" : "Recalculate All Scores Now"}
+                    </Button>
+                    {recalcResult && (
+                      <p className="text-xs text-green-700 dark:text-green-400" data-testid="text-recalc-result">
+                        ✓ Recalculation complete — {recalcResult.updated} accounts updated{recalcResult.errors > 0 ? `, ${recalcResult.errors} errors` : ""}.
+                      </p>
+                    )}
+                    {isRecalculating && (
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                          <div className="h-full bg-primary animate-pulse rounded-full w-2/3" />
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">Running…</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })()}
         </TabsContent>
       </Tabs>
 

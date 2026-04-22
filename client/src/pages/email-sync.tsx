@@ -88,7 +88,7 @@ interface EmailThread {
   hasCC: boolean;
 }
 
-interface Client { id: number; name: string; }
+interface Client { id: number; name: string; healthScore?: number | null; }
 interface Lead { id: number; title: string; clientId: number | null; }
 interface Contact { id: number; name: string; email: string | null; clientId: number | null; }
 interface DirectoryUser { id: string; firstName: string | null; lastName: string | null; email: string; role: string; }
@@ -261,7 +261,18 @@ function ThreadRow({ thread, clients, directoryUsers, isSelected, isChecked, sho
           </span>
         )}
         {client && (
-          <span className="text-xs text-primary font-medium truncate">{client.name}</span>
+          <span className="inline-flex items-center gap-1">
+            <span className="text-xs text-primary font-medium truncate">{client.name}</span>
+            {client.healthScore !== null && client.healthScore !== undefined && (
+              <span className={`text-[9px] font-bold px-1 py-0 rounded-full shrink-0 ${
+                client.healthScore >= 70 ? "bg-green-100 text-green-700" :
+                client.healthScore >= 40 ? "bg-amber-100 text-amber-700" :
+                "bg-red-100 text-red-700"
+              }`} data-testid={`badge-health-email-${thread.threadId}`}>
+                {client.healthScore}
+              </span>
+            )}
+          </span>
         )}
         {latest.isDismissed && (
           <span className="text-xs text-gray-400 italic">dismissed</span>

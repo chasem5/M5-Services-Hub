@@ -2,19 +2,14 @@ import {
   LayoutDashboard, 
   Target, 
   Users, 
-  CheckSquare, 
-  FileText, 
-  Mic,
-  ShieldCheck,
   Mail,
   Megaphone,
-  HeartPulse,
-  Building2,
-  Sparkles,
-  ScrollText,
+  ShieldCheck,
   Lock,
-  ClipboardList,
   Calculator,
+  BarChart3,
+  Activity,
+  Sparkles,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -37,15 +32,14 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 
 const ALL_NAV_ITEMS = [
-  { title: "Dashboard", icon: LayoutDashboard, url: "/", module: "dashboard" },
-  { title: "Deals", icon: Target, url: "/leads", module: "leads" },
-  { title: "Customers", icon: Users, url: "/customers", module: "customers" },
-  { title: "Tasks", icon: CheckSquare, url: "/tasks", module: "tasks" },
-  { title: "Meetings", icon: Mic, url: "/meetings", module: "meetings" },
-  { title: "Estimates", icon: FileText, url: "/estimates", module: "estimates" },
-  { title: "Agreements", icon: ScrollText, url: "/service-agreements", module: "estimates" },
-  { title: "Email Sync", icon: Mail, url: "/email", module: "email_sync" },
-  { title: "Announcements", icon: Megaphone, url: "/announcements", module: "announcements" },
+  { title: "Dashboard",    icon: LayoutDashboard, url: "/",             module: "dashboard",     active: (l: string) => l === "/" },
+  { title: "Customers",   icon: Users,           url: "/my-accounts",  module: "customers",     active: (l: string) => l.startsWith("/my-accounts") || l.startsWith("/customers") },
+  { title: "Deals",       icon: Target,          url: "/leads",        module: "leads",         active: (l: string) => l.startsWith("/leads") },
+  { title: "Activity",    icon: Activity,        url: "/tasks",        module: "tasks",         active: (l: string) => l.startsWith("/tasks") || l.startsWith("/meetings") },
+  { title: "Estimates",   icon: Calculator,      url: "/estimating",   module: "estimates",     active: (l: string) => l.startsWith("/estimating") || l.startsWith("/estimates") || l.startsWith("/service-agreements") },
+  { title: "Reports",     icon: BarChart3,       url: "/reports",      module: "customers",     active: (l: string) => l.startsWith("/reports") || l.startsWith("/company-intelligence") || l.startsWith("/weekly-report") },
+  { title: "Email Sync",  icon: Mail,            url: "/email",        module: "email_sync",    active: (l: string) => l.startsWith("/email") },
+  { title: "Announcements", icon: Megaphone,     url: "/announcements",module: "announcements", active: (l: string) => l.startsWith("/announcements") },
 ];
 
 const ROLE_BADGE: Record<string, string> = {
@@ -88,10 +82,7 @@ export function AppSidebar() {
   const displayName = myPerms?.displayName ?? user?.role ?? "";
 
   return (
-    <Sidebar
-      variant="sidebar"
-      collapsible="icon"
-    >
+    <Sidebar variant="sidebar" collapsible="icon">
       <SidebarHeader className="p-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 px-2 overflow-hidden">
           <img src="/logo.webp" alt="M5 Logo" className="h-8 w-8 min-w-8 object-contain" />
@@ -100,19 +91,18 @@ export function AppSidebar() {
           </span>
         </Link>
       </SidebarHeader>
-      
+
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Main Menu</SidebarGroupLabel>
+          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {visibleNavItems.map((item) => {
-                const isActive = location === item.url || 
-                  (item.url === "/estimates" && (location === "/service-catalog" || location === "/proposals"));
+                const isActive = item.active(location);
                 return (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton 
-                      asChild 
+                    <SidebarMenuButton
+                      asChild
                       isActive={isActive}
                       tooltip={item.title}
                       className={isActive ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
@@ -131,7 +121,7 @@ export function AppSidebar() {
                         <span className="group-data-[collapsible=icon]:hidden flex items-center gap-1.5">
                           {item.title}
                           {item.module === "announcements" && hasUnreadRelease && (
-                            <Sparkles className="h-3 w-3 text-primary fill-primary group-data-[collapsible=icon]:hidden" />
+                            <Sparkles className="h-3 w-3 text-primary fill-primary" />
                           )}
                         </span>
                       </Link>
@@ -139,12 +129,13 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+
               {isAdmin && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
                     isActive={location === "/admin"}
-                    tooltip="Admin"
+                    tooltip="Team Admin"
                     className={location === "/admin" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                   >
                     <Link href="/admin" data-testid="link-admin" onClick={() => isMobile && setOpenMobile(false)}>
@@ -154,20 +145,13 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
 
-        {user?.role === "super_admin" && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Executive</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
+              {user?.role === "super_admin" && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
                     isActive={location === "/ceo"}
-                    tooltip="CEO Command Center"
+                    tooltip="Command Center"
                     className={location === "/ceo" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
                   >
                     <Link href="/ceo" data-testid="link-ceo-command-center" onClick={() => isMobile && setOpenMobile(false)}>
@@ -176,83 +160,7 @@ export function AppSidebar() {
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        <SidebarGroup>
-          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Coaching</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location.startsWith("/weekly-report")}
-                  tooltip="Weekly Report"
-                  className={location.startsWith("/weekly-report") ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
-                >
-                  <Link href="/weekly-report" data-testid="link-weekly-report" onClick={() => isMobile && setOpenMobile(false)}>
-                    <ClipboardList className={`h-4 w-4 shrink-0 ${location.startsWith("/weekly-report") ? "text-primary" : ""}`} />
-                    <span className="group-data-[collapsible=icon]:hidden">Weekly Report</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Estimating</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location.startsWith("/estimating")}
-                  tooltip="Estimating & Quoting"
-                  className={location.startsWith("/estimating") ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
-                >
-                  <Link href="/estimating" data-testid="link-estimating" onClick={() => isMobile && setOpenMobile(false)}>
-                    <Calculator className={`h-4 w-4 shrink-0 ${location.startsWith("/estimating") ? "text-primary" : ""}`} />
-                    <span className="group-data-[collapsible=icon]:hidden">Estimating &amp; Quoting</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel className="group-data-[collapsible=icon]:hidden">Intelligence</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location === "/reports/customer-intelligence"}
-                  tooltip="Customer Intelligence"
-                  className={location === "/reports/customer-intelligence" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
-                >
-                  <Link href="/reports/customer-intelligence" data-testid="link-customer-intelligence" onClick={() => isMobile && setOpenMobile(false)}>
-                    <HeartPulse className={`h-4 w-4 shrink-0 ${location === "/reports/customer-intelligence" ? "text-primary" : ""}`} />
-                    <span className="group-data-[collapsible=icon]:hidden">Customer Intel</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location === "/company-intelligence"}
-                  tooltip="Company Intelligence"
-                  className={location === "/company-intelligence" ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : ""}
-                >
-                  <Link href="/company-intelligence" data-testid="link-company-intelligence" onClick={() => isMobile && setOpenMobile(false)}>
-                    <Building2 className={`h-4 w-4 shrink-0 ${location === "/company-intelligence" ? "text-primary" : ""}`} />
-                    <span className="group-data-[collapsible=icon]:hidden">Company Intel</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -277,12 +185,11 @@ export function AppSidebar() {
                 ? `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim()
                 : user?.email}
             </p>
-            <Badge
-              variant="outline"
-              className={`text-[10px] px-1.5 py-0 h-4 mt-0.5 font-semibold border ${user?.role ? ROLE_BADGE[user.role] : ""}`}
-            >
-              {displayName.toUpperCase()}
-            </Badge>
+            {myPerms?.role && (
+              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 mt-0.5 capitalize ${ROLE_BADGE[myPerms.role] ?? ""}`}>
+                {myPerms.role.replace("_", " ")}
+              </Badge>
+            )}
           </div>
         </div>
       </SidebarFooter>

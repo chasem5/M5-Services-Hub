@@ -54,8 +54,9 @@ interface ClientIntel {
   invoiceTrend: "growing" | "flat" | "declining";
   invoiceLast3Avg: number;
   invoicePrior3Avg: number;
-  healthScore: number;
+  healthScore: number | null;
   healthStatus: "healthy" | "watch" | "at_risk";
+  healthTrend: "rising" | "flat" | "declining" | null;
   momentum: "rising" | "declining" | "stable";
   isOverridden: boolean;
   healthOverrideNote: string | null;
@@ -117,23 +118,37 @@ function HealthBadgeHover({ client }: { client: ClientIntel }) {
   const isStalled6m = j6m !== -1 && j6m === 0 && !isDormant12m;
 
   const overriddenClass = client.isOverridden ? "ring-2 ring-offset-1 ring-amber-400" : "";
+  const trendEl = (() => {
+    if (client.healthTrend === "rising") return <TrendingUp className="h-3 w-3 text-green-600 shrink-0" data-testid={`icon-trend-rising-${client.clientId}`} />;
+    if (client.healthTrend === "declining") return <TrendingDown className="h-3 w-3 text-red-500 shrink-0" data-testid={`icon-trend-declining-${client.clientId}`} />;
+    return <Minus className="h-3 w-3 text-muted-foreground shrink-0" data-testid={`icon-trend-flat-${client.clientId}`} />;
+  })();
+  const scoreDisplay = client.isOverridden || client.healthScore === null
+    ? null
+    : <span className="font-mono text-[11px] tabular-nums">{client.healthScore}</span>;
   const badgeEl = (() => {
+    // No cached score yet — show a neutral "Pending" badge
+    if (!client.isOverridden && client.healthScore === null) return (
+      <Badge className="bg-muted text-muted-foreground border-border text-xs cursor-pointer" data-testid="badge-health-pending">
+        Pending
+      </Badge>
+    );
     if (client.healthStatus === "healthy") return (
       <Badge className={cn("bg-green-100 text-green-700 border-green-200 text-xs cursor-pointer gap-1", overriddenClass)} data-testid="badge-health-healthy">
         {client.isOverridden && <Pin className="h-2.5 w-2.5" />}
-        Healthy
+        Healthy {scoreDisplay}
       </Badge>
     );
     if (client.healthStatus === "watch") return (
       <Badge className={cn("bg-amber-100 text-amber-700 border-amber-200 text-xs cursor-pointer gap-1", overriddenClass)} data-testid="badge-health-watch">
         {client.isOverridden && <Pin className="h-2.5 w-2.5" />}
-        Watch
+        Watch {scoreDisplay}
       </Badge>
     );
     return (
       <Badge className={cn("bg-red-100 text-red-700 border-red-200 text-xs cursor-pointer gap-1", overriddenClass)} data-testid="badge-health-at-risk">
         {client.isOverridden && <Pin className="h-2.5 w-2.5" />}
-        At Risk
+        At Risk {scoreDisplay}
       </Badge>
     );
   })();
@@ -141,18 +156,9 @@ function HealthBadgeHover({ client }: { client: ClientIntel }) {
   return (
     <HoverCard open={open} onOpenChange={handleOpen} openDelay={400}>
       <HoverCardTrigger asChild>
-        <span className="inline-flex items-center gap-1.5 cursor-pointer">
+        <span className="inline-flex items-center gap-1 cursor-pointer">
           {badgeEl}
-          {client.momentum === "rising" && (
-            <span className="text-[10px] font-bold text-green-600 flex items-center gap-0.5" data-testid={`badge-momentum-${client.clientId}`}>
-              <TrendingUp className="h-3 w-3" /> On the Rise
-            </span>
-          )}
-          {client.momentum === "declining" && (
-            <span className="text-[10px] font-bold text-red-500 flex items-center gap-0.5" data-testid={`badge-momentum-${client.clientId}`}>
-              <TrendingDown className="h-3 w-3" /> Declining
-            </span>
-          )}
+          {client.healthScore !== null && trendEl}
         </span>
       </HoverCardTrigger>
       <HoverCardContent className="w-80 text-sm" side="right">
@@ -271,7 +277,7 @@ export default function CustomerReport() {
   const [healthFilterState, setHealthFilterState] = useState("all");
   const [filterUserId, setFilterUserId] = useState("all");
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("ltv");
+  const [sortKey, setSortKey] = useState<SortKey>("healthScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -318,7 +324,7 @@ export default function CustomerReport() {
         case "pipelineValue": return c.pipelineValue;
         case "velocityLast90": return c.velocityLast90;
         case "activeJobs": return c.activeJobs;
-        case "healthScore": return c.healthScore;
+        case "healthScore": return c.healthScore ?? -1;
         default: return 0;
       }
     };
@@ -452,13 +458,14 @@ export default function CustomerReport() {
 
       {/* Scoring explanation */}
       <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 flex flex-wrap gap-x-4 gap-y-1">
-        <span className="font-medium text-foreground">Health scoring:</span>
-        <span>Revenue trend <strong className="text-foreground">+2 growing / +1 flat</strong></span>
-        <span>Job velocity <strong className="text-foreground">+1</strong></span>
-        <span>Active pipeline <strong className="text-foreground">+1</strong></span>
-        <span>LTV &gt;$25K <strong className="text-foreground">+1</strong></span>
-        <span>Service agreement <strong className="text-foreground">+1</strong></span>
-        <span>Healthy ≥ 4 pts · Watch 2–3 pts · At Risk &lt; 2 pts</span>
+        <span className="font-medium text-foreground">Health score (0–100):</span>
+        <span>Job frequency <strong className="text-foreground">25%</strong></span>
+        <span>Revenue vs expected <strong className="text-foreground">25%</strong></span>
+        <span>Quote win rate <strong className="text-foreground">15%</strong></span>
+        <span>Recency <strong className="text-foreground">15%</strong></span>
+        <span>Email engagement <strong className="text-foreground">10%</strong></span>
+        <span>Margin <strong className="text-foreground">10%</strong></span>
+        <span>Healthy ≥ 70 · Watch 40–69 · At Risk &lt; 40</span>
         <span className="flex items-center gap-1"><Pin className="h-3 w-3 text-amber-500" /> = manually pinned</span>
       </div>
 

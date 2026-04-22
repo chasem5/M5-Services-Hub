@@ -179,6 +179,13 @@ export async function registerRoutes(
   await storage.migrateLeadLossColumns();
   await storage.migrateWeeklyReportTables();
   await storage.migrateEstimatingTables();
+  await storage.migrateHealthScoreTables();
+  // Seed default health score settings in admin_settings
+  const { seedDefaultAdminSettings } = await import("./health-score");
+  await seedDefaultAdminSettings();
+  // Prompt 3: Onboarding milestones + qualification reviews
+  await storage.migrateOnboardingMilestones();
+  await storage.migrateQualificationReviews();
   // Multi-board task system: create tables, add columns, backfill data
   await storage.migrateTaskBoards();
   await storage.migrateEmailMessageColumns();
@@ -572,6 +579,38 @@ export async function registerRoutes(
     res.json(result);
   });
 
+  app.get("/api/clients/overdue-milestones", isAuthenticated, async (req, res) => {
+    if (!(await hasModuleAccess(req, "customers"))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const scopedUserId = await getScopedUserId(req, "customers");
+    const allClients = await storage.listClients(scopedUserId);
+    const phase1Clients = allClients.filter(c => (c.customerPhase ?? 1) === 1);
+    if (phase1Clients.length === 0) return res.json([]);
+    const phase1Ids = phase1Clients.map(c => c.id);
+    const overdueMap = await storage.getOverdueMilestones(phase1Ids);
+    const result = phase1Clients
+      .filter(c => (overdueMap.get(c.id) ?? 0) > 0)
+      .map(c => ({ clientId: c.id, clientName: c.name, overdueCount: overdueMap.get(c.id) ?? 0 }));
+    res.json(result);
+  });
+
+  app.get("/api/clients/milestone-summary", isAuthenticated, async (req, res) => {
+    if (!(await hasModuleAccess(req, "customers"))) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    const scopedUserId = await getScopedUserId(req, "customers");
+    const allClients = await storage.listClients(scopedUserId);
+    const phase1ClientIds = allClients.filter(c => (c.customerPhase ?? 1) === 1).map(c => c.id);
+    if (phase1ClientIds.length === 0) return res.json({});
+    const batchMap = await storage.getMilestoneSummaryBatch(phase1ClientIds);
+    const result: Record<number, { completed: number; total: number }> = {};
+    for (const [id, data] of batchMap.entries()) {
+      result[id] = data;
+    }
+    res.json(result);
+  });
+
   app.get("/api/clients/check-duplicate", isAuthenticated, async (req, res) => {
     const name = req.query.name as string;
     if (!name) return res.status(400).json({ message: "Name parameter required" });
@@ -616,6 +655,225 @@ export async function registerRoutes(
     const scopedUserId = await getScopedUserId(req, "customers");
     const clients = await storage.listClients(scopedUserId);
     res.json(clients);
+  });
+
+  // Admin settings (health score config)
+  app.get("/api/admin-settings", isAuthenticated, async (_req, res) => {
+    const settings = await storage.getAdminSettings();
+    res.json(settings);
+  });
+
+  app.put("/api/admin-settings/:key", isAuthenticated, async (req, res) => {
+    try {
+      const callerId = (req.user as any)?.claims?.sub;
+      const callerUser = callerId ? await storage.getUser(callerId) : null;
+      if (!callerUser || !["super_admin", "admin"].includes(callerUser.role ?? "")) {
+        return res.status(403).json({ message: "Only admins can modify health score settings" });
+      }
+      const { key } = req.params;
+      const { value } = req.body;
+      if (typeof value !== "string" || value.trim() === "") {
+        return res.status(400).json({ message: "value must be a non-empty string" });
+      }
+      const { saveAdminSetting } = await import("./health-score");
+      await saveAdminSetting(key, value.trim());
+      res.json({ key, value: value.trim() });
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message ?? "Failed to save setting" });
+    }
+  });
+
+  app.post("/api/admin/recalculate-health-scores", isAuthenticated, async (req, res) => {
+    const callerId = (req.user as any)?.claims?.sub;
+    const callerUser = callerId ? await storage.getUser(callerId) : null;
+    if (!callerUser || !["super_admin", "admin"].includes(callerUser.role ?? "")) {
+      return res.status(403).json({ message: "Admins only" });
+    }
+    try {
+      const { computeHealthScore, persistHealthScore, persistMonthlySnapshot } = await import("./health-score");
+      const allClients = await storage.listClients();
+      const now = new Date();
+      let updated = 0;
+      let errors = 0;
+      for (const client of allClients) {
+        try {
+          const breakdown = await computeHealthScore(client.id, now);
+          if (breakdown.totalScore !== null) {
+            await persistHealthScore(client.id, breakdown);
+            await persistMonthlySnapshot(client.id, breakdown.totalScore, breakdown.trend, breakdown, now);
+            updated++;
+          }
+        } catch {
+          errors++;
+        }
+      }
+      await saveAdminSetting("health.lastRecalcAt", now.toISOString());
+      res.json({ updated, errors, completedAt: now.toISOString() });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message ?? "Recalculation failed" });
+    }
+  });
+
+  app.get("/api/admin/last-recalc", isAuthenticated, async (_req, res) => {
+    const lastRecalcAt = await storage.getAppSetting("health.lastRecalcAt");
+    res.json({ lastRecalcAt: lastRecalcAt ?? null });
+  });
+
+  // ── Onboarding Milestones (Prompt 3) ─────────────────────────────────────────
+
+  app.get("/api/clients/:id/onboarding-milestones", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const milestones = await storage.getClientOnboardingMilestones(id);
+    res.json(milestones);
+  });
+
+  app.patch("/api/clients/:id/onboarding-milestones/:key", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      const { key } = req.params;
+      const userId = (req.user as any)?.claims?.sub;
+      const { status, notes, saOutcome } = req.body as { status?: string; notes?: string; saOutcome?: string };
+      const now = new Date();
+      const data: Record<string, unknown> = {};
+      if (status !== undefined) {
+        data.status = status;
+        if (status === "complete") { data.completedAt = now; data.completedBy = userId ?? null; }
+        if (status === "pending") { data.completedAt = null; data.completedBy = null; }
+      }
+      if (notes !== undefined) data.notes = notes;
+      if (saOutcome !== undefined) data.saOutcome = saOutcome;
+      const updated = await storage.updateOnboardingMilestone(id, key, data as any);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message ?? "Failed to update milestone" });
+    }
+  });
+
+  app.post("/api/clients/:id/init-milestones", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const client = await storage.getClient(id);
+    if (!client) return res.status(404).json({ message: "Client not found" });
+    await storage.initClientOnboardingMilestones(id, client.createdAt);
+    res.json({ ok: true });
+  });
+
+  // ── Qualification Reviews (Prompt 3) ─────────────────────────────────────────
+
+  app.get("/api/clients/:id/qualification-reviews", isAuthenticated, async (req, res) => {
+    const id = parseInt(req.params.id as string);
+    const reviews = await storage.getQualificationReviews(id);
+    res.json(reviews);
+  });
+
+  app.post("/api/clients/:id/qualification-reviews", isAuthenticated, async (req, res) => {
+    try {
+      const clientId = parseInt(req.params.id as string);
+      const userId = (req.user as any)?.claims?.sub;
+      const client = await storage.getClient(clientId);
+      if (!client) return res.status(404).json({ message: "Client not found" });
+
+      const { partnershipScore, reviewType } = req.body as { partnershipScore: number; reviewType?: string };
+
+      // Auto-calculate signals
+      const milestones = await storage.getClientOnboardingMilestones(clientId);
+      const completedMilestones = milestones.filter(m => m.status === "complete").length;
+      const milestoneCompletion = completedMilestones >= 6 ? "strong" : completedMilestones >= 4 ? "moderate" : "weak";
+
+      // Revenue potential
+      const annualRevenue = parseFloat(client.annualRevenue ?? "0");
+      // Count related child locations to determine multi-building status
+      let multiBuilding = false;
+      try {
+        const { db } = await import("./db");
+        const { clients: clientsTable } = await import("@shared/schema");
+        const { eq: eqFn, count: countFn } = await import("drizzle-orm");
+        const [childCount] = await db.select({ cnt: countFn() }).from(clientsTable).where(eqFn(clientsTable.parentClientId, clientId));
+        multiBuilding = Number(childCount?.cnt ?? 0) > 0;
+      } catch {}
+      // SA potential: client has an active BuildOps service agreement
+      let hasSa = false;
+      try {
+        const { db } = await import("./db");
+        const { buildopsAgreements } = await import("@shared/schema");
+        const { eq: eqFn } = await import("drizzle-orm");
+        const saRows = await db.select({ id: buildopsAgreements.id }).from(buildopsAgreements).where(eqFn(buildopsAgreements.clientId, clientId)).limit(1);
+        hasSa = saRows.length > 0;
+      } catch {}
+      let revenuePotential = "low";
+      if (hasSa || annualRevenue >= 500000) revenuePotential = "high";
+      else if (multiBuilding && annualRevenue < 500000) revenuePotential = "medium";
+
+      // Margin quality — check first jobs
+      let marginQuality = "positive";
+      try {
+        const { db } = await import("./db");
+        const { buildopsJobs: jobsTable } = await import("@shared/schema");
+        const { eq: eqFn, isNotNull } = await import("drizzle-orm");
+        const jobs = await db.select({ margin: jobsTable.profitMargin }).from(jobsTable).where(eqFn(jobsTable.clientId, clientId)).limit(5);
+        const margins = jobs.map(j => parseFloat(j.margin ?? "0")).filter(m => !isNaN(m));
+        if (margins.length > 0) {
+          const avgMargin = margins.reduce((s, m) => s + m, 0) / margins.length;
+          if (avgMargin < 0) marginQuality = "negative";
+        }
+      } catch {}
+
+      // Recommendation logic
+      let recommendation: string;
+      const isHighRevenue = revenuePotential === "high";
+      const isLowRevenue = revenuePotential === "low";
+      const isPositiveMargin = marginQuality === "positive";
+      const isNegativeMargin = marginQuality === "negative";
+      const isStrongMilestones = milestoneCompletion === "strong";
+      const isWeakMilestones = milestoneCompletion === "weak";
+      const isHighPartnership = partnershipScore === 3;
+      const isLowPartnership = partnershipScore === 1;
+
+      if (isHighRevenue && isPositiveMargin && isStrongMilestones && isHighPartnership) {
+        recommendation = "invest_more";
+      } else if (isLowRevenue && isLowPartnership && (isWeakMilestones || isNegativeMargin)) {
+        recommendation = "deprioritize";
+      } else {
+        recommendation = "nurture";
+      }
+
+      const review = await storage.createQualificationReview({
+        clientId,
+        reviewType: reviewType ?? "90day",
+        partnershipScore,
+        revenuePotential,
+        marginQuality,
+        milestoneCompletion,
+        recommendation,
+        reviewedBy: userId ?? null,
+      });
+
+      // Update the client's qualificationRecommendation field
+      await storage.updateClient(clientId, {
+        qualificationRecommendation: recommendation,
+        qualificationReviewedAt: new Date(),
+        partnershipScore,
+      });
+
+      res.json(review);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message ?? "Failed to create review" });
+    }
+  });
+
+  app.patch("/api/qualification-reviews/:id/override", isAuthenticated, async (req, res) => {
+    try {
+      const reviewId = parseInt(req.params.id as string);
+      const { overrideRecommendation, overrideReason } = req.body as { overrideRecommendation: string; overrideReason: string };
+      if (!overrideRecommendation || !overrideReason?.trim()) {
+        return res.status(400).json({ message: "Override reason is required" });
+      }
+      const updated = await storage.updateQualificationReviewOverride(reviewId, overrideRecommendation, overrideReason);
+      // Also update the client record
+      await storage.updateClient(updated.clientId, { qualificationRecommendation: overrideRecommendation });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message ?? "Failed to override review" });
+    }
   });
 
   // Bulk email response rates for all clients (single efficient query)
@@ -712,6 +970,8 @@ export async function registerRoutes(
     }
     const client = await storage.createClient(clientData);
     await logActivity(req, "client", client.id, "created");
+    // Auto-create 7 onboarding milestones for every new client
+    try { await storage.initClientOnboardingMilestones(client.id, client.createdAt); } catch {}
     res.json(client);
   });
 
@@ -973,6 +1233,13 @@ export async function registerRoutes(
     const id = parseInt(req.params.id as string);
     const contactData = insertClientContactSchema.parse({ ...req.body, clientId: id });
     const contact = await storage.createClientContact(contactData);
+    // Auto-complete milestone 2 (contacts_identified) when 3+ contacts exist
+    try {
+      const allContacts = await storage.listClientContacts(id);
+      if (allContacts.length >= 3) {
+        await storage.autoCompleteOnboardingMilestone(id, "contacts_identified");
+      }
+    } catch {}
     res.json(contact);
   });
 
@@ -1833,7 +2100,16 @@ Do not include any other text, just the JSON.`,
     const leadData = insertLeadSchema.parse(req.body);
     const lead = await storage.createLead(leadData);
     await logActivity(req, "lead", lead.id, "created");
-    
+    // Auto-complete milestone 4 (first_quote) on first lead for a Phase-1 client
+    if (lead.clientId) {
+      try {
+        const client = await storage.getClient(lead.clientId);
+        if (client && client.customerPhase === 1) {
+          await storage.autoCompleteOnboardingMilestone(lead.clientId, "first_quote");
+        }
+      } catch {}
+    }
+
     if (lead.assignedTo) {
       await sendPushNotification(lead.assignedTo, {
         title: "New Lead Assigned",
@@ -8020,8 +8296,9 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         invoiceTrend: "growing" | "flat" | "declining";
         invoiceLast3Avg: number;
         invoicePrior3Avg: number;
-        healthScore: number;
+        healthScore: number | null;
         healthStatus: "healthy" | "watch" | "at_risk";
+        healthTrend: "rising" | "flat" | "declining" | null;
         momentum: "rising" | "declining" | "stable";
         groupChildCount: number;
       }
@@ -8106,10 +8383,29 @@ Write a punchy, factual summary highlighting what's driving the health status. L
         const velocityDirection = computeVelocityDirection(jobs.last90, jobs.prior90);
         const { invoiceTrend, last3Avg: invoiceLast3Avg, prior3Avg: invoicePrior3Avg } =
           computeInvoiceTrend(groupMonthlyData);
-        const { healthScore, healthStatus, isOverridden } = computeHealthScoreV2(
-          velocityDirection, openDeals, hasActiveSA, ltv, invoiceTrend, null, client.healthOverride,
-          jobs.last6m, jobs.last12m
-        );
+
+        // ── Use the new engine's cached 0-100 score from the clients table ──
+        const isOverridden = !!client.healthOverride;
+        let healthStatus: "healthy" | "watch" | "at_risk";
+        let healthScore: number | null;
+        if (isOverridden && client.healthOverride) {
+          // Manual override wins — synthesise a representative score for sort purposes
+          healthStatus = client.healthOverride as "healthy" | "watch" | "at_risk";
+          healthScore = healthStatus === "healthy" ? 85 : healthStatus === "watch" ? 55 : 20;
+        } else {
+          const cachedScore = client.healthScore;
+          healthScore = cachedScore ?? null; // keep null rather than faking 0
+          if (cachedScore === null) {
+            // Score not yet computed (Phase 1 or pending nightly run)
+            healthStatus = "watch";
+          } else if (cachedScore >= 70) {
+            healthStatus = "healthy";
+          } else if (cachedScore >= 40) {
+            healthStatus = "watch";
+          } else {
+            healthStatus = "at_risk";
+          }
+        }
         const momentum = computeMomentum(velocityDirection, invoiceTrend);
 
         if (tierFilter && client.tier !== tierFilter) continue;
@@ -8137,6 +8433,7 @@ Write a punchy, factual summary highlighting what's driving the health status. L
           invoicePrior3Avg,
           healthScore,
           healthStatus,
+          healthTrend: client.healthTrend ?? null,
           momentum,
           isOverridden,
           healthOverrideNote: client.healthOverrideNote ?? null,

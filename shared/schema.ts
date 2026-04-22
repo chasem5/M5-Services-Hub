@@ -39,6 +39,17 @@ export const clients = pgTable("clients", {
   prospectRevenueTier: varchar("prospect_revenue_tier", { length: 10 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  // Health Score Foundation fields
+  customerPhase: integer("customer_phase"), // 1 | 2 | 3
+  healthScore: integer("health_score"), // 0–100, null for Phase 1
+  healthTrend: varchar("health_trend", { length: 20 }), // 'rising' | 'flat' | 'declining'
+  healthScoreUpdatedAt: timestamp("health_score_updated_at"),
+  healthScoreBreakdown: jsonb("health_score_breakdown"), // full breakdown JSON
+  onboardingStartDate: timestamp("onboarding_start_date"),
+  qualificationRecommendation: varchar("qualification_recommendation", { length: 50 }),
+  qualificationReviewedAt: timestamp("qualification_reviewed_at"),
+  partnershipScore: integer("partnership_score"),
+  repExpectedJobFrequency: integer("rep_expected_job_frequency"), // jobs per year
 });
 
 export const clientOffices = pgTable("client_offices", {
@@ -1303,3 +1314,73 @@ export type ApprovalRule = typeof approvalRules.$inferSelect;
 export type WorkspaceCatalogItem = typeof workspaceCatalogItems.$inferSelect;
 export type InsertWorkspaceCatalogItem = z.infer<typeof insertWorkspaceCatalogItemSchema>;
 export type InsertWeeklyReportAction = z.infer<typeof insertWeeklyReportActionSchema>;
+
+// ─── Health Score Foundation Tables (Task #122) ──────────────────────────────
+
+export const customerHealthHistory = pgTable("customer_health_history", {
+  id: serial("id").primaryKey(),
+  customerId: integer("customer_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+  score: integer("score").notNull(),
+  trend: varchar("trend", { length: 20 }),
+  breakdown: jsonb("breakdown"),
+  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+});
+export type CustomerHealthHistory = typeof customerHealthHistory.$inferSelect;
+
+export const adminSettings = pgTable("admin_settings", {
+  id: serial("id").primaryKey(),
+  key: varchar("key", { length: 100 }).notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type AdminSetting = typeof adminSettings.$inferSelect;
+
+// ─── Onboarding Milestones (Prompt 3) ────────────────────────────────────────
+
+export const ONBOARDING_MILESTONES = [
+  { key: "intro_meeting",        label: "Intro meeting / kickoff call",          targetDayEnd: 14, completionType: "manual"  as const },
+  { key: "contacts_identified",  label: "Key contacts identified and logged",    targetDayEnd: 21, completionType: "auto"    as const },
+  { key: "site_visit",           label: "Site visit / walkthrough",              targetDayEnd: 28, completionType: "manual"  as const },
+  { key: "first_quote",          label: "First quote sent",                      targetDayEnd: 35, completionType: "auto"    as const },
+  { key: "service_lunch",        label: "Service offering lunch / meeting",      targetDayEnd: 56, completionType: "manual"  as const },
+  { key: "first_job",            label: "First job completed",                   targetDayEnd: 70, completionType: "auto"    as const },
+  { key: "sa_discussed",         label: "Service agreement discussed",           targetDayEnd: 84, completionType: "manual"  as const },
+] as const;
+export type OnboardingMilestoneKey = typeof ONBOARDING_MILESTONES[number]["key"];
+export const ONBOARDING_MILESTONE_KEYS = ONBOARDING_MILESTONES.map(m => m.key) as OnboardingMilestoneKey[];
+
+export const clientOnboardingMilestones = pgTable("client_onboarding_milestones", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+  milestoneKey: varchar("milestone_key", { length: 50 }).notNull(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id),
+  notes: text("notes"),
+  saOutcome: varchar("sa_outcome", { length: 30 }),
+}, (t) => ({ unq: unique().on(t.clientId, t.milestoneKey) }));
+
+export const insertClientOnboardingMilestoneSchema = createInsertSchema(clientOnboardingMilestones).omit({ id: true });
+export type ClientOnboardingMilestone = typeof clientOnboardingMilestones.$inferSelect;
+export type InsertClientOnboardingMilestone = z.infer<typeof insertClientOnboardingMilestoneSchema>;
+
+// ─── Qualification Reviews (Prompt 3) ────────────────────────────────────────
+
+export const clientQualificationReviews = pgTable("client_qualification_reviews", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+  reviewType: varchar("review_type", { length: 20 }).default("90day").notNull(),
+  partnershipScore: integer("partnership_score").notNull(),
+  revenuePotential: varchar("revenue_potential", { length: 20 }).notNull(),
+  marginQuality: varchar("margin_quality", { length: 20 }).notNull(),
+  milestoneCompletion: varchar("milestone_completion", { length: 20 }).notNull(),
+  recommendation: varchar("recommendation", { length: 30 }).notNull(),
+  overrideRecommendation: varchar("override_recommendation", { length: 30 }),
+  overrideReason: text("override_reason"),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at").defaultNow().notNull(),
+});
+
+export const insertClientQualificationReviewSchema = createInsertSchema(clientQualificationReviews).omit({ id: true, reviewedAt: true });
+export type ClientQualificationReview = typeof clientQualificationReviews.$inferSelect;
+export type InsertClientQualificationReview = z.infer<typeof insertClientQualificationReviewSchema>;

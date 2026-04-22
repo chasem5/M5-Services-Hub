@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2 } from "lucide-react";
+import { BarChart3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ActionPlanPanel } from "@/components/ActionPlanPanel";
 import { RecommendationsHub } from "@/components/RecommendationsHub";
@@ -9,31 +9,35 @@ import WinLossReport from "./win-loss-report";
 import MonthlyReport from "./monthly-report";
 import CohortAnalysis from "./cohort-analysis";
 import ServiceAgreements from "./service-agreements";
+import CustomerReport from "./customer-report";
+import WeeklyReport from "./weekly-report";
 
 const TABS = [
-  { value: "monthly", label: "Monthly Report" },
-  { value: "revenue", label: "Revenue" },
-  { value: "win-loss", label: "Win / Loss" },
-  { value: "cohort", label: "Cohort Analysis" },
-  { value: "agreements", label: "Service Agreements" },
-  { value: "action-plan", label: "Action Plan" },
-  { value: "recommendations", label: "Recommendations" },
+  { value: "customer-intel", label: "Customer Health" },
+  { value: "monthly",        label: "Monthly Report" },
+  { value: "revenue",        label: "Revenue" },
+  { value: "win-loss",       label: "Win / Loss" },
+  { value: "cohort",         label: "Cohort Analysis" },
+  { value: "agreements",     label: "Agreements" },
+  { value: "weekly-report",  label: "Weekly Report" },
+  { value: "action-plan",    label: "Action Plan" },
+  { value: "recommendations",label: "Recommendations" },
 ];
 
 const TAB_VALUES = TABS.map(t => t.value);
 
 function getInitialTab(): string {
   const hash = window.location.hash.replace("#", "");
-  return TAB_VALUES.includes(hash) ? hash : "monthly";
+  return TAB_VALUES.includes(hash) ? hash : "customer-intel";
 }
 
-export default function CompanyIntelligence() {
+export default function Reports() {
   const [activeTab, setActiveTab] = useState<string>(getInitialTab);
 
   useEffect(() => {
     function onHashChange() {
       const hash = window.location.hash.replace("#", "");
-      const tab = TAB_VALUES.includes(hash) ? hash : "monthly";
+      const tab = TAB_VALUES.includes(hash) ? hash : "customer-intel";
       setActiveTab(tab);
     }
     window.addEventListener("hashchange", onHashChange);
@@ -49,11 +53,11 @@ export default function CompanyIntelligence() {
     <div className="flex flex-col h-full min-h-0 bg-background">
       <div className="shrink-0 border-b bg-background px-6 py-4">
         <div className="flex items-center gap-2.5">
-          <Building2 className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-heading font-bold">Company Intelligence</h1>
+          <BarChart3 className="h-5 w-5 text-primary" />
+          <h1 className="text-xl font-heading font-bold">Reports</h1>
         </div>
         <p className="text-muted-foreground text-sm mt-0.5">
-          Revenue analytics, deal outcomes, cohort trends, and service agreements
+          Customer health, revenue analytics, deal outcomes, cohort trends, and coaching reports
         </p>
       </div>
 
@@ -63,14 +67,14 @@ export default function CompanyIntelligence() {
           onValueChange={handleTabChange}
           className="flex flex-col flex-1 min-h-0"
         >
-          <div className="shrink-0 border-b bg-background px-6">
-            <TabsList className="h-10 bg-transparent p-0 gap-0 rounded-none">
+          <div className="shrink-0 border-b bg-background px-6 overflow-x-auto">
+            <TabsList className="h-10 bg-transparent p-0 gap-0 rounded-none flex">
               {TABS.map(tab => (
                 <TabsTrigger
                   key={tab.value}
                   value={tab.value}
                   data-testid={`tab-${tab.value}`}
-                  className="h-10 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none px-4 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  className="h-10 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none px-4 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap shrink-0"
                 >
                   {tab.label}
                 </TabsTrigger>
@@ -79,6 +83,9 @@ export default function CompanyIntelligence() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
+            <TabsContent value="customer-intel" className="m-0 h-full">
+              <CustomerReport />
+            </TabsContent>
             <TabsContent value="revenue" className="m-0">
               <RevenueAnalytics />
             </TabsContent>
@@ -94,6 +101,9 @@ export default function CompanyIntelligence() {
             <TabsContent value="agreements" className="m-0">
               <ServiceAgreements />
             </TabsContent>
+            <TabsContent value="weekly-report" className="m-0">
+              <WeeklyReport />
+            </TabsContent>
             <TabsContent value="action-plan" className="m-0 p-6">
               <Card className="shadow-sm bg-card max-w-2xl">
                 <CardHeader className="pb-2">
@@ -103,10 +113,7 @@ export default function CompanyIntelligence() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <ActionPlanPanel
-                    type="company"
-                    clientId={null}
-                  />
+                  <ActionPlanPanel type="company" clientId={null} />
                 </CardContent>
               </Card>
             </TabsContent>

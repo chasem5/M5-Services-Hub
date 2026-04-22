@@ -68,25 +68,38 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
             {/* Companies */}
             {clients.length > 0 && (
               <CommandGroup heading="Companies">
-                {clients.map(client => (
-                  <CommandItem
-                    key={`client-${client.id}`}
-                    value={`company ${client.name} ${client.industry || ""}`}
-                    onSelect={() => navigate(`/customers/${client.id}`)}
-                    data-testid={`search-result-company-${client.id}`}
-                    className="flex items-center gap-3 cursor-pointer"
-                  >
-                    <div className="h-7 w-7 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                      <Building2 className="h-3.5 w-3.5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{client.name}</p>
-                      {client.industry && (
-                        <p className="text-xs text-muted-foreground truncate">{client.industry}</p>
+                {clients.map(client => {
+                  const score = client.healthScore;
+                  const healthColor = score === null || score === undefined
+                    ? "bg-muted text-muted-foreground"
+                    : score >= 70 ? "bg-green-100 text-green-700"
+                    : score >= 40 ? "bg-amber-100 text-amber-700"
+                    : "bg-red-100 text-red-700";
+                  return (
+                    <CommandItem
+                      key={`client-${client.id}`}
+                      value={`company ${client.name} ${client.industry || ""}`}
+                      onSelect={() => navigate(`/customers/${client.id}`)}
+                      data-testid={`search-result-company-${client.id}`}
+                      className="flex items-center gap-3 cursor-pointer"
+                    >
+                      <div className="h-7 w-7 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                        <Building2 className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{client.name}</p>
+                        {client.industry && (
+                          <p className="text-xs text-muted-foreground truncate">{client.industry}</p>
+                        )}
+                      </div>
+                      {score !== null && score !== undefined && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${healthColor}`} data-testid={`badge-health-search-${client.id}`}>
+                          {score}
+                        </span>
                       )}
-                    </div>
-                  </CommandItem>
-                ))}
+                    </CommandItem>
+                  );
+                })}
               </CommandGroup>
             )}
 

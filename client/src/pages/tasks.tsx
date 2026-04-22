@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { format, isBefore, startOfDay } from "date-fns";
-import { Link, useSearch } from "wouter";
+import { Link, useSearch, useLocation } from "wouter";
 import {
   Form,
   FormControl,
@@ -482,6 +482,7 @@ const VISIBILITY_LABELS = {
 };
 
 export default function TasksPage() {
+  const [location] = useLocation();
   const searchParams = useSearch();
   const { toast } = useToast();
   const [view, setView] = useState<"board" | "list">(() => window.innerWidth < 768 ? "list" : "board");
@@ -950,6 +951,19 @@ export default function TasksPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Activity section nav */}
+      <div className="flex gap-0 border-b bg-background px-6 shrink-0">
+        <Link href="/tasks">
+          <span className={`inline-flex h-10 items-center px-4 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${location.startsWith("/tasks") ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            Tasks
+          </span>
+        </Link>
+        <Link href="/meetings">
+          <span className={`inline-flex h-10 items-center px-4 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${location.startsWith("/meetings") ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            Meetings
+          </span>
+        </Link>
+      </div>
       {/* Board switcher bar */}
       <div className="flex items-center gap-2 px-4 md:px-6 py-2 bg-muted/30 border-b overflow-x-auto shrink-0">
         <div className="flex items-center gap-1 min-w-0">
