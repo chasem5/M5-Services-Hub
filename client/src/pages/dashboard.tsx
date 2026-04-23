@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   TrendingUp,
   TrendingDown,
@@ -22,6 +23,8 @@ import {
   ArrowRight,
   Calendar,
   Sun,
+  Eye,
+  Users,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { formatDistanceToNow, format, parseISO, differenceInDays, isToday, isYesterday } from "date-fns";
@@ -155,9 +158,38 @@ export default function Dashboard() {
   const [onboardingSteps, setOnboardingSteps] = useState<Record<string, boolean>>({});
   const [isDismissed, setIsDismissed] = useState(false);
 
+  const isAdminOrManager = user && ["super_admin", "admin", "manager"].includes(user.role ?? "");
+  const [viewTeamId, setViewTeamId] = useState<string>("__all__");
+  const [viewUserId, setViewUserId] = useState<string>("__all__");
+
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/teams"],
+    enabled: !!isAdminOrManager,
+  });
+
+  const { data: userDirectory = [] } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string }[]>({
+    queryKey: ["/api/users/directory"],
+    enabled: !!isAdminOrManager,
+  });
+
+  const dashboardQueryKey = useMemo(() => {
+    const params = new URLSearchParams();
+    if (isAdminOrManager) {
+      if (viewTeamId !== "__all__") { params.set("teamId", viewTeamId); }
+      else if (viewUserId !== "__all__") { params.set("userId", viewUserId); }
+      else { params.set("filter", "all"); }
+    } else {
+      params.set("filter", "mine");
+    }
+    return ["/api/dashboard", params.toString()];
+  }, [isAdminOrManager, viewTeamId, viewUserId]);
+
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
-    queryKey: ["/api/dashboard", "mine"],
-    queryFn: () => fetch(`/api/dashboard?filter=mine`, { credentials: "include" }).then(r => r.json()),
+    queryKey: dashboardQueryKey,
+    queryFn: () => {
+      const params = new URLSearchParams(dashboardQueryKey[1] as string);
+      return fetch(`/api/dashboard?${params.toString()}`, { credentials: "include" }).then(r => r.json());
+    },
   });
 
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
@@ -294,6 +326,71 @@ export default function Dashboard() {
         externalDialog={quickAction === "activity" ? null : quickAction as any}
         onExternalOpen={(d) => setQuickAction(d as any)}
       />
+
+      {/* ── Viewing As (admin/manager only) ──────────────────────────── */}
+      {isAdminOrManager && (
+        <div className="flex items-center gap-3 bg-muted/50 border border-border/60 rounded-lg px-4 py-2.5">
+          <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-sm font-medium text-muted-foreground shrink-0">Viewing as:</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select
+              value={viewTeamId}
+              onValueChange={(v) => { setViewTeamId(v); if (v !== "__all__") setViewUserId("__all__"); }}
+            >
+              <SelectTrigger className="h-8 text-xs w-[160px]" data-testid="select-view-team">
+                <div className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="All Teams" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Teams</SelectItem>
+                {teamsList.map(t => (
+                  <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={viewUserId}
+              onValueChange={(v) => { setViewUserId(v); if (v !== "__all__") setViewTeamId("__all__"); }}
+            >
+              <SelectTrigger className="h-8 text-xs w-[180px]" data-testid="select-view-user">
+                <SelectValue placeholder="All Employees" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Employees</SelectItem>
+                {userDirectory.map(u => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(viewTeamId !== "__all__" || viewUserId !== "__all__") && (
+              <button
+                onClick={() => { setViewTeamId("__all__"); setViewUserId("__all__"); }}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                data-testid="button-clear-view-filter"
+              >
+                <X className="h-3.5 w-3.5" /> Clear
+              </button>
+            )}
+          </div>
+          {viewTeamId !== "__all__" && (
+            <span className="text-xs text-primary font-medium ml-auto">
+              {teamsList.find(t => String(t.id) === viewTeamId)?.name ?? ""}
+            </span>
+          )}
+          {viewUserId !== "__all__" && (
+            <span className="text-xs text-primary font-medium ml-auto">
+              {(() => {
+                const u = userDirectory.find(u => u.id === viewUserId);
+                return u ? (u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email) : "";
+              })()}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Top Strip: 4 Stat Cards ──────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

@@ -24,6 +24,9 @@ import {
   CheckSquare,
   UserCheck,
   AlertTriangle,
+  Eye,
+  Users,
+  X,
 } from "lucide-react";
 import { differenceInDays, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 
@@ -101,8 +104,44 @@ export default function MyAccounts() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  const { data: clients = [], isLoading: clientsLoading } = useQuery<Client[]>({
-    queryKey: ["/api/clients"],
+  const isAdminOrManager = user && ["super_admin", "admin", "manager"].includes(user.role ?? "");
+  const [viewTeamId, setViewTeamId] = useState<string>("__all__");
+  const [viewUserId, setViewUserId] = useState<string>("__mine__");
+
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/teams"],
+    enabled: !!isAdminOrManager,
+  });
+
+  const { data: userDirectory = [] } = useQuery<{ id: string; firstName: string | null; lastName: string | null; email: string }[]>({
+    queryKey: ["/api/users/directory"],
+    enabled: !!isAdminOrManager,
+  });
+
+  const clientsQueryKey = useMemo(() => {
+    if (!isAdminOrManager) return ["/api/clients"];
+    if (viewTeamId !== "__all__") return ["/api/clients", "team", viewTeamId];
+    if (viewUserId !== "__mine__" && viewUserId !== "__all__") return ["/api/clients", "user", viewUserId];
+    if (viewUserId === "__all__") return ["/api/clients", "all"];
+    return ["/api/clients", "mine", user?.id];
+  }, [isAdminOrManager, viewTeamId, viewUserId, user?.id]);
+
+  const clientsQueryFn = useMemo(() => {
+    if (!isAdminOrManager) {
+      return () => fetch("/api/clients", { credentials: "include" }).then(r => r.json());
+    }
+    if (viewTeamId !== "__all__") {
+      return () => fetch(`/api/clients?teamId=${viewTeamId}`, { credentials: "include" }).then(r => r.json());
+    }
+    if (viewUserId !== "__mine__" && viewUserId !== "__all__") {
+      return () => fetch(`/api/clients?userId=${viewUserId}`, { credentials: "include" }).then(r => r.json());
+    }
+    return () => fetch("/api/clients", { credentials: "include" }).then(r => r.json());
+  }, [isAdminOrManager, viewTeamId, viewUserId]);
+
+  const { data: allClients = [], isLoading: clientsLoading } = useQuery<Client[]>({
+    queryKey: clientsQueryKey,
+    queryFn: clientsQueryFn,
   });
 
   const { data: leads = [] } = useQuery<Lead[]>({
@@ -128,10 +167,16 @@ export default function MyAccounts() {
     return map;
   }, [leads]);
 
-  const myClients = useMemo(() =>
-    clients.filter(c => c.accountManagerUserId === user?.id),
-    [clients, user?.id],
-  );
+  const myClients = useMemo(() => {
+    if (isAdminOrManager) {
+      // For admin viewing "mine" only
+      if (viewTeamId === "__all__" && viewUserId === "__mine__") {
+        return allClients.filter(c => c.accountManagerUserId === user?.id);
+      }
+      return allClients;
+    }
+    return allClients.filter(c => c.accountManagerUserId === user?.id);
+  }, [allClients, isAdminOrManager, viewTeamId, viewUserId, user?.id]);
 
   const filteredClients = useMemo(() => {
     let result = myClients;
@@ -287,6 +332,58 @@ export default function MyAccounts() {
         </Link>
       </div>
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
+      {/* Viewing As bar (admin/manager only) */}
+      {isAdminOrManager && (
+        <div className="flex items-center gap-3 bg-muted/50 border border-border/60 rounded-lg px-4 py-2.5">
+          <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-sm font-medium text-muted-foreground shrink-0">Viewing as:</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select
+              value={viewTeamId}
+              onValueChange={(v) => { setViewTeamId(v); if (v !== "__all__") setViewUserId("__all__"); }}
+            >
+              <SelectTrigger className="h-8 text-xs w-[160px]" data-testid="select-myaccounts-view-team">
+                <div className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="All Teams" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Teams</SelectItem>
+                {teamsList.map(t => (
+                  <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={viewUserId}
+              onValueChange={(v) => { setViewUserId(v); if (v !== "__mine__" && v !== "__all__") setViewTeamId("__all__"); }}
+            >
+              <SelectTrigger className="h-8 text-xs w-[180px]" data-testid="select-myaccounts-view-user">
+                <SelectValue placeholder="My Accounts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__mine__">My Accounts</SelectItem>
+                <SelectItem value="__all__">All Accounts</SelectItem>
+                {userDirectory.map(u => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(viewTeamId !== "__all__" || (viewUserId !== "__mine__")) && (
+              <button
+                onClick={() => { setViewTeamId("__all__"); setViewUserId("__mine__"); }}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                data-testid="button-clear-myaccounts-view-filter"
+              >
+                <X className="h-3.5 w-3.5" /> Reset
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">

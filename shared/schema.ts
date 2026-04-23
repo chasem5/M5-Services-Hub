@@ -6,6 +6,17 @@ import { users } from "./models/auth";
 export { sessions, users } from "./models/auth";
 export type { UpsertUser, User } from "./models/auth";
 
+// ─── Teams ────────────────────────────────────────────────────────────────────
+export const teams = pgTable("teams", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertTeamSchema = createInsertSchema(teams).omit({ id: true, createdAt: true });
+export type Team = typeof teams.$inferSelect;
+export type InsertTeam = z.infer<typeof insertTeamSchema>;
+
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
   name: varchar("name").notNull(),
@@ -50,6 +61,7 @@ export const clients = pgTable("clients", {
   qualificationReviewedAt: timestamp("qualification_reviewed_at"),
   partnershipScore: integer("partnership_score"),
   repExpectedJobFrequency: integer("rep_expected_job_frequency"), // jobs per year
+  teamId: integer("team_id").references(() => teams.id),
 });
 
 export const clientOffices = pgTable("client_offices", {
@@ -164,6 +176,7 @@ export const leads = pgTable("leads", {
   lostAt: timestamp("lost_at"),
   lossReason: varchar("loss_reason", { enum: ["price", "competition", "timing", "no_response", "other"] }),
   lossNote: text("loss_note"),
+  teamId: integer("team_id").references(() => teams.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -215,6 +228,7 @@ export const tasks = pgTable("tasks", {
   sortOrder: integer("sort_order").default(0).notNull(),
   checklist: jsonb("checklist").default([]),
   labels: text("labels").array().default([]),
+  teamId: integer("team_id").references(() => teams.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -1145,6 +1159,7 @@ export const opportunities = pgTable("opportunities", {
   jobType: varchar("job_type", { length: 100 }),
   customerPo: varchar("customer_po", { length: 100 }),
   internalNotes: text("internal_notes"),
+  teamId: integer("team_id").references(() => teams.id),
   createdBy: varchar("created_by").references(() => users.id),
   approvedBy: varchar("approved_by").references(() => users.id),
   approvalNote: text("approval_note"),

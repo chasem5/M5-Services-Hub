@@ -188,6 +188,7 @@ export async function registerRoutes(
   await storage.migrateQualificationReviews();
   // Multi-board task system: create tables, add columns, backfill data
   await storage.migrateTaskBoards();
+  await storage.migrateTeams();
   await storage.migrateEmailMessageColumns();
   await storage.migrateMeetingTypeColumn();
   // Seed default value tier settings
@@ -418,7 +419,18 @@ export async function registerRoutes(
       }
     }
 
-    const stats = await storage.getDashboardStats(filterUserId);
+    // teamId-based scope override (admin/manager only)
+    let filterTeamId: number | undefined;
+    if (isAdminOrManager && req.query.teamId) {
+      filterTeamId = parseInt(String(req.query.teamId));
+      filterUserId = undefined; // team scope takes priority
+    }
+    if (isAdminOrManager && req.query.userId) {
+      filterUserId = String(req.query.userId);
+      filterTeamId = undefined;
+    }
+
+    const stats = await storage.getDashboardStats(filterUserId, filterTeamId);
     res.json(stats);
   });
 
@@ -501,6 +513,50 @@ export async function registerRoutes(
     const id = req.params.id as string;
     await storage.deleteUser(id);
     res.sendStatus(204);
+  });
+
+  // ── Teams ────────────────────────────────────────────────────────────────────
+  app.get("/api/teams", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (_req, res) => {
+    const all = await storage.listTeams();
+    res.json(all);
+  });
+
+  app.post("/api/teams", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    const data = z.object({ name: z.string().min(1), description: z.string().optional().nullable() }).parse(req.body);
+    const team = await storage.createTeam(data);
+    res.json(team);
+  });
+
+  app.patch("/api/teams/:id", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    const id = parseInt(req.params.id);
+    const data = z.object({ name: z.string().min(1).optional(), description: z.string().optional().nullable() }).parse(req.body);
+    const team = await storage.updateTeam(id, data);
+    res.json(team);
+  });
+
+  app.delete("/api/teams/:id", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
+    const id = parseInt(req.params.id);
+    await storage.deleteTeam(id);
+    res.sendStatus(204);
+  });
+
+  app.get("/api/teams/:id/members", isAuthenticated, requireRole(["super_admin", "admin", "manager"]), async (req, res) => {
+    const id = parseInt(req.params.id);
+    const members = await storage.getTeamMembers(id);
+    res.json(members);
+  });
+
+  app.post("/api/teams/:id/members", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    const teamId = parseInt(req.params.id);
+    const { userId } = z.object({ userId: z.string() }).parse(req.body);
+    const user = await storage.assignUserToTeam(userId, teamId);
+    res.json(user);
+  });
+
+  app.delete("/api/teams/:id/members/:userId", isAuthenticated, requireRole(["super_admin", "admin"]), async (req, res) => {
+    const { userId } = req.params;
+    const user = await storage.assignUserToTeam(userId, null);
+    res.json(user);
   });
 
   // Invites (Super Admin only)
@@ -653,7 +709,16 @@ export async function registerRoutes(
 
   app.get("/api/clients", isAuthenticated, async (req, res) => {
     const scopedUserId = await getScopedUserId(req, "customers");
-    const clients = await storage.listClients(scopedUserId);
+    const currentUserId = (req as any).user?.claims?.sub;
+    const callerUser = currentUserId ? await storage.getUser(currentUserId) : null;
+    const isAdminOrManager = callerUser && ["super_admin", "admin", "manager"].includes(callerUser.role ?? "");
+    let filterTeamId: number | undefined;
+    let filterUserId: string | undefined = scopedUserId;
+    if (isAdminOrManager) {
+      if (req.query.teamId) filterTeamId = parseInt(String(req.query.teamId));
+      if (req.query.userId) filterUserId = String(req.query.userId);
+    }
+    const clients = await storage.listClients(filterUserId, filterTeamId);
     res.json(clients);
   });
 
@@ -1991,7 +2056,16 @@ Do not include any other text, just the JSON.`,
   // Leads
   app.get("/api/leads", isAuthenticated, async (req, res) => {
     const scopedUserId = await getScopedUserId(req, "leads");
-    const leads = await storage.listLeads(scopedUserId);
+    const currentUserId = (req as any).user?.claims?.sub;
+    const callerUser = currentUserId ? await storage.getUser(currentUserId) : null;
+    const isAdminOrManager = callerUser && ["super_admin", "admin", "manager"].includes(callerUser.role ?? "");
+    let filterTeamId: number | undefined;
+    let filterUserId: string | undefined = scopedUserId;
+    if (isAdminOrManager) {
+      if (req.query.teamId) filterTeamId = parseInt(String(req.query.teamId));
+      if (req.query.userId) filterUserId = String(req.query.userId);
+    }
+    const leads = await storage.listLeads(filterUserId, filterTeamId);
     const now = new Date();
     const leadsWithFlags = leads.map(lead => ({
       ...lead,

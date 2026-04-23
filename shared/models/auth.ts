@@ -36,6 +36,7 @@ export const users = pgTable("users", {
   dashboardFilter: varchar("dashboard_filter").default("all"),
   buildopsRepId: varchar("buildops_rep_id"),
   team: varchar("team"),
+  teamId: integer("team_id"),
   emailNotifyTaskAssigned: boolean("email_notify_task_assigned").default(true).notNull(),
   emailNotifyTaskDue: boolean("email_notify_task_due").default(true).notNull(),
   emailNotifyAnnouncement: boolean("email_notify_announcement").default(true).notNull(),
