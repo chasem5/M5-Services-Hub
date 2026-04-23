@@ -839,7 +839,7 @@ function KanbanColumn({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0" data-column-scroll="true">
         <div className="p-3 space-y-3">
           {filteredLeads
             ?.filter((l) => l.stage === stage.slug)
@@ -2578,7 +2578,7 @@ export default function Leads() {
                 }
 
                 const target = e.target as Element;
-                const isOverColumnScrollArea = !!target.closest("[data-radix-scroll-area-viewport]");
+                const isOverColumnScrollArea = !!target.closest("[data-column-scroll]");
 
                 if (e.deltaX !== 0 && !isOverColumnScrollArea) {
                   e.preventDefault();
