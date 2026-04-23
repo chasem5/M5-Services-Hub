@@ -292,7 +292,7 @@ const ACTIVITY_TYPES = [
   { value: "follow_up", label: "Follow-up", icon: CornerDownRight, color: "text-primary", bg: "bg-primary/10" },
 ] as const;
 
-function LeadActivityTab({ leadId }: { leadId: number }) {
+function LeadActivityTab({ leadId, hideComposer = false }: { leadId: number; hideComposer?: boolean }) {
   const [draft, setDraft] = useState("");
   const [activityType, setActivityType] = useState<string>("note");
   const { toast } = useToast();
@@ -354,6 +354,7 @@ function LeadActivityTab({ leadId }: { leadId: number }) {
 
   return (
     <div className="space-y-4">
+      {!hideComposer && (
       <div className="space-y-2.5">
         <div className="flex flex-wrap gap-1.5">
           {ACTIVITY_TYPES.map(({ value, label, icon: Icon }) => (
@@ -396,6 +397,7 @@ function LeadActivityTab({ leadId }: { leadId: number }) {
         </div>
         <p className="text-[11px] text-muted-foreground">Ctrl+Enter to save quickly</p>
       </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-2">
@@ -404,50 +406,175 @@ function LeadActivityTab({ leadId }: { leadId: number }) {
       ) : notes.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
           <CalendarDays className="h-8 w-8 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">No activity logged yet — record your first call, email, or meeting note above</p>
+          <p className="text-sm">No activity logged yet — use the quick-log bar above to add your first entry</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {notes.map((note) => {
-            const meta = getActivityMeta((note as any).activityType);
-            const Icon = meta.icon;
-            return (
-              <div
-                key={note.id}
-                className="group flex gap-3 p-3 rounded-lg border bg-card hover:bg-muted/40 transition-colors"
-                data-testid={`card-lead-activity-${note.id}`}
-              >
-                <div className="flex-shrink-0 mt-0.5">
-                  <div className={`h-7 w-7 rounded-full flex items-center justify-center ${meta.bg}`}>
-                    <Icon className={`h-3.5 w-3.5 ${meta.color}`} />
+        <div className="space-y-1">
+          {(() => {
+            function getDateLabel(dateStr: string) {
+              const d = new Date(dateStr);
+              const today = new Date();
+              const yesterday = new Date(today);
+              yesterday.setDate(yesterday.getDate() - 1);
+              if (d.toDateString() === today.toDateString()) return "Today";
+              if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+              return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            }
+            let lastDateLabel = "";
+            return notes.map((note) => {
+              const meta = getActivityMeta((note as any).activityType);
+              const Icon = meta.icon;
+              const isNoteType = ((note as any).activityType ?? "note") === "note";
+              const dateLabel = getDateLabel(note.createdAt);
+              const showDateHeader = dateLabel !== lastDateLabel;
+              lastDateLabel = dateLabel;
+              return (
+                <div key={note.id}>
+                  {showDateHeader && (
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mt-4 mb-1.5 first:mt-0">
+                      {dateLabel}
+                    </p>
+                  )}
+                  <div
+                    className={`group flex gap-3 p-3 rounded-lg border transition-colors ${
+                      isNoteType
+                        ? "bg-amber-50 border-amber-100 dark:bg-amber-950/20 dark:border-amber-800/40"
+                        : "bg-card hover:bg-muted/40"
+                    }`}
+                    data-testid={`card-lead-activity-${note.id}`}
+                  >
+                    <div className="flex-shrink-0 mt-0.5">
+                      <div className={`h-7 w-7 rounded-full flex items-center justify-center ${meta.bg}`}>
+                        <Icon className={`h-3.5 w-3.5 ${meta.color}`} />
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider ${meta.color}`}>{meta.label}</span>
+                        {isNoteType && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-amber-200 text-amber-800 dark:bg-amber-800/40 dark:text-amber-300 rounded-full font-medium">Internal</span>
+                        )}
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.content}</p>
+                      <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+                        <span>{getUserName(note.userId)}</span>
+                        <span>·</span>
+                        <span title={new Date(note.createdAt).toLocaleString()}>
+                          {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteMutation.mutate(note.id)}
+                      disabled={deleteMutation.isPending}
+                      data-testid={`button-delete-activity-${note.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider ${meta.color}`}>{meta.label}</span>
-                  </div>
-                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.content}</p>
-                  <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
-                    <span>{getUserName(note.userId)}</span>
-                    <span>·</span>
-                    <span title={new Date(note.createdAt).toLocaleString()}>
-                      {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
-                    </span>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => deleteMutation.mutate(note.id)}
-                  disabled={deleteMutation.isPending}
-                  data-testid={`button-delete-activity-${note.id}`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuickLogBar({ leadId }: { leadId: number }) {
+  const [logType, setLogType] = useState<string | null>(null);
+  const [logText, setLogText] = useState("");
+  const { toast } = useToast();
+
+  const logMutation = useMutation({
+    mutationFn: async ({ content, activityType }: { content: string; activityType: string }) => {
+      const res = await apiRequest("POST", `/api/leads/${leadId}/notes`, { content, activityType });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", leadId, "notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads/activity-summary"] });
+      setLogType(null);
+      setLogText("");
+      toast({ title: "Activity logged" });
+    },
+    onError: () => toast({ title: "Failed to log activity", variant: "destructive" }),
+  });
+
+  const LOG_BUTTONS = [
+    { label: "Note", value: "note", icon: MessageSquare },
+    { label: "Call", value: "call", icon: Phone },
+    { label: "Email", value: "email", icon: Mail },
+    { label: "Meeting", value: "meeting", icon: UsersIcon },
+    { label: "Site Visit", value: "site_visit", icon: Building },
+  ] as const;
+
+  return (
+    <div className="px-5 py-2.5 border-b bg-muted/30 shrink-0">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mr-0.5">Log</span>
+        {LOG_BUTTONS.map(btn => {
+          const Icon = btn.icon;
+          const isActive = logType === btn.value;
+          return (
+            <button
+              key={btn.value}
+              onClick={() => setLogType(logType === btn.value ? null : btn.value)}
+              data-testid={`button-quicklog-${btn.value}`}
+              className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-all font-medium ${
+                isActive
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-3 w-3" />
+              {btn.label}
+            </button>
+          );
+        })}
+      </div>
+      {logType && (
+        <div className="mt-2 flex gap-2">
+          <Textarea
+            value={logText}
+            onChange={(e) => setLogText(e.target.value)}
+            placeholder={`Add ${LOG_BUTTONS.find(b => b.value === logType)?.label.toLowerCase()} details...`}
+            rows={2}
+            className="flex-1 text-xs resize-none"
+            data-testid="textarea-quicklog-draft"
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                if (logText.trim()) logMutation.mutate({ content: logText.trim(), activityType: logType });
+              }
+            }}
+          />
+          <div className="flex flex-col gap-1">
+            <Button
+              size="sm"
+              className="text-xs"
+              onClick={() => {
+                if (logText.trim()) logMutation.mutate({ content: logText.trim(), activityType: logType });
+              }}
+              disabled={!logText.trim() || logMutation.isPending}
+              data-testid="button-quicklog-save"
+            >
+              {logMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs"
+              onClick={() => { setLogType(null); setLogText(""); }}
+              data-testid="button-quicklog-cancel"
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -1137,6 +1264,10 @@ export default function Leads() {
     setIsEditingInternalNotes(false);
     setSuggestedTask(null);
     setSuggestedTaskLoading(false);
+    setActiveDrawerTab("activity");
+    setIsEditingLead(false);
+    setIsAddTaskOpen(false);
+    setQuickTaskInput("");
   }, [selectedLead?.id]);
 
   const [search, setSearch] = useState("");
@@ -1163,6 +1294,8 @@ export default function Leads() {
   const [formServiceTypes, setFormServiceTypes] = useState<string[]>([]);
   const [editFormServiceTypes, setEditFormServiceTypes] = useState<string[]>([]);
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
+  const [activeDrawerTab, setActiveDrawerTab] = useState("activity");
+  const [quickTaskInput, setQuickTaskInput] = useState("");
   const [pendingTaskId, setPendingTaskId] = useState<number | null>(null);
   const [selectedDealTask, setSelectedDealTask] = useState<Task | null>(null);
   const [dealTaskNewChecklistText, setDealTaskNewChecklistText] = useState("");
@@ -2056,6 +2189,14 @@ export default function Leads() {
 
   const detailScore = selectedLead?.confidenceScore ?? 50;
   const detailLeadTasks = selectedLead ? getLeadTasks(selectedLead.id) : [];
+  const { data: detailLeadNotes = [] } = useQuery<LeadNote[]>({
+    queryKey: ["/api/leads", selectedLead?.id ?? 0, "notes"],
+    queryFn: async () => {
+      const res = await fetch(`/api/leads/${selectedLead!.id}/notes`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: !!selectedLead?.id,
+  });
 
   const scrollToColumn = (stageSlug: string) => {
     const el = document.getElementById(`column-${stageSlug}`);
@@ -3221,28 +3362,82 @@ export default function Leads() {
           setIsAddTaskOpen(false);
         }
       }}>
-        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
-          {selectedLead && (
-            <>
-              <SheetHeader>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <Badge className="capitalize">
-                      {selectedLead.stage.replace('_', ' ')}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">ID: #{selectedLead.id}</span>
-                  </div>
-                  {!isEditingLead ? (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setIsEditingLead(true)}
-                        data-testid="button-edit-lead"
-                      >
-                        <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                        Edit Deal
-                      </Button>
+        <SheetContent className="w-full sm:max-w-xl flex flex-col p-0 overflow-hidden gap-0">
+          {selectedLead && (() => {
+            const currentStageObj = stages.find(s => s.slug === selectedLead.stage);
+            const stageColors = getStageColors(currentStageObj?.color);
+            const clientName = getClientName(selectedLead.clientId);
+            const repName = getUserName(selectedLead.assignedTo);
+            const clientInitials = clientName ? clientName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase() : "?";
+            const valueDisplay = isLeadPotential(selectedLead)
+              ? `${selectedLead.valueTier} ≈ ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(tierMap[selectedLead.valueTier!] ?? 0)}`
+              : formatCurrency(selectedLead.value);
+            const aiS = aiSummaries[selectedLead.id];
+            const isAiLoading = loadingAiSummary[selectedLead.id];
+            const healthColorMap: Record<string, string> = {
+              "Strong": "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400",
+              "On Track": "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-400",
+              "Stalled": "bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-400",
+              "At Risk": "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-400",
+            };
+
+            function handleHeaderStageChange(targetSlug: string) {
+              if (!selectedLead) return;
+              const targetStageObj = stages.find(s => s.slug === targetSlug);
+              if (currentStageObj?.track === "relationship" && targetStageObj?.track === "deal") {
+                const client = clients?.find(c => c.id === selectedLead.clientId);
+                setPendingDealMove({ leadId: selectedLead.id, stage: targetSlug, clientName: client?.name ?? "this client" });
+                return;
+              }
+              if (targetSlug === "lost") {
+                setLossReasonInput("");
+                setLossNoteInput("");
+                setPendingLossCapture({ leadId: selectedLead.id, stage: targetSlug });
+                return;
+              }
+              updateLeadStageMutation.mutate({ id: selectedLead.id, stage: targetSlug });
+            }
+
+            return (
+              <>
+                <SheetDescription className="sr-only">Deal details, activity, and tasks for this opportunity.</SheetDescription>
+
+                {/* ── HEADER ── */}
+                <div className="px-5 pt-4 pb-3 border-b bg-background space-y-2 shrink-0">
+                  {/* Row 1: stage dropdown + ID + Edit Deal */}
+                  <div className="flex items-center justify-between gap-2 pr-10">
+                    <div className="flex items-center gap-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className={`text-xs font-semibold px-2.5 py-1 rounded-full border flex items-center gap-1 transition-colors ${stageColors.badge || "bg-muted text-foreground border-border"}`}
+                            data-testid="button-stage-dropdown"
+                          >
+                            {currentStageObj?.label ?? selectedLead.stage.replace(/_/g, ' ')}
+                            <ChevronDown className="h-3 w-3 opacity-60" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-44">
+                          {stages.map(s => {
+                            const sc = getStageColors(s.color);
+                            return (
+                              <DropdownMenuItem
+                                key={s.id}
+                                onClick={() => handleHeaderStageChange(s.slug)}
+                                className="text-xs"
+                                data-testid={`option-stage-${s.slug}`}
+                              >
+                                <div className={`h-2 w-2 rounded-full mr-2 shrink-0 ${sc.dot}`} />
+                                {s.label}
+                                {s.slug === selectedLead.stage && <Check className="h-3 w-3 ml-auto opacity-60" />}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <span className="text-xs text-muted-foreground font-mono">#{selectedLead.id}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
                       {selectedLead.stage === "lost" && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -3265,18 +3460,18 @@ export default function Leads() {
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
                       <Button
                         size="sm"
-                        variant="ghost"
+                        variant="outline"
                         onClick={() => {
-                          setIsEditingLead(false);
-                          setEditFormTags(selectedLead.tags ?? []);
                           const vType = (selectedLead.valueType as "fixed" | "potential") ?? "fixed";
                           setEditValueType(vType);
                           setEditValueTier((selectedLead.valueTier as string | null) ?? null);
+                          setEditFormTags(selectedLead.tags ?? []);
+                          setEditFormServiceTypes(((selectedLead as any).serviceTypes?.length > 0 ? (selectedLead as any).serviceTypes : selectedLead.serviceType ? [selectedLead.serviceType] : []) as string[]);
+                          setEditConfidenceStatus((selectedLead as any).confidenceStatus ?? null);
+                          setSelectedClientIdForBuildingEdit(selectedLead.clientId ?? null);
+                          setSelectedClientIdForContactEdit(selectedLead.clientId ?? null);
                           editLeadForm.reset({
                             title: selectedLead.title,
                             clientId: selectedLead.clientId ?? undefined,
@@ -3290,49 +3485,482 @@ export default function Leads() {
                             notes: selectedLead.notes ?? "",
                             assignedTo: selectedLead.assignedTo ?? undefined,
                           });
+                          setIsEditingLead(true);
+                          setActiveDrawerTab("details");
                         }}
-                        data-testid="button-cancel-edit-lead"
+                        data-testid="button-edit-lead"
                       >
-                        <X className="h-3.5 w-3.5 mr-1" />
-                        Cancel
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={editLeadForm.handleSubmit(saveLeadEdits)}
-                        disabled={updateLeadMutation.isPending}
-                        data-testid="button-save-lead-edits"
-                      >
-                        <Check className="h-3.5 w-3.5 mr-1" />
-                        {updateLeadMutation.isPending ? "Saving..." : "Save"}
+                        <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                        Edit Deal
                       </Button>
                     </div>
-                  )}
-                </div>
-                <SheetTitle className="text-2xl">{selectedLead.title}</SheetTitle>
-                <SheetDescription>
-                  Full details, tasks, and activity timeline for this opportunity.
-                </SheetDescription>
-              </SheetHeader>
+                  </div>
 
-              <Tabs defaultValue="details" className="mt-6">
-                <TabsList className="w-full grid grid-cols-5 h-auto">
-                  <TabsTrigger value="details" className="py-2.5 text-xs sm:text-sm">Details</TabsTrigger>
-                  <TabsTrigger value="notes" className="py-2.5 text-xs sm:text-sm" data-testid="tab-activity">Activity</TabsTrigger>
-                  <TabsTrigger value="attachments" className="py-2.5 text-xs sm:text-sm">Files</TabsTrigger>
-                  <TabsTrigger value="tasks" className="py-2.5 text-xs sm:text-sm">
-                    Tasks
-                    {detailLeadTasks.length > 0 && (
-                      <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
-                        {detailLeadTasks.length}
-                      </Badge>
+                  {/* Row 2: Deal title */}
+                  <SheetTitle className="text-base font-bold leading-snug">{selectedLead.title}</SheetTitle>
+
+                  {/* Row 3: Meta row */}
+                  <div className="flex items-center gap-2.5 flex-wrap text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center text-primary font-bold text-[10px] shrink-0">
+                        {clientInitials}
+                      </div>
+                      <span className="font-medium">{clientName || "No client"}</span>
+                    </div>
+                    <span className="text-muted-foreground/50">·</span>
+                    <span className="font-mono font-bold">{valueDisplay}</span>
+                    {repName && (
+                      <>
+                        <span className="text-muted-foreground/50">·</span>
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                          <div className="w-4 h-4 rounded-full bg-muted flex items-center justify-center text-[9px] font-bold">
+                            {repName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()}
+                          </div>
+                          <span>{repName.split(' ')[0]}</span>
+                        </div>
+                      </>
                     )}
-                  </TabsTrigger>
-                  <TabsTrigger value="activity" className="py-2.5 text-xs sm:text-sm">Timeline</TabsTrigger>
-                </TabsList>
+                    {(selectedLead as any).buildopsExpirationDate && (
+                      <>
+                        <span className="text-muted-foreground/50">·</span>
+                        <span className="text-muted-foreground">
+                          Exp {new Date((selectedLead as any).buildopsExpirationDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </span>
+                      </>
+                    )}
+                  </div>
 
-                <TabsContent value="details" className="space-y-6 py-4">
-                  {/* AI Deal Analysis Card */}
-                  {!isEditingLead && (() => {
+                  {/* Row 4: AI health chip + one-liner */}
+                  <div className="flex items-start gap-2 min-h-[22px] flex-wrap">
+                    {isAiLoading ? (
+                      <div className="h-5 w-24 bg-muted animate-pulse rounded-full" />
+                    ) : aiS ? (
+                      <>
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold border shrink-0 ${healthColorMap[aiS.healthLabel] ?? "bg-muted text-muted-foreground border-border"}`}>
+                          <Sparkles className="h-2.5 w-2.5" />
+                          {aiS.healthLabel}
+                        </span>
+                        {aiS.headline && (
+                          <p className="text-xs text-muted-foreground italic flex-1 min-w-0">{aiS.headline}</p>
+                        )}
+                        <button
+                          onClick={() => {
+                            setAiSummaries(prev => { const n = {...prev}; delete n[selectedLead.id]; return n; });
+                            fetchAiSummary(selectedLead.id, true);
+                          }}
+                          className="text-muted-foreground hover:text-foreground p-0.5 rounded shrink-0 ml-auto"
+                          title="Refresh AI analysis"
+                          data-testid="button-refresh-ai-analysis"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                        onClick={() => fetchAiSummary(selectedLead.id, true)}
+                        data-testid="button-load-ai-analysis"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Analyze deal
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── QUICK-LOG BAR ── */}
+                <QuickLogBar leadId={selectedLead.id} />
+
+                {/* ── TABS ── */}
+                <Tabs value={activeDrawerTab} onValueChange={setActiveDrawerTab} className="flex flex-col flex-1 overflow-hidden">
+                  <TabsList className="shrink-0 w-full grid grid-cols-4 h-auto rounded-none border-b px-0 bg-background">
+                    <TabsTrigger value="activity" className="py-2.5 text-xs sm:text-sm rounded-none" data-testid="tab-activity">
+                      Activity
+                      {detailLeadNotes.length > 0 && (
+                        <Badge className="ml-1 h-4 px-1 text-[10px] bg-violet-100 text-violet-600 border-0 hover:bg-violet-100">
+                          {detailLeadNotes.length}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="tasks" className="py-2.5 text-xs sm:text-sm rounded-none" data-testid="tab-tasks">
+                      Tasks
+                      {detailLeadTasks.length > 0 && (
+                        <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                          {detailLeadTasks.length}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="files" className="py-2.5 text-xs sm:text-sm rounded-none" data-testid="tab-files">Files</TabsTrigger>
+                    <TabsTrigger value="details" className="py-2.5 text-xs sm:text-sm rounded-none" data-testid="tab-details">Details</TabsTrigger>
+                  </TabsList>
+
+                  <div className="flex-1 overflow-y-auto">
+
+                    {/* ── ACTIVITY TAB ── */}
+                    <TabsContent value="activity" className="py-4 px-5 space-y-4 mt-0">
+                      <LeadActivityTab leadId={selectedLead.id} hideComposer />
+                      <LeadLinkedEmails leadId={selectedLead.id} />
+                    </TabsContent>
+
+                    {/* ── TASKS TAB ── */}
+                    <TabsContent value="tasks" className="py-4 px-5 space-y-3 mt-0">
+                      {/* AI Suggested Task Banner — always at top */}
+                      {suggestedTaskLoading && (
+                        <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2 animate-pulse">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                            <div className="h-3.5 w-40 bg-primary/20 rounded" />
+                          </div>
+                          <div className="h-3 w-full bg-muted rounded" />
+                          <div className="h-3 w-2/3 bg-muted rounded" />
+                        </div>
+                      )}
+                      {suggestedTask && !suggestedTaskLoading && (
+                        <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2" data-testid="card-ai-suggested-task">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                            <span className="text-xs font-semibold text-primary uppercase tracking-wide">AI Suggested Next Step</span>
+                          </div>
+                          <p className="text-sm font-medium">{suggestedTask.title}</p>
+                          {suggestedTask.description && (
+                            <p className="text-xs text-muted-foreground">{suggestedTask.description}</p>
+                          )}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 capitalize ${priorityColors[suggestedTask.priority as keyof typeof priorityColors] ?? ""}`}>
+                              {suggestedTask.priority}
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground">
+                              Due in {suggestedTask.dueInDays} day{suggestedTask.dueInDays !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs px-3"
+                              disabled={acceptSuggestedTaskMutation.isPending}
+                              data-testid="button-accept-suggested-task"
+                              onClick={() => {
+                                const dueDate = new Date();
+                                dueDate.setDate(dueDate.getDate() + suggestedTask.dueInDays);
+                                acceptSuggestedTaskMutation.mutate({
+                                  title: suggestedTask.title,
+                                  description: suggestedTask.description,
+                                  priority: suggestedTask.priority as "low" | "medium" | "high",
+                                  status: "todo",
+                                  dueDate: dueDate.toISOString().split("T")[0],
+                                  relatedLeadId: selectedLead.id,
+                                  relatedClientId: selectedLead.clientId ?? null,
+                                  assignedTo: null,
+                                } as InsertTask);
+                              }}
+                            >
+                              {acceptSuggestedTaskMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                              Add Task
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs px-3"
+                              data-testid="button-dismiss-suggested-task"
+                              onClick={() => setSuggestedTask(null)}
+                            >
+                              Dismiss
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Inline quick-add task input */}
+                      <div className="flex gap-2">
+                        <Input
+                          value={quickTaskInput}
+                          onChange={(e) => setQuickTaskInput(e.target.value)}
+                          placeholder="Add a task…"
+                          className="flex-1 text-sm"
+                          data-testid="input-quick-task"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && quickTaskInput.trim()) {
+                              createTaskMutation.mutate({
+                                title: quickTaskInput.trim(),
+                                description: "",
+                                priority: "medium",
+                                status: "todo",
+                                relatedLeadId: selectedLead.id,
+                                relatedClientId: selectedLead.clientId ?? undefined,
+                                assignedTo: undefined,
+                                dueDate: undefined,
+                              });
+                              setQuickTaskInput("");
+                            }
+                          }}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (quickTaskInput.trim()) {
+                              createTaskMutation.mutate({
+                                title: quickTaskInput.trim(),
+                                description: "",
+                                priority: "medium",
+                                status: "todo",
+                                relatedLeadId: selectedLead.id,
+                                relatedClientId: selectedLead.clientId ?? undefined,
+                                assignedTo: undefined,
+                                dueDate: undefined,
+                              });
+                              setQuickTaskInput("");
+                            }
+                          }}
+                          disabled={!quickTaskInput.trim() || createTaskMutation.isPending}
+                          data-testid="button-quick-add-task"
+                        >
+                          {createTaskMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                          {detailLeadTasks.length} Task{detailLeadTasks.length !== 1 ? "s" : ""}
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-xs h-7"
+                          onClick={() => {
+                            setIsAddTaskOpen((v) => !v);
+                            addTaskForm.reset({
+                              title: "",
+                              description: "",
+                              priority: "medium",
+                              status: "todo",
+                              relatedLeadId: selectedLead.id,
+                              relatedClientId: selectedLead.clientId ?? undefined,
+                              assignedTo: undefined,
+                              dueDate: undefined,
+                            });
+                          }}
+                          data-testid="button-add-task-to-lead"
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-1" />
+                          Full form
+                        </Button>
+                      </div>
+
+                      {isAddTaskOpen && (
+                        <Card className="border-primary/30 bg-primary/3">
+                          <CardContent className="p-4">
+                            <Form {...addTaskForm}>
+                              <form
+                                onSubmit={addTaskForm.handleSubmit((data) => {
+                                  const dueDateRaw = data.dueDate as unknown as string;
+                                  createTaskMutation.mutate({
+                                    ...data,
+                                    relatedLeadId: selectedLead.id,
+                                    dueDate: dueDateRaw ? new Date(dueDateRaw) : undefined,
+                                  });
+                                })}
+                                className="space-y-3"
+                              >
+                                <FormField
+                                  control={addTaskForm.control}
+                                  name="title"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>Task Title</FormLabel>
+                                      <FormControl>
+                                        <Input placeholder="e.g. Follow up with client" {...field} value={field.value || ""} data-testid="input-new-task-title" />
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={addTaskForm.control}
+                                  name="description"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                                      <FormControl>
+                                        <Textarea className="resize-none min-h-[60px]" {...field} value={field.value || ""} data-testid="textarea-new-task-desc" />
+                                      </FormControl>
+                                    </FormItem>
+                                  )}
+                                />
+                                <div className="grid grid-cols-2 gap-3">
+                                  <FormField
+                                    control={addTaskForm.control}
+                                    name="priority"
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Priority</FormLabel>
+                                        <Select onValueChange={field.onChange} value={field.value}>
+                                          <FormControl>
+                                            <SelectTrigger data-testid="select-new-task-priority">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                          </FormControl>
+                                          <SelectContent>
+                                            <SelectItem value="low">Low</SelectItem>
+                                            <SelectItem value="medium">Medium</SelectItem>
+                                            <SelectItem value="high">High</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </FormItem>
+                                    )}
+                                  />
+                                  <FormField
+                                    control={addTaskForm.control}
+                                    name="dueDate"
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>Due Date</FormLabel>
+                                        <FormControl>
+                                          <Input
+                                            type="date"
+                                            {...field}
+                                            value={field.value ? String(field.value).slice(0, 10) : ""}
+                                            data-testid="input-new-task-due"
+                                          />
+                                        </FormControl>
+                                      </FormItem>
+                                    )}
+                                  />
+                                </div>
+                                <FormField
+                                  control={addTaskForm.control}
+                                  name="assignedTo"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>Assign To <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                                      <Select onValueChange={field.onChange} value={field.value || undefined}>
+                                        <FormControl>
+                                          <SelectTrigger data-testid="select-new-task-assignee">
+                                            <SelectValue placeholder="Select team member" />
+                                          </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                          {users?.map((u) => (
+                                            <SelectItem key={u.id} value={u.id}>
+                                              {u.firstName} {u.lastName}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </FormItem>
+                                  )}
+                                />
+                                <div className="flex gap-2 pt-1">
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    disabled={createTaskMutation.isPending}
+                                    className="flex-1"
+                                    data-testid="button-save-new-task"
+                                  >
+                                    {createTaskMutation.isPending ? "Creating..." : "Create Task"}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setIsAddTaskOpen(false)}
+                                    data-testid="button-cancel-new-task"
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </form>
+                            </Form>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {detailLeadTasks.length === 0 && !isAddTaskOpen ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                          <p className="text-sm">No tasks linked to this deal yet.</p>
+                          <p className="text-xs mt-1">Type a task above and press Enter to create one.</p>
+                        </div>
+                      ) : (
+                        detailLeadTasks.map((task) => {
+                          const isDone = task.status === "done";
+                          const isPending = pendingTaskId === task.id;
+                          return (
+                            <Card
+                              key={task.id}
+                              className={`border-l-4 cursor-pointer hover:bg-muted/30 transition-colors ${
+                                isDone ? "border-l-green-400 opacity-70" :
+                                task.priority === "high" ? "border-l-red-400" :
+                                task.priority === "medium" ? "border-l-yellow-400" : "border-l-blue-400"
+                              }`}
+                              onClick={() => { setSelectedDealTask(task); setDealTaskDescriptionDraft(task.description || ""); }}
+                              data-testid={`card-lead-task-${task.id}`}
+                            >
+                              <CardContent className="p-3 flex items-start gap-3">
+                                <button
+                                  className={`h-4 w-4 mt-0.5 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                    isDone ? "bg-green-500 border-green-500 text-white" : "border-muted-foreground/40 hover:border-green-500"
+                                  }`}
+                                  onClick={(e) => { e.stopPropagation(); completeTaskMutation.mutate({
+                                    id: task.id,
+                                    status: isDone ? "todo" : "done",
+                                    title: task.title,
+                                    completing: !isDone,
+                                  }); }}
+                                  disabled={isPending}
+                                  data-testid={`button-toggle-task-${task.id}`}
+                                  title={isDone ? "Mark as todo" : "Mark as done"}
+                                >
+                                  {isPending ? (
+                                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                  ) : isDone ? (
+                                    <Check className="h-2.5 w-2.5" />
+                                  ) : null}
+                                </button>
+                                <div
+                                  className="flex-1 min-w-0"
+                                  data-testid={`body-deal-task-${task.id}`}
+                                >
+                                  <p className={`text-sm font-medium ${isDone ? "line-through text-muted-foreground" : ""}`}>
+                                    {task.title}
+                                  </p>
+                                  {task.description && (
+                                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{task.description}</p>
+                                  )}
+                                  <div className="flex items-center gap-2 mt-1.5">
+                                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 capitalize ${priorityColors[task.priority]}`}>
+                                      {task.priority}
+                                    </Badge>
+                                    {task.dueDate && (
+                                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                        <CalendarIcon className="h-2.5 w-2.5" />
+                                        {new Date(task.dueDate).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                    {task.assignedTo && (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {getUserName(task.assignedTo)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })
+                      )}
+                    </TabsContent>
+
+                    {/* ── FILES TAB ── */}
+                    <TabsContent value="files" className="py-4 px-5 mt-0">
+                      <AttachmentsPanel entityType="lead" entityId={selectedLead.id} />
+                    </TabsContent>
+
+                    {/* ── DETAILS TAB ── */}
+                    <TabsContent value="details" className="space-y-6 py-4 px-5 mt-0">
+                      {/* AI Deal Analysis Card (full) */}
+                      {!isEditingLead && (() => {
                     const s = aiSummaries[selectedLead.id];
                     const isLoading = loadingAiSummary[selectedLead.id];
                     const colorMap: Record<string, string> = {
@@ -3457,6 +4085,46 @@ export default function Leads() {
                   {isEditingLead ? (
                     <Form {...editLeadForm}>
                       <form onSubmit={editLeadForm.handleSubmit(saveLeadEdits)} className="space-y-4">
+                        <div className="flex gap-2 justify-end pb-2 border-b">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setIsEditingLead(false);
+                              setEditFormTags(selectedLead.tags ?? []);
+                              const vType = (selectedLead.valueType as "fixed" | "potential") ?? "fixed";
+                              setEditValueType(vType);
+                              setEditValueTier((selectedLead.valueTier as string | null) ?? null);
+                              editLeadForm.reset({
+                                title: selectedLead.title,
+                                clientId: selectedLead.clientId ?? undefined,
+                                contactId: selectedLead.contactId ?? null,
+                                buildingId: selectedLead.buildingId ?? null,
+                                serviceType: (selectedLead.serviceType as any) ?? null,
+                                valueType: vType,
+                                value: selectedLead.value,
+                                valueTier: (selectedLead.valueTier as any) ?? null,
+                                confidenceScore: selectedLead.confidenceScore ?? 50,
+                                notes: selectedLead.notes ?? "",
+                                assignedTo: selectedLead.assignedTo ?? undefined,
+                              });
+                            }}
+                            data-testid="button-cancel-edit-lead"
+                          >
+                            <X className="h-3.5 w-3.5 mr-1" />
+                            Cancel
+                          </Button>
+                          <Button
+                            type="submit"
+                            size="sm"
+                            disabled={updateLeadMutation.isPending}
+                            data-testid="button-save-lead-edits"
+                          >
+                            <Check className="h-3.5 w-3.5 mr-1" />
+                            {updateLeadMutation.isPending ? "Saving..." : "Save Changes"}
+                          </Button>
+                        </div>
                         <FormField
                           control={editLeadForm.control}
                           name="title"
@@ -4051,22 +4719,11 @@ export default function Leads() {
                         })()}
                       </div>
 
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                            <Target className="h-3 w-3" /> Confidence Score
-                          </p>
-                          <span className={`text-sm font-bold ${getConfidenceColor(localScore)}`}>{localScore}%</span>
-                        </div>
-                        <Slider
-                          min={0} max={100} step={5}
-                          value={[localScore]}
-                          onValueChange={([val]) => setLocalScore(val)}
-                          onValueCommit={([val]) => {
-                            patchConfidenceMutation.mutate({ id: selectedLead.id, score: val });
-                          }}
-                          data-testid="slider-confidence-detail"
-                        />
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                          <Target className="h-3 w-3" /> Confidence Score
+                        </p>
+                        <span className={`text-sm font-bold ${getConfidenceColor(localScore)}`} data-testid="text-confidence-score">{localScore}%</span>
                       </div>
 
                       {selectedLead.tags && selectedLead.tags.length > 0 && (
@@ -4119,419 +4776,37 @@ export default function Leads() {
 
                       <Separator />
 
-                      <div className="space-y-3">
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Change Stage</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {stages.map((stage) => {
-                            const sc = getStageColors(stage.color);
-                            const isActive = selectedLead.stage === stage.slug;
-                            return (
-                              <Button
-                                key={stage.id}
-                                variant={isActive ? "secondary" : "outline"}
-                                size="sm"
-                                className="justify-start font-medium"
-                                onClick={() => {
-                                  const currentStageObj = stages.find(s => s.slug === selectedLead.stage);
-                                  if (currentStageObj?.track === "relationship" && stage.track === "deal") {
-                                    const client = clients?.find(c => c.id === selectedLead.clientId);
-                                    setPendingDealMove({ leadId: selectedLead.id, stage: stage.slug, clientName: client?.name ?? "this client" });
-                                    return;
-                                  }
-                                  if (stage.slug === "lost") {
-                                    setLossReasonInput("");
-                                    setLossNoteInput("");
-                                    setPendingLossCapture({ leadId: selectedLead.id, stage: stage.slug });
-                                    return;
-                                  }
-                                  updateLeadStageMutation.mutate({ id: selectedLead.id, stage: stage.slug });
-                                }}
-                              >
-                                <div className={`h-2 w-2 rounded-full mr-2 ${isActive ? sc.dot : 'bg-muted-foreground/30'}`} />
-                                {stage.label}
-                              </Button>
-                            );
-                          })}
-                        </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Internal Notes</p>
+                        <Card className="bg-muted">
+                          <CardContent className="p-3 text-sm leading-relaxed whitespace-pre-wrap" data-testid="text-internal-notes">
+                            {selectedLead.notes || <span className="text-muted-foreground italic">No notes yet</span>}
+                          </CardContent>
+                        </Card>
                       </div>
 
-                      <Separator />
-
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Internal Notes</p>
-                          {!isEditingInternalNotes && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setInternalNotesDraft(selectedLead.notes ?? "");
-                                setIsEditingInternalNotes(true);
-                              }}
-                              className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
-                              title="Edit notes"
-                              data-testid="button-edit-internal-notes"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                        {isEditingInternalNotes ? (
-                          <div className="space-y-2">
-                            <Textarea
-                              value={internalNotesDraft}
-                              onChange={(e) => setInternalNotesDraft(e.target.value)}
-                              rows={4}
-                              className="resize-none text-sm"
-                              autoFocus
-                              data-testid="textarea-internal-notes"
-                            />
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => saveInternalNotesMutation.mutate({ id: selectedLead.id, notes: internalNotesDraft })}
-                                disabled={saveInternalNotesMutation.isPending}
-                                data-testid="button-save-internal-notes"
-                              >
-                                {saveInternalNotesMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
-                                Save
-                              </Button>
-                              <button
-                                type="button"
-                                onClick={() => setIsEditingInternalNotes(false)}
-                                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                data-testid="button-cancel-internal-notes"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <Card className="bg-muted">
-                            <CardContent className="p-3 text-sm leading-relaxed whitespace-pre-wrap">
-                              {selectedLead.notes || <span className="text-muted-foreground italic">No notes yet — click the pencil to add one</span>}
-                            </CardContent>
-                          </Card>
-                        )}
+                      <div className="pt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full font-medium"
+                          onClick={() => setIsEditingLead(true)}
+                          data-testid="button-edit-deal-details"
+                        >
+                          <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                          Edit Deal Details
+                        </Button>
                       </div>
                     </>
                   )}
                 </TabsContent>
 
-                <TabsContent value="notes" className="py-4 space-y-4">
-                  {selectedLead && <LeadActivityTab leadId={selectedLead.id} />}
-                  {selectedLead && <LeadLinkedEmails leadId={selectedLead.id} />}
-                </TabsContent>
 
-                <TabsContent value="attachments" className="py-4">
-                  {selectedLead && <AttachmentsPanel entityType="lead" entityId={selectedLead.id} />}
-                </TabsContent>
-
-                <TabsContent value="tasks" className="py-4 space-y-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                      {detailLeadTasks.length} Task{detailLeadTasks.length !== 1 ? "s" : ""}
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setIsAddTaskOpen((v) => !v);
-                        addTaskForm.reset({
-                          title: "",
-                          description: "",
-                          priority: "medium",
-                          status: "todo",
-                          relatedLeadId: selectedLead.id,
-                          relatedClientId: selectedLead.clientId ?? undefined,
-                          assignedTo: undefined,
-                          dueDate: undefined,
-                        });
-                      }}
-                      data-testid="button-add-task-to-lead"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1.5" />
-                      Add Task
-                    </Button>
                   </div>
-
-                  {isAddTaskOpen && (
-                    <Card className="border-primary/30 bg-primary/3">
-                      <CardContent className="p-4">
-                        <Form {...addTaskForm}>
-                          <form
-                            onSubmit={addTaskForm.handleSubmit((data) => {
-                              const dueDateRaw = data.dueDate as unknown as string;
-                              createTaskMutation.mutate({
-                                ...data,
-                                relatedLeadId: selectedLead.id,
-                                dueDate: dueDateRaw ? new Date(dueDateRaw) : undefined,
-                              });
-                            })}
-                            className="space-y-3"
-                          >
-                            <FormField
-                              control={addTaskForm.control}
-                              name="title"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Task Title</FormLabel>
-                                  <FormControl>
-                                    <Input placeholder="e.g. Follow up with client" {...field} value={field.value || ""} data-testid="input-new-task-title" />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={addTaskForm.control}
-                              name="description"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
-                                  <FormControl>
-                                    <Textarea className="resize-none min-h-[60px]" {...field} value={field.value || ""} data-testid="textarea-new-task-desc" />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                            <div className="grid grid-cols-2 gap-3">
-                              <FormField
-                                control={addTaskForm.control}
-                                name="priority"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Priority</FormLabel>
-                                    <Select onValueChange={field.onChange} value={field.value}>
-                                      <FormControl>
-                                        <SelectTrigger data-testid="select-new-task-priority">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        <SelectItem value="low">Low</SelectItem>
-                                        <SelectItem value="medium">Medium</SelectItem>
-                                        <SelectItem value="high">High</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={addTaskForm.control}
-                                name="dueDate"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Due Date</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type="date"
-                                        {...field}
-                                        value={field.value ? String(field.value).slice(0, 10) : ""}
-                                        data-testid="input-new-task-due"
-                                      />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-                            <FormField
-                              control={addTaskForm.control}
-                              name="assignedTo"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Assign To <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
-                                  <Select onValueChange={field.onChange} value={field.value || undefined}>
-                                    <FormControl>
-                                      <SelectTrigger data-testid="select-new-task-assignee">
-                                        <SelectValue placeholder="Select team member" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      {users?.map((u) => (
-                                        <SelectItem key={u.id} value={u.id}>
-                                          {u.firstName} {u.lastName}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </FormItem>
-                              )}
-                            />
-                            <div className="flex gap-2 pt-1">
-                              <Button
-                                type="submit"
-                                size="sm"
-                                disabled={createTaskMutation.isPending}
-                                className="flex-1"
-                                data-testid="button-save-new-task"
-                              >
-                                {createTaskMutation.isPending ? "Creating..." : "Create Task"}
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setIsAddTaskOpen(false)}
-                                data-testid="button-cancel-new-task"
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </form>
-                        </Form>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* AI Suggested Task Banner */}
-                  {suggestedTaskLoading && (
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2 animate-pulse">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-primary shrink-0" />
-                        <div className="h-3.5 w-40 bg-primary/20 rounded" />
-                      </div>
-                      <div className="h-3 w-full bg-muted rounded" />
-                      <div className="h-3 w-2/3 bg-muted rounded" />
-                    </div>
-                  )}
-                  {suggestedTask && !suggestedTaskLoading && (
-                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2" data-testid="card-ai-suggested-task">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-primary shrink-0" />
-                        <span className="text-xs font-semibold text-primary uppercase tracking-wide">AI Suggested Next Step</span>
-                      </div>
-                      <p className="text-sm font-medium">{suggestedTask.title}</p>
-                      {suggestedTask.description && (
-                        <p className="text-xs text-muted-foreground">{suggestedTask.description}</p>
-                      )}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 capitalize ${priorityColors[suggestedTask.priority as keyof typeof priorityColors] ?? ""}`}>
-                          {suggestedTask.priority}
-                        </Badge>
-                        <span className="text-[10px] text-muted-foreground">
-                          Due in {suggestedTask.dueInDays} day{suggestedTask.dueInDays !== 1 ? "s" : ""}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 pt-0.5">
-                        <Button
-                          size="sm"
-                          className="h-7 text-xs px-3"
-                          disabled={acceptSuggestedTaskMutation.isPending}
-                          data-testid="button-accept-suggested-task"
-                          onClick={() => {
-                            if (!selectedLead) return;
-                            const dueDate = new Date();
-                            dueDate.setDate(dueDate.getDate() + suggestedTask.dueInDays);
-                            acceptSuggestedTaskMutation.mutate({
-                              title: suggestedTask.title,
-                              description: suggestedTask.description,
-                              priority: suggestedTask.priority as "low" | "medium" | "high",
-                              status: "todo",
-                              dueDate: dueDate.toISOString().split("T")[0],
-                              relatedLeadId: selectedLead.id,
-                              relatedClientId: selectedLead.clientId ?? null,
-                              assignedTo: null,
-                            } as InsertTask);
-                          }}
-                        >
-                          {acceptSuggestedTaskMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                          Add Task
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs px-3"
-                          data-testid="button-dismiss-suggested-task"
-                          onClick={() => setSuggestedTask(null)}
-                        >
-                          Dismiss
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {detailLeadTasks.length === 0 && !isAddTaskOpen ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                      <p className="text-sm">No tasks linked to this deal yet.</p>
-                      <p className="text-xs mt-1">Use the "Add Task" button above to create one.</p>
-                    </div>
-                  ) : (
-                    detailLeadTasks.map((task) => {
-                      const isDone = task.status === "done";
-                      const isPending = pendingTaskId === task.id;
-                      return (
-                        <Card
-                          key={task.id}
-                          className={`border-l-4 cursor-pointer hover:bg-muted/30 transition-colors ${
-                            isDone ? "border-l-green-400 opacity-70" :
-                            task.priority === "high" ? "border-l-red-400" :
-                            task.priority === "medium" ? "border-l-yellow-400" : "border-l-blue-400"
-                          }`}
-                          onClick={() => { setSelectedDealTask(task); setDealTaskDescriptionDraft(task.description || ""); }}
-                          data-testid={`card-lead-task-${task.id}`}
-                        >
-                          <CardContent className="p-3 flex items-start gap-3">
-                            <button
-                              className={`h-4 w-4 mt-0.5 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                isDone ? "bg-green-500 border-green-500 text-white" : "border-muted-foreground/40 hover:border-green-500"
-                              }`}
-                              onClick={(e) => { e.stopPropagation(); completeTaskMutation.mutate({
-                                id: task.id,
-                                status: isDone ? "todo" : "done",
-                                title: task.title,
-                                completing: !isDone,
-                              }); }}
-                              disabled={isPending}
-                              data-testid={`button-toggle-task-${task.id}`}
-                              title={isDone ? "Mark as todo" : "Mark as done"}
-                            >
-                              {isPending ? (
-                                <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                              ) : isDone ? (
-                                <Check className="h-2.5 w-2.5" />
-                              ) : null}
-                            </button>
-                            <div
-                              className="flex-1 min-w-0"
-                              data-testid={`body-deal-task-${task.id}`}
-                            >
-                              <p className={`text-sm font-medium ${isDone ? "line-through text-muted-foreground" : ""}`}>
-                                {task.title}
-                              </p>
-                              {task.description && (
-                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{task.description}</p>
-                              )}
-                              <div className="flex items-center gap-2 mt-1.5">
-                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 capitalize ${priorityColors[task.priority]}`}>
-                                  {task.priority}
-                                </Badge>
-                                {task.dueDate && (
-                                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                    <CalendarIcon className="h-2.5 w-2.5" />
-                                    {new Date(task.dueDate).toLocaleDateString()}
-                                  </span>
-                                )}
-                                {task.assignedTo && (
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {getUserName(task.assignedTo)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })
-                  )}
-                </TabsContent>
-
-                <TabsContent value="activity" className="py-4 h-[500px]">
-                  <ActivityTimeline entityType="lead" entityId={selectedLead.id} />
-                </TabsContent>
-              </Tabs>
-            </>
-          )}
+                </Tabs>
+              </>
+            );
+          })()}
         </SheetContent>
       </Sheet>
 
