@@ -584,6 +584,7 @@ export default function TasksPage() {
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
   const { data: allContacts = [] } = useQuery<ClientContact[]>({ queryKey: ["/api/client-contacts"] });
   const { data: users = [] } = useQuery<User[]>({ queryKey: ["/api/users"] });
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ["/api/teams"] });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -1605,6 +1606,31 @@ export default function TasksPage() {
                   }}
                 />
               </div>
+              {teamsList.length > 0 && (
+                <FormField
+                  control={addForm.control}
+                  name="teamId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Team (Optional)</FormLabel>
+                      <Select onValueChange={(val) => field.onChange(val === "__none__" ? null : parseInt(val))} value={field.value != null ? String(field.value) : "__none__"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-task-team">
+                            <SelectValue placeholder="No team" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">— No Team —</SelectItem>
+                          {teamsList.map(t => (
+                            <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <Button type="submit" className="w-full" disabled={createMutation.isPending} data-testid="button-submit-task">
                 {createMutation.isPending ? "Creating…" : "Create Task"}
               </Button>

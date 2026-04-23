@@ -720,6 +720,7 @@ function UnifiedHistoryFeed({ clientId, contacts = [] }: { clientId: number; con
   });
 
   const { data: users = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/users"] });
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ["/api/teams"] });
 
   const isLoading = loadAct || loadEmail || loadFiles;
 
@@ -3045,6 +3046,28 @@ export default function ClientDetail() {
                         </div>
                       );
                     })()}
+                    {/* Team Assignment */}
+                    {isAdminOrManager && teamsList.length > 0 && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-medium text-muted-foreground w-28 shrink-0">Team</span>
+                        <Select
+                          value={client.teamId ? String(client.teamId) : "__none__"}
+                          onValueChange={(val) => {
+                            updateClientMutation.mutate({ teamId: val === "__none__" ? null : parseInt(val) });
+                          }}
+                        >
+                          <SelectTrigger className="h-7 text-xs w-40 border-dashed" data-testid="select-detail-team">
+                            <SelectValue placeholder="No team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">— No Team —</SelectItem>
+                            {teamsList.map(t => (
+                              <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                     {/* Notes */}
                     {client.notes && (
                       <div className="flex items-start gap-3">

@@ -1253,6 +1253,10 @@ export default function Leads() {
     queryKey: ["/api/users"],
   });
 
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/teams"],
+  });
+
   const { data: tasks = [] } = useQuery<Task[]>({
     queryKey: ["/api/tasks"],
   });
@@ -3108,6 +3112,31 @@ export default function Leads() {
                   </FormItem>
                 )}
               />
+              {teamsList.length > 0 && (
+                <FormField
+                  control={form.control}
+                  name="teamId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Team (Optional)</FormLabel>
+                      <Select onValueChange={(val) => field.onChange(val === "__none__" ? null : parseInt(val))} value={field.value != null ? String(field.value) : "__none__"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-lead-team">
+                            <SelectValue placeholder="No team" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">— No Team —</SelectItem>
+                          {teamsList.map(t => (
+                            <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={form.control}
                 name="notes"
@@ -3622,6 +3651,31 @@ export default function Leads() {
                             </FormItem>
                           )}
                         />
+                        {teamsList.length > 0 && (
+                          <FormField
+                            control={editLeadForm.control}
+                            name="teamId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Team</FormLabel>
+                                <Select onValueChange={(val) => field.onChange(val === "__none__" ? null : parseInt(val))} value={field.value != null ? String(field.value) : "__none__"}>
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-edit-lead-team">
+                                      <SelectValue placeholder="No team" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="__none__">— No Team —</SelectItem>
+                                    {teamsList.map(t => (
+                                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
                         <div className="space-y-3">
                           <Label className="text-sm font-medium">Confidence Status</Label>
                           <div className="flex items-center bg-muted rounded-md p-0.5 border w-fit">

@@ -2,17 +2,13 @@ import { pgTable, text, serial, integer, timestamp, boolean, varchar, jsonb, dec
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./models/auth";
+import { teams } from "./models/teams";
 
 export { sessions, users } from "./models/auth";
 export type { UpsertUser, User } from "./models/auth";
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
-export const teams = pgTable("teams", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 100 }).notNull(),
-  description: text("description"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export { teams } from "./models/teams";
 export const insertTeamSchema = createInsertSchema(teams).omit({ id: true, createdAt: true });
 export type Team = typeof teams.$inferSelect;
 export type InsertTeam = z.infer<typeof insertTeamSchema>;

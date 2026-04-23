@@ -659,8 +659,9 @@ export async function registerRoutes(
     if (!(await hasModuleAccess(req, "customers"))) {
       return res.status(403).json({ message: "Access denied" });
     }
-    const callerUser = req.user as any;
-    const isAdminOrManager = callerUser && ["super_admin", "admin", "manager"].includes(callerUser.role ?? "");
+    const currentUserId = (req as any).user?.claims?.sub;
+    const callerDbUser = currentUserId ? await storage.getUser(currentUserId) : null;
+    const isAdminOrManager = callerDbUser && ["super_admin", "admin", "manager"].includes(callerDbUser.role ?? "");
     let scopedUserId = await getScopedUserId(req, "customers");
     let filterTeamId: number | undefined;
     if (isAdminOrManager && req.query.teamId) filterTeamId = parseInt(String(req.query.teamId));
