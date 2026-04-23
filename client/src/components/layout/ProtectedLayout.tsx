@@ -9,6 +9,7 @@ import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger, MobileSearchButton } from "@/components/GlobalSearch";
 import { QuickActionsBar } from "@/components/QuickActionsBar";
 import { WhatsNewModal } from "@/components/WhatsNewModal";
+import { ProfileSetupModal } from "@/components/ProfileSetupModal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
@@ -107,7 +108,7 @@ function getRelativeTime(date: Date): string {
 }
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isProfileComplete } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -294,6 +295,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
       <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
       <BottomNav />
       <WhatsNewModal />
+      {!isProfileComplete && <ProfileSetupModal />}
     </SidebarProvider>
   );
 }
