@@ -590,7 +590,7 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       id={`column-${stage.slug}`}
-      className={`flex flex-col w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
+      className={`flex flex-col overflow-hidden w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
     >
       <div className={`p-3 border-b ${sc.header}`}>
         <div className="flex items-center justify-between mb-2">
@@ -617,7 +617,7 @@ function KanbanColumn({
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="p-3 space-y-3">
           {filteredLeads
             ?.filter((l) => l.stage === stage.slug)
@@ -2288,7 +2288,7 @@ export default function Leads() {
           >
             <div
               ref={boardScrollRef}
-              className="flex h-full overflow-x-scroll p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth"
+              className="flex h-full overflow-x-scroll overflow-y-hidden p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth"
               onWheel={(e) => {
                 const board = boardScrollRef.current;
                 if (!board) return;
