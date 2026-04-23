@@ -720,7 +720,6 @@ function UnifiedHistoryFeed({ clientId, contacts = [] }: { clientId: number; con
   });
 
   const { data: users = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/users"] });
-  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ["/api/teams"] });
 
   const isLoading = loadAct || loadEmail || loadFiles;
 
@@ -1445,6 +1444,8 @@ export default function ClientDetail() {
   const { data: users = [] } = useQuery<{id: string; firstName: string|null; lastName: string|null; email: string|null}[]>({
     queryKey: ["/api/users/directory"],
   });
+
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ["/api/teams"] });
 
   const { data: recentEmails = [] } = useQuery<EmailMsg[]>({
     queryKey: ["/api/email-messages", clientId],

@@ -544,6 +544,7 @@ function KanbanColumn({
   getServiceTypeColor,
   getServiceTypeLabel,
   getUserName,
+  getTeamName,
   openLeadDetail,
   tasks,
   loadingAiSummary,
@@ -571,6 +572,7 @@ function KanbanColumn({
   getServiceTypeColor: (v: string | null | undefined) => string;
   getServiceTypeLabel: (v: string | null | undefined) => string | null;
   getUserName: (id: string | null) => string;
+  getTeamName?: (id: number | null | undefined) => string | null;
   openLeadDetail: (lead: Lead) => void;
   tasks: Task[];
   loadingAiSummary: Record<number, boolean>;
@@ -635,6 +637,7 @@ function KanbanColumn({
                 getServiceTypeColor={getServiceTypeColor}
                 getServiceTypeLabel={getServiceTypeLabel}
                 getUserName={getUserName}
+                getTeamName={getTeamName}
                 openLeadDetail={openLeadDetail}
                 tasks={tasks}
                 loadingAiSummary={loadingAiSummary}
@@ -679,6 +682,7 @@ function LeadCard({
   isBuildopsTab = false,
   invoiceStatus,
   clientHealthScore,
+  getTeamName,
 }: { 
   lead: Lead; 
   formatCurrency: (v: string | number) => string;
@@ -702,6 +706,7 @@ function LeadCard({
   isBuildopsTab?: boolean;
   invoiceStatus?: { invoicedTotal: number; outstandingTotal: number; paidTotal: number; invoiceCount: number; paymentStatus: string } | null;
   clientHealthScore?: number | null;
+  getTeamName?: (id: number | null | undefined) => string | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: lead.id,
@@ -808,6 +813,11 @@ function LeadCard({
                 <Building2 className="h-3 w-3 shrink-0" />
                 <span className="truncate">{getBuildingName(lead.buildingId)}</span>
               </p>
+            )}
+            {getTeamName && lead.teamId && (
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0 w-fit mt-0.5" data-testid={`badge-lead-team-${lead.id}`}>
+                {getTeamName(lead.teamId) ?? `Team #${lead.teamId}`}
+              </Badge>
             )}
           </CardHeader>
           <CardContent className="p-3 pt-2 flex flex-col gap-2">
@@ -1919,6 +1929,11 @@ export default function Leads() {
     return name || user.email || "Unknown";
   };
 
+  const getTeamName = (teamId: number | null | undefined) => {
+    if (!teamId) return null;
+    return teamsList.find((t) => t.id === teamId)?.name ?? null;
+  };
+
   const formatCurrency = (value: string | number) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value));
 
@@ -2380,6 +2395,7 @@ export default function Leads() {
                               getServiceTypeColor={getServiceTypeColor}
                               getServiceTypeLabel={getServiceTypeLabel}
                               getUserName={getUserName}
+                              getTeamName={getTeamName}
                               openLeadDetail={openLeadDetail}
                               tasks={tasks}
                               loadingAiSummary={loadingAiSummary}
@@ -2435,6 +2451,7 @@ export default function Leads() {
                               getServiceTypeColor={getServiceTypeColor}
                               getServiceTypeLabel={getServiceTypeLabel}
                               getUserName={getUserName}
+                              getTeamName={getTeamName}
                               openLeadDetail={openLeadDetail}
                               tasks={tasks}
                               loadingAiSummary={loadingAiSummary}
@@ -2468,6 +2485,7 @@ export default function Leads() {
                     getServiceTypeColor={getServiceTypeColor}
                     getServiceTypeLabel={getServiceTypeLabel}
                     getUserName={getUserName}
+                    getTeamName={getTeamName}
                     openLeadDetail={openLeadDetail}
                     tasks={tasks}
                     loadingAiSummary={loadingAiSummary}
@@ -2540,6 +2558,11 @@ export default function Leads() {
                                 <Building2 className="h-3 w-3 shrink-0" />
                                 {getBuildingName(lead.buildingId)}
                               </span>
+                            )}
+                            {lead.teamId && (
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 mt-0.5 w-fit" data-testid={`badge-lead-list-team-${lead.id}`}>
+                                {getTeamName(lead.teamId) ?? `Team #${lead.teamId}`}
+                              </Badge>
                             )}
                           </div>
                         </TableCell>

@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Task, Lead, Client, ClientContact, User, InsertTask, insertTaskSchema, TaskLabelDefinition, TaskColumn, TaskBoard } from "@shared/schema";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -485,6 +486,8 @@ export default function TasksPage() {
   const [location] = useLocation();
   const searchParams = useSearch();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isAdminOrManager = user && ["super_admin", "admin", "manager"].includes(user.role ?? "");
   const [view, setView] = useState<"board" | "list">(() => window.innerWidth < 768 ? "list" : "board");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -1901,6 +1904,17 @@ export default function TasksPage() {
                           {allContacts.map((c) => <SelectItem key={c.id} value={c.id.toString()}>{c.name}{c.title ? ` – ${c.title}` : ""}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      {isAdminOrManager && teamsList.length > 0 && (
+                        <Select value={selectedTask.teamId?.toString() || "none"} onValueChange={(v) => updateTaskField("teamId", v === "none" ? null : parseInt(v))}>
+                          <SelectTrigger className="h-9 text-sm" data-testid="select-detail-team">
+                            <SelectValue placeholder="Team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No Team</SelectItem>
+                            {teamsList.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                   </div>
 

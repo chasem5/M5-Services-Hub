@@ -106,7 +106,7 @@ export default function MyAccounts() {
 
   const isAdminOrManager = user && ["super_admin", "admin", "manager"].includes(user.role ?? "");
   const [viewTeamId, setViewTeamId] = useState<string>("__all__");
-  const [viewUserId, setViewUserId] = useState<string>("__mine__");
+  const [viewUserId, setViewUserId] = useState<string>("__all__");
 
   const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
     queryKey: ["/api/teams"],
@@ -584,6 +584,11 @@ export default function MyAccounts() {
                       <td className="px-4 py-3">
                         <div className="font-semibold truncate max-w-[180px]">{client.name}</div>
                         <div className="text-xs text-muted-foreground truncate max-w-[180px]">{client.industry ?? "—"}</div>
+                        {isAdminOrManager && client.teamId && (
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 mt-0.5" data-testid={`badge-team-${client.id}`}>
+                            {teamsList.find(t => t.id === client.teamId)?.name ?? `Team #${client.teamId}`}
+                          </Badge>
+                        )}
                       </td>
 
                       {/* Health */}
