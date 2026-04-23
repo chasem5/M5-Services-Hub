@@ -840,7 +840,6 @@ function KanbanColumn({
         </div>
       </div>
 
-      <ScrollArea className="flex-1 min-h-0">
       <div className="flex-1 h-0 overflow-y-auto overscroll-contain" data-column-scroll="true">
         <div className="p-3 space-y-3">
           {filteredLeads
