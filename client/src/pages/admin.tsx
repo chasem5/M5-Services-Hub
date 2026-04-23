@@ -63,6 +63,7 @@ import {
   MapPin,
   Database,
   GitMerge,
+  Activity,
 } from "lucide-react";
 import { format, isAfter } from "date-fns";
 import type { User } from "@shared/models/auth";
@@ -128,6 +129,286 @@ function CopyButton({ text }: { text: string }) {
 
 interface RoleConfig { roleKey: string; displayName: string; }
 interface RolePermission { id: number; roleKey: string; module: string; accessLevel: string; }
+
+function TeamsPanel({ users }: { users: User[] }) {
+  const { toast } = useToast();
+  const { data: teamsList = [], isLoading: teamsLoading } = useQuery<{ id: number; name: string; description: string | null; createdAt: string }[]>({
+    queryKey: ["/api/teams"],
+  });
+
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newTeamDesc, setNewTeamDesc] = useState("");
+  const [editingTeam, setEditingTeam] = useState<{ id: number; name: string; description: string | null } | null>(null);
+  const [deletingTeamId, setDeletingTeamId] = useState<number | null>(null);
+  const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
+  const [assigningUserId, setAssigningUserId] = useState<Record<number, string>>({});
+
+  const createTeamMutation = useMutation({
+    mutationFn: (data: { name: string; description?: string | null }) =>
+      apiRequest("POST", "/api/teams", data).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/teams"] });
+      setNewTeamName("");
+      setNewTeamDesc("");
+      toast({ title: "Team created" });
+    },
+    onError: () => toast({ title: "Failed to create team", variant: "destructive" }),
+  });
+
+  const updateTeamMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; name: string; description?: string | null }) =>
+      apiRequest("PATCH", `/api/teams/${id}`, data).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/teams"] });
+      setEditingTeam(null);
+      toast({ title: "Team updated" });
+    },
+    onError: () => toast({ title: "Failed to update team", variant: "destructive" }),
+  });
+
+  const deleteTeamMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/teams/${id}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? "Failed to delete team");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/teams"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setDeletingTeamId(null);
+      toast({ title: "Team deleted" });
+    },
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
+  });
+
+  const assignUserMutation = useMutation({
+    mutationFn: ({ teamId, userId }: { teamId: number; userId: string }) =>
+      apiRequest("POST", `/api/teams/${teamId}/members`, { userId }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/teams"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "User added to team" });
+    },
+    onError: () => toast({ title: "Failed to assign user", variant: "destructive" }),
+  });
+
+  const removeUserMutation = useMutation({
+    mutationFn: ({ teamId, userId }: { teamId: number; userId: string }) =>
+      apiRequest("DELETE", `/api/teams/${teamId}/members/${userId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/teams"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "User removed from team" });
+    },
+    onError: () => toast({ title: "Failed to remove user", variant: "destructive" }),
+  });
+
+  const getTeamMembers = (teamId: number) =>
+    users.filter(u => u.teamId === teamId);
+
+  const unassignedUsers = users.filter(u => !u.teamId);
+
+  return (
+    <div className="space-y-4">
+      {/* Create Team */}
+      <Card className="border-none shadow-sm bg-card">
+        <CardHeader className="pb-3 border-b">
+          <div className="flex items-center gap-2">
+            <div className="bg-primary/10 p-2 rounded-full">
+              <Users2 className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-base font-heading">Create a Team</CardTitle>
+              <CardDescription className="text-xs">Organize employees into teams for scoped reporting and filtering.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4 space-y-3">
+          <div className="space-y-2">
+            <Input
+              placeholder="Team name (e.g. Facility Solutions)"
+              value={newTeamName}
+              onChange={e => setNewTeamName(e.target.value)}
+              data-testid="input-new-team-name"
+            />
+            <Input
+              placeholder="Description (optional)"
+              value={newTeamDesc}
+              onChange={e => setNewTeamDesc(e.target.value)}
+              data-testid="input-new-team-description"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={() => createTeamMutation.mutate({ name: newTeamName.trim(), description: newTeamDesc.trim() || null })}
+            disabled={!newTeamName.trim() || createTeamMutation.isPending}
+            data-testid="button-create-team"
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            {createTeamMutation.isPending ? "Creating..." : "Create Team"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Teams List */}
+      {teamsLoading ? (
+        <Skeleton className="h-24 w-full rounded-lg" />
+      ) : teamsList.length === 0 ? (
+        <div className="text-center py-10 text-muted-foreground text-sm">No teams yet. Create one above.</div>
+      ) : (
+        <div className="space-y-3">
+          {teamsList.map(team => {
+            const members = getTeamMembers(team.id);
+            const isExpanded = expandedTeamId === team.id;
+            return (
+              <Card key={team.id} className="border-none shadow-sm bg-card">
+                <CardContent className="p-4">
+                  {editingTeam?.id === team.id ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={editingTeam.name}
+                        onChange={e => setEditingTeam(t => t ? { ...t, name: e.target.value } : t)}
+                        data-testid={`input-edit-team-name-${team.id}`}
+                      />
+                      <Input
+                        value={editingTeam.description ?? ""}
+                        onChange={e => setEditingTeam(t => t ? { ...t, description: e.target.value } : t)}
+                        placeholder="Description (optional)"
+                        data-testid={`input-edit-team-description-${team.id}`}
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => updateTeamMutation.mutate({ id: editingTeam.id, name: editingTeam.name, description: editingTeam.description })} disabled={updateTeamMutation.isPending} data-testid={`button-save-team-${team.id}`}>
+                          Save
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditingTeam(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary/10 p-2 rounded-full shrink-0">
+                        <Users2 className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-sm" data-testid={`text-team-name-${team.id}`}>{team.name}</span>
+                          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">{members.length} member{members.length !== 1 ? "s" : ""}</Badge>
+                        </div>
+                        {team.description && <p className="text-xs text-muted-foreground mt-0.5">{team.description}</p>}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setExpandedTeamId(isExpanded ? null : team.id)} data-testid={`button-expand-team-${team.id}`}>
+                          {isExpanded ? "Collapse" : "Manage"}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setEditingTeam({ id: team.id, name: team.name, description: team.description })} data-testid={`button-edit-team-${team.id}`}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeletingTeamId(team.id)} data-testid={`button-delete-team-${team.id}`}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {isExpanded && (
+                    <div className="mt-4 space-y-3 border-t pt-4">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Members</p>
+                      {members.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No members yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {members.map(u => (
+                            <div key={u.id} className="flex items-center gap-2 text-sm">
+                              <Avatar className="h-6 w-6">
+                                <AvatarFallback className="text-[10px]">{u.firstName?.[0]}{u.lastName?.[0]}</AvatarFallback>
+                              </Avatar>
+                              <span className="flex-1">{u.firstName} {u.lastName} <span className="text-muted-foreground text-xs">({u.email})</span></span>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:text-destructive" onClick={() => removeUserMutation.mutate({ teamId: team.id, userId: u.id })} data-testid={`button-remove-member-${u.id}`}>
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {unassignedUsers.length > 0 && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <Select value={assigningUserId[team.id] ?? ""} onValueChange={v => setAssigningUserId(prev => ({ ...prev, [team.id]: v }))}>
+                            <SelectTrigger className="h-8 text-xs flex-1" data-testid={`select-add-member-${team.id}`}>
+                              <SelectValue placeholder="Add employee to team..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {unassignedUsers.map(u => (
+                                <SelectItem key={u.id} value={u.id}>
+                                  {u.firstName} {u.lastName} ({u.email})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button size="sm" className="h-8" onClick={() => {
+                            const uid = assigningUserId[team.id];
+                            if (uid) {
+                              assignUserMutation.mutate({ teamId: team.id, userId: uid });
+                              setAssigningUserId(prev => ({ ...prev, [team.id]: "" }));
+                            }
+                          }} disabled={!assigningUserId[team.id] || assignUserMutation.isPending} data-testid={`button-add-member-${team.id}`}>
+                            <Plus className="h-3.5 w-3.5 mr-1" /> Add
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Unassigned Users */}
+      {users.length > 0 && (
+        <Card className="border-none shadow-sm bg-card">
+          <CardHeader className="pb-2 border-b">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Unassigned Employees</CardTitle>
+          </CardHeader>
+          <CardContent className="p-4">
+            {unassignedUsers.length === 0 ? (
+              <p className="text-xs text-muted-foreground">All employees are assigned to a team.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {unassignedUsers.map(u => (
+                  <div key={u.id} className="flex items-center gap-2 text-sm py-1">
+                    <Avatar className="h-6 w-6">
+                      <AvatarFallback className="text-[10px]">{u.firstName?.[0]}{u.lastName?.[0]}</AvatarFallback>
+                    </Avatar>
+                    <span className="flex-1">{u.firstName} {u.lastName} <span className="text-muted-foreground text-xs">({u.email})</span></span>
+                    <Badge variant="outline" className="text-[10px] px-1.5 h-4">No Team</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Delete Confirm Dialog */}
+      <AlertDialog open={deletingTeamId !== null} onOpenChange={open => { if (!open) setDeletingTeamId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Team?</AlertDialogTitle>
+            <AlertDialogDescription>This will remove the team and unassign all its members. This cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deletingTeamId && deleteTeamMutation.mutate(deletingTeamId)} data-testid="button-confirm-delete-team">
+              Delete Team
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
 
 function BuildOpsPanel() {
   const { toast } = useToast();
@@ -2027,6 +2308,17 @@ export default function AdminPage() {
   const [cancelInviteId, setCancelInviteId] = useState<number | null>(null);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [savedPermission, setSavedPermission] = useState<string | null>(null);
+
+  // Health Score Config state
+  const [hsWeights, setHsWeights] = useState<Record<string, number>>({ jobFrequency: 25, recency: 15, revenue: 25, emailEngagement: 10, quoteAcceptance: 15, margin: 10 });
+  const [hsEnabled, setHsEnabled] = useState<Record<string, boolean>>({ jobFrequency: true, recency: true, revenue: true, emailEngagement: true, quoteAcceptance: true, margin: true });
+  const [hsHealthyThreshold, setHsHealthyThreshold] = useState(70);
+  const [hsWatchThreshold, setHsWatchThreshold] = useState(40);
+  const [hsTrendSensitivity, setHsTrendSensitivity] = useState(5);
+  const [hsSettingsLoaded, setHsSettingsLoaded] = useState(false);
+  const [isSavingHs, setIsSavingHs] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [recalcResult, setRecalcResult] = useState<{ updated: number; errors: number; completedAt: string } | null>(null);
   const [savedLabel, setSavedLabel] = useState<string | null>(null);
   const [roleLabelEdits, setRoleLabelEdits] = useState<Record<string, string>>({});
   const [showAddRole, setShowAddRole] = useState(false);
@@ -2041,6 +2333,22 @@ export default function AdminPage() {
   const isSuperAdmin = myPerms?.isSuperAdmin ?? false;
   const { data: buildopsVerifiedSetting } = useQuery<{ value: string | null }>({ queryKey: ["/api/settings/buildopsConnectionVerified"] });
   const isBuildopsVerifiedForPanel = buildopsVerifiedSetting?.value === "true";
+
+  const { data: adminSettings } = useQuery<Record<string, string>>({ queryKey: ["/api/admin-settings"] });
+  const { data: lastRecalcData } = useQuery<{ lastRecalcAt: string | null }>({ queryKey: ["/api/admin/last-recalc"] });
+
+  useEffect(() => {
+    if (adminSettings && !hsSettingsLoaded) {
+      const w = (k: string, def: number) => Math.round(parseFloat(adminSettings[`health.weight.${k}`] ?? String(def / 100)) * 100);
+      const e = (k: string) => adminSettings[`health.enabled.${k}`] !== "false";
+      setHsWeights({ jobFrequency: w("jobFrequency", 25), recency: w("recency", 15), revenue: w("revenue", 25), emailEngagement: w("emailEngagement", 10), quoteAcceptance: w("quoteAcceptance", 15), margin: w("margin", 10) });
+      setHsEnabled({ jobFrequency: e("jobFrequency"), recency: e("recency"), revenue: e("revenue"), emailEngagement: e("emailEngagement"), quoteAcceptance: e("quoteAcceptance"), margin: e("margin") });
+      setHsHealthyThreshold(parseInt(adminSettings["health.threshold.healthy"] ?? "70", 10));
+      setHsWatchThreshold(parseInt(adminSettings["health.threshold.watch"] ?? "40", 10));
+      setHsTrendSensitivity(parseInt(adminSettings["health.trend.sensitivity"] ?? "5", 10));
+      setHsSettingsLoaded(true);
+    }
+  }, [adminSettings, hsSettingsLoaded]);
 
   if (currentUser && currentUser.role !== "admin" && currentUser.role !== "super_admin") {
     setLocation("/");
@@ -2302,6 +2610,12 @@ export default function AdminPage() {
             {isSuperAdmin && <Badge variant="secondary" className="ml-1 h-5 px-1.5">{users.length}</Badge>}
           </TabsTrigger>
           {isSuperAdmin && (
+            <TabsTrigger value="teams" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-teams">
+              <Users2 className="h-4 w-4" />
+              Teams
+            </TabsTrigger>
+          )}
+          {isSuperAdmin && (
             <TabsTrigger value="invites" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2">
               <Mail className="h-4 w-4" />
               Invitations
@@ -2332,6 +2646,12 @@ export default function AdminPage() {
             <TabsTrigger value="orgchart" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-orgchart">
               <GitBranch className="h-4 w-4" />
               Org Chart
+            </TabsTrigger>
+          )}
+          {(isSuperAdmin || (myPerms?.role === "admin")) && (
+            <TabsTrigger value="health-score" className="data-[state=active]:border-primary data-[state=active]:bg-transparent border-b-2 border-transparent rounded-none h-12 px-2 font-medium gap-2" data-testid="tab-health-score">
+              <Activity className="h-4 w-4" />
+              Health Score
             </TabsTrigger>
           )}
         </TabsList>
@@ -2460,6 +2780,11 @@ export default function AdminPage() {
               </Card>
             ))
           )}
+        </TabsContent>
+
+        {/* ── Teams Management Tab ─────────────────────────────────────── */}
+        <TabsContent value="teams" className="pt-4 space-y-4">
+          <TeamsPanel users={users} />
         </TabsContent>
 
         <TabsContent value="invites" className="pt-4 space-y-5">
@@ -3236,6 +3561,288 @@ export default function AdminPage() {
               </div>
             )}
           </div>
+        </TabsContent>
+
+        <TabsContent value="health-score" className="pt-4">
+          {(() => {
+            const COMPONENTS = [
+              { key: "jobFrequency", label: "Job Frequency" },
+              { key: "recency", label: "Recency" },
+              { key: "revenue", label: "Revenue" },
+              { key: "emailEngagement", label: "Email Engagement" },
+              { key: "quoteAcceptance", label: "Quote Acceptance" },
+              { key: "margin", label: "Margin" },
+            ] as const;
+
+            const enabledKeys = COMPONENTS.filter(c => hsEnabled[c.key]).map(c => c.key);
+            const weightSum = enabledKeys.reduce((s, k) => s + (hsWeights[k] ?? 0), 0);
+            const weightsValid = Math.abs(weightSum - 100) < 1 && enabledKeys.length > 0;
+
+            const handleWeightChange = (key: string, val: number) => {
+              setHsWeights(prev => ({ ...prev, [key]: val }));
+            };
+
+            const handleToggle = (key: string, newEnabled: boolean) => {
+              const newEnabledState = { ...hsEnabled, [key]: newEnabled };
+              setHsEnabled(newEnabledState);
+              if (!newEnabled) {
+                const activeKeys = COMPONENTS.filter(c => newEnabledState[c.key]).map(c => c.key);
+                if (activeKeys.length > 0) {
+                  const totalActive = activeKeys.reduce((s, k) => s + (hsWeights[k] ?? 0), 0);
+                  const disabledWeight = hsWeights[key] ?? 0;
+                  const newWeights = { ...hsWeights };
+                  if (totalActive > 0) {
+                    for (const k of activeKeys) {
+                      newWeights[k] = Math.round(((hsWeights[k] ?? 0) / totalActive) * (totalActive + disabledWeight));
+                    }
+                  }
+                  newWeights[key] = 0;
+                  setHsWeights(newWeights);
+                }
+              }
+            };
+
+            const handleReset = () => {
+              setHsWeights({ jobFrequency: 25, recency: 15, revenue: 25, emailEngagement: 10, quoteAcceptance: 15, margin: 10 });
+              setHsEnabled({ jobFrequency: true, recency: true, revenue: true, emailEngagement: true, quoteAcceptance: true, margin: true });
+              setHsHealthyThreshold(70);
+              setHsWatchThreshold(40);
+              setHsTrendSensitivity(5);
+            };
+
+            const handleSave = async () => {
+              setIsSavingHs(true);
+              try {
+                const putSetting = (k: string, v: string) =>
+                  apiRequest("PUT", `/api/admin-settings/${encodeURIComponent(k)}`, { value: v });
+                await Promise.all([
+                  ...COMPONENTS.map(c => putSetting(`health.weight.${c.key}`, String((hsWeights[c.key] ?? 0) / 100))),
+                  ...COMPONENTS.map(c => putSetting(`health.enabled.${c.key}`, hsEnabled[c.key] ? "true" : "false")),
+                  putSetting("health.threshold.healthy", String(hsHealthyThreshold)),
+                  putSetting("health.threshold.watch", String(hsWatchThreshold)),
+                  putSetting("health.trend.sensitivity", String(hsTrendSensitivity)),
+                ]);
+                queryClient.invalidateQueries({ queryKey: ["/api/admin-settings"] });
+                toast({ title: "Health score settings saved" });
+              } catch {
+                toast({ title: "Failed to save settings", variant: "destructive" });
+              } finally {
+                setIsSavingHs(false);
+              }
+            };
+
+            const handleRecalculate = async () => {
+              setIsRecalculating(true);
+              setRecalcResult(null);
+              try {
+                const res = await apiRequest("POST", "/api/admin/recalculate-health-scores", {});
+                const data = await res.json();
+                setRecalcResult(data);
+                queryClient.invalidateQueries({ queryKey: ["/api/admin/last-recalc"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+                toast({ title: `Health scores updated for ${data.updated} accounts` });
+              } catch {
+                toast({ title: "Recalculation failed", variant: "destructive" });
+              } finally {
+                setIsRecalculating(false);
+              }
+            };
+
+            return (
+              <div className="space-y-6 max-w-2xl">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">Health Score Configuration</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Adjust how health scores are computed across your accounts.</p>
+                  </div>
+                  <button onClick={handleReset} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors" data-testid="button-hs-reset-defaults">
+                    Reset to defaults
+                  </button>
+                </div>
+
+                {/* Component Weights */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-semibold">Component Weights</CardTitle>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${weightsValid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`} data-testid="text-weight-sum">
+                        {weightSum}% of 100%
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Active component weights must sum to 100%.</p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {COMPONENTS.map(({ key, label }) => (
+                      <div key={key} className={`space-y-1 ${!hsEnabled[key] ? "opacity-40" : ""}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{label}</span>
+                          <span className="text-sm font-semibold tabular-nums" data-testid={`text-weight-${key}`}>{hsWeights[key] ?? 0}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={hsWeights[key] ?? 0}
+                          onChange={e => handleWeightChange(key, parseInt(e.target.value))}
+                          disabled={!hsEnabled[key]}
+                          className="w-full accent-primary"
+                          data-testid={`slider-weight-${key}`}
+                        />
+                      </div>
+                    ))}
+                    {!weightsValid && (
+                      <p className="text-xs text-red-600 dark:text-red-400" data-testid="text-weight-error">
+                        Active weights must sum to exactly 100% before saving.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Component Toggles */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Component Toggles</CardTitle>
+                    <p className="text-xs text-muted-foreground">Disable components to exclude them from score calculations. Weights will redistribute automatically.</p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {COMPONENTS.map(({ key, label }) => (
+                      <div key={key} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{label}</span>
+                          <Switch
+                            checked={hsEnabled[key]}
+                            onCheckedChange={v => handleToggle(key, v)}
+                            data-testid={`switch-enable-${key}`}
+                          />
+                        </div>
+                        {!hsEnabled[key] && (
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400">Disabling this component redistributes its weight to remaining active components proportionally.</p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                {/* Score Thresholds */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Score Thresholds</CardTitle>
+                    <p className="text-xs text-muted-foreground">Define the score bands for Healthy, Watch, and At Risk accounts.</p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Healthy above</label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={hsHealthyThreshold}
+                          onChange={e => setHsHealthyThreshold(parseInt(e.target.value) || 70)}
+                          className="h-8 text-sm"
+                          data-testid="input-threshold-healthy"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Watch above</label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={hsWatchThreshold}
+                          onChange={e => setHsWatchThreshold(parseInt(e.target.value) || 40)}
+                          className="h-8 text-sm"
+                          data-testid="input-threshold-watch"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">At Risk (auto)</label>
+                        <div className="h-8 rounded-md border border-input bg-muted/50 px-3 flex items-center text-sm text-muted-foreground" data-testid="text-threshold-atrisk">
+                          Below {hsWatchThreshold}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Live preview */}
+                    <div className="flex gap-2 mt-1">
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700`}>Healthy ≥ {hsHealthyThreshold}</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700`}>Watch {hsWatchThreshold}–{hsHealthyThreshold - 1}</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700`}>At Risk &lt; {hsWatchThreshold}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Trend Sensitivity */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Trend Sensitivity</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={hsTrendSensitivity}
+                        onChange={e => setHsTrendSensitivity(parseInt(e.target.value) || 5)}
+                        className="h-8 text-sm w-24"
+                        data-testid="input-trend-sensitivity"
+                      />
+                      <span className="text-sm text-muted-foreground">points needed to show as rising ↑ or declining ↓</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Scores that change less than this amount are shown as flat (→).</p>
+                  </CardContent>
+                </Card>
+
+                {/* Save button */}
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSavingHs || !weightsValid}
+                    data-testid="button-hs-save"
+                  >
+                    {isSavingHs ? "Saving…" : "Save Settings"}
+                  </Button>
+                </div>
+
+                {/* Recalculation */}
+                <Card className="border-border/40">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Recalculation</CardTitle>
+                    <p className="text-xs text-muted-foreground">Run an immediate health score recalculation for all accounts (nightly runs also do this automatically).</p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {lastRecalcData?.lastRecalcAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Last run: {new Date(lastRecalcData.lastRecalcAt).toLocaleString()}
+                      </p>
+                    )}
+                    <Button
+                      variant="outline"
+                      onClick={handleRecalculate}
+                      disabled={isRecalculating}
+                      data-testid="button-recalculate-health"
+                    >
+                      {isRecalculating ? "Recalculating…" : "Recalculate All Scores Now"}
+                    </Button>
+                    {recalcResult && (
+                      <p className="text-xs text-green-700 dark:text-green-400" data-testid="text-recalc-result">
+                        ✓ Recalculation complete — {recalcResult.updated} accounts updated{recalcResult.errors > 0 ? `, ${recalcResult.errors} errors` : ""}.
+                      </p>
+                    )}
+                    {isRecalculating && (
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                          <div className="h-full bg-primary animate-pulse rounded-full w-2/3" />
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">Running…</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })()}
         </TabsContent>
       </Tabs>
 

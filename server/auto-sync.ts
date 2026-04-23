@@ -1,7 +1,15 @@
 import { storage } from "./storage";
+import {
+  computeHealthScore,
+  persistHealthScore,
+  persistMonthlySnapshot,
+  computeCustomerPhase,
+} from "./health-score";
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+const NIGHTLY_MS = 24 * 60 * 60 * 1000;
 const STARTUP_DELAY_MS = 2 * 60 * 1000; // 2 min after boot
+const NIGHTLY_DELAY_MS = 30 * 1000; // 30 s after boot — ensures scores are ready quickly after any restart
 
 async function getBuildOpsCreds(): Promise<{ clientId: string; clientSecret: string; tenantId: string } | null> {
   const clientId = await storage.getAppSetting("buildopsClientId");
@@ -140,6 +148,18 @@ async function runSync() {
       const [existing] = await db.select().from(buildopsJobs).where(eq(buildopsJobs.buildopsId, job.id));
       if (existing) { await db.update(buildopsJobs).set(payload).where(eq(buildopsJobs.buildopsId, job.id)); jobUpdated++; }
       else { await db.insert(buildopsJobs).values(payload); jobCreated++; }
+
+      // Auto-complete milestone 6 (first_job) when a Phase-1 client's job is marked complete
+      const clientIdForJob = payload.clientId;
+      const isCompletedJob = !!payload.completedDate;
+      if (clientIdForJob && isCompletedJob) {
+        try {
+          const client = await storage.getClient(clientIdForJob);
+          if (client && client.customerPhase === 1) {
+            await storage.autoCompleteOnboardingMilestone(clientIdForJob, "first_job");
+          }
+        } catch {}
+      }
     }
     console.log(`[auto-sync] Jobs: ${jobCreated} created, ${jobUpdated} updated, ${jobSkipped} skipped of ${jobs.length}`);
 
@@ -222,4 +242,351 @@ export function scheduleAutoSync() {
     setInterval(runSync, FOUR_HOURS_MS);
   }, STARTUP_DELAY_MS);
   console.log(`[auto-sync] Scheduled: first run in ${STARTUP_DELAY_MS / 60000} min, then every ${FOUR_HOURS_MS / 3600000}h.`);
+
+  // Health score nightly run (runs once 5 min after boot, then every 24 hours)
+  setTimeout(() => {
+    runHealthScoreUpdate();
+    setInterval(runHealthScoreUpdate, NIGHTLY_MS);
+  }, NIGHTLY_DELAY_MS);
+  console.log(`[health-score] Nightly recalculation scheduled: first run in ${NIGHTLY_DELAY_MS / 60000} min.`);
+}
+
+// ── Health Score Nightly Run ─────────────────────────────────────────────────
+
+const DAILY_AUTO_TASK_CAP = 5;
+const OVERFLOW_QUEUE_KEY = "health.autoTask.overflowQueue";
+
+interface OverflowItem {
+  repId: string;
+  clientId: number;
+  clientName: string;
+  title: string;
+  priority: "high" | "medium" | "low";
+  score: number;
+  scoreDelta: number;
+  sortKey: number; // lower = higher priority
+}
+
+async function loadOverflowQueue(): Promise<OverflowItem[]> {
+  try {
+    const { db } = await import("./db");
+    const { adminSettings } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const [row] = await db.select().from(adminSettings).where(eq(adminSettings.key, OVERFLOW_QUEUE_KEY));
+    return row ? (JSON.parse(row.value) as OverflowItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveOverflowQueue(items: OverflowItem[]): Promise<void> {
+  try {
+    const { db } = await import("./db");
+    const { adminSettings } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const value = JSON.stringify(items);
+    const [existing] = await db.select().from(adminSettings).where(eq(adminSettings.key, OVERFLOW_QUEUE_KEY));
+    if (existing) {
+      await db.update(adminSettings).set({ value, updatedAt: new Date() }).where(eq(adminSettings.key, OVERFLOW_QUEUE_KEY));
+    } else {
+      await db.insert(adminSettings).values({ key: OVERFLOW_QUEUE_KEY, value });
+    }
+  } catch (err: any) {
+    console.error("[health-score] Failed to save overflow queue:", err.message);
+  }
+}
+
+async function runHealthScoreUpdate() {
+  console.log("[health-score] Starting nightly health score recalculation…");
+  try {
+    const allClients = await storage.listClients();
+    const now = new Date();
+
+    // ── Pass 1: Score all clients, collect pending triggers (no tasks created yet) ──
+    let updated = 0;
+    let skipped = 0;
+    const pendingTriggers: OverflowItem[] = [];
+
+    for (const client of allClients) {
+      try {
+        // Capture previous score before update (for delta computation)
+        const prevScore = client.healthScore ?? null;
+
+        // computeHealthScore handles all phase logic internally, including
+        // using earliest job date to correctly classify imported clients.
+        const breakdown = await computeHealthScore(client.id);
+        if (!breakdown) { skipped++; continue; }
+
+        // Phase 1 — score is intentionally null; persist phase & clear stale fields
+        if (breakdown.phase === 1) {
+          await storage.updateClient(client.id, {
+            customerPhase: 1,
+            healthScore: null,
+            healthTrend: null,
+            healthScoreBreakdown: null,
+          });
+          skipped++;
+          continue;
+        }
+
+        await persistHealthScore(client.id, breakdown);
+
+        if (breakdown.totalScore !== null) {
+          await persistMonthlySnapshot(client.id, breakdown.totalScore, breakdown.trend, breakdown, now);
+        }
+
+        updated++;
+
+        // Collect triggers for this client (no tasks created yet)
+        if (breakdown.totalScore !== null && client.accountManagerUserId) {
+          const scoreDelta = prevScore !== null ? prevScore - breakdown.totalScore : 0;
+          const triggers = await collectTriggers(client, breakdown, scoreDelta, now);
+          pendingTriggers.push(...triggers);
+        }
+      } catch (err: any) {
+        console.error(`[health-score] Error on client ${client.id} (${client.name}):`, err.message);
+      }
+    }
+
+    // ── Pass 2: Load overflow from prior runs, merge with new triggers, enforce cap globally per rep ──
+    const priorOverflow = await loadOverflowQueue();
+
+    // Combine overflow + new (overflow items carry their sortKey from when they were generated)
+    // Note: prior overflow items get processed first as they're already deferred
+    const allCandidates = [...priorOverflow, ...pendingTriggers];
+
+    // Group by rep
+    const byRep = new Map<string, OverflowItem[]>();
+    for (const item of allCandidates) {
+      const existing = byRep.get(item.repId) ?? [];
+      existing.push(item);
+      byRep.set(item.repId, existing);
+    }
+
+    const nextOverflow: OverflowItem[] = [];
+
+    for (const [repId, items] of byRep) {
+      // Global sort: at-risk (sortKey 0) → largest drops (sortKey 1–99) → no-contact (200) → quotes (300)
+      items.sort((a, b) => a.sortKey - b.sortKey);
+      const toCreate = items.slice(0, DAILY_AUTO_TASK_CAP);
+      const toQueue = items.slice(DAILY_AUTO_TASK_CAP);
+
+      for (const t of toCreate) {
+        try {
+          await storage.createTask({
+            title: t.title,
+            assignedTo: repId,
+            relatedClientId: t.clientId,
+            priority: t.priority,
+            status: "todo",
+            description: `Auto-generated health score alert. Score: ${t.score}/100.`,
+            sortOrder: 0,
+          });
+        } catch (err: any) {
+          console.error("[health-score] Failed to create auto-task:", err.message);
+          toQueue.push(t); // failed — re-queue
+        }
+      }
+
+      nextOverflow.push(...toQueue);
+    }
+
+    await saveOverflowQueue(nextOverflow);
+
+    // ── Pass 3: Onboarding milestone overdue checks + Day-90/6-month tasks ──
+    try {
+      await runOnboardingNightlyChecks(allClients, now);
+    } catch (err: any) {
+      console.error("[onboarding] Nightly check error:", err.message);
+    }
+
+    console.log(`[health-score] Done: ${updated} scored, ${skipped} skipped, ${nextOverflow.length} tasks queued for tomorrow.`);
+  } catch (err: any) {
+    console.error("[health-score] Fatal error:", err.message);
+  }
+}
+
+// ── Onboarding nightly checks ─────────────────────────────────────────────────
+async function taskExists(title: string, relatedClientId: number): Promise<boolean> {
+  try {
+    const { db } = await import("./db");
+    const { tasks: tasksTable } = await import("@shared/schema");
+    const { and, eq: eqFn, ne } = await import("drizzle-orm");
+    const rows = await db.select({ id: tasksTable.id }).from(tasksTable).where(
+      and(eqFn(tasksTable.title, title), eqFn(tasksTable.relatedClientId, relatedClientId), ne(tasksTable.status, "done")),
+    ).limit(1);
+    return rows.length > 0;
+  } catch { return false; }
+}
+
+async function runOnboardingNightlyChecks(
+  allClients: Array<{ id: number; name: string; createdAt: Date; customerPhase?: number | null; accountManagerUserId: string | null; qualificationRecommendation?: string | null; qualificationReviewedAt?: Date | null }>,
+  now: Date,
+): Promise<void> {
+  const { ONBOARDING_MILESTONES } = await import("@shared/schema");
+
+  for (const client of allClients) {
+    const repId = client.accountManagerUserId;
+    if (!repId) continue;
+
+    const daysSinceCreation = (now.getTime() - client.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+
+    // ─── Day-90 qualification task (only once, only if not already reviewed) ───
+    if (daysSinceCreation >= 90 && !client.qualificationReviewedAt) {
+      try {
+        const qualTitle = `Complete 90-day qualification review for ${client.name}`;
+        if (!(await taskExists(qualTitle, client.id))) {
+          await storage.createTask({
+            title: qualTitle,
+            assignedTo: repId,
+            relatedClientId: client.id,
+            priority: "high",
+            status: "todo",
+            description: `Day-90 qualification review is due for ${client.name}. Visit the customer profile to complete the review.`,
+            sortOrder: 0,
+          });
+        }
+      } catch {}
+    }
+
+    // ─── 6-month re-evaluation task for nurture clients ────────────────────────
+    if (client.qualificationRecommendation === "nurture" && client.qualificationReviewedAt) {
+      const sixMonthsAfterReview = new Date(client.qualificationReviewedAt.getTime() + 180 * 24 * 60 * 60 * 1000);
+      if (now >= sixMonthsAfterReview) {
+        try {
+          const reEvalTitle = `6-month re-evaluation due for ${client.name}`;
+          if (!(await taskExists(reEvalTitle, client.id))) {
+            await storage.createTask({
+              title: reEvalTitle,
+              assignedTo: repId,
+              relatedClientId: client.id,
+              priority: "medium",
+              status: "todo",
+              description: `6-month nurture re-evaluation is due for ${client.name}. Complete the review on the customer profile.`,
+              sortOrder: 0,
+            });
+          }
+        } catch {}
+      }
+    }
+
+    // ─── Overdue milestone tasks (Phase 1 or still within 90-day window) ────────
+    if (daysSinceCreation > 90 && client.customerPhase !== 1) continue;
+
+    try {
+      const milestones = await storage.getClientOnboardingMilestones(client.id);
+      for (const m of ONBOARDING_MILESTONES) {
+        const record = milestones.find(r => r.milestoneKey === m.key);
+        if (!record || record.status === "complete") continue;
+        const targetDate = new Date(client.createdAt.getTime() + m.targetDayEnd * 24 * 60 * 60 * 1000);
+        if (now <= targetDate) continue;
+
+        // Mark as overdue in DB if not already
+        if (record.status !== "overdue") {
+          try { await storage.updateOnboardingMilestone(client.id, m.key, { status: "overdue" }); } catch {}
+        }
+
+        // Create overdue task (max 1 per client per day)
+        const overdueTitle = `${m.label} overdue for ${client.name}`;
+        if (!(await taskExists(overdueTitle, client.id))) {
+          try {
+            await storage.createTask({
+              title: overdueTitle,
+              assignedTo: repId,
+              relatedClientId: client.id,
+              priority: "medium",
+              status: "todo",
+              description: `Onboarding milestone overdue: "${m.label}" was due by day ${m.targetDayEnd} for ${client.name}.`,
+              sortOrder: 0,
+            });
+          } catch {}
+        }
+        break; // max 1 onboarding task per client per nightly run
+      }
+    } catch {}
+  }
+}
+
+// Collect triggers for one client (pure data collection, no DB writes for tasks)
+async function collectTriggers(
+  client: { id: number; name: string; accountManagerUserId: string | null },
+  breakdown: { totalScore: number; trend: string; components?: Record<string, unknown> },
+  scoreDelta: number, // positive = score dropped this run
+  now: Date,
+): Promise<OverflowItem[]> {
+  const repId = client.accountManagerUserId;
+  if (!repId) return [];
+
+  const score = breakdown.totalScore;
+  const recency = breakdown.components?.recency as { detail?: { daysSinceContact?: number } } | undefined;
+  const daysSince = recency?.detail?.daysSinceContact ?? null;
+
+  interface Trigger {
+    title: string;
+    priority: "high" | "medium" | "low";
+    sortKey: number;
+  }
+
+  const triggers: Trigger[] = [];
+
+  // at-risk: score below 40 (watch threshold)
+  if (score < 40) {
+    triggers.push({ title: `At-Risk Alert: ${client.name} health score is ${score}/100`, priority: "high", sortKey: 0 });
+  }
+
+  // declining fast: explicit score drop >= 15 points this run
+  if (scoreDelta >= 15) {
+    triggers.push({
+      title: `Declining Account: ${client.name} dropped ${scoreDelta} pts (now ${score}/100)`,
+      priority: "high",
+      sortKey: 100 - Math.min(scoreDelta, 99), // larger drops first (lower key)
+    });
+  }
+
+  // no contact in 45 days
+  if (daysSince !== null && daysSince > 45) {
+    triggers.push({
+      title: `No Contact: ${client.name} — ${Math.round(daysSince)} days since last touchpoint`,
+      priority: "medium",
+      sortKey: 200,
+    });
+  }
+
+  // open (non-closed) quote with no response for 30+ days
+  try {
+    const { db } = await import("./db");
+    const { leads: leadsTable } = await import("@shared/schema");
+    const { and, eq, lt, isNotNull, sql: sqlFn } = await import("drizzle-orm");
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const openQuotes = await db
+      .select({ id: leadsTable.id })
+      .from(leadsTable)
+      .where(
+        and(
+          eq(leadsTable.clientId, client.id),
+          isNotNull(leadsTable.buildopsQuoteId),
+          sqlFn`${leadsTable.stage} NOT IN ('won', 'lost', 'closed_lost')`,
+          lt(leadsTable.updatedAt, thirtyDaysAgo),
+        ),
+      )
+      .limit(1);
+    if (openQuotes.length > 0) {
+      triggers.push({
+        title: `Unresponsive Quote: ${client.name} — open quote with no response for 30+ days`,
+        priority: "medium",
+        sortKey: 300,
+      });
+    }
+  } catch {}
+
+  return triggers.map((t) => ({
+    repId,
+    clientId: client.id,
+    clientName: client.name,
+    title: t.title,
+    priority: t.priority,
+    score,
+    scoreDelta,
+    sortKey: t.sortKey,
+  }));
 }

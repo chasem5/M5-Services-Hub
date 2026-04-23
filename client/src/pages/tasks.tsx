@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Task, Lead, Client, ClientContact, User, InsertTask, insertTaskSchema, TaskLabelDefinition, TaskColumn, TaskBoard } from "@shared/schema";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -15,7 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { format, isBefore, startOfDay } from "date-fns";
-import { Link, useSearch } from "wouter";
+import { Link, useSearch, useLocation } from "wouter";
 import {
   Form,
   FormControl,
@@ -482,8 +483,11 @@ const VISIBILITY_LABELS = {
 };
 
 export default function TasksPage() {
+  const [location] = useLocation();
   const searchParams = useSearch();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isAdminOrManager = user && ["super_admin", "admin", "manager"].includes(user.role ?? "");
   const [view, setView] = useState<"board" | "list">(() => window.innerWidth < 768 ? "list" : "board");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -583,6 +587,7 @@ export default function TasksPage() {
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
   const { data: allContacts = [] } = useQuery<ClientContact[]>({ queryKey: ["/api/client-contacts"] });
   const { data: users = [] } = useQuery<User[]>({ queryKey: ["/api/users"] });
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ["/api/teams"] });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -950,6 +955,19 @@ export default function TasksPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Activity section nav */}
+      <div className="flex gap-0 border-b bg-background px-6 shrink-0">
+        <Link href="/tasks">
+          <span className={`inline-flex h-10 items-center px-4 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${location.startsWith("/tasks") ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            Tasks
+          </span>
+        </Link>
+        <Link href="/meetings">
+          <span className={`inline-flex h-10 items-center px-4 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${location.startsWith("/meetings") ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            Meetings
+          </span>
+        </Link>
+      </div>
       {/* Board switcher bar */}
       <div className="flex items-center gap-2 px-4 md:px-6 py-2 bg-muted/30 border-b overflow-x-auto shrink-0">
         <div className="flex items-center gap-1 min-w-0">
@@ -1591,6 +1609,31 @@ export default function TasksPage() {
                   }}
                 />
               </div>
+              {teamsList.length > 0 && (
+                <FormField
+                  control={addForm.control}
+                  name="teamId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Team (Optional)</FormLabel>
+                      <Select onValueChange={(val) => field.onChange(val === "__none__" ? null : parseInt(val))} value={field.value != null ? String(field.value) : "__none__"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-task-team">
+                            <SelectValue placeholder="No team" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">— No Team —</SelectItem>
+                          {teamsList.map(t => (
+                            <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <Button type="submit" className="w-full" disabled={createMutation.isPending} data-testid="button-submit-task">
                 {createMutation.isPending ? "Creating…" : "Create Task"}
               </Button>
@@ -1861,6 +1904,17 @@ export default function TasksPage() {
                           {allContacts.map((c) => <SelectItem key={c.id} value={c.id.toString()}>{c.name}{c.title ? ` – ${c.title}` : ""}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      {isAdminOrManager && teamsList.length > 0 && (
+                        <Select value={selectedTask.teamId?.toString() || "none"} onValueChange={(v) => updateTaskField("teamId", v === "none" ? null : parseInt(v))}>
+                          <SelectTrigger className="h-9 text-sm" data-testid="select-detail-team">
+                            <SelectValue placeholder="Team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No Team</SelectItem>
+                            {teamsList.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                   </div>
 

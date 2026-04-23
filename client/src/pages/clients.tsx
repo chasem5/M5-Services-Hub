@@ -403,7 +403,7 @@ const SERVICE_NEEDS = [
 
 
 export default function Customers() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user: authUser } = useAuth();
   const isAdminOrManager = authUser?.role === "super_admin" || authUser?.role === "admin" || authUser?.role === "manager";
   const canEditAccountManager = authUser?.role === "super_admin" || authUser?.role === "admin";
@@ -416,7 +416,7 @@ export default function Customers() {
   const [contactStatusFilter, setContactStatusFilter] = useState("all");
   const [contactSortField, setContactSortField] = useState<"name" | "company" | "title" | "status" | "spend">("name");
   const [contactSortDir, setContactSortDir] = useState<"asc" | "desc">("asc");
-  const [companySortField, setCompanySortField] = useState<"name" | "tier" | "industry" | "status" | "revenue" | "spend">("name");
+  const [companySortField, setCompanySortField] = useState<"name" | "tier" | "industry" | "status" | "revenue" | "spend" | "health">("name");
   const [companySortDir, setCompanySortDir] = useState<"asc" | "desc">("asc");
   const [segmentByService, setSegmentByService] = useState(false);
   const { data: serviceSegments = {} } = useQuery<Record<number, string>>({
@@ -566,6 +566,11 @@ export default function Customers() {
     enabled: isAdminOrManager,
   });
 
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/teams"],
+    enabled: isAdminOrManager,
+  });
+
   const { data: allBuildings = [], isLoading: isLoadingBuildings } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/all-buildings"],
   });
@@ -585,6 +590,12 @@ export default function Customers() {
   const { data: emailResponseRates = {} } = useQuery<Record<number, { outboundEmails: number; emailsWithReply: number; responseRate: number }>>({
     queryKey: ["/api/clients/email-response-rates"],
   });
+
+  const { data: adminSettings = {} } = useQuery<Record<string, string>>({
+    queryKey: ["/api/admin-settings"],
+  });
+  const healthyThreshold = parseInt(adminSettings["health.threshold.healthy"] ?? "70", 10);
+  const watchThreshold = parseInt(adminSettings["health.threshold.watch"] ?? "40", 10);
 
   const { data: buildopsRevenueSummary = {} } = useQuery<Record<number, number>>({
     queryKey: ["/api/buildops-revenue-summary"],
@@ -966,6 +977,8 @@ export default function Customers() {
       cmp = getRevenue(a) - getRevenue(b);
     } else if (companySortField === "spend") {
       cmp = (spendByClientId[a.id] ?? 0) - (spendByClientId[b.id] ?? 0);
+    } else if (companySortField === "health") {
+      cmp = (a.healthScore ?? -1) - (b.healthScore ?? -1);
     }
     return companySortDir === "asc" ? cmp : -cmp;
   });
@@ -1035,7 +1048,21 @@ export default function Customers() {
     });
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="flex flex-col h-full">
+      {/* Customers section nav */}
+      <div className="flex gap-0 border-b bg-background px-6 shrink-0">
+        <Link href="/my-accounts">
+          <span className={`inline-flex h-10 items-center px-4 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${location.startsWith("/my-accounts") ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            My Accounts
+          </span>
+        </Link>
+        <Link href="/customers">
+          <span className={`inline-flex h-10 items-center px-4 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${!location.startsWith("/my-accounts") && location.startsWith("/customers") ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            All Customers
+          </span>
+        </Link>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
       {/* Hidden file inputs for import */}
       <input
         ref={companiesFileRef}
@@ -1783,8 +1810,8 @@ export default function Customers() {
                             data-testid="checkbox-select-all-companies"
                           />
                         </TableHead>
-                        {(["name", "tier", "industry", "status", "revenue", "spend"] as const).map((field, i) => {
-                          const labels = ["Company Name", "Tier", "Industry", "Status", "Revenue", "BD Spend"];
+                        {(["name", "tier", "industry", "status", "revenue", "spend", "health"] as const).map((field, i) => {
+                          const labels = ["Company Name", "Tier", "Industry", "Status", "Revenue", "BD Spend", "Health"];
                           const active = companySortField === field;
                           return (
                             <TableHead
@@ -1895,6 +1922,14 @@ export default function Customers() {
                                         }
                                         return null;
                                       })()}
+                                      {isAdminOrManager && c.teamId && (
+                                        <span
+                                          className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-secondary-foreground font-medium border shrink-0"
+                                          data-testid={`badge-client-team-${c.id}`}
+                                        >
+                                          {teamsList.find(t => t.id === c.teamId)?.name ?? `Team #${c.teamId}`}
+                                        </span>
+                                      )}
                                     </div>
                                     {(c.serviceNeeds ?? []).length > 0 && (
                                       <div className="flex flex-wrap gap-1">
@@ -2000,6 +2035,47 @@ export default function Customers() {
                                         {roi.label}
                                       </span>
                                     )}
+                                  </div>
+                                );
+                              })()}
+                            </TableCell>
+                            <TableCell>
+                              {(() => {
+                                const phase = c.customerPhase;
+                                const score = c.healthScore;
+                                const trend = c.healthTrend;
+
+                                if (phase === 1) {
+                                  return (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800" data-testid={`badge-health-new-${c.id}`}>
+                                      New
+                                    </span>
+                                  );
+                                }
+                                if (score === null || score === undefined) {
+                                  return <span className="text-muted-foreground text-sm" data-testid={`text-health-unscored-${c.id}`}>—</span>;
+                                }
+
+                                const trendArrow = trend === "rising" ? "↑" : trend === "declining" ? "↓" : "→";
+                                const trendColor = trend === "rising" ? "text-green-600" : trend === "declining" ? "text-red-500" : "text-muted-foreground";
+
+                                let bandClass = "";
+                                if (score >= healthyThreshold) {
+                                  bandClass = "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800";
+                                } else if (score >= watchThreshold) {
+                                  bandClass = "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800";
+                                } else {
+                                  bandClass = "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800";
+                                }
+
+                                return (
+                                  <div className="flex items-center gap-1.5" data-testid={`cell-health-${c.id}`}>
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${bandClass}`}>
+                                      {score}
+                                    </span>
+                                    <span className={`text-sm font-bold ${trendColor}`} title={`Trend: ${trend ?? "flat"}`}>
+                                      {trendArrow}
+                                    </span>
                                   </div>
                                 );
                               })()}
@@ -3806,6 +3882,7 @@ export default function Customers() {
           <Plus className="h-6 w-6" />
         </button>
       )}
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { eq, and, desc, sql, lt, or, inArray } from "drizzle-orm";
 import { computeHealthScoreV2, computeVelocityDirection, computeInvoiceTrend } from "./health-utils";
 import {
   users,
+  teams,
   clients,
   clientOffices,
   contactStages,
@@ -51,6 +52,13 @@ import {
   buildopsJobs,
   clientOnboardingChecklist,
   ONBOARDING_TOTAL_ITEMS,
+  clientOnboardingMilestones,
+  ONBOARDING_MILESTONES,
+  clientQualificationReviews,
+  type ClientOnboardingMilestone,
+  type InsertClientOnboardingMilestone,
+  type ClientQualificationReview,
+  type InsertClientQualificationReview,
   aiFeedback,
   actionPlans,
   weeklyReports,
@@ -169,6 +177,8 @@ import {
   type BufferRule,
   type ApprovalRule,
   type WorkspaceCatalogItem,
+  type Team,
+  type InsertTeam,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -182,6 +192,16 @@ export interface IStorage {
   updateUserManager(id: string, managerUserId: string | null): Promise<User>;
   deleteUser(id: string): Promise<void>;
 
+  // Teams
+  listTeams(): Promise<Team[]>;
+  getTeam(id: number): Promise<Team | undefined>;
+  createTeam(data: InsertTeam): Promise<Team>;
+  updateTeam(id: number, data: Partial<InsertTeam>): Promise<Team>;
+  deleteTeam(id: number): Promise<void>;
+  getTeamMembers(teamId: number): Promise<User[]>;
+  assignUserToTeam(userId: string, teamId: number | null): Promise<User>;
+  migrateTeams(): Promise<void>;
+
   // Invites
   createInvite(data: InsertInvite): Promise<Invite>;
   listInvites(): Promise<Invite[]>;
@@ -190,7 +210,7 @@ export interface IStorage {
   deleteInvite(id: number): Promise<void>;
 
   // Clients
-  listClients(userId?: string): Promise<Client[]>;
+  listClients(userId?: string, teamId?: number): Promise<Client[]>;
   getClient(id: number): Promise<Client | undefined>;
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: number, client: Partial<InsertClient>): Promise<Client>;
@@ -228,7 +248,7 @@ export interface IStorage {
   getBuildingActivity(buildingId: number): Promise<{ leads: Lead[]; estimates: Estimate[] }>;
 
   // Leads
-  listLeads(userId?: string): Promise<Lead[]>;
+  listLeads(userId?: string, teamId?: number, userTeamId?: number): Promise<Lead[]>;
   getLead(id: number): Promise<Lead | undefined>;
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: number, lead: Partial<InsertLead>): Promise<Lead>;
@@ -280,7 +300,7 @@ export interface IStorage {
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
 
   // Dashboard
-  getDashboardStats(filterUserId?: string): Promise<any>;
+  getDashboardStats(filterUserId?: string, filterTeamId?: number, userTeamId?: number): Promise<any>;
   getTeamPerformanceStats(): Promise<any[]>;
   getCeoTeamPerformanceStats(): Promise<any[]>;
 
@@ -515,6 +535,27 @@ export interface IStorage {
   createActionPlan(data: InsertActionPlan): Promise<ActionPlan>;
   updateActionPlan(id: number, data: Partial<InsertActionPlan>): Promise<ActionPlan>;
   deleteActionPlan(id: number): Promise<void>;
+
+  // Health Score Foundation
+  migrateHealthScoreTables(): Promise<void>;
+  getAdminSettings(): Promise<Record<string, string>>;
+
+  // Onboarding Milestones (Prompt 3)
+  migrateOnboardingMilestones(): Promise<void>;
+  initClientOnboardingMilestones(clientId: number, createdAt: Date): Promise<void>;
+  getClientOnboardingMilestones(clientId: number): Promise<ClientOnboardingMilestone[]>;
+  updateOnboardingMilestone(clientId: number, milestoneKey: string, data: Partial<Pick<ClientOnboardingMilestone, "status" | "completedAt" | "completedBy" | "notes" | "saOutcome">>): Promise<ClientOnboardingMilestone>;
+  autoCompleteOnboardingMilestone(clientId: number, milestoneKey: string, completedBy?: string): Promise<void>;
+  getMilestoneSummary(clientId: number): Promise<{ completed: number; total: number } | null>;
+  getMilestoneSummaryBatch(clientIds: number[]): Promise<Map<number, { completed: number; total: number }>>;
+  getOverdueMilestones(clientIds: number[]): Promise<Map<number, number>>;
+
+  // Qualification Reviews (Prompt 3)
+  migrateQualificationReviews(): Promise<void>;
+  createQualificationReview(data: InsertClientQualificationReview): Promise<ClientQualificationReview>;
+  getQualificationReviews(clientId: number): Promise<ClientQualificationReview[]>;
+  getLatestQualificationReview(clientId: number): Promise<ClientQualificationReview | null>;
+  updateQualificationReviewOverride(reviewId: number, overrideRecommendation: string, overrideReason: string): Promise<ClientQualificationReview>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -606,9 +647,87 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Clients
-  async listClients(userId?: string): Promise<Client[]> {
-    if (userId) {
-      return await db.select().from(clients).where(eq(clients.createdBy, userId)).orderBy(desc(clients.createdAt));
+  // ── Teams ──────────────────────────────────────────────────────────────────
+  async listTeams(): Promise<Team[]> {
+    return await db.select().from(teams).orderBy(teams.name);
+  }
+
+  async getTeam(id: number): Promise<Team | undefined> {
+    const [team] = await db.select().from(teams).where(eq(teams.id, id));
+    return team;
+  }
+
+  async createTeam(data: InsertTeam): Promise<Team> {
+    const [team] = await db.insert(teams).values(data).returning();
+    return team;
+  }
+
+  async updateTeam(id: number, data: Partial<InsertTeam>): Promise<Team> {
+    const [team] = await db.update(teams).set(data).where(eq(teams.id, id)).returning();
+    return team;
+  }
+
+  async deleteTeam(id: number): Promise<void> {
+    await db.execute(sql.raw(`UPDATE users SET team_id = NULL WHERE team_id = ${id}`));
+    await db.execute(sql.raw(`UPDATE clients SET team_id = NULL WHERE team_id = ${id}`));
+    await db.execute(sql.raw(`UPDATE leads SET team_id = NULL WHERE team_id = ${id}`));
+    await db.execute(sql.raw(`UPDATE opportunities SET team_id = NULL WHERE team_id = ${id}`));
+    await db.execute(sql.raw(`UPDATE tasks SET team_id = NULL WHERE team_id = ${id}`));
+    await db.delete(teams).where(eq(teams.id, id));
+  }
+
+  async getTeamMembers(teamId: number): Promise<User[]> {
+    return await db.select().from(users).where(eq(users.teamId, teamId));
+  }
+
+  async assignUserToTeam(userId: string, teamId: number | null): Promise<User> {
+    const [user] = await db.update(users).set({ teamId }).where(eq(users.id, userId)).returning();
+    return user;
+  }
+
+  async migrateTeams(): Promise<void> {
+    try {
+      await db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS "teams" (
+          "id" SERIAL PRIMARY KEY,
+          "name" VARCHAR(100) NOT NULL,
+          "description" TEXT,
+          "created_at" TIMESTAMP DEFAULT NOW() NOT NULL
+        )
+      `));
+    } catch (e) { console.error("migrateTeams: create teams table error:", e); }
+    try {
+      await db.execute(sql.raw(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "team_id" INTEGER REFERENCES "teams"("id") ON DELETE SET NULL`));
+    } catch (e) {
+      // Column may already exist without FK; try adding the constraint separately
+      try {
+        await db.execute(sql.raw(`
+          ALTER TABLE "users"
+          ADD CONSTRAINT IF NOT EXISTS "users_team_id_teams_id_fk"
+          FOREIGN KEY ("team_id") REFERENCES "teams"("id") ON DELETE SET NULL
+        `));
+      } catch (_) { /* constraint may already exist */ }
+    }
+    try {
+      await db.execute(sql.raw(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "team_id" INTEGER REFERENCES "teams"("id") ON DELETE SET NULL`));
+    } catch (e) { console.error("migrateTeams: clients.team_id error:", e); }
+    try {
+      await db.execute(sql.raw(`ALTER TABLE "leads" ADD COLUMN IF NOT EXISTS "team_id" INTEGER REFERENCES "teams"("id") ON DELETE SET NULL`));
+    } catch (e) { console.error("migrateTeams: leads.team_id error:", e); }
+    try {
+      await db.execute(sql.raw(`ALTER TABLE "opportunities" ADD COLUMN IF NOT EXISTS "team_id" INTEGER REFERENCES "teams"("id") ON DELETE SET NULL`));
+    } catch (e) { console.error("migrateTeams: opportunities.team_id error:", e); }
+    try {
+      await db.execute(sql.raw(`ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "team_id" INTEGER REFERENCES "teams"("id") ON DELETE SET NULL`));
+    } catch (e) { console.error("migrateTeams: tasks.team_id error:", e); }
+  }
+
+  async listClients(userId?: string, teamId?: number): Promise<Client[]> {
+    const conditions = [];
+    if (userId) conditions.push(eq(clients.accountManagerUserId, userId));
+    if (teamId) conditions.push(eq(clients.teamId, teamId));
+    if (conditions.length > 0) {
+      return await db.select().from(clients).where(and(...conditions)).orderBy(desc(clients.createdAt));
     }
     return await db.select().from(clients).orderBy(desc(clients.createdAt));
   }
@@ -798,9 +917,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Leads
-  async listLeads(userId?: string): Promise<Lead[]> {
-    if (userId) {
-      return await db.select().from(leads).where(eq(leads.assignedTo, userId)).orderBy(desc(leads.createdAt));
+  async listLeads(userId?: string, teamId?: number, userTeamId?: number): Promise<Lead[]> {
+    const conditions = [];
+    if (userId && userTeamId) {
+      // Non-admin with a team: show deals assigned to them OR assigned to their team
+      conditions.push(or(eq(leads.assignedTo, userId), eq(leads.teamId, userTeamId))!);
+    } else if (userId) {
+      conditions.push(eq(leads.assignedTo, userId));
+    }
+    if (teamId) conditions.push(eq(leads.teamId, teamId));
+    if (conditions.length > 0) {
+      return await db.select().from(leads).where(and(...conditions)).orderBy(desc(leads.createdAt));
     }
     return await db.select().from(leads).orderBy(desc(leads.createdAt));
   }
@@ -1103,7 +1230,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Dashboard
-  async getDashboardStats(filterUserId?: string): Promise<any> {
+  async getDashboardStats(filterUserId?: string, filterTeamId?: number, userTeamId?: number): Promise<any> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -1126,8 +1253,15 @@ export class DatabaseStorage implements IStorage {
       return parseFloat(lead.value || "0");
     };
 
-    const userFilter = filterUserId ? eq(leads.assignedTo, filterUserId) : undefined;
+    // When a non-admin user has a teamId, surface leads assigned to them OR to their team
+    const userFilter = filterUserId && userTeamId
+      ? or(eq(leads.assignedTo, filterUserId), eq(leads.teamId, userTeamId))
+      : filterUserId ? eq(leads.assignedTo, filterUserId) : undefined;
+    const teamLeadFilter = filterTeamId ? eq(leads.teamId, filterTeamId) : undefined;
+    const leadScopeFilter = userFilter ?? teamLeadFilter;
     const taskUserFilter = filterUserId ? eq(tasks.assignedTo, filterUserId) : undefined;
+    const taskTeamFilter = filterTeamId ? eq(tasks.teamId, filterTeamId) : undefined;
+    const taskScopeFilter = taskUserFilter ?? taskTeamFilter;
 
     // Build client-ID set for account manager scoping (used for BuildOps invoice/job data)
     let managedClientIds: Set<number> | null = null;
@@ -1137,28 +1271,34 @@ export class DatabaseStorage implements IStorage {
         .from(clients)
         .where(eq(clients.accountManagerUserId, filterUserId));
       managedClientIds = new Set(managed.map(c => c.id));
+    } else if (filterTeamId) {
+      const managed = await db
+        .select({ id: clients.id })
+        .from(clients)
+        .where(eq(clients.teamId, filterTeamId));
+      managedClientIds = new Set(managed.map(c => c.id));
     }
 
-    const activeleadsWhere = userFilter
-      ? and(sql`${leads.stage} NOT IN ('won', 'lost')`, userFilter)
+    const activeleadsWhere = leadScopeFilter
+      ? and(sql`${leads.stage} NOT IN ('won', 'lost')`, leadScopeFilter)
       : sql`${leads.stage} NOT IN ('won', 'lost')`;
 
     // Win rate: last 12 months only
-    const wonLeadsWhere = userFilter
-      ? and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${twelveMonthsAgo}`, userFilter)
+    const wonLeadsWhere = leadScopeFilter
+      ? and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${twelveMonthsAgo}`, leadScopeFilter)
       : and(eq(leads.stage, 'won'), sql`COALESCE(${leads.wonAt}, ${leads.updatedAt}) >= ${twelveMonthsAgo}`);
-    const lostLeadsWhere = userFilter
-      ? and(eq(leads.stage, 'lost'), sql`${leads.updatedAt} >= ${twelveMonthsAgo}`, userFilter)
+    const lostLeadsWhere = leadScopeFilter
+      ? and(eq(leads.stage, 'lost'), sql`${leads.updatedAt} >= ${twelveMonthsAgo}`, leadScopeFilter)
       : and(eq(leads.stage, 'lost'), sql`${leads.updatedAt} >= ${twelveMonthsAgo}`);
 
-    const openTasksWhere = taskUserFilter
-      ? and(sql`${tasks.status} != 'done'`, taskUserFilter)
+    const openTasksWhere = taskScopeFilter
+      ? and(sql`${tasks.status} != 'done'`, taskScopeFilter)
       : sql`${tasks.status} != 'done'`;
-    const dueTodayWhere = taskUserFilter
-      ? and(sql`${tasks.dueDate} >= ${today}`, sql`${tasks.dueDate} < ${tomorrow}`, taskUserFilter)
+    const dueTodayWhere = taskScopeFilter
+      ? and(sql`${tasks.dueDate} >= ${today}`, sql`${tasks.dueDate} < ${tomorrow}`, taskScopeFilter)
       : and(sql`${tasks.dueDate} >= ${today}`, sql`${tasks.dueDate} < ${tomorrow}`);
-    const overdueWhere = taskUserFilter
-      ? and(sql`${tasks.status} != 'done'`, sql`${tasks.dueDate} < ${today}`, sql`${tasks.dueDate} IS NOT NULL`, taskUserFilter)
+    const overdueWhere = taskScopeFilter
+      ? and(sql`${tasks.status} != 'done'`, sql`${tasks.dueDate} < ${today}`, sql`${tasks.dueDate} IS NOT NULL`, taskScopeFilter)
       : and(sql`${tasks.status} != 'done'`, sql`${tasks.dueDate} < ${today}`, sql`${tasks.dueDate} IS NOT NULL`);
 
     const [
@@ -1188,7 +1328,7 @@ export class DatabaseStorage implements IStorage {
       }).from(leads).where(activeleadsWhere),
       db.select({ count: sql<number>`count(*)` }).from(tasks).where(openTasksWhere),
       db.select({ count: sql<number>`count(*)` }).from(tasks).where(dueTodayWhere),
-      db.select({ stage: leads.stage, count: sql<number>`count(*)` }).from(leads).where(userFilter ? and(sql`1=1`, userFilter) : sql`1=1`).groupBy(leads.stage),
+      db.select({ stage: leads.stage, count: sql<number>`count(*)` }).from(leads).where(leadScopeFilter ? and(sql`1=1`, leadScopeFilter) : sql`1=1`).groupBy(leads.stage),
       db.select({ count: sql<number>`count(*)` }).from(leads).where(wonLeadsWhere),
       db.select({ count: sql<number>`count(*)` }).from(leads).where(lostLeadsWhere),
       db.select({ count: sql<number>`count(*)` }).from(tasks).where(overdueWhere),
@@ -1244,7 +1384,7 @@ export class DatabaseStorage implements IStorage {
         sql`${leads.buildopsQuoteStatus} IN ('won', 'lost')`,
         sql`${leads.stage} NOT IN ('won', 'lost')`,
         sql`${leads.updatedAt} >= ${twelveMonthsAgo}`,
-        userFilter ?? sql`1=1`
+        leadScopeFilter ?? sql`1=1`
       ))
       .groupBy(leads.buildopsQuoteStatus);
 
@@ -1351,7 +1491,7 @@ export class DatabaseStorage implements IStorage {
         sql`${leads.buildopsQuoteId} IS NOT NULL`,
         sql`${leads.buildopsQuoteStatus} IN ('draft', 'sent')`,
         sql`${leads.stage} NOT IN ('won', 'lost')`,
-        userFilter ?? sql`1=1`
+        leadScopeFilter ?? sql`1=1`
       ));
 
     // Get estimate IDs linked to buildops quotes to avoid double-counting
@@ -5096,6 +5236,227 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return { created, updated };
+  }
+
+  // ── Health Score Foundation ────────────────────────────────────────────────
+
+  async migrateHealthScoreTables(): Promise<void> {
+    // Add health score columns to clients
+    const alterStmts = [
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS customer_phase integer`,
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS health_score integer`,
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS health_trend varchar(20)`,
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS health_score_updated_at timestamp`,
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS health_score_breakdown jsonb`,
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS onboarding_start_date timestamp`,
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS qualification_recommendation varchar(50)`,
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS qualification_reviewed_at timestamp`,
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS partnership_score integer`,
+      sql`ALTER TABLE clients ADD COLUMN IF NOT EXISTS rep_expected_job_frequency integer`,
+    ];
+    for (const stmt of alterStmts) {
+      try {
+        await db.execute(stmt);
+      } catch {}
+    }
+
+    // Create customer_health_history table
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS customer_health_history (
+          id serial PRIMARY KEY,
+          customer_id integer NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+          score integer NOT NULL,
+          trend varchar(20),
+          breakdown jsonb,
+          recorded_at timestamp DEFAULT now() NOT NULL
+        )
+      `);
+    } catch {}
+
+    // Create admin_settings table
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS admin_settings (
+          id serial PRIMARY KEY,
+          key varchar(100) NOT NULL UNIQUE,
+          value text NOT NULL,
+          updated_at timestamp DEFAULT now() NOT NULL
+        )
+      `);
+    } catch {}
+  }
+
+  async getAdminSettings(): Promise<Record<string, string>> {
+    const { getAdminSettingsMap } = await import("./health-score");
+    return getAdminSettingsMap();
+  }
+
+  // ── Onboarding Milestones (Prompt 3) ────────────────────────────────────────
+
+  async migrateOnboardingMilestones(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS client_onboarding_milestones (
+          id serial PRIMARY KEY,
+          client_id integer NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+          milestone_key varchar(50) NOT NULL,
+          status varchar(20) NOT NULL DEFAULT 'pending',
+          completed_at timestamp,
+          completed_by varchar REFERENCES users(id),
+          notes text,
+          sa_outcome varchar(30),
+          UNIQUE(client_id, milestone_key)
+        )
+      `);
+    } catch (e) {
+      console.error("[migrate] migrateOnboardingMilestones:", e);
+    }
+  }
+
+  async initClientOnboardingMilestones(clientId: number, createdAt: Date): Promise<void> {
+    for (const m of ONBOARDING_MILESTONES) {
+      try {
+        await db.insert(clientOnboardingMilestones).values({
+          clientId,
+          milestoneKey: m.key,
+          status: "pending",
+        }).onConflictDoNothing();
+      } catch (e) {
+        console.error(`[onboarding] initMilestone ${m.key} for client ${clientId}:`, e);
+      }
+    }
+  }
+
+  async getClientOnboardingMilestones(clientId: number): Promise<ClientOnboardingMilestone[]> {
+    return db.select().from(clientOnboardingMilestones).where(eq(clientOnboardingMilestones.clientId, clientId));
+  }
+
+  async updateOnboardingMilestone(
+    clientId: number,
+    milestoneKey: string,
+    data: Partial<Pick<ClientOnboardingMilestone, "status" | "completedAt" | "completedBy" | "notes" | "saOutcome">>,
+  ): Promise<ClientOnboardingMilestone> {
+    const [row] = await db
+      .update(clientOnboardingMilestones)
+      .set(data)
+      .where(
+        and(
+          eq(clientOnboardingMilestones.clientId, clientId),
+          eq(clientOnboardingMilestones.milestoneKey, milestoneKey),
+        ),
+      )
+      .returning();
+    if (!row) throw new Error(`Milestone ${milestoneKey} not found for client ${clientId}`);
+    return row;
+  }
+
+  async autoCompleteOnboardingMilestone(clientId: number, milestoneKey: string, completedBy?: string): Promise<void> {
+    try {
+      const [existing] = await db
+        .select()
+        .from(clientOnboardingMilestones)
+        .where(
+          and(
+            eq(clientOnboardingMilestones.clientId, clientId),
+            eq(clientOnboardingMilestones.milestoneKey, milestoneKey),
+          ),
+        );
+      if (!existing) return;
+      if (existing.status === "complete") return;
+      await db
+        .update(clientOnboardingMilestones)
+        .set({ status: "complete", completedAt: new Date(), completedBy: completedBy ?? null })
+        .where(
+          and(
+            eq(clientOnboardingMilestones.clientId, clientId),
+            eq(clientOnboardingMilestones.milestoneKey, milestoneKey),
+          ),
+        );
+    } catch (e) {
+      console.error(`[onboarding] autoComplete ${milestoneKey} for ${clientId}:`, e);
+    }
+  }
+
+  async getMilestoneSummary(clientId: number): Promise<{ completed: number; total: number } | null> {
+    const rows = await db.select().from(clientOnboardingMilestones).where(eq(clientOnboardingMilestones.clientId, clientId));
+    if (rows.length === 0) return null;
+    const completed = rows.filter(r => r.status === "complete").length;
+    return { completed, total: ONBOARDING_MILESTONES.length };
+  }
+
+  async getMilestoneSummaryBatch(clientIds: number[]): Promise<Map<number, { completed: number; total: number }>> {
+    const map = new Map<number, { completed: number; total: number }>();
+    if (clientIds.length === 0) return map;
+    const rows = await db.select().from(clientOnboardingMilestones).where(inArray(clientOnboardingMilestones.clientId, clientIds));
+    const byClient = new Map<number, typeof rows>();
+    for (const row of rows) {
+      const existing = byClient.get(row.clientId) ?? [];
+      existing.push(row);
+      byClient.set(row.clientId, existing);
+    }
+    for (const [cid, clientRows] of byClient) {
+      const completed = clientRows.filter(r => r.status === "complete").length;
+      map.set(cid, { completed, total: ONBOARDING_MILESTONES.length });
+    }
+    return map;
+  }
+
+  async getOverdueMilestones(clientIds: number[]): Promise<Map<number, number>> {
+    const map = new Map<number, number>();
+    if (clientIds.length === 0) return map;
+    const rows = await db.select().from(clientOnboardingMilestones).where(
+      and(inArray(clientOnboardingMilestones.clientId, clientIds), eq(clientOnboardingMilestones.status, "overdue"))
+    );
+    for (const row of rows) {
+      map.set(row.clientId, (map.get(row.clientId) ?? 0) + 1);
+    }
+    return map;
+  }
+
+  // ── Qualification Reviews (Prompt 3) ────────────────────────────────────────
+
+  async migrateQualificationReviews(): Promise<void> {
+    try {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS client_qualification_reviews (
+          id serial PRIMARY KEY,
+          client_id integer NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+          review_type varchar(20) NOT NULL DEFAULT '90day',
+          partnership_score integer NOT NULL,
+          revenue_potential varchar(20) NOT NULL,
+          margin_quality varchar(20) NOT NULL,
+          milestone_completion varchar(20) NOT NULL,
+          recommendation varchar(30) NOT NULL,
+          override_recommendation varchar(30),
+          override_reason text,
+          reviewed_by varchar REFERENCES users(id),
+          reviewed_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+    } catch (e) {
+      console.error("[migrate] migrateQualificationReviews:", e);
+    }
+  }
+
+  async createQualificationReview(data: InsertClientQualificationReview): Promise<ClientQualificationReview> {
+    const [row] = await db.insert(clientQualificationReviews).values(data).returning();
+    return row;
+  }
+
+  async getQualificationReviews(clientId: number): Promise<ClientQualificationReview[]> {
+    return db.select().from(clientQualificationReviews).where(eq(clientQualificationReviews.clientId, clientId)).orderBy(desc(clientQualificationReviews.reviewedAt));
+  }
+
+  async getLatestQualificationReview(clientId: number): Promise<ClientQualificationReview | null> {
+    const [row] = await db.select().from(clientQualificationReviews).where(eq(clientQualificationReviews.clientId, clientId)).orderBy(desc(clientQualificationReviews.reviewedAt)).limit(1);
+    return row ?? null;
+  }
+
+  async updateQualificationReviewOverride(reviewId: number, overrideRecommendation: string, overrideReason: string): Promise<ClientQualificationReview> {
+    const [row] = await db.update(clientQualificationReviews).set({ overrideRecommendation, overrideReason }).where(eq(clientQualificationReviews.id, reviewId)).returning();
+    if (!row) throw new Error(`Review ${reviewId} not found`);
+    return row;
   }
 
 }

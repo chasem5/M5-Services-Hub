@@ -42,10 +42,13 @@ export function useAuth() {
     },
   });
 
+  const isProfileComplete = !!(user?.firstName?.trim() && user?.lastName?.trim());
+
   return {
     user,
     isLoading,
     isAuthenticated: !!user,
+    isProfileComplete,
     logout: logoutMutation.mutate,
     isLoggingOut: logoutMutation.isPending,
   };

@@ -3,6 +3,7 @@ type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/admin-redesign/BuildOpsAdminRedesign.tsx": () => import("../components/mockups/admin-redesign/BuildOpsAdminRedesign.tsx"),
   "./components/mockups/ceo-color-scheme/CeoColorRedesign.tsx": () => import("../components/mockups/ceo-color-scheme/CeoColorRedesign.tsx"),
+  "./components/mockups/deal-popout/DealPopoutRevamp.tsx": () => import("../components/mockups/deal-popout/DealPopoutRevamp.tsx"),
   "./components/mockups/company-tabs/FilesTab.tsx": () => import("../components/mockups/company-tabs/FilesTab.tsx"),
   "./components/mockups/company-tabs/HistoryTab.tsx": () => import("../components/mockups/company-tabs/HistoryTab.tsx"),
   "./components/mockups/company-tabs/IntelligenceTab.tsx": () => import("../components/mockups/company-tabs/IntelligenceTab.tsx"),
@@ -12,6 +13,7 @@ export const modules: ModuleMap = {
   "./components/mockups/hiring-dashboard/HiringDecisionDashboard.tsx": () => import("../components/mockups/hiring-dashboard/HiringDecisionDashboard.tsx"),
   "./components/mockups/estimating/OpportunitiesList.tsx": () => import("../components/mockups/estimating/OpportunitiesList.tsx"),
   "./components/mockups/estimating/WorkspaceApp.tsx": () => import("../components/mockups/estimating/WorkspaceApp.tsx"),
+  "./components/mockups/kanban-revamp/KanbanRevamp.tsx": () => import("../components/mockups/kanban-revamp/KanbanRevamp.tsx"),
   "./components/mockups/org-structure/SimpleTenant.tsx": () => import("../components/mockups/org-structure/SimpleTenant.tsx"),
   "./components/mockups/org-structure/TeamsLargeCorp.tsx": () => import("../components/mockups/org-structure/TeamsLargeCorp.tsx"),
   "./components/mockups/slide-overs/BuildingPanel.tsx": () => import("../components/mockups/slide-overs/BuildingPanel.tsx"),

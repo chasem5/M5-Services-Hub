@@ -3,12 +3,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/button";
-import { Megaphone, RefreshCw, Menu, LayoutDashboard, Target, Users, CheckSquare, Mic } from "lucide-react";
+import { Megaphone, RefreshCw, Menu, LayoutDashboard, Target, Users, Activity, BarChart3 } from "lucide-react";
 
 import { RemindersDropdown } from "@/components/RemindersDropdown";
 import { GlobalSearch, GlobalSearchTrigger, MobileSearchButton } from "@/components/GlobalSearch";
 import { QuickActionsBar } from "@/components/QuickActionsBar";
 import { WhatsNewModal } from "@/components/WhatsNewModal";
+import { ProfileSetupModal } from "@/components/ProfileSetupModal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
@@ -30,19 +31,26 @@ function MobileMenuButton() {
 }
 
 const BOTTOM_NAV_ITEMS = [
-  { label: "Home", icon: LayoutDashboard, href: "/" },
-  { label: "Deals", icon: Target, href: "/leads" },
-  { label: "Contacts", icon: Users, href: "/customers" },
-  { label: "Tasks", icon: CheckSquare, href: "/tasks" },
-  { label: "Meetings", icon: Mic, href: "/meetings" },
+  { label: "Home",      icon: LayoutDashboard, href: "/" },
+  { label: "Customers", icon: Users,           href: "/my-accounts" },
+  { label: "Deals",     icon: Target,          href: "/leads" },
+  { label: "Activity",  icon: Activity,        href: "/tasks" },
+  { label: "Reports",   icon: BarChart3,       href: "/reports" },
 ];
+
+const BOTTOM_NAV_EXTRA: Record<string, string[]> = {
+  "/tasks":      ["/meetings"],
+  "/my-accounts":["/customers"],
+  "/reports":    ["/company-intelligence", "/weekly-report"],
+};
 
 function BottomNav() {
   const [location] = useLocation();
 
   const isActive = (href: string) => {
     if (href === "/") return location === "/";
-    return location.startsWith(href);
+    if (location.startsWith(href)) return true;
+    return (BOTTOM_NAV_EXTRA[href] ?? []).some(alt => location.startsWith(alt));
   };
 
   return (
@@ -100,7 +108,8 @@ function getRelativeTime(date: Date): string {
 }
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isProfileComplete } = useAuth();
+  const [location] = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -245,7 +254,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
           </header>
           <main
             ref={mainRef}
-            className="flex-1 overflow-y-auto overflow-x-hidden relative pb-16 md:pb-0"
+            className={`flex-1 overflow-x-hidden relative pb-16 md:pb-0 ${location.startsWith("/leads") ? "overflow-hidden" : "overflow-y-auto"}`}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
@@ -287,6 +296,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
       <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
       <BottomNav />
       <WhatsNewModal />
+      {!isProfileComplete && <ProfileSetupModal />}
     </SidebarProvider>
   );
 }

@@ -21,13 +21,14 @@ import AdminPage from "@/pages/admin";
 import EmailSync from "@/pages/email-sync";
 import Announcements from "@/pages/announcements";
 import CustomerReport from "@/pages/customer-report";
-import CompanyIntelligence from "@/pages/company-intelligence";
+import Reports from "@/pages/company-intelligence";
 import CEOCommandCenter from "@/pages/ceo-command-center";
 import WeeklyReport from "@/pages/weekly-report";
 import WeeklyReportTeam from "@/pages/weekly-report-team";
 import EstimatingList from "@/pages/estimating-list";
 import EstimatingWorkspace from "@/pages/estimating-workspace";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import MyAccounts from "@/pages/my-accounts";
 
 function TabRedirect({ tab }: { tab: string }) {
   const [, navigate] = useLocation();
@@ -59,9 +60,11 @@ function ProtectedRouter() {
           <Route path="/email" component={EmailSync} />
           <Route path="/announcements" component={Announcements} />
           <Route path="/reports/customer-intelligence" component={CustomerReport} />
-          <Route path="/company-intelligence" component={CompanyIntelligence} />
+          <Route path="/reports" component={Reports} />
+          <Route path="/company-intelligence" component={Reports} />
           <Route path="/ceo" component={CEOCommandCenter} />
           <Route path="/weekly-report/team" component={WeeklyReportTeam} />
+          <Route path="/my-accounts" component={MyAccounts} />
           <Route path="/weekly-report" component={WeeklyReport} />
           <Route path="/estimating/:id" component={EstimatingWorkspace} />
           <Route path="/estimating" component={EstimatingList} />

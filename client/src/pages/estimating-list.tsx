@@ -174,6 +174,7 @@ function emptyForm() {
     customerPo: "",
     internalNotes: "",
     scopeOfWork: "",
+    teamId: null as number | null,
   };
 }
 
@@ -181,6 +182,7 @@ export default function EstimatingList() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
+  const isAdminOrManager = user && ["super_admin", "admin", "manager"].includes(user.role ?? "");
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -210,6 +212,11 @@ export default function EstimatingList() {
     queryKey: ["/api/estimating/job-types"],
     enabled: showCreate,
     staleTime: 10 * 60 * 1000,
+  });
+
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/teams"],
+    enabled: !!isAdminOrManager && showCreate,
   });
 
   const jobTypeOptions = buildopsJobTypes.length > 0
@@ -297,6 +304,7 @@ export default function EstimatingList() {
     if (pm) payload.projectManagerId = pm;
     if (am) payload.accountManagerId = am;
     if (sb) payload.soldById = sb;
+    if (form.teamId) payload.teamId = form.teamId;
     createMut.mutate(payload);
   }
 
@@ -637,7 +645,27 @@ export default function EstimatingList() {
 
             <Separator />
 
-            {/* Row 6: Notes */}
+            {/* Row 6: Team assignment (admin/manager only) */}
+            {isAdminOrManager && teamsList.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Team <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                <Select value={form.teamId != null ? String(form.teamId) : "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, teamId: v === "__none__" ? null : parseInt(v) }))}>
+                  <SelectTrigger data-testid="select-opportunity-team">
+                    <SelectValue placeholder="No team" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— No Team —</SelectItem>
+                    {teamsList.map(t => (
+                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <Separator />
+
+            {/* Row 7: Notes */}
             <div className="space-y-1.5">
               <Label htmlFor="opp-notes">Internal Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
               <Textarea

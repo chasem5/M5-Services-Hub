@@ -97,7 +97,7 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string; icon: React.
 export default function MeetingsPage() {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [meetingType, setMeetingType] = useState<"standard" | "pipeline_review">("standard");
@@ -197,6 +197,19 @@ export default function MeetingsPage() {
           New Meeting
         </Button>
       </header>
+      {/* Activity section nav */}
+      <div className="flex gap-0 border-b bg-background px-6 shrink-0">
+        <Link href="/tasks">
+          <span className={`inline-flex h-10 items-center px-4 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${location.startsWith("/tasks") ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            Tasks
+          </span>
+        </Link>
+        <Link href="/meetings">
+          <span className={`inline-flex h-10 items-center px-4 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${location.startsWith("/meetings") ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            Meetings
+          </span>
+        </Link>
+      </div>
 
       <div className="flex-1 overflow-y-auto p-6">
         {/* Upcoming Calendar Events Panel */}
