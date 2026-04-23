@@ -167,14 +167,20 @@ function TeamsPanel({ users }: { users: User[] }) {
   });
 
   const deleteTeamMutation = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/teams/${id}`),
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/teams/${id}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? "Failed to delete team");
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/teams"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setDeletingTeamId(null);
       toast({ title: "Team deleted" });
     },
-    onError: () => toast({ title: "Failed to delete team", variant: "destructive" }),
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
 
   const assignUserMutation = useMutation({
@@ -200,9 +206,9 @@ function TeamsPanel({ users }: { users: User[] }) {
   });
 
   const getTeamMembers = (teamId: number) =>
-    users.filter((u: any) => u.teamId === teamId);
+    users.filter(u => u.teamId === teamId);
 
-  const unassignedUsers = users.filter((u: any) => !u.teamId);
+  const unassignedUsers = users.filter(u => !u.teamId);
 
   return (
     <div className="space-y-4">
@@ -312,7 +318,7 @@ function TeamsPanel({ users }: { users: User[] }) {
                         <p className="text-xs text-muted-foreground">No members yet.</p>
                       ) : (
                         <div className="space-y-2">
-                          {members.map((u: any) => (
+                          {members.map(u => (
                             <div key={u.id} className="flex items-center gap-2 text-sm">
                               <Avatar className="h-6 w-6">
                                 <AvatarFallback className="text-[10px]">{u.firstName?.[0]}{u.lastName?.[0]}</AvatarFallback>
@@ -332,7 +338,7 @@ function TeamsPanel({ users }: { users: User[] }) {
                               <SelectValue placeholder="Add employee to team..." />
                             </SelectTrigger>
                             <SelectContent>
-                              {unassignedUsers.map((u: any) => (
+                              {unassignedUsers.map(u => (
                                 <SelectItem key={u.id} value={u.id}>
                                   {u.firstName} {u.lastName} ({u.email})
                                 </SelectItem>
@@ -370,7 +376,7 @@ function TeamsPanel({ users }: { users: User[] }) {
               <p className="text-xs text-muted-foreground">All employees are assigned to a team.</p>
             ) : (
               <div className="space-y-1.5">
-                {unassignedUsers.map((u: any) => (
+                {unassignedUsers.map(u => (
                   <div key={u.id} className="flex items-center gap-2 text-sm py-1">
                     <Avatar className="h-6 w-6">
                       <AvatarFallback className="text-[10px]">{u.firstName?.[0]}{u.lastName?.[0]}</AvatarFallback>

@@ -536,6 +536,10 @@ export async function registerRoutes(
 
   app.delete("/api/teams/:id", isAuthenticated, requireRole(["super_admin"]), async (req, res) => {
     const id = parseInt(req.params.id);
+    const members = await storage.getTeamMembers(id);
+    if (members.length > 0) {
+      return res.status(409).json({ message: "Cannot delete a team that has active members. Remove all members first." });
+    }
     await storage.deleteTeam(id);
     res.sendStatus(204);
   });
@@ -655,8 +659,13 @@ export async function registerRoutes(
     if (!(await hasModuleAccess(req, "customers"))) {
       return res.status(403).json({ message: "Access denied" });
     }
-    const scopedUserId = await getScopedUserId(req, "customers");
-    const allClients = await storage.listClients(scopedUserId);
+    const callerUser = req.user as any;
+    const isAdminOrManager = callerUser && ["super_admin", "admin", "manager"].includes(callerUser.role ?? "");
+    let scopedUserId = await getScopedUserId(req, "customers");
+    let filterTeamId: number | undefined;
+    if (isAdminOrManager && req.query.teamId) filterTeamId = parseInt(String(req.query.teamId));
+    if (isAdminOrManager && req.query.userId) scopedUserId = String(req.query.userId);
+    const allClients = await storage.listClients(scopedUserId, filterTeamId);
     const phase1ClientIds = allClients.filter(c => (c.customerPhase ?? 1) === 1).map(c => c.id);
     if (phase1ClientIds.length === 0) return res.json({});
     const batchMap = await storage.getMilestoneSummaryBatch(phase1ClientIds);

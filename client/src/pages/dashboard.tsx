@@ -192,11 +192,27 @@ export default function Dashboard() {
     },
   });
 
-  const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
+  const scopeParams = useMemo(() => {
+    if (!isAdminOrManager) return "";
+    if (viewTeamId !== "__all__") return `?teamId=${viewTeamId}`;
+    if (viewUserId !== "__all__") return `?userId=${viewUserId}`;
+    return "";
+  }, [isAdminOrManager, viewTeamId, viewUserId]);
+
+  const { data: clients = [] } = useQuery<Client[]>({
+    queryKey: ["/api/clients", scopeParams],
+    queryFn: () => fetch(`/api/clients${scopeParams}`, { credentials: "include" }).then(r => r.json()),
+  });
   const { data: contacts = [] } = useQuery<ClientContact[]>({ queryKey: ["/api/client-contacts"] });
-  const { data: leads = [] } = useQuery<Lead[]>({ queryKey: ["/api/leads"] });
+  const { data: leads = [] } = useQuery<Lead[]>({
+    queryKey: ["/api/leads", scopeParams],
+    queryFn: () => fetch(`/api/leads${scopeParams}`, { credentials: "include" }).then(r => r.json()),
+  });
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
-  const { data: milestoneSummary = {} } = useQuery<Record<number, { completed: number; total: number }>>({ queryKey: ["/api/clients/milestone-summary"] });
+  const { data: milestoneSummary = {} } = useQuery<Record<number, { completed: number; total: number }>>({
+    queryKey: ["/api/clients/milestone-summary", scopeParams],
+    queryFn: () => fetch(`/api/clients/milestone-summary${scopeParams}`, { credentials: "include" }).then(r => r.json()),
+  });
   const { data: overdueMilestones = [] } = useQuery<{ clientId: number; clientName: string; overdueCount: number }[]>({ queryKey: ["/api/clients/overdue-milestones"] });
 
   useEffect(() => {

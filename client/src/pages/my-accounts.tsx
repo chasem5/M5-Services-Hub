@@ -148,8 +148,16 @@ export default function MyAccounts() {
     queryKey: ["/api/leads"],
   });
 
+  const milestoneSummaryParams = useMemo(() => {
+    if (!isAdminOrManager) return "";
+    if (viewTeamId !== "__all__") return `?teamId=${viewTeamId}`;
+    if (viewUserId !== "__mine__" && viewUserId !== "__all__") return `?userId=${viewUserId}`;
+    return "";
+  }, [isAdminOrManager, viewTeamId, viewUserId]);
+
   const { data: milestoneSummary = {} } = useQuery<Record<number, { completed: number; total: number }>>({
-    queryKey: ["/api/clients/milestone-summary"],
+    queryKey: ["/api/clients/milestone-summary", milestoneSummaryParams],
+    queryFn: () => fetch(`/api/clients/milestone-summary${milestoneSummaryParams}`, { credentials: "include" }).then(r => r.json()),
   });
 
   const createTaskMutation = useMutation({
@@ -388,7 +396,15 @@ export default function MyAccounts() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <UserCheck className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-heading font-bold tracking-tight">My Accounts</h1>
+          <h1 className="text-2xl font-heading font-bold tracking-tight">
+            {isAdminOrManager && viewTeamId !== "__all__"
+              ? `Team: ${teamsList.find(t => String(t.id) === viewTeamId)?.name ?? "..."} Accounts`
+              : isAdminOrManager && viewUserId !== "__mine__" && viewUserId !== "__all__"
+              ? `${userDirectory.find(u => u.id === viewUserId)?.firstName ?? "..."}'s Accounts`
+              : isAdminOrManager && viewUserId === "__all__"
+              ? "All Accounts"
+              : "My Accounts"}
+          </h1>
           {!clientsLoading && (
             <Badge variant="secondary" className="ml-1">{myClients.length}</Badge>
           )}
