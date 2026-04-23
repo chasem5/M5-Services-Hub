@@ -43,6 +43,7 @@ import {
 import { useSearch, useLocation, Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -1103,6 +1104,8 @@ function LeadCard({
 }
 
 export default function Leads() {
+  const { user } = useAuth();
+  const isAdminOrManager = user?.role === "super_admin" || user?.role === "admin" || user?.role === "manager";
   const searchParams = useSearch();
   const [, setLocation] = useLocation();
   const sourceTab = useMemo(() => {
@@ -1265,6 +1268,7 @@ export default function Leads() {
 
   const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
     queryKey: ["/api/teams"],
+    enabled: isAdminOrManager,
   });
 
   const { data: tasks = [] } = useQuery<Task[]>({

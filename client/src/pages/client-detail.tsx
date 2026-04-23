@@ -1445,7 +1445,10 @@ export default function ClientDetail() {
     queryKey: ["/api/users/directory"],
   });
 
-  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({ queryKey: ["/api/teams"] });
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/teams"],
+    enabled: isAdminOrManager,
+  });
 
   const { data: recentEmails = [] } = useQuery<EmailMsg[]>({
     queryKey: ["/api/email-messages", clientId],

@@ -697,8 +697,17 @@ export class DatabaseStorage implements IStorage {
       `));
     } catch (e) { console.error("migrateTeams: create teams table error:", e); }
     try {
-      await db.execute(sql.raw(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "team_id" INTEGER`));
-    } catch (e) { console.error("migrateTeams: users.team_id error:", e); }
+      await db.execute(sql.raw(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "team_id" INTEGER REFERENCES "teams"("id") ON DELETE SET NULL`));
+    } catch (e) {
+      // Column may already exist without FK; try adding the constraint separately
+      try {
+        await db.execute(sql.raw(`
+          ALTER TABLE "users"
+          ADD CONSTRAINT IF NOT EXISTS "users_team_id_teams_id_fk"
+          FOREIGN KEY ("team_id") REFERENCES "teams"("id") ON DELETE SET NULL
+        `));
+      } catch (_) { /* constraint may already exist */ }
+    }
     try {
       await db.execute(sql.raw(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "team_id" INTEGER REFERENCES "teams"("id") ON DELETE SET NULL`));
     } catch (e) { console.error("migrateTeams: clients.team_id error:", e); }
