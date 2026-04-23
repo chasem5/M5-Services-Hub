@@ -98,6 +98,7 @@ import {
   MoveRight,
   AlignLeft,
   Receipt,
+  ChevronLeft,
 } from "lucide-react";
 import {
   Card,
@@ -187,25 +188,31 @@ import { Calendar } from "@/components/ui/calendar";
 
 const STAGE_COLORS = {
   green: {
-    column: "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800",
-    header: "bg-green-100 dark:bg-green-900/40 border-green-200 dark:border-green-800 rounded-t-lg",
-    dot: "bg-green-500",
-    badge: "bg-green-100 text-green-800 border-green-200",
-    value: "text-green-700 dark:text-green-400",
+    column: "bg-emerald-50/80 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800",
+    header: "bg-emerald-700 dark:bg-emerald-800 border-emerald-600 dark:border-emerald-700 rounded-t-lg",
+    dot: "bg-emerald-300",
+    badge: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    value: "text-emerald-200 dark:text-emerald-300",
+    subheader: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800",
+    strip: "bg-emerald-700 dark:bg-emerald-800 border-emerald-600 dark:border-emerald-700",
   },
   red: {
     column: "bg-red-50/60 dark:bg-red-950/20 border-red-200/70 dark:border-red-800/50",
-    header: "bg-red-100/70 dark:bg-red-900/30 border-red-200/70 dark:border-red-800/50 rounded-t-lg",
-    dot: "bg-red-500",
+    header: "bg-red-700 dark:bg-red-800 border-red-600 dark:border-red-700 rounded-t-lg",
+    dot: "bg-red-300",
     badge: "bg-red-100 text-red-700 border-red-200",
-    value: "text-red-700 dark:text-red-400",
+    value: "text-red-200 dark:text-red-300",
+    subheader: "bg-red-50/70 dark:bg-red-950/30 border-red-200/70 dark:border-red-800/50",
+    strip: "bg-red-700 dark:bg-red-800 border-red-600 dark:border-red-700",
   },
   default: {
-    column: "bg-muted/70 border-border",
-    header: "bg-background border-b border-border rounded-t-lg",
-    dot: "bg-muted-foreground/40",
-    badge: "",
-    value: "text-muted-foreground",
+    column: "bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700",
+    header: "bg-slate-700 dark:bg-slate-800 border-slate-600 dark:border-slate-700 rounded-t-lg",
+    dot: "bg-slate-300",
+    badge: "bg-slate-100 text-slate-700 border-slate-200",
+    value: "text-slate-300 dark:text-slate-400",
+    subheader: "bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700",
+    strip: "bg-slate-700 dark:bg-slate-800 border-slate-600 dark:border-slate-700",
   },
 };
 
@@ -714,9 +721,29 @@ function KanbanColumn({
   invoiceStatusMap?: Record<number, any>;
   clientHealthMap?: Record<number, number | null>;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: stage.slug,
-  });
+  const { setNodeRef, isOver } = useDroppable({ id: stage.slug });
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (collapsed) {
+    return (
+      <button
+        onClick={() => setCollapsed(false)}
+        title={`Expand ${stage.label}`}
+        data-testid={`btn-expand-column-${stage.slug}`}
+        className={`flex flex-col items-center justify-between rounded-lg border shadow-sm hover:opacity-90 transition-opacity py-3 shrink-0 ${sc.strip}`}
+        style={{ width: 36 }}
+      >
+        <span className="text-[10px] font-bold text-white/80">{cardCount}</span>
+        <span
+          className="flex-1 flex items-center justify-center text-[11px] font-semibold text-white"
+          style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", letterSpacing: "0.04em" }}
+        >
+          {stage.label}
+        </span>
+        <ChevronRight className="h-3 w-3 text-white/70" />
+      </button>
+    );
+  }
 
   return (
     <div
@@ -724,28 +751,36 @@ function KanbanColumn({
       id={`column-${stage.slug}`}
       className={`flex flex-col w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
     >
-      <div className={`p-3 border-b ${sc.header}`}>
-        <div className="flex items-center justify-between mb-2">
+      {/* Dark colored column header */}
+      <div className={`px-3 py-2.5 border-b shrink-0 ${sc.header}`}>
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${sc.dot}`} />
-            <h3 className="font-semibold text-sm">{stage.label}</h3>
-            <Badge variant="secondary" className="h-5 px-1.5 min-w-[1.25rem] flex items-center justify-center font-bold text-[10px]">
+            <div className={`h-2 w-2 rounded-full ${sc.dot} shrink-0`} />
+            <h3 className="font-semibold text-sm text-white">{stage.label}</h3>
+            <Badge className="h-5 px-1.5 min-w-[1.25rem] flex items-center justify-center font-bold text-[10px] bg-white/20 text-white border-0 hover:bg-white/20">
               {cardCount}
             </Badge>
           </div>
+          <button
+            onClick={() => setCollapsed(true)}
+            title="Collapse column"
+            data-testid={`btn-collapse-column-${stage.slug}`}
+            className="text-white/60 hover:text-white transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
         </div>
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Total Value</span>
-            <span className="text-sm font-bold text-foreground">{formatCurrency(rawVal)}</span>
+      </div>
+
+      {/* Value sub-header */}
+      <div className={`px-3 py-2 border-b shrink-0 ${sc.subheader}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <TrendingUp className="h-2.5 w-2.5" />
+            <span>Weighted</span>
+            <span className={`font-semibold ml-0.5 ${sc.value}`}>{formatCurrency(weightedVal)}</span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-              <TrendingUp className="h-2.5 w-2.5" />
-              Weighted
-            </span>
-            <span className={`text-xs font-semibold ${sc.value}`}>{formatCurrency(weightedVal)}</span>
-          </div>
+          <span className="text-xs font-bold text-foreground">{formatCurrency(rawVal)}</span>
         </div>
       </div>
 
