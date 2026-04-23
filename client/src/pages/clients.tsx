@@ -168,7 +168,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertClientSchema, insertClientContactSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate, type ContactStage, type User, type IndustryOption } from "@shared/schema";
+import { insertClientSchema, type Client, type ClientContact, type BdSpendEntry, type ContactBuilding, type ClientOffice, type Lead, type Estimate, type ContactStage, type User, type IndustryOption } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -177,6 +177,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PortfolioManager } from "@/components/PortfolioManager";
 import { CardScannerDialog } from "@/components/CardScannerDialog";
 import { ContactStagesManager, getStageBadgeClass } from "@/components/ContactStagesManager";
+import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   AlertDialog,
@@ -601,8 +602,6 @@ export default function Customers() {
   });
 
   const [duplicateClientWarning, setDuplicateClientWarning] = useState<{ id: number; name: string } | null>(null);
-  const [duplicateContactWarning, setDuplicateContactWarning] = useState<{ id: number; name: string; clientId: number; clientName?: string } | null>(null);
-
   const checkClientDuplicate = async (name: string) => {
     if (!name.trim()) {
       setDuplicateClientWarning(null);
@@ -618,24 +617,6 @@ export default function Customers() {
       }
     } catch (err) {
       console.error("Duplicate client check failed", err);
-    }
-  };
-
-  const checkContactDuplicate = async (email: string) => {
-    if (!email.trim()) {
-      setDuplicateContactWarning(null);
-      return;
-    }
-    try {
-      const res = await apiRequest("GET", `/api/contacts/check-duplicate?email=${encodeURIComponent(email.trim())}`);
-      const data = await res.json();
-      if (data.exists) {
-        setDuplicateContactWarning(data.contact);
-      } else {
-        setDuplicateContactWarning(null);
-      }
-    } catch (err) {
-      console.error("Duplicate contact check failed", err);
     }
   };
 
@@ -886,35 +867,6 @@ export default function Customers() {
     createClientMutation.mutate(data);
   };
 
-  const contactForm = useForm({
-    resolver: zodResolver(insertClientContactSchema),
-    defaultValues: {
-      name: "",
-      title: "",
-      email: "",
-      phone: "",
-      clientId: undefined as number | undefined,
-      isPrimary: false,
-      serviceNeeds: [] as string[],
-      stageId: null as number | null,
-      ownerId: null as string | null,
-      profilePictureUrl: "",
-    },
-  });
-
-  const createContactMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/client-contacts", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] });
-      setIsAddContactOpen(false);
-      contactForm.reset();
-      toast({ title: "Contact added successfully" });
-    },
-    onError: () => {
-      toast({ title: "Failed to add contact", variant: "destructive" });
-    },
-  });
-
   const updateContactStageMutation = useMutation({
     mutationFn: ({ id, stageId }: { id: number; stageId: number | null }) =>
       apiRequest("PATCH", `/api/contacts/${id}`, { stageId }),
@@ -948,18 +900,6 @@ export default function Customers() {
     const first = u.firstName?.[0] ?? "";
     const last = u.lastName?.[0] ?? "";
     return (first + last).toUpperCase() || (u.email?.[0]?.toUpperCase() ?? "?");
-  };
-
-  const onAddContact = (data: any) => {
-    const payload = {
-      ...data,
-      linkedinUrl: data.linkedinUrl || null,
-      profilePictureUrl: data.profilePictureUrl || null,
-      tier: data.tier === "none" ? null : (data.tier || null),
-      reportsTo: data.reportsTo || null,
-      serviceNeeds: data.serviceNeeds || [],
-    };
-    createContactMutation.mutate(payload);
   };
 
   const industries = Array.from(new Set(clients?.map(c => c.industry).filter(Boolean) || []));
@@ -1243,10 +1183,7 @@ export default function Customers() {
                 <Building2 className="mr-2 h-4 w-4" /> Add Company
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => {
-                  contactForm.reset({ name: "", title: "", email: "", phone: "", clientId: contactCompanyFilter !== "all" ? parseInt(contactCompanyFilter) : undefined, isPrimary: false, serviceNeeds: [] });
-                  setIsAddContactOpen(true);
-                }}
+                onClick={() => setIsAddContactOpen(true)}
                 data-testid="button-add-contact-dropdown"
               >
                 <Users className="mr-2 h-4 w-4" /> Add Contact
@@ -3069,269 +3006,11 @@ export default function Customers() {
             </CardContent>
           </Card>
 
-          {/* Add Contact Dialog */}
-          <Dialog open={isAddContactOpen} onOpenChange={setIsAddContactOpen}>
-            <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
-              <DialogHeader>
-                <DialogTitle>Add Contact</DialogTitle>
-                <DialogDescription>Create a new contact and associate them with a company.</DialogDescription>
-              </DialogHeader>
-              <Form {...contactForm}>
-                <form onSubmit={contactForm.handleSubmit(onAddContact)} className="space-y-4 py-2 overflow-y-auto flex-1 pr-1">
-                  <FormField control={contactForm.control} name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Full Name <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input placeholder="Enter contact name" {...field} data-testid="input-new-contact-name" /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField control={contactForm.control} name={"clientId" as any}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Company <span className="text-destructive">*</span></FormLabel>
-                        <SearchableSelect
-                          options={(clients || []).map(c => ({ value: c.id.toString(), label: c.name }))}
-                          value={field.value?.toString() || ""}
-                          onChange={(val) => field.onChange(val ? parseInt(val) : undefined)}
-                          placeholder="Select company..."
-                          searchPlaceholder="Search companies..."
-                          data-testid="select-new-contact-company"
-                        />
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField control={contactForm.control} name="title"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Job Title</FormLabel>
-                        <FormControl><Input placeholder="e.g. Operations Manager" {...field} value={field.value || ""} data-testid="input-new-contact-title" /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField control={contactForm.control} name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <Input 
-                              placeholder="email@example.com" 
-                              {...field} 
-                              value={field.value || ""} 
-                              onBlur={(e) => {
-                                field.onBlur();
-                                checkContactDuplicate(e.target.value);
-                              }}
-                              data-testid="input-new-contact-email" 
-                            />
-                          </FormControl>
-                          {duplicateContactWarning && (
-                            <p className="mt-1 text-[10px] text-yellow-600 font-medium flex items-center gap-1 leading-tight">
-                              <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
-                              A contact with this email already exists: {duplicateContactWarning.name} {duplicateContactWarning.clientName ? `at ${duplicateContactWarning.clientName}` : ""} — 
-                              <Link href={`/customers/${duplicateContactWarning.clientId}?contactId=${duplicateContactWarning.id}`} className="underline ml-0.5" onClick={() => setIsAddContactOpen(false)}>
-                                View them
-                              </Link>
-                            </p>
-                          )}
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField control={contactForm.control} name="phone"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Phone</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="(555) 012-3456"
-                              {...field}
-                              value={field.value || ""}
-                              onChange={(e) => field.onChange(formatPhoneNumber(e.target.value))}
-                              data-testid="input-new-contact-phone"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <FormField control={contactForm.control} name={"linkedinUrl" as any}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-1.5">
-                          <SiLinkedin className="h-3.5 w-3.5 text-[#0A66C2]" />
-                          LinkedIn Profile URL
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="https://linkedin.com/in/username"
-                            {...field}
-                            value={field.value || ""}
-                            data-testid="input-new-contact-linkedin"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField control={contactForm.control} name="profilePictureUrl"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Profile Picture URL</FormLabel>
-                        <div className="flex items-center gap-3">
-                          <FormControl>
-                            <Input
-                              placeholder="https://example.com/photo.jpg"
-                              {...field}
-                              value={field.value || ""}
-                              data-testid="input-new-contact-photo"
-                            />
-                          </FormControl>
-                          {field.value && (
-                            <img
-                              src={field.value}
-                              alt="Preview"
-                              className="h-10 w-10 rounded-full object-cover border"
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                            />
-                          )}
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div>
-                    <FormLabel className="text-sm font-medium">Service Needs</FormLabel>
-                    <p className="text-xs text-muted-foreground mb-2 mt-0.5">Which M5 services does this contact require?</p>
-                    <div className="grid grid-cols-1 gap-2">
-                      {SERVICE_NEEDS.map(s => {
-                        const current: string[] = (contactForm.watch("serviceNeeds") as string[]) ?? [];
-                        const checked = current.includes(s.key);
-                        return (
-                          <div
-                            key={s.key}
-                            role="checkbox"
-                            aria-checked={checked}
-                            tabIndex={0}
-                            className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors select-none ${checked ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-                            onClick={() => {
-                              const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
-                              contactForm.setValue("serviceNeeds", next);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === " " || e.key === "Enter") {
-                                const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
-                                contactForm.setValue("serviceNeeds", next);
-                              }
-                            }}
-                            data-testid={`toggle-new-contact-service-${s.key}`}
-                          >
-                            <s.Icon className={`h-4 w-4 shrink-0 ${s.color}`} />
-                            <span className="text-sm">{s.label}</span>
-                            {checked && <CheckCircle2 className="h-4 w-4 text-primary ml-auto" />}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <FormField control={contactForm.control} name={"tier" as any}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Contact Tier</FormLabel>
-                        <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-new-contact-tier">
-                              <SelectValue placeholder="No Tier" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">No Tier</SelectItem>
-                            <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
-                            <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
-                            <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField control={contactForm.control} name={"stageId" as any}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Contact Stage</FormLabel>
-                        <Select
-                          value={field.value != null ? String(field.value) : "none"}
-                          onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v))}
-                        >
-                          <SelectTrigger data-testid="select-new-contact-stage">
-                            <SelectValue placeholder="No stage" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">No stage</SelectItem>
-                            {contactStages.map(s => (
-                              <SelectItem key={s.id} value={String(s.id)}>
-                                <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(s.color)}`}>
-                                  {s.label}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField control={contactForm.control} name={"ownerId" as any}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Relationship Owner</FormLabel>
-                        <Select
-                          value={field.value ?? "none"}
-                          onValueChange={(v) => field.onChange(v === "none" ? null : v)}
-                        >
-                          <SelectTrigger data-testid="select-new-contact-owner">
-                            <SelectValue placeholder="Unassigned" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Unassigned</SelectItem>
-                            {users.map(u => (
-                              <SelectItem key={u.id} value={u.id}>
-                                {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField control={contactForm.control} name="isPrimary"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                        <FormControl>
-                          <Checkbox checked={field.value} onCheckedChange={field.onChange} data-testid="checkbox-new-contact-primary" />
-                        </FormControl>
-                        <div className="space-y-1 leading-none">
-                          <FormLabel>Primary Contact</FormLabel>
-                          <FormDescription>Mark this person as the main point of contact.</FormDescription>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
-                  <DialogFooter className="pt-2">
-                    <Button type="submit" className="w-full h-11" disabled={createContactMutation.isPending} data-testid="button-submit-new-contact">
-                      {createContactMutation.isPending ? "Adding..." : "Add Contact"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
+          <ContactFormDialog
+            open={isAddContactOpen}
+            onClose={() => setIsAddContactOpen(false)}
+            onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/client-contacts"] })}
+          />
 
           <ContactStagesManager open={stageManagerOpen} onOpenChange={setStageManagerOpen} />
         </TabsContent>
@@ -4192,7 +3871,6 @@ export default function Customers() {
           className="md:hidden fixed bottom-20 right-4 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all"
           onClick={() => {
             if (activeTab === "contacts") {
-              contactForm.reset({ name: "", title: "", email: "", phone: "", clientId: contactCompanyFilter !== "all" ? parseInt(contactCompanyFilter) : undefined, isPrimary: false, serviceNeeds: [] });
               setIsAddContactOpen(true);
             } else {
               setIsCreateDialogOpen(true);

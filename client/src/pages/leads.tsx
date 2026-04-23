@@ -803,6 +803,7 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       id={`column-${stage.slug}`}
+      className={`flex flex-col overflow-hidden w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
       className={`flex flex-col h-full w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
       style={{ minHeight: 0 }}
     >
@@ -839,6 +840,7 @@ function KanbanColumn({
         </div>
       </div>
 
+      <ScrollArea className="flex-1 min-h-0">
       <div className="flex-1 h-0 overflow-y-auto overscroll-contain" data-column-scroll="true">
         <div className="p-3 space-y-3">
           {filteredLeads
@@ -2525,6 +2527,31 @@ export default function Leads() {
           >
             <div
               ref={boardScrollRef}
+              className="flex h-full overflow-x-scroll overflow-y-hidden p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth"
+              onWheel={(e) => {
+                const board = boardScrollRef.current;
+                if (!board) return;
+
+                if (e.shiftKey) {
+                  e.preventDefault();
+                  board.scrollLeft += e.deltaY;
+                  return;
+                }
+
+                const target = e.target as Element;
+                const isOverColumnScrollArea = !!target.closest("[data-radix-scroll-area-viewport]");
+
+                if (e.deltaX !== 0 && !isOverColumnScrollArea) {
+                  e.preventDefault();
+                  board.scrollLeft += e.deltaX;
+                  return;
+                }
+
+                if (e.deltaY !== 0 && !isOverColumnScrollArea) {
+                  e.preventDefault();
+                  board.scrollLeft += e.deltaY;
+                }
+              }}
               className="flex h-full overflow-x-scroll p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth"
             >
               {(() => {

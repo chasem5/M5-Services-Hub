@@ -145,8 +145,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { 
-  insertClientContactSchema, 
+import {
   insertClientSchema,
   insertClientOfficeSchema,
   type Client, 
@@ -1622,30 +1621,6 @@ export default function ClientDetail() {
     },
   });
 
-  const createContactMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await apiRequest("POST", `/api/clients/${clientId}/contacts`, data);
-      return res.json();
-    },
-    onSuccess: async (newContact: ClientContact) => {
-      if (addContactPortfolioId !== "none") {
-        await apiRequest("POST", `/api/portfolios/${addContactPortfolioId}/contacts`, { contactId: newContact.id, role: null });
-        queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/portfolios", { clientId }] });
-      }
-      if (addContactForBuildingId !== null) {
-        await apiRequest("PUT", `/api/contact-buildings/${addContactForBuildingId}`, { contactId: newContact.id });
-        queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "all-buildings"] });
-        setAddContactForBuildingId(null);
-      }
-      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
-      setIsContactDialogOpen(false);
-      setAddContactPortfolioId("none");
-      contactForm.reset();
-      toast({ title: "Success", description: "Contact added successfully" });
-    },
-  });
-
   const deleteContactMutation = useMutation({
     mutationFn: async (contactId: number) => {
       await apiRequest("DELETE", `/api/clients/${clientId}/contacts/${contactId}`);
@@ -1823,7 +1798,6 @@ export default function ClientDetail() {
 
   const openAddContactForOffice = (officeId: number | null, buildingId?: number) => {
     setDefaultOfficeId(officeId);
-    contactForm.setValue("officeId" as any, officeId ?? undefined);
     if (buildingId !== undefined) setAddContactForBuildingId(buildingId);
     else setAddContactForBuildingId(null);
     setIsContactDialogOpen(true);
@@ -1897,24 +1871,6 @@ export default function ClientDetail() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
-  const contactForm = useForm({
-    resolver: zodResolver(insertClientContactSchema),
-    defaultValues: {
-      clientId,
-      name: "",
-      title: "",
-      email: "",
-      phone: "",
-      isPrimary: false,
-      tier: null as string | null,
-      stageId: null as number | null,
-      ownerId: null as string | null,
-      reportsTo: undefined as number | undefined,
-      serviceNeeds: [] as string[],
-      profilePictureUrl: "" as any,
-    },
-  });
-
   const editContactForm = useForm({
     defaultValues: {
       name: "",
@@ -1973,10 +1929,6 @@ export default function ClientDetail() {
 
   const onUpdateClient = (data: any) => {
     updateClientMutation.mutate(data);
-  };
-
-  const onAddContact = (data: any) => {
-    createContactMutation.mutate(data);
   };
 
   if (isLoadingClient) {
@@ -4050,267 +4002,32 @@ export default function ClientDetail() {
             />
 
             {/* Organization shared dialogs — rendered outside sub-tab conditionals so they work from any sub-view */}
-            {/* Add Contact Dialog */}
-            <Dialog open={isContactDialogOpen} onOpenChange={(open) => { setIsContactDialogOpen(open); if (!open) { setDefaultOfficeId(null); setAddContactForBuildingId(null); } }}>
-              <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
-                <DialogHeader>
-                  <DialogTitle>Add Contact</DialogTitle>
-                  <DialogDescription>Add a new contact person for {client.name}.</DialogDescription>
-                </DialogHeader>
-                <Form {...contactForm}>
-                  <form onSubmit={contactForm.handleSubmit(onAddContact)} className="space-y-4 py-4 overflow-y-auto flex-1 pr-1">
-                    <FormField control={contactForm.control} name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Full Name</FormLabel>
-                          <FormControl><Input placeholder="Enter contact name" {...field} data-testid="input-contact-name" /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField control={contactForm.control} name="title"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Job Title</FormLabel>
-                          <FormControl><Input placeholder="e.g. Operations Manager" {...field} value={field.value || ""} data-testid="input-contact-title" /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField control={contactForm.control} name="email"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Email</FormLabel>
-                            <FormControl><Input placeholder="email@example.com" {...field} value={field.value || ""} data-testid="input-contact-email" /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField control={contactForm.control} name="phone"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Phone</FormLabel>
-                            <FormControl>
-                              <Input 
-                                placeholder="555-0123" 
-                                {...field} 
-                                value={field.value || ""} 
-                                onChange={(e) => field.onChange(formatPhoneNumber(e.target.value))}
-                                data-testid="input-contact-phone" 
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    <FormField control={contactForm.control} name={"linkedinUrl" as any}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="flex items-center gap-1.5">
-                            <SiLinkedin className="h-3.5 w-3.5 text-[#0A66C2]" />
-                            LinkedIn Profile URL
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="https://linkedin.com/in/username"
-                              {...field}
-                              value={field.value || ""}
-                              data-testid="input-contact-linkedin"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    {(offices || []).length > 0 && (
-                      <div>
-                        <label className="text-sm font-medium mb-1.5 block">Office / Division</label>
-                        <Select
-                          onValueChange={(val) => (contactForm as any).setValue("officeId", val === "none" ? null : parseInt(val))}
-                          defaultValue={defaultOfficeId?.toString() || "none"}
-                        >
-                          <SelectTrigger data-testid="select-contact-office">
-                            <SelectValue placeholder="Select office (optional)" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">No office (unassigned)</SelectItem>
-                            {(offices || []).map(o => (
-                              <SelectItem key={o.id} value={o.id.toString()}>{o.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    <FormField control={contactForm.control} name="reportsTo"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Reports To</FormLabel>
-                          <SearchableSelect
-                            options={[
-                              { value: "none", label: "No manager (top level)" },
-                              ...(contacts || []).map(c => ({ value: c.id.toString(), label: c.name, sublabel: c.title ?? undefined }))
-                            ]}
-                            value={field.value?.toString() || "none"}
-                            onChange={(val) => field.onChange(val === "none" ? undefined : parseInt(val))}
-                            placeholder="Select manager (optional)"
-                            searchPlaceholder="Search contacts..."
-                            data-testid="select-contact-reports-to"
-                          />
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    {/* Service Needs */}
-                    <div>
-                      <FormLabel className="text-sm font-medium">Service Needs</FormLabel>
-                      <p className="text-xs text-muted-foreground mb-2 mt-0.5">Which M5 services does this contact require?</p>
-                      <div className="grid grid-cols-1 gap-2">
-                        {SERVICE_NEEDS.map(s => {
-                          const current: string[] = (contactForm.watch("serviceNeeds") as string[]) ?? [];
-                          const checked = current.includes(s.key);
-                          return (
-                            <div
-                              key={s.key}
-                              role="checkbox"
-                              aria-checked={checked}
-                              tabIndex={0}
-                              className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors select-none ${checked ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-                              onClick={() => {
-                                const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
-                                contactForm.setValue("serviceNeeds", next);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === " " || e.key === "Enter") {
-                                  const next = checked ? current.filter(k => k !== s.key) : [...current, s.key];
-                                  contactForm.setValue("serviceNeeds", next);
-                                }
-                              }}
-                              data-testid={`toggle-add-contact-service-${s.key}`}
-                            >
-                              <s.Icon className={`h-4 w-4 shrink-0 ${s.color}`} />
-                              <span className="text-sm">{s.label}</span>
-                              {checked && <CheckCircle2 className="h-4 w-4 text-primary ml-auto" />}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <FormField control={contactForm.control} name={"tier" as any}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Contact Tier</FormLabel>
-                          <Select onValueChange={(v) => field.onChange(v === "none" ? null : v)} value={field.value ?? "none"}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-contact-tier">
-                                <SelectValue placeholder="No Tier" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="none">No Tier</SelectItem>
-                              <SelectItem value="tier_1">Tier 1 — High Value</SelectItem>
-                              <SelectItem value="tier_2">Tier 2 — Medium Value</SelectItem>
-                              <SelectItem value="tier_3">Tier 3 — Lower Value</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField control={contactForm.control} name={"stageId" as any}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Contact Stage</FormLabel>
-                          <Select
-                            value={field.value != null ? String(field.value) : "none"}
-                            onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v))}
-                          >
-                            <FormControl>
-                              <SelectTrigger data-testid="select-add-contact-stage">
-                                <SelectValue placeholder="No stage" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="none">No stage</SelectItem>
-                              {contactStages.map(s => (
-                                <SelectItem key={s.id} value={String(s.id)}>
-                                  <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${getStageBadgeClass(s.color)}`}>
-                                    {s.label}
-                                  </span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField control={contactForm.control} name={"ownerId" as any}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Relationship Owner</FormLabel>
-                          <Select
-                            value={field.value ?? "none"}
-                            onValueChange={(v) => field.onChange(v === "none" ? null : v)}
-                          >
-                            <FormControl>
-                              <SelectTrigger data-testid="select-add-contact-owner">
-                                <SelectValue placeholder="Unassigned" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="none">Unassigned</SelectItem>
-                              {users.map(u => (
-                                <SelectItem key={u.id} value={u.id}>
-                                  {`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField control={contactForm.control} name="isPrimary"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                          <FormControl>
-                            <Checkbox checked={field.value} onCheckedChange={field.onChange} data-testid="checkbox-contact-primary" />
-                          </FormControl>
-                          <div className="space-y-1 leading-none">
-                            <FormLabel>Primary Contact</FormLabel>
-                            <FormDescription>Mark this person as the main point of contact.</FormDescription>
-                          </div>
-                        </FormItem>
-                      )}
-                    />
-                    {clientPortfolios.length > 0 && (
-                      <div>
-                        <label className="text-sm font-medium mb-1.5 block">Assign to Portfolio <span className="text-muted-foreground font-normal">(optional)</span></label>
-                        <Select value={addContactPortfolioId} onValueChange={setAddContactPortfolioId}>
-                          <SelectTrigger data-testid="select-add-contact-portfolio">
-                            <SelectValue placeholder="Select portfolio (optional)" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">No portfolio</SelectItem>
-                            {clientPortfolios.map(p => (
-                              <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    <DialogFooter className="pt-4">
-                      <Button type="submit" className="w-full h-11" disabled={createContactMutation.isPending} data-testid="button-submit-contact">
-                        {createContactMutation.isPending ? "Adding..." : "Add Contact"}
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </Form>
-              </DialogContent>
-            </Dialog>
+            <ContactFormDialog
+              open={isContactDialogOpen}
+              onClose={() => {
+                setIsContactDialogOpen(false);
+                setDefaultOfficeId(null);
+                setAddContactForBuildingId(null);
+              }}
+              fixedClientId={clientId}
+              fixedClientName={client?.name}
+              offices={offices}
+              defaultOfficeId={defaultOfficeId}
+              siblingContacts={contacts}
+              onSuccess={async (newContact) => {
+                if (addContactPortfolioId !== "none") {
+                  await apiRequest("POST", `/api/portfolios/${addContactPortfolioId}/contacts`, { contactId: newContact.id, role: null });
+                  queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/portfolios", { clientId }] });
+                  setAddContactPortfolioId("none");
+                }
+                if (addContactForBuildingId !== null) {
+                  await apiRequest("PUT", `/api/contact-buildings/${addContactForBuildingId}`, { contactId: newContact.id });
+                  queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "all-buildings"] });
+                }
+                queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "contacts"] });
+              }}
+            />
 
             {/* Add to Portfolio Dialog */}
             <Dialog open={portfolioPickerContactId !== null} onOpenChange={open => { if (!open) { setPortfolioPickerContactId(null); setPortfolioPickerPortfolioId("none"); setPortfolioPickerRole(""); } }}>
