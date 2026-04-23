@@ -839,7 +839,7 @@ function KanbanColumn({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 overscroll-contain" data-column-scroll="true">
+      <div className="flex-1 h-0 overflow-y-auto overscroll-contain" data-column-scroll="true">
         <div className="p-3 space-y-3">
           {filteredLeads
             ?.filter((l) => l.stage === stage.slug)
@@ -2740,7 +2740,7 @@ export default function Leads() {
             </DragOverlay>
           </DndContext>
         ) : (
-          <div className="p-4 sm:p-6">
+          <div className="p-4 sm:p-6 overflow-y-auto h-full">
             <Card className="overflow-x-auto">
               <Table className="min-w-[900px]">
                 <TableHeader>

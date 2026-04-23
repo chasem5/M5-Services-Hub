@@ -253,7 +253,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
           </header>
           <main
             ref={mainRef}
-            className="flex-1 overflow-y-auto overflow-x-hidden relative pb-16 md:pb-0"
+            className={`flex-1 overflow-x-hidden relative pb-16 md:pb-0 ${location.startsWith("/leads") ? "overflow-hidden" : "overflow-y-auto"}`}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
