@@ -205,6 +205,60 @@ const STAGE_COLORS = {
     subheader: "bg-red-50/70 dark:bg-red-950/30 border-red-200/70 dark:border-red-800/50",
     strip: "bg-red-700 dark:bg-red-800 border-red-600 dark:border-red-700",
   },
+  blue: {
+    column: "bg-blue-50/80 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800",
+    header: "bg-blue-700 dark:bg-blue-800 border-blue-600 dark:border-blue-700 rounded-t-lg",
+    dot: "bg-blue-300",
+    badge: "bg-blue-100 text-blue-800 border-blue-200",
+    value: "text-blue-200 dark:text-blue-300",
+    subheader: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800",
+    strip: "bg-blue-700 dark:bg-blue-800 border-blue-600 dark:border-blue-700",
+  },
+  violet: {
+    column: "bg-violet-50/80 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800",
+    header: "bg-violet-700 dark:bg-violet-800 border-violet-600 dark:border-violet-700 rounded-t-lg",
+    dot: "bg-violet-300",
+    badge: "bg-violet-100 text-violet-800 border-violet-200",
+    value: "text-violet-200 dark:text-violet-300",
+    subheader: "bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800",
+    strip: "bg-violet-700 dark:bg-violet-800 border-violet-600 dark:border-violet-700",
+  },
+  amber: {
+    column: "bg-amber-50/80 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800",
+    header: "bg-amber-600 dark:bg-amber-700 border-amber-500 dark:border-amber-600 rounded-t-lg",
+    dot: "bg-amber-300",
+    badge: "bg-amber-100 text-amber-800 border-amber-200",
+    value: "text-amber-200 dark:text-amber-300",
+    subheader: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800",
+    strip: "bg-amber-600 dark:bg-amber-700 border-amber-500 dark:border-amber-600",
+  },
+  teal: {
+    column: "bg-teal-50/80 dark:bg-teal-950/20 border-teal-200 dark:border-teal-800",
+    header: "bg-teal-700 dark:bg-teal-800 border-teal-600 dark:border-teal-700 rounded-t-lg",
+    dot: "bg-teal-300",
+    badge: "bg-teal-100 text-teal-800 border-teal-200",
+    value: "text-teal-200 dark:text-teal-300",
+    subheader: "bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800",
+    strip: "bg-teal-700 dark:bg-teal-800 border-teal-600 dark:border-teal-700",
+  },
+  orange: {
+    column: "bg-orange-50/80 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800",
+    header: "bg-orange-600 dark:bg-orange-700 border-orange-500 dark:border-orange-600 rounded-t-lg",
+    dot: "bg-orange-300",
+    badge: "bg-orange-100 text-orange-800 border-orange-200",
+    value: "text-orange-200 dark:text-orange-300",
+    subheader: "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800",
+    strip: "bg-orange-600 dark:bg-orange-700 border-orange-500 dark:border-orange-600",
+  },
+  purple: {
+    column: "bg-purple-50/80 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800",
+    header: "bg-purple-700 dark:bg-purple-800 border-purple-600 dark:border-purple-700 rounded-t-lg",
+    dot: "bg-purple-300",
+    badge: "bg-purple-100 text-purple-800 border-purple-200",
+    value: "text-purple-200 dark:text-purple-300",
+    subheader: "bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800",
+    strip: "bg-purple-700 dark:bg-purple-800 border-purple-600 dark:border-purple-700",
+  },
   default: {
     column: "bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700",
     header: "bg-slate-700 dark:bg-slate-800 border-slate-600 dark:border-slate-700 rounded-t-lg",
@@ -750,6 +804,7 @@ function KanbanColumn({
       ref={setNodeRef}
       id={`column-${stage.slug}`}
       className={`flex flex-col w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
+      style={{ minHeight: 0 }}
     >
       {/* Dark colored column header */}
       <div className={`px-3 py-2.5 border-b shrink-0 ${sc.header}`}>
@@ -784,7 +839,7 @@ function KanbanColumn({
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto min-h-0">
         <div className="p-3 space-y-3">
           {filteredLeads
             ?.filter((l) => l.stage === stage.slug)
@@ -817,7 +872,7 @@ function KanbanColumn({
               />
             ))}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

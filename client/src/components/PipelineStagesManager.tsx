@@ -34,9 +34,15 @@ import { CSS } from "@dnd-kit/utilities";
 
 function getStageColors(color: string | null | undefined) {
   switch (color) {
-    case "green": return { dot: "bg-green-500", badge: "bg-green-100 text-green-700 border-green-200" };
-    case "red": return { dot: "bg-red-500", badge: "bg-red-100 text-red-700 border-red-200" };
-    default: return { dot: "bg-muted-foreground", badge: "bg-muted text-muted-foreground border-border" };
+    case "green":  return { dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" };
+    case "red":    return { dot: "bg-red-500",     badge: "bg-red-100 text-red-700 border-red-200" };
+    case "blue":   return { dot: "bg-blue-500",    badge: "bg-blue-100 text-blue-700 border-blue-200" };
+    case "violet": return { dot: "bg-violet-500",  badge: "bg-violet-100 text-violet-700 border-violet-200" };
+    case "amber":  return { dot: "bg-amber-500",   badge: "bg-amber-100 text-amber-700 border-amber-200" };
+    case "teal":   return { dot: "bg-teal-500",    badge: "bg-teal-100 text-teal-700 border-teal-200" };
+    case "orange": return { dot: "bg-orange-500",  badge: "bg-orange-100 text-orange-700 border-orange-200" };
+    case "purple": return { dot: "bg-purple-500",  badge: "bg-purple-100 text-purple-700 border-purple-200" };
+    default:       return { dot: "bg-muted-foreground", badge: "bg-muted text-muted-foreground border-border" };
   }
 }
 
@@ -179,8 +185,14 @@ function SortableStageRow({
           data-testid={`select-pipeline-stage-color-${stage.id}`}
         >
           <option value="default">Default</option>
+          <option value="blue">Blue</option>
+          <option value="violet">Violet</option>
+          <option value="teal">Teal</option>
           <option value="green">Green</option>
+          <option value="amber">Amber</option>
+          <option value="orange">Orange</option>
           <option value="red">Red</option>
+          <option value="purple">Purple</option>
         </select>
       )}
 
@@ -362,8 +374,14 @@ export function PipelineStagesManager() {
             data-testid="select-new-pipeline-stage-color"
           >
             <option value="default">Default</option>
+            <option value="blue">Blue</option>
+            <option value="violet">Violet</option>
+            <option value="teal">Teal</option>
             <option value="green">Green</option>
+            <option value="amber">Amber</option>
+            <option value="orange">Orange</option>
             <option value="red">Red</option>
+            <option value="purple">Purple</option>
           </select>
           <Button
             size="sm"
