@@ -803,7 +803,7 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       id={`column-${stage.slug}`}
-      className={`flex flex-col w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
+      className={`flex flex-col h-full w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
       style={{ minHeight: 0 }}
     >
       {/* Dark colored column header */}
@@ -2326,148 +2326,104 @@ export default function Leads() {
 
   return (
     <div className="flex flex-col h-full bg-muted" data-testid="page-leads">
-      <header className="flex flex-col gap-3 p-4 md:p-6 bg-background border-b shadow-sm">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-              <Target className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-heading font-bold">Deals</h1>
-              <p className="text-muted-foreground hidden md:block">Manage your sales pipeline and track opportunities</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* View toggle — always visible */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 gap-1.5" data-testid="button-view-selector">
-                  {view === "kanban" ? <LayoutGrid className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
-                  <span className="hidden sm:inline">{view === "kanban" ? "Board" : "List"}</span>
-                  <ChevronDown className="h-3 w-3 ml-0.5 opacity-60" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-36">
-                <DropdownMenuItem onClick={() => setView("kanban")} className="gap-2" data-testid="option-view-board">
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                  Board
-                  {view === "kanban" && <Check className="h-3.5 w-3.5 ml-auto" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setView("list")} className="gap-2" data-testid="option-view-list">
-                  <List className="h-3.5 w-3.5" />
-                  List
-                  {view === "list" && <Check className="h-3.5 w-3.5 ml-auto" />}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {/* Overflow menu for secondary actions */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8" data-testid="button-mobile-more">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setIsPipelineReviewOpen(true)} data-testid="option-pipeline-review-mobile">
-                  <ClipboardList className="h-4 w-4 mr-2" />
-                  Pipeline Review
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsManageStagesOpen(true)} data-testid="option-manage-stages-mobile">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Manage Stages
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {
-                  setEditingView(null);
-                  setNewViewName("");
-                  setNewViewStages([]);
-                  setNewViewServiceTypes([]);
-                  setNewViewTiers([]);
-                  setNewViewTags([]);
-                  setNewViewDateRange("all");
-                  setIsManageViewsOpen(true);
-                }} data-testid="option-new-view-mobile">
-                  <BookmarkPlus className="h-4 w-4 mr-2" />
-                  New View
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => syncBuildopsQuotesMutation.mutate()}
-                  disabled={syncBuildopsQuotesMutation.isPending}
-                  data-testid="option-sync-buildops"
-                >
-                  <RefreshCw className={`h-4 w-4 mr-2 ${syncBuildopsQuotesMutation.isPending ? "animate-spin" : ""}`} />
-                  Sync BuildOps Quotes
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {/* Add Deal — desktop only; on mobile use FAB */}
-            <Button onClick={() => {
-              form.reset();
-              setFormTags([]);
-              setTagInput("");
-              setIsAddDealOpen(true);
-            }} className="hidden md:inline-flex" data-testid="button-add-lead">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Deal
-            </Button>
-          </div>
-        </div>
-
-        {/* Mobile Stage Selector */}
-        <div className="md:hidden px-0 pb-1 overflow-x-auto no-scrollbar">
-          <div className="flex gap-2 min-w-max pb-1">
-            {stages.map((stage) => {
-              const count = filteredLeads?.filter(l => l.stage === stage.slug).length ?? 0;
-              return (
-                <Button
-                  key={stage.slug}
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full h-8 px-3 text-[10px] font-bold uppercase tracking-wider border-muted-foreground/20 whitespace-nowrap bg-background"
-                  onClick={() => scrollToColumn(stage.slug)}
-                >
-                  {stage.label}
-                  <Badge variant="secondary" className="ml-1.5 h-4 px-1 min-w-[1rem] text-[9px]">
-                    {count}
-                  </Badge>
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Source tab switcher — Deals / BuildOps Quotes / All */}
-        <div className="flex items-center" data-testid="source-tab-switcher">
-          <div className="inline-flex rounded-lg border bg-muted p-0.5 gap-0.5">
+      <header className="flex flex-col shrink-0 bg-background border-b shadow-sm">
+        {/* Row 1: title + source tabs + actions */}
+        <div className="flex items-center gap-2 px-3 md:px-4 h-12 border-b">
+          <Target className="h-4 w-4 text-primary shrink-0" />
+          <h1 className="text-sm font-semibold mr-1 shrink-0">Deals</h1>
+          {/* Source tab switcher */}
+          <div className="inline-flex rounded-md border bg-muted p-0.5 gap-0.5 shrink-0" data-testid="source-tab-switcher">
             <button
               onClick={() => setSourceTab("deals")}
-              className={`px-3 py-1 text-sm rounded-md font-medium transition-colors ${sourceTab === "deals" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              className={`px-2.5 py-0.5 text-xs rounded font-medium transition-colors ${sourceTab === "deals" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
               data-testid="button-source-tab-deals"
             >
               Deals
             </button>
             <button
               onClick={() => setSourceTab("buildops")}
-              className={`px-3 py-1 text-sm rounded-md font-medium transition-colors flex items-center gap-1.5 ${sourceTab === "buildops" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              className={`px-2.5 py-0.5 text-xs rounded font-medium transition-colors flex items-center gap-1 ${sourceTab === "buildops" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
               data-testid="button-source-tab-buildops"
             >
-              <BuildOpsIcon className="h-3.5 w-3.5 shrink-0" />
-              BuildOps Quotes
+              <BuildOpsIcon className="h-3 w-3 shrink-0" />
+              <span className="hidden sm:inline">BuildOps</span>
             </button>
             <button
               onClick={() => setSourceTab("all")}
-              className={`px-3 py-1 text-sm rounded-md font-medium transition-colors ${sourceTab === "all" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              className={`px-2.5 py-0.5 text-xs rounded font-medium transition-colors ${sourceTab === "all" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
               data-testid="button-source-tab-all"
             >
               All
             </button>
           </div>
+          <div className="flex-1" />
+          {/* Search — desktop */}
+          <div className="relative hidden md:block">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search deals..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8 h-8 w-48 text-sm"
+              data-testid="input-search-leads"
+            />
+          </div>
+          {/* View toggle */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5" data-testid="button-view-selector">
+                {view === "kanban" ? <LayoutGrid className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-36">
+              <DropdownMenuItem onClick={() => setView("kanban")} className="gap-2" data-testid="option-view-board">
+                <LayoutGrid className="h-3.5 w-3.5" />Board
+                {view === "kanban" && <Check className="h-3.5 w-3.5 ml-auto" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setView("list")} className="gap-2" data-testid="option-view-list">
+                <List className="h-3.5 w-3.5" />List
+                {view === "list" && <Check className="h-3.5 w-3.5 ml-auto" />}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* More menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-8 w-8" data-testid="button-mobile-more">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setIsPipelineReviewOpen(true)} data-testid="option-pipeline-review-mobile">
+                <ClipboardList className="h-4 w-4 mr-2" />Pipeline Review
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsManageStagesOpen(true)} data-testid="option-manage-stages-mobile">
+                <Settings className="h-4 w-4 mr-2" />Manage Stages
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => {
+                setEditingView(null); setNewViewName(""); setNewViewStages([]);
+                setNewViewServiceTypes([]); setNewViewTiers([]); setNewViewTags([]);
+                setNewViewDateRange("all"); setIsManageViewsOpen(true);
+              }} data-testid="option-new-view-mobile">
+                <BookmarkPlus className="h-4 w-4 mr-2" />New View
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => syncBuildopsQuotesMutation.mutate()} disabled={syncBuildopsQuotesMutation.isPending} data-testid="option-sync-buildops">
+                <RefreshCw className={`h-4 w-4 mr-2 ${syncBuildopsQuotesMutation.isPending ? "animate-spin" : ""}`} />Sync BuildOps Quotes
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button onClick={() => { form.reset(); setFormTags([]); setTagInput(""); setIsAddDealOpen(true); }} className="h-8 hidden md:inline-flex" data-testid="button-add-lead">
+            <Plus className="h-4 w-4 mr-1.5" />Add Deal
+          </Button>
         </div>
 
-        {/* Pipeline View switcher — desktop only */}
-        <div className="hidden md:flex items-center gap-2 flex-wrap">
+        {/* Row 2: pipeline views + filters */}
+        <div className="flex items-center gap-2 px-3 md:px-4 h-10 overflow-x-auto no-scrollbar">
+          {/* Pipeline view pills */}
           <button
             onClick={() => setActiveViewId(null)}
-            className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${!activeViewId ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+            className={`px-2.5 py-1 text-xs rounded-full border transition-colors font-medium whitespace-nowrap shrink-0 ${!activeViewId ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
             data-testid="button-view-all"
           >
             All Deals
@@ -2476,102 +2432,76 @@ export default function Leads() {
             <button
               key={v.id}
               onClick={() => setActiveViewId(v.id)}
-              className={`px-3 py-1 text-sm rounded-full border transition-colors font-medium ${activeViewId === v.id ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+              className={`px-2.5 py-1 text-xs rounded-full border transition-colors font-medium whitespace-nowrap shrink-0 ${activeViewId === v.id ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
               data-testid={`button-view-${v.id}`}
             >
               {v.name}
             </button>
           ))}
-          <Button size="sm" variant="outline" className="h-7 rounded-full text-xs gap-1.5" onClick={() => {
-            setEditingView(null);
-            setNewViewName("");
-            setNewViewStages([]);
-            setNewViewServiceTypes([]);
-            setNewViewTiers([]);
-            setNewViewTags([]);
-            setNewViewDateRange("all");
-            setIsManageViewsOpen(true);
+          <Button size="sm" variant="ghost" className="h-6 rounded-full text-xs gap-1 px-2 shrink-0" onClick={() => {
+            setEditingView(null); setNewViewName(""); setNewViewStages([]);
+            setNewViewServiceTypes([]); setNewViewTiers([]); setNewViewTags([]);
+            setNewViewDateRange("all"); setIsManageViewsOpen(true);
           }} data-testid="button-manage-views">
-            <BookmarkPlus className="h-3.5 w-3.5" />
-            New View
+            <BookmarkPlus className="h-3 w-3" />
           </Button>
-        </div>
-
-        <div className="hidden sm:flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search deals..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-              data-testid="input-search-leads"
-            />
-          </div>
-          <Select value={stageFilter} onValueChange={setStageFilter}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Filter by Stage" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Stages</SelectItem>
-              {stages.map((stage) => (
-                <SelectItem key={stage.id} value={stage.slug}>{stage.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={tierFilter} onValueChange={setTierFilter}>
-            <SelectTrigger className="w-[140px]" data-testid="select-lead-tier-filter">
-              <SelectValue placeholder="All Tiers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Tiers</SelectItem>
-              <SelectItem value="tier_1">Tier 1</SelectItem>
-              <SelectItem value="tier_2">Tier 2</SelectItem>
-              <SelectItem value="tier_3">Tier 3</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={tagFilter} onValueChange={setTagFilter}>
-            <SelectTrigger className="w-[140px]" data-testid="select-lead-tag-filter">
-              <TagIcon className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="All Tags" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Tags</SelectItem>
-              {dealTags.map((tag) => (
-                <SelectItem key={tag.id} value={tag.name}>{tag.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={dateFilter}
-            onValueChange={(v) => {
-              setDateFilter(v);
-              localStorage.setItem("kanban-date-filter", v);
-            }}
-          >
-            <SelectTrigger className="w-[145px]" data-testid="select-date-filter">
-              <CalendarDays className="h-4 w-4 mr-2 shrink-0" />
-              <SelectValue placeholder="All Time" />
-            </SelectTrigger>
-            <SelectContent>
-              {DATE_PRESETS.map(p => (
-                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
           {activeView && (
-            <div className="flex items-center gap-1.5 text-xs text-primary font-medium border border-primary/30 bg-primary/5 rounded-full px-3 py-1">
+            <div className="flex items-center gap-1 text-xs text-primary font-medium border border-primary/30 bg-primary/5 rounded-full px-2 py-0.5 shrink-0">
               <Eye className="h-3 w-3" />
-              View: {activeView.name}
-              <button onClick={() => setActiveViewId(null)} className="ml-1 hover:text-destructive">
-                <X className="h-3 w-3" />
-              </button>
+              {activeView.name}
+              <button onClick={() => setActiveViewId(null)} className="ml-0.5 hover:text-destructive"><X className="h-3 w-3" /></button>
             </div>
           )}
+          <div className="flex-1 hidden md:block" />
+          {/* Filters — desktop */}
+          <div className="hidden md:flex items-center gap-1.5 shrink-0">
+            <Select value={stageFilter} onValueChange={setStageFilter}>
+              <SelectTrigger className="h-7 w-[150px] text-xs">
+                <Filter className="h-3 w-3 mr-1.5" />
+                <SelectValue placeholder="All Stages" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Stages</SelectItem>
+                {stages.map((stage) => (
+                  <SelectItem key={stage.id} value={stage.slug}>{stage.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={tierFilter} onValueChange={setTierFilter}>
+              <SelectTrigger className="h-7 w-[110px] text-xs" data-testid="select-lead-tier-filter">
+                <SelectValue placeholder="All Tiers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Tiers</SelectItem>
+                <SelectItem value="tier_1">Tier 1</SelectItem>
+                <SelectItem value="tier_2">Tier 2</SelectItem>
+                <SelectItem value="tier_3">Tier 3</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={tagFilter} onValueChange={setTagFilter}>
+              <SelectTrigger className="h-7 w-[110px] text-xs" data-testid="select-lead-tag-filter">
+                <TagIcon className="h-3 w-3 mr-1.5" />
+                <SelectValue placeholder="All Tags" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Tags</SelectItem>
+                {dealTags.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.name}>{tag.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={dateFilter} onValueChange={(v) => { setDateFilter(v); localStorage.setItem("kanban-date-filter", v); }}>
+              <SelectTrigger className="h-7 w-[120px] text-xs" data-testid="select-date-filter">
+                <CalendarDays className="h-3 w-3 mr-1.5 shrink-0" />
+                <SelectValue placeholder="All Time" />
+              </SelectTrigger>
+              <SelectContent>
+                {DATE_PRESETS.map(p => (
+                  <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </header>
 
