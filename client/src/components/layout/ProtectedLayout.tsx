@@ -283,6 +283,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </div>
             )}
             <div
+              className="h-full"
               style={{
                 transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : undefined,
                 transition: pullDistance === 0 ? "transform 0.25s ease" : undefined,
