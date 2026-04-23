@@ -109,6 +109,7 @@ function getRelativeTime(date: Date): string {
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading, isProfileComplete } = useAuth();
+  const [location] = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
