@@ -839,7 +839,7 @@ function KanbanColumn({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0" data-column-scroll="true">
+      <div className="flex-1 overflow-y-auto min-h-0 overscroll-contain" data-column-scroll="true">
         <div className="p-3 space-y-3">
           {filteredLeads
             ?.filter((l) => l.stage === stage.slug)
@@ -1348,6 +1348,35 @@ export default function Leads() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const autoOpenedRef = useRef(false);
   const boardScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const board = boardScrollRef.current;
+    if (!board) return;
+    const handleWheel = (e: WheelEvent) => {
+      const target = e.target as Element;
+      const isOverColumn = !!target.closest("[data-column-scroll]");
+      if (isOverColumn) {
+        // Let the column scroll naturally — stop event from reaching outer layout scroller
+        e.stopPropagation();
+        return;
+      }
+      if (e.shiftKey) {
+        e.preventDefault();
+        board.scrollLeft += e.deltaY;
+        return;
+      }
+      if (e.deltaX !== 0) {
+        e.preventDefault();
+        board.scrollLeft += e.deltaX;
+        return;
+      }
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        board.scrollLeft += e.deltaY;
+      }
+    };
+    board.addEventListener("wheel", handleWheel, { passive: false });
+    return () => board.removeEventListener("wheel", handleWheel);
+  }, []);
   const [localScore, setLocalScore] = useState(50);
   useEffect(() => { setLocalScore(selectedLead?.confidenceScore ?? 50); }, [selectedLead?.id, selectedLead?.confidenceScore]);
   useEffect(() => {
@@ -2567,30 +2596,6 @@ export default function Leads() {
             <div
               ref={boardScrollRef}
               className="flex h-full overflow-x-scroll p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth"
-              onWheel={(e) => {
-                const board = boardScrollRef.current;
-                if (!board) return;
-
-                if (e.shiftKey) {
-                  e.preventDefault();
-                  board.scrollLeft += e.deltaY;
-                  return;
-                }
-
-                const target = e.target as Element;
-                const isOverColumnScrollArea = !!target.closest("[data-column-scroll]");
-
-                if (e.deltaX !== 0 && !isOverColumnScrollArea) {
-                  e.preventDefault();
-                  board.scrollLeft += e.deltaX;
-                  return;
-                }
-
-                if (e.deltaY !== 0 && !isOverColumnScrollArea) {
-                  e.preventDefault();
-                  board.scrollLeft += e.deltaY;
-                }
-              }}
             >
               {(() => {
                 const visibleStages = activeFilters?.stages?.length
