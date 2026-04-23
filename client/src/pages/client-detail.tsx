@@ -2068,6 +2068,14 @@ export default function ClientDetail() {
                   </Tooltip>
                 </TooltipProvider>
               )}
+              {client.teamId && (
+                <span
+                  className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground border"
+                  data-testid="badge-client-team-header"
+                >
+                  {teamsList.find(t => t.id === client.teamId)?.name ?? `Team #${client.teamId}`}
+                </span>
+              )}
               <Select
                 value={client.customerStatus ?? "prospect"}
                 onValueChange={(val) => updateClientMutation.mutate({ customerStatus: val })}

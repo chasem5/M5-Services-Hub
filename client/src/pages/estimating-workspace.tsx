@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -200,6 +201,8 @@ export default function EstimatingWorkspace() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isAdminOrManager = user && ["super_admin", "admin", "manager"].includes(user.role ?? "");
   const oppId = parseInt(params.id);
 
   const [aiOpen, setAiOpen] = useState(false);
@@ -284,6 +287,11 @@ export default function EstimatingWorkspace() {
       return res.json();
     },
     enabled: showCatalog,
+  });
+
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/teams"],
+    enabled: !!isAdminOrManager,
   });
 
   useEffect(() => {
@@ -885,6 +893,33 @@ export default function EstimatingWorkspace() {
                                 <span key={sl} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">{sl}</span>
                               ))}
                             </div>
+                          </div>
+                        )}
+                        {isAdminOrManager && teamsList.length > 0 && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-muted-foreground text-xs">Team:</span>
+                            <Select
+                              value={opp?.teamId != null ? String(opp.teamId) : "__none__"}
+                              onValueChange={(v) => updateOppMut.mutate({ teamId: v === "__none__" ? null : parseInt(v) })}
+                            >
+                              <SelectTrigger className="h-6 text-xs flex-1" data-testid="select-opp-team">
+                                <SelectValue placeholder="No team" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">— No Team —</SelectItem>
+                                {teamsList.map(t => (
+                                  <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        {!isAdminOrManager && opp?.teamId && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-muted-foreground text-xs">Team:</span>
+                            <Badge variant="outline" className="text-[9px]" data-testid="badge-opp-team">
+                              {teamsList.find(t => t.id === opp.teamId)?.name ?? `Team #${opp.teamId}`}
+                            </Badge>
                           </div>
                         )}
                       </div>

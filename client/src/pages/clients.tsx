@@ -565,6 +565,11 @@ export default function Customers() {
     enabled: isAdminOrManager,
   });
 
+  const { data: teamsList = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/teams"],
+    enabled: isAdminOrManager,
+  });
+
   const { data: allBuildings = [], isLoading: isLoadingBuildings } = useQuery<ContactBuilding[]>({
     queryKey: ["/api/all-buildings"],
   });
@@ -1980,6 +1985,14 @@ export default function Customers() {
                                         }
                                         return null;
                                       })()}
+                                      {isAdminOrManager && c.teamId && (
+                                        <span
+                                          className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-secondary-foreground font-medium border shrink-0"
+                                          data-testid={`badge-client-team-${c.id}`}
+                                        >
+                                          {teamsList.find(t => t.id === c.teamId)?.name ?? `Team #${c.teamId}`}
+                                        </span>
+                                      )}
                                     </div>
                                     {(c.serviceNeeds ?? []).length > 0 && (
                                       <div className="flex flex-wrap gap-1">
