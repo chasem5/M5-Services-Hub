@@ -803,9 +803,7 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       id={`column-${stage.slug}`}
-      className={`flex flex-col overflow-hidden w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
-      className={`flex flex-col h-full w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
-      style={{ minHeight: 0 }}
+      className={`flex flex-col overflow-hidden h-full w-full md:w-80 md:min-w-80 min-w-[85vw] rounded-lg border shadow-sm transition-colors scroll-snap-align-start ${sc.column} ${isOver ? "ring-2 ring-primary/50" : ""}`}
     >
       {/* Dark colored column header */}
       <div className={`px-3 py-2.5 border-b shrink-0 ${sc.header}`}>
@@ -840,8 +838,7 @@ function KanbanColumn({
         </div>
       </div>
 
-      <ScrollArea className="flex-1 min-h-0">
-      <div className="flex-1 h-0 overflow-y-auto overscroll-contain" data-column-scroll="true">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain" data-column-scroll="true">
         <div className="p-3 space-y-3">
           {filteredLeads
             ?.filter((l) => l.stage === stage.slug)
@@ -2539,7 +2536,7 @@ export default function Leads() {
                 }
 
                 const target = e.target as Element;
-                const isOverColumnScrollArea = !!target.closest("[data-radix-scroll-area-viewport]");
+                const isOverColumnScrollArea = !!target.closest("[data-column-scroll]");
 
                 if (e.deltaX !== 0 && !isOverColumnScrollArea) {
                   e.preventDefault();
@@ -2552,7 +2549,6 @@ export default function Leads() {
                   board.scrollLeft += e.deltaY;
                 }
               }}
-              className="flex h-full overflow-x-scroll p-4 md:p-6 gap-6 scroll-snap-x-mandatory scroll-smooth"
             >
               {(() => {
                 const visibleStages = activeFilters?.stages?.length
