@@ -248,7 +248,7 @@ export interface IStorage {
   getBuildingActivity(buildingId: number): Promise<{ leads: Lead[]; estimates: Estimate[] }>;
 
   // Leads
-  listLeads(userId?: string, teamId?: number): Promise<Lead[]>;
+  listLeads(userId?: string, teamId?: number, userTeamId?: number): Promise<Lead[]>;
   getLead(id: number): Promise<Lead | undefined>;
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: number, lead: Partial<InsertLead>): Promise<Lead>;
@@ -300,7 +300,7 @@ export interface IStorage {
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
 
   // Dashboard
-  getDashboardStats(filterUserId?: string, filterTeamId?: number): Promise<any>;
+  getDashboardStats(filterUserId?: string, filterTeamId?: number, userTeamId?: number): Promise<any>;
   getTeamPerformanceStats(): Promise<any[]>;
   getCeoTeamPerformanceStats(): Promise<any[]>;
 
@@ -917,9 +917,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Leads
-  async listLeads(userId?: string, teamId?: number): Promise<Lead[]> {
+  async listLeads(userId?: string, teamId?: number, userTeamId?: number): Promise<Lead[]> {
     const conditions = [];
-    if (userId) conditions.push(eq(leads.assignedTo, userId));
+    if (userId && userTeamId) {
+      // Non-admin with a team: show deals assigned to them OR assigned to their team
+      conditions.push(or(eq(leads.assignedTo, userId), eq(leads.teamId, userTeamId))!);
+    } else if (userId) {
+      conditions.push(eq(leads.assignedTo, userId));
+    }
     if (teamId) conditions.push(eq(leads.teamId, teamId));
     if (conditions.length > 0) {
       return await db.select().from(leads).where(and(...conditions)).orderBy(desc(leads.createdAt));
@@ -1225,7 +1230,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Dashboard
-  async getDashboardStats(filterUserId?: string, filterTeamId?: number): Promise<any> {
+  async getDashboardStats(filterUserId?: string, filterTeamId?: number, userTeamId?: number): Promise<any> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -1248,7 +1253,10 @@ export class DatabaseStorage implements IStorage {
       return parseFloat(lead.value || "0");
     };
 
-    const userFilter = filterUserId ? eq(leads.assignedTo, filterUserId) : undefined;
+    // When a non-admin user has a teamId, surface leads assigned to them OR to their team
+    const userFilter = filterUserId && userTeamId
+      ? or(eq(leads.assignedTo, filterUserId), eq(leads.teamId, userTeamId))
+      : filterUserId ? eq(leads.assignedTo, filterUserId) : undefined;
     const teamLeadFilter = filterTeamId ? eq(leads.teamId, filterTeamId) : undefined;
     const leadScopeFilter = userFilter ?? teamLeadFilter;
     const taskUserFilter = filterUserId ? eq(tasks.assignedTo, filterUserId) : undefined;

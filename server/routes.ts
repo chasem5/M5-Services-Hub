@@ -430,7 +430,9 @@ export async function registerRoutes(
       filterTeamId = undefined;
     }
 
-    const stats = await storage.getDashboardStats(filterUserId, filterTeamId);
+    // For non-admin users scoped to their own ID, also surface deals belonging to their team
+    const dashUserTeamId = (!isAdminOrManager && filterUserId && callerUser?.teamId) ? callerUser.teamId : undefined;
+    const stats = await storage.getDashboardStats(filterUserId, filterTeamId, dashUserTeamId);
     res.json(stats);
   });
 
@@ -2075,7 +2077,9 @@ Do not include any other text, just the JSON.`,
       if (req.query.teamId) filterTeamId = parseInt(String(req.query.teamId));
       if (req.query.userId) filterUserId = String(req.query.userId);
     }
-    const leads = await storage.listLeads(filterUserId, filterTeamId);
+    // For non-admin users scoped to their own ID, also surface deals assigned to their team
+    const userTeamId = (!isAdminOrManager && filterUserId && callerUser?.teamId) ? callerUser.teamId : undefined;
+    const leads = await storage.listLeads(filterUserId, filterTeamId, userTeamId);
     const now = new Date();
     const leadsWithFlags = leads.map(lead => ({
       ...lead,
